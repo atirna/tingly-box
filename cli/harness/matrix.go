@@ -26,7 +26,7 @@ type MatrixCmd struct {
 	Targets    []string `kong:"name='target',sep=',',help='Filter by target protocol (can repeat or comma-separate)'"`
 	Streaming  bool     `kong:"name='streaming',help='Run only streaming tests'"`
 	NonStream  bool     `kong:"name='non-streaming',help='Run only non-streaming tests'"`
-	Mode       string   `kong:"name='mode',default='default',enum='default,all,single,transitive,idempotent,flags,content_shapes,cache_controls',help='Section selection: default (single + idempotent round-trip; two-hop OFF), all (every section), single (A→B only), transitive (A→B→C only), idempotent (round-trip g(f(A))==A only), flags (per-rule flag behavior only), content_shapes (request content-shape regression only), cache_controls (single-hop + ABA cache/no-cache requests)'"`
+	Mode       string   `kong:"name='mode',default='default',enum='default,all,single,transitive,idempotent,flags,content_shapes,cache_controls,bridges',help='Section selection: default (single + idempotent + dormant Bridges; two-hop OFF), all (every section), single (production A→B only), transitive (production A→B→C only), idempotent (production round-trip only), flags (per-rule flags only), content_shapes (request content-shape regression only), cache_controls (single-hop + ABA cache/no-cache requests), bridges (dormant Stage/Bridge topology only)'"`
 	Client     string   `kong:"name='client',default='http',enum='http,gosdk,python,node,aisdk',help='Client driver: http (raw JSON over net/http, default), gosdk (official anthropic-sdk-go / openai-go), python (real Python SDKs via subprocess driver), node (real Node SDKs via subprocess driver), aisdk (AI SDK by Vercel via subprocess driver)'"`
 	JsonOutput bool     `kong:"name='json',help='Output results as JSON'"`
 	Verbose    int      `kong:"name='verbose',short='v',type='counter',help='Verbose output (repeat for more detail)'"`
@@ -40,10 +40,11 @@ type MatrixCmd struct {
 // here (plus its ExecuteAll* executor in internal/protocoltest) and extending
 // the --mode enum on MatrixCmd.
 type matrixSection struct {
-	name     string
-	modes    []string // --mode values that include this section
-	httpOnly bool     // drives raw requests directly; requires --client=http
-	exec     func(*protocoltest.Matrix) []protocoltest.TestResult
+	name       string
+	modes      []string // --mode values that include this section
+	httpOnly   bool     // requires --client=http
+	exec       func(*protocoltest.Matrix) []protocoltest.TestResult
+	bridgeExec func(*protocoltest.BridgeMatrix) []protocoltest.TestResult
 }
 
 // matrixSections is the section registry: the single source of truth for what
@@ -55,16 +56,17 @@ var matrixSections = []matrixSection{
 	{name: "flags", modes: []string{"all", "flags"}, httpOnly: true, exec: (*protocoltest.Matrix).ExecuteAllFlags},
 	{name: "content_shapes", modes: []string{"all", "content_shapes"}, httpOnly: true, exec: (*protocoltest.Matrix).ExecuteAllContentShapes},
 	{name: "cache_controls", modes: []string{"all", "cache_controls"}, httpOnly: true, exec: (*protocoltest.Matrix).ExecuteAllCacheControls},
+	{name: "bridges", modes: []string{"default", "all", "bridges"}, httpOnly: true, bridgeExec: (*protocoltest.BridgeMatrix).ExecuteAll},
 }
 
 // Help returns extended help text shown by `harness matrix --help`.
 func (*MatrixCmd) Help() string {
 	return `Examples:
-  # Default: single-hop (A→B) + idempotent round-trips (g(f(A))==A).
+  # Default: production single-hop + idempotent round-trips + dormant Bridges.
   # Two-hop (A→B→C) transitive chains are OFF by default.
   harness matrix
 
-  # Run absolutely everything: single + two-hop + idempotent
+  # Run every section: single + two-hop + idempotent + flags + dormant Bridges
   harness matrix --mode=all
 
   # Run only two-hop (A→B→C) transitive chain tests
@@ -81,6 +83,9 @@ func (*MatrixCmd) Help() string {
 
   # Run single-hop + ABA prompt-cache request tests
   harness matrix --mode=cache_controls
+
+  # Run only the dormant Stage/Bridge topology (no production dispatch claim)
+  harness matrix --mode=bridges
 
   # Run only single-hop (A→B) tests
   harness matrix --mode=single
@@ -128,12 +133,21 @@ func (m *MatrixCmd) Run() error {
 	if m.Streaming && m.NonStream {
 		return fmt.Errorf("cannot specify both --streaming and --non-streaming")
 	}
+	if m.Client != "http" && m.Mode == "bridges" {
+		return fmt.Errorf("--mode=bridges only supports --client=http (the Bridge matrix runs in-process and has no client transport)")
+	}
 	if m.Client != "http" {
 		for _, sec := range matrixSections {
 			if sec.httpOnly && m.Mode == sec.name {
 				return fmt.Errorf("--mode=%s only supports --client=http (this suite drives raw requests directly)", m.Mode)
 			}
 		}
+	}
+	if m.Mode == "bridges" && m.MCPEnabled {
+		return fmt.Errorf("--mode=bridges does not support --mcp (the Bridge matrix validates protocol topology only)")
+	}
+	if m.Mode == "bridges" && m.RecordDir != "" {
+		return fmt.Errorf("--mode=bridges does not support --record-dir (the Bridge matrix runs in-process without HTTP recording)")
 	}
 
 	client, err := resolveClient(m.Client)
@@ -171,6 +185,25 @@ func (m *MatrixCmd) Run() error {
 	if m.MCPEnabled {
 		matrix = matrix.WithMCPEnabled()
 	}
+	bridgeMatrix := protocoltest.DefaultBridgeMatrix()
+	if len(m.Scenarios) > 0 {
+		bridgeMatrix = bridgeMatrix.OnlyScenarios(m.Scenarios...)
+	}
+	if len(m.Sources) > 0 {
+		bridgeMatrix = bridgeMatrix.OnlySources(m.Sources...)
+	}
+	if len(m.Targets) > 0 {
+		bridgeMatrix = bridgeMatrix.OnlyTargets(m.Targets...)
+	}
+	if m.Streaming {
+		bridgeMatrix = bridgeMatrix.OnlyStreaming(true)
+	}
+	if m.NonStream {
+		bridgeMatrix = bridgeMatrix.OnlyStreaming(false)
+	}
+	if m.BatchCount > 1 {
+		bridgeMatrix = bridgeMatrix.WithBatchCount(m.BatchCount)
+	}
 
 	// Collect results for the sections the selected --mode includes (see
 	// matrixSections for the mode → section mapping).
@@ -183,6 +216,10 @@ func (m *MatrixCmd) Run() error {
 			// Only reachable with --mode=all: selecting an http-only section
 			// directly with another client is rejected up front.
 			logrus.Warnf("skipping %s section: only supported with --client=http", sec.name)
+			continue
+		}
+		if sec.bridgeExec != nil {
+			combined = append(combined, sec.bridgeExec(bridgeMatrix)...)
 			continue
 		}
 		combined = append(combined, sec.exec(matrix)...)
