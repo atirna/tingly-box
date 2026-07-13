@@ -34,6 +34,7 @@ type MatrixCmd struct {
 	BatchCount   int      `kong:"name='batch',default='1',help='Number of times to run each test (for stability/performance testing)'"`
 	MCPEnabled   bool     `kong:"name='mcp',help='Enable MCP feature flag in test env'"`
 	StageEnabled bool     `kong:"name='stage',help='Enable production Protocol Stage selection in the test server'"`
+	Guardrails   bool     `kong:"name='guardrails',help='Enable an active allow-only Guardrails runtime in the test server'"`
 }
 
 // matrixSection describes one runnable section of the validation matrix and
@@ -95,6 +96,9 @@ func (*MatrixCmd) Help() string {
   harness matrix --mode=single --stage --source=openai_chat --target=anthropic_beta
   harness matrix --mode=single --stage --source=anthropic_beta --target=openai_chat
 
+  # Exercise Beta Guardrail as a Stage without changing scenario semantics
+  harness matrix --mode=single --stage --guardrails --source=anthropic_beta
+
   # Drive requests through real client stacks instead of raw HTTP
   harness matrix --mode=single --client=gosdk    # official Go SDKs, in-process
   harness matrix --mode=single --client=python   # real Python SDKs (subprocess driver)
@@ -154,6 +158,9 @@ func (m *MatrixCmd) Run() error {
 	if m.Mode == "bridges" && m.StageEnabled {
 		return fmt.Errorf("--mode=bridges does not support --stage (use --mode=single to exercise the production Stage path)")
 	}
+	if m.Mode == "bridges" && m.Guardrails {
+		return fmt.Errorf("--mode=bridges does not support --guardrails (use --mode=single to exercise the production Guardrail path)")
+	}
 	if m.Mode == "bridges" && m.RecordDir != "" {
 		return fmt.Errorf("--mode=bridges does not support --record-dir (the Bridge matrix runs in-process without HTTP recording)")
 	}
@@ -195,6 +202,9 @@ func (m *MatrixCmd) Run() error {
 	}
 	if m.StageEnabled {
 		matrix = matrix.WithProtocolStage()
+	}
+	if m.Guardrails {
+		matrix = matrix.WithGuardrails()
 	}
 	bridgeMatrix := protocoltest.DefaultBridgeMatrix()
 	if len(m.Scenarios) > 0 {
