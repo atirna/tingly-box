@@ -149,10 +149,11 @@ type Server struct {
 	quotaManager providerQuotaModule.Manager
 
 	// options
-	enableUI    bool
-	openBrowser bool
-	host        string
-	debug       bool
+	enableUI             bool
+	openBrowser          bool
+	host                 string
+	debug                bool
+	protocolStageEnabled bool
 
 	// httpTimeouts overrides the http.Server ReadHeaderTimeout/ReadTimeout/
 	// WriteTimeout/IdleTimeout values Start() otherwise hardcodes. Zero
@@ -502,6 +503,7 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 		GetOrCreateScenarioSink:  server.GetOrCreateScenarioSink,
 		CurrentGuardrailsRuntime: server.currentGuardrailsRuntime,
 		GetScenarioRecordMode:    server.GetScenarioRecordMode,
+		ProtocolStageEnabled:     server.protocolStageEnabled,
 	})
 
 	// Setup middleware
