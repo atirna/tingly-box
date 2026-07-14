@@ -2,6 +2,7 @@ package protocoltest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/internal/config"
@@ -38,6 +40,7 @@ import (
 // native APIs (/v1/chat/completions, /v1/messages, etc.).
 type TestEnv struct {
 	appConfig     *config.AppConfig
+	rootServer    *server.Server
 	gatewayServer *httptest.Server // real HTTP server; every request traverses it
 	virtual       *VirtualServer
 	modelToken    string
@@ -152,6 +155,7 @@ func preseedEnterpriseContextKeys(configDir string) error {
 type gatewayCore struct {
 	configDir  string
 	appConfig  *config.AppConfig
+	rootServer *server.Server
 	gateway    *httptest.Server
 	virtual    *VirtualServer
 	modelToken string
@@ -184,12 +188,13 @@ func newGatewayCore(dirPattern string, configure func(*config.AppConfig), server
 		configure(appConfig)
 	}
 
-	gatewayServer := server.NewServer(appConfig.GetGlobalConfig(), serverOpts...)
-	ts := httptest.NewServer(gatewayServer.GetRouter())
+	rootServer := server.NewServer(appConfig.GetGlobalConfig(), serverOpts...)
+	ts := httptest.NewServer(rootServer.GetRouter())
 
 	return &gatewayCore{
 		configDir:  configDir,
 		appConfig:  appConfig,
+		rootServer: rootServer,
 		gateway:    ts,
 		virtual:    NewVirtualServerForCLI(),
 		modelToken: appConfig.GetGlobalConfig().GetModelToken(),
@@ -227,6 +232,11 @@ func (env *TestEnv) Close() {
 	if env.gatewayServer != nil {
 		env.gatewayServer.Close()
 	}
+	if env.rootServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = env.rootServer.ForceFlushRecordings(ctx)
+		cancel()
+	}
 	if env.virtual != nil {
 		env.virtual.Close()
 	}
@@ -258,6 +268,15 @@ func NewTestEnvForCLI(opts ...TestEnvOption) (*TestEnv, error) {
 	}
 
 	core, err := newGatewayCore("pv-env-*", func(ac *config.AppConfig) {
+		if cfg.recordDir != "" {
+			for _, scenario := range []typ.RuleScenario{typ.ScenarioAnthropic, typ.ScenarioOpenAI} {
+				_ = ac.GetGlobalConfig().SetScenarioStringFlag(
+					scenario,
+					serverconfig.FlagRecordingV2,
+					string(typ.RecordingModeStagedRequestResponse),
+				)
+			}
+		}
 		if cfg.mcpEnabled {
 			_ = ac.GetGlobalConfig().SetScenarioFlag(typ.ScenarioGlobal, serverconfig.ExtensionMCP, true)
 		}
@@ -271,6 +290,7 @@ func NewTestEnvForCLI(opts ...TestEnvOption) (*TestEnv, error) {
 
 	return &TestEnv{
 		appConfig:     core.appConfig,
+		rootServer:    core.rootServer,
 		gatewayServer: core.gateway,
 		virtual:       core.virtual,
 		modelToken:    core.modelToken,
