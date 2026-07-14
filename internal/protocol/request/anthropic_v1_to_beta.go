@@ -2,6 +2,7 @@ package request
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/sirupsen/logrus"
@@ -17,24 +18,32 @@ import (
 // tool_result content and image data; the round-trip has no such gaps and
 // needs no updates when the SDK adds new block types.
 //
-// Returns nil (rather than erroring) if req is nil or the round-trip fails,
-// so callers doing best-effort context extraction (smart-routing) degrade
-// gracefully instead of panicking.
+// This compatibility wrapper keeps the historical nil-on-failure behavior for
+// context-extraction callers. Protocol boundaries that need an actionable
+// error should use ConvertAnthropicV1ToBetaRequestWithError.
 func ConvertAnthropicV1ToBetaRequest(req *anthropic.MessageNewParams) *anthropic.BetaMessageNewParams {
-	if req == nil {
-		return nil
-	}
-
-	b, err := json.Marshal(req)
+	converted, err := ConvertAnthropicV1ToBetaRequestWithError(req)
 	if err != nil {
-		logrus.WithError(err).Warn("ConvertAnthropicV1ToBetaRequest: marshal v1 request failed")
+		logrus.WithError(err).Warn("ConvertAnthropicV1ToBetaRequest: wire conversion failed")
 		return nil
+	}
+	return converted
+}
+
+// ConvertAnthropicV1ToBetaRequestWithError performs the same wire conversion
+// and reports malformed or non-JSON parameter values to the caller.
+func ConvertAnthropicV1ToBetaRequestWithError(req *anthropic.MessageNewParams) (*anthropic.BetaMessageNewParams, error) {
+	if req == nil {
+		return nil, nil
 	}
 
-	var beta anthropic.BetaMessageNewParams
-	if err := json.Unmarshal(b, &beta); err != nil {
-		logrus.WithError(err).Warn("ConvertAnthropicV1ToBetaRequest: unmarshal into beta shape failed")
-		return nil
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal Anthropic v1 request: %w", err)
 	}
-	return &beta
+	var beta anthropic.BetaMessageNewParams
+	if err := json.Unmarshal(data, &beta); err != nil {
+		return nil, fmt.Errorf("unmarshal Anthropic v1 request as Beta: %w", err)
+	}
+	return &beta, nil
 }
