@@ -9,6 +9,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/guardrails"
 	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/server/recording"
+	"github.com/tingly-dev/tingly-box/internal/server/servertool"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	pkgobs "github.com/tingly-dev/tingly-box/pkg/obs"
 )
@@ -126,6 +127,15 @@ func WithHTTPTimeouts(t HTTPTimeouts) ServerOption {
 func WithProtocolStage(enabled bool) ServerOption {
 	return func(s *Server) {
 		s.protocolStageEnabled = enabled
+	}
+}
+
+// WithServertoolProviders registers in-process server-owned tools with the MCP
+// runtime and Tool Loop. Providers remain registered when configuration hot
+// reload rebuilds the servertool pipeline.
+func WithServertoolProviders(providers ...servertool.ToolProvider) ServerOption {
+	return func(s *Server) {
+		s.servertoolProviders = append(s.servertoolProviders, providers...)
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol/sse"
 	"github.com/tingly-dev/tingly-box/internal/server"
 	serverconfig "github.com/tingly-dev/tingly-box/internal/server/config"
+	"github.com/tingly-dev/tingly-box/internal/server/servertool"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -61,6 +62,7 @@ type testEnvConfig struct {
 	protocolStageEnabled bool
 	guardrailsRuntime    *guardrails.Guardrails
 	client               Client
+	servertoolProviders  []servertool.ToolProvider
 }
 
 // NewTestEnvOptionWithRecordDir creates an option to set the record directory.
@@ -146,6 +148,14 @@ func preseedEnterpriseContextKeys(configDir string) error {
 	}
 	privatePath, publicPath := serverconfig.EnterpriseContextKeyPaths(configDir)
 	return serverconfig.WriteEnterpriseContextKeys(privatePath, publicPath, keys.private, keys.public)
+}
+
+// NewTestEnvOptionWithServertoolProviders injects server-owned tools through
+// the same Server option and startup path used by production embedders.
+func NewTestEnvOptionWithServertoolProviders(providers ...servertool.ToolProvider) TestEnvOption {
+	return func(cfg *testEnvConfig) {
+		cfg.servertoolProviders = append(cfg.servertoolProviders, providers...)
+	}
 }
 
 // gatewayCore is the shared skeleton every single-process harness env builds
@@ -265,6 +275,9 @@ func NewTestEnvForCLI(opts ...TestEnvOption) (*TestEnv, error) {
 	}
 	if cfg.guardrailsRuntime != nil {
 		serverOpts = append(serverOpts, server.WithGuardrails(cfg.guardrailsRuntime))
+	}
+	if len(cfg.servertoolProviders) > 0 {
+		serverOpts = append(serverOpts, server.WithServertoolProviders(cfg.servertoolProviders...))
 	}
 
 	core, err := newGatewayCore("pv-env-*", func(ac *config.AppConfig) {
