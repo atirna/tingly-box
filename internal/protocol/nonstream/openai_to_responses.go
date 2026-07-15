@@ -67,6 +67,21 @@ func ConvertChatToResponsesWire(resp *openai.ChatCompletion, responseModel, actu
 			},
 		})
 	}
+	if len(resp.Choices) > 0 {
+		for _, toolCall := range resp.Choices[0].Message.ToolCalls {
+			arguments := toolCall.Function.Arguments
+			index := len(output)
+			output = append(output, wire.ResponsesOutputItemWire{
+				ID:          toolCall.ID,
+				CallID:      toolCall.ID,
+				Type:        "function_call",
+				Name:        toolCall.Function.Name,
+				Arguments:   &arguments,
+				Status:      itemStatus,
+				OutputIndex: &index,
+			})
+		}
+	}
 
 	// The canonical type owns the Responses usage shape, including the cache
 	// read/write and reasoning detail a client would otherwise read as zeros.
@@ -116,7 +131,6 @@ func ConvertAnthropicBetaToResponsesWire(resp *anthropic.BetaMessage, responseMo
 	status, incompleteReason := anthropicStopReasonToResponsesStatus(string(resp.StopReason))
 
 	output := []wire.ResponsesOutputItemWire{}
-	outputIndex := 0
 
 	var textParts []wire.ResponsesContentPartWire
 	for _, block := range resp.Content {
@@ -130,22 +144,6 @@ func ConvertAnthropicBetaToResponsesWire(resp *anthropic.BetaMessage, responseMo
 				Text:        block.Text,
 				Annotations: []any{},
 			})
-		case "tool_use":
-			argsJSON := "{}"
-			if block.Input != nil {
-				if raw, err := json.Marshal(block.Input); err == nil {
-					argsJSON = string(raw)
-				}
-			}
-			index := outputIndex
-			output = append(output, wire.ResponsesOutputItemWire{
-				Type:        "function_call",
-				ID:          block.ID,
-				Name:        block.Name,
-				Arguments:   &argsJSON,
-				OutputIndex: &index,
-			})
-			outputIndex++
 		}
 	}
 
@@ -157,7 +155,28 @@ func ConvertAnthropicBetaToResponsesWire(resp *anthropic.BetaMessage, responseMo
 			Status:  status,
 			Content: textParts,
 		}
-		output = append([]wire.ResponsesOutputItemWire{msgItem}, output...)
+		output = append(output, msgItem)
+	}
+
+	for _, block := range resp.Content {
+		if block.Type != "tool_use" {
+			continue
+		}
+		argsJSON := "{}"
+		if block.Input != nil {
+			if raw, err := json.Marshal(block.Input); err == nil {
+				argsJSON = string(raw)
+			}
+		}
+		index := len(output)
+		output = append(output, wire.ResponsesOutputItemWire{
+			Type:        "function_call",
+			ID:          block.ID,
+			CallID:      block.ID,
+			Name:        block.Name,
+			Arguments:   &argsJSON,
+			OutputIndex: &index,
+		})
 	}
 
 	// Responses-API input_tokens is the TOTAL prompt cost, so normalizing the
