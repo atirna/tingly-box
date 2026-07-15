@@ -19,9 +19,10 @@ type ProviderResponse struct {
 	NoKeyRequired    bool              `json:"no_key_required" example:"false"`
 	Enabled          bool              `json:"enabled" example:"true"`
 	ProxyURL         string            `json:"proxy_url,omitempty" example:"http://localhost:7890"`
-	AuthType         string            `json:"auth_type,omitempty" example:"api_key"` // api_key, oauth, or vmodel
+	AuthType         string            `json:"auth_type,omitempty" example:"api_key"` // api_key, oauth, vmodel, aws_sigv4, azure_key, gcp_sa
 	OAuthDetail      *typ.OAuthDetail  `json:"oauth_detail,omitempty"`                // OAuth credentials (only for oauth auth type)
 	VModelDetail     *typ.VModelDetail `json:"vmodel_detail,omitempty"`               // Virtual-model config (only for vmodel auth type)
+	Credential       map[string]string `json:"credential,omitempty"`                  // Multi-field cloud credentials (only for aws_sigv4/azure_key/gcp_sa)
 	Source           string            `json:"source,omitempty" example:"user"`       // "user" (default) or "builtin"
 }
 
@@ -42,7 +43,11 @@ type CreateProviderRequest struct {
 	NoKeyRequired    bool   `json:"no_key_required" description:"Whether provider requires no API key" example:"false"`
 	Enabled          bool   `json:"enabled" description:"Whether provider is enabled" example:"true"`
 	ProxyURL         string `json:"proxy_url,omitempty" description:"HTTP or SOCKS proxy URL (e.g., http://localhost:7890 or socks5://localhost:1080)" example:"http://localhost:7890"`
-	AuthType         string `json:"auth_type,omitempty" description:"Auth type: api_key or oauth (default: api_key)" example:"api_key"`
+	AuthType         string `json:"auth_type,omitempty" description:"Auth type: api_key, oauth, aws_sigv4, azure_key, or gcp_sa (default: api_key)" example:"api_key"`
+	// Credential carries multi-field cloud credentials for auth types
+	// aws_sigv4 (AWS Bedrock), azure_key (Azure OpenAI), and gcp_sa (GCP Vertex).
+	// Ignored for api_key/oauth/vmodel. See ai.CredentialSchema for the field keys.
+	Credential map[string]string `json:"credential,omitempty" description:"Cloud credential fields (aws_sigv4/azure_key/gcp_sa)"`
 }
 
 // CreateProviderResponse represents the response for adding a provider.
@@ -63,6 +68,10 @@ type UpdateProviderRequest struct {
 	NoKeyRequired    *bool   `json:"no_key_required,omitempty" description:"Whether provider requires no API key"`
 	Enabled          *bool   `json:"enabled,omitempty" description:"New enabled status"`
 	ProxyURL         *string `json:"proxy_url,omitempty" description:"HTTP or SOCKS proxy URL"`
+	// Credential replaces the full multi-field credential bundle for cloud auth
+	// types (aws_sigv4/azure_key/gcp_sa). Omit (null) to leave it unchanged; the
+	// edit UI resends the complete map since the read path returns it in full.
+	Credential map[string]string `json:"credential,omitempty" description:"Replacement cloud credential fields (aws_sigv4/azure_key/gcp_sa)"`
 }
 
 // UpdateProviderResponse represents the response for updating a provider.
