@@ -79,6 +79,14 @@ const Onboarding: React.FC = () => {
                 dialog and no "← Back to picker" in the form. */}
             <ConnectAIDialogs flow={connectAI} inline isFirstProvider/>
 
+            <CloudProviderDialog
+                open={cloudPresetId !== null}
+                presetId={cloudPresetId}
+                onClose={() => setCloudPresetId(null)}
+                onSuccess={() => setSuccessDialogOpen(true)}
+                onNotification={showMessage}
+            />
+
             <Dialog
                 open={successDialogOpen}
                 onClose={() => setSuccessDialogOpen(false)}

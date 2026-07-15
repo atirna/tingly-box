@@ -186,6 +186,9 @@ const TemplatePage: React.FC<TemplatePageProps> = (props) => {
     });
     const { handleConnectAIClick } = connectAI;
 
+    // Cloud-credential dialog state (Bedrock/Vertex/Azure)
+    const [cloudPresetId, setCloudPresetId] = useState<string | null>(null);
+
     const handleAddApiKeyClick = useCallback(() => {
         handleConnectAIClick();
     }, [handleConnectAIClick]);
