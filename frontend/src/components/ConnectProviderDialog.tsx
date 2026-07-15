@@ -1,6 +1,5 @@
 import {Add, Close, Cloud, Computer, ContentPaste, Key, Login, Search, Language, Description, Upload} from '@/components/icons';
 import RegionBadge from './RegionBadge';
-import {CLOUD_PRESETS} from './cloud/cloudCredentialSchema';
 import {
     Box,
     ButtonBase,
@@ -17,7 +16,7 @@ import {
     alpha,
 } from '@mui/material';
 import React, {useMemo, useState} from 'react';
-import {type UniqueProvider, useProviderTemplates, searchProviders} from '../services/serviceProviders';
+import {type UniqueProvider, useProviderTemplates, useCloudProviders, searchProviders} from '../services/serviceProviders';
 import ProviderIcon from './ProviderIcon';
 import {FALLBACK_OAUTH_PROVIDERS, type OAuthProvider} from './OAuthDialog';
 
@@ -286,6 +285,7 @@ export const ProviderListContent: React.FC<ProviderListContentProps> = ({
     wide = false,
 }) => {
     const keyProviders = useProviderTemplates();
+    const cloudProviders = useCloudProviders();
 
     const oauthProviders = useMemo(
         () => FALLBACK_OAUTH_PROVIDERS.filter(
@@ -303,8 +303,8 @@ export const ProviderListContent: React.FC<ProviderListContentProps> = ({
         : oauthProviders;
     const showCustom = !needle || CUSTOM_SEARCH_TERMS.some(s => s.toLowerCase().includes(needle.toLowerCase()));
     const filteredCloud = needle
-        ? CLOUD_PRESETS.filter((p) => `${p.name} ${p.subtitle} ${p.authType}`.toLowerCase().includes(needle.toLowerCase()))
-        : CLOUD_PRESETS;
+        ? cloudProviders.filter((p) => `${p.name} ${p.alias || ''} ${p.description || ''} ${p.authType || ''}`.toLowerCase().includes(needle.toLowerCase()))
+        : cloudProviders;
 
     // Group key providers by region (CN vs Global vs Self-hosted)
     const {cnKeyProviders, globalKeyProviders, selfHostedProviders} = useMemo(() => {
@@ -437,10 +437,13 @@ export const ProviderListContent: React.FC<ProviderListContentProps> = ({
                             {filteredCloud.map((p) => (
                                 <ProviderCard
                                     key={`cloud-${p.id}`}
-                                    icon={<ProviderIcon identifier={p.icon} size={26}/>}
-                                    name={p.name}
-                                    meta={p.subtitle}
+                                    icon={<ProviderIcon identifier={p.icon || p.id} size={26}/>}
+                                    name={p.alias || p.name}
+                                    meta={p.description || ''}
                                     badge={cloudBadge}
+                                    website={showDetails ? p.website : undefined}
+                                    apiDoc={showDetails ? p.apiDoc : undefined}
+                                    showDetails={showDetails}
                                     onClick={() => onSelect({kind: 'cloud', presetId: p.id})}
                                 />
                             ))}
