@@ -34,7 +34,7 @@ export const emptyForm = (apiStyle?: 'openai' | 'anthropic'): EnhancedProviderFo
  * Returns null when the picker result doesn't open the form (oauth / import / paste).
  */
 export function buildProviderFormData(selection: ConnectSelection): ConnectFormResult | null {
-    if (selection.kind === 'oauth' || selection.kind === 'import' || selection.kind === 'paste') {
+    if (selection.kind === 'oauth' || selection.kind === 'import' || selection.kind === 'paste' || selection.kind === 'cloud') {
         return null;
     }
 
@@ -90,6 +90,12 @@ export interface UseProviderDialogReturn {
     oauthAutoStartId: string | null;
     handleCloseOAuth: () => void;
     handleOAuthSuccess: () => void;
+    /** Open state for the built-in CloudProviderDialog (owned by this hook). */
+    cloudPresetId: string | null;
+    handleCloseCloud: () => void;
+    handleCloudSuccess: () => void;
+    /** Notification sink for dialogs owned by this hook. */
+    notify: (message: string, severity: 'success' | 'error') => void;
     fromConnectPicker: boolean;
     /** Self-hosted / local providers: token is optional but editable. */
     optionalEditableToken: boolean;
@@ -112,6 +118,7 @@ export const useProviderDialog = (
     const [importing, setImporting] = useState(false);
     const [oauthDialogOpen, setOAuthDialogOpen] = useState(false);
     const [oauthAutoStartId, setOAuthAutoStartId] = useState<string | null>(null);
+    const [cloudPresetId, setCloudPresetId] = useState<string | null>(null);
     const [fromConnectPicker, setFromConnectPicker] = useState(false);
     const [optionalEditableToken, setOptionalEditableToken] = useState(false);
     const [providerFormData, setProviderFormData] = useState<EnhancedProviderFormData>(emptyForm(defaultApiStyle));
@@ -137,6 +144,7 @@ export const useProviderDialog = (
             }
             if (selection.kind === 'import') setImportModalOpen(true);
             if (selection.kind === 'paste') setPasteDialogOpen(true);
+            if (selection.kind === 'cloud') setCloudPresetId(selection.presetId);
             return;
         }
 
@@ -202,6 +210,16 @@ export const useProviderDialog = (
         showNotification('Provider connected via OAuth!', 'success');
         onProviderAdded?.();
     }, [showNotification, onProviderAdded]);
+
+    const handleCloseCloud = useCallback(() => {
+        setCloudPresetId(null);
+    }, []);
+
+    // CloudProviderDialog closes itself and fires its own success notification;
+    // the hook only propagates the refresh.
+    const handleCloudSuccess = useCallback(() => {
+        onProviderAdded?.();
+    }, [onProviderAdded]);
 
     const handleProviderSubmit = async (e: React.FormEvent, resolved?: Partial<EnhancedProviderFormData>) => {
         e.preventDefault();
@@ -289,6 +307,10 @@ export const useProviderDialog = (
         oauthAutoStartId,
         handleCloseOAuth,
         handleOAuthSuccess,
+        cloudPresetId,
+        handleCloseCloud,
+        handleCloudSuccess,
+        notify: showNotification,
         fromConnectPicker,
         optionalEditableToken,
     };

@@ -1,3 +1,4 @@
+import CloudProviderDialog from '@/components/cloud/CloudProviderDialog';
 import ConnectProviderDialog from '@/components/ConnectProviderDialog';
 import ImportModal from '@/components/ImportModal';
 import OAuthDialog from '@/components/OAuthDialog';
@@ -61,6 +62,14 @@ const ConnectAIDialogs: React.FC<ConnectAIDialogsProps> = ({ flow, inline = fals
                 onClose={flow.handleCloseImport}
                 onImport={flow.handleImportData}
                 loading={flow.importing}
+            />
+            <CloudProviderDialog
+                open={flow.cloudPresetId !== null}
+                presetId={flow.cloudPresetId}
+                onClose={flow.handleCloseCloud}
+                onSuccess={flow.handleCloudSuccess}
+                onBack={!inline ? () => flow.handleConnectAIClick() : undefined}
+                onNotification={flow.notify}
             />
         </>
     );
