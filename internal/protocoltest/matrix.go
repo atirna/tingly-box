@@ -480,6 +480,28 @@ func (m *Matrix) executeOneWithEnv(env *TestEnv, s Scenario, source, target prot
 	base := m.newBaseResult(s.Name, source, target, streaming)
 
 	env.SetupRoute(source, target, s)
+	requestModel := env.findRouteModel(source, target, s.Name)
+	verifyPersistedRecord := m.MCPStageCoverage && m.RecordDir != "" && s.Name == MCPStageOwnedToolScenarioName
+	var existingRecordIDs map[string]struct{}
+	if verifyPersistedRecord {
+		var snapshotErr error
+		existingRecordIDs, snapshotErr = persistedRequestRecordIDs(m.RecordDir)
+		if snapshotErr != nil {
+			return TestResult{
+				Name:      m.buildTestName(s.Name, source, target, streaming),
+				Scenario:  s.Name,
+				Source:    source,
+				Target:    target,
+				Streaming: streaming,
+				Passed:    false,
+				Errors: []AssertionError{{
+					Assertion: "request_record_snapshot",
+					Error:     snapshotErr.Error(),
+				}},
+				Duration: time.Since(start),
+			}
+		}
+	}
 	result, err := env.SendAsCLI(source, target, s, streaming)
 	if err != nil {
 		base.Errors = []AssertionError{{
@@ -501,6 +523,13 @@ func (m *Matrix) executeOneWithEnv(env *TestEnv, s Scenario, source, target prot
 				Error:     err.Error(),
 				Context:   truncate(string(result.RawBody), 300),
 			})
+		}
+	}
+	if verifyPersistedRecord {
+		recordErrors := verifyMCPStagePersistedRecord(env, m.RecordDir, requestModel, source, target, existingRecordIDs)
+		if len(recordErrors) > 0 {
+			passed = false
+			errors = append(errors, recordErrors...)
 		}
 	}
 
