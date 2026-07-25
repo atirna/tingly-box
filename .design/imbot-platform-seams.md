@@ -197,6 +197,14 @@ Feishu/Lark（`PATCH /im/v1/messages/:id` 卡片原地更新）、tingly（记�
 调用方统一用 `imbot.RestateOrIgnore(...)`：平台不支持就什么都不做并返回 false，
 撤菜单是 best-effort，绝不能打断按钮按下之后的流程。
 
+**一个平台差异没有被抹平，也不该被抹平**：`RestateOptions.Text` 为空表示"只撤控件、
+正文别动"。Telegram 能做到（`editMessageReplyMarkup` 单独改控件），**Feishu 做不到**
+——卡片 patch 替换整个 content，照字面执行会把用户的消息正文清空。Feishu 因此对这类
+请求返回 `ErrNotSupported`，`RestateOrIgnore` 转成 no-op。丢正文比留一个陈旧菜单更糟。
+
+所以 §7.2 的修复在 Feishu 上是**部分**的：调用方给出替代文本的场景（目录浏览翻页、
+prompt 结果回填）可以工作；纯"撤菜单"的三处仍是 no-op，除非将来保留原正文。
+
 `AsTelegramBot` 缩回真正 Telegram 专有的 `ResolveChatID`（`/join` 命令，已用
 `WithPlatforms` 正确声明，是合理特化）。
 
@@ -299,7 +307,8 @@ Clear / CD / Project、目录浏览、`/resume` 选择器对 Feishu 用户全部
 不进去。用户在 Feishu 上点完按钮旧键盘一直挂着，可重复点击进入陈旧状态——而代码
 注释明说撤键盘就是为了防这个。
 
-现在 7 处调用点走 `imbot.RestateOrIgnore`，Feishu 通过卡片 patch 拿到该能力。
+现在 7 处调用点走 `imbot.RestateOrIgnore`，Feishu 通过卡片 patch 拿到该能力
+——但仅限调用方给出替代文本的场景，原因见 Seam 4 末尾。
 
 ### 7.3 `handler_verbose.go` 的能力判定被注释掉（Seam 3 已修）
 

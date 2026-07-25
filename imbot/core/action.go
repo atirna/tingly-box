@@ -1,10 +1,5 @@
 package core
 
-import (
-	"fmt"
-	"strings"
-)
-
 // Actions are the platform-neutral way to attach interactive controls to an
 // outbound message. They replace the previous convention of pre-rendering a
 // platform payload and passing it through SendMessageOptions.Metadata, which
@@ -57,10 +52,13 @@ const (
 	FallbackDrop FallbackPolicy = ""
 	// FallbackAsURL degrades to a plain link action when URL is set.
 	FallbackAsURL FallbackPolicy = "as_url"
-	// FallbackAsText appends the action to the message body as numbered text,
-	// so the user can still answer by typing.
-	FallbackAsText FallbackPolicy = "as_text"
 )
+
+// Only the policies a platform actually honours are defined here. An
+// "append it to the body as numbered text" policy would be useful for
+// platforms with no interactive support, but nothing implements it yet — and a
+// policy that silently does nothing is precisely the failure this seam exists
+// to remove. Add it together with its first implementation.
 
 // Action is one message-scoped interactive control.
 //
@@ -152,35 +150,4 @@ func (s *ActionSet) Flatten() []Action {
 		out = append(out, row...)
 	}
 	return out
-}
-
-// RenderableOn splits an action set for a platform that cannot render actions
-// natively, returning the actions to keep as links (FallbackAsURL) and the
-// text to append to the message body (FallbackAsText). Actions with
-// FallbackDrop appear in neither.
-//
-// Platforms with native support never call this; it exists so that platforms
-// without it degrade explicitly instead of silently discarding the caller's
-// intent.
-func (s *ActionSet) RenderableOn() (links []Action, textSuffix string) {
-	if s.IsEmpty() {
-		return nil, ""
-	}
-	var lines []string
-	n := 0
-	for _, action := range s.Flatten() {
-		switch action.Fallback {
-		case FallbackAsURL:
-			if action.URL != "" {
-				links = append(links, action)
-			}
-		case FallbackAsText:
-			n++
-			lines = append(lines, fmt.Sprintf("%d. %s", n, action.Label))
-		}
-	}
-	if len(lines) > 0 {
-		textSuffix = strings.Join(lines, "\n")
-	}
-	return links, textSuffix
 }

@@ -179,9 +179,20 @@ func actionSetFromMap(m map[string]interface{}) *core.ActionSet {
 // card, so the common cases are covered; a plain-text message cannot be
 // patched and the API reports that as an error, which callers treat as
 // best-effort.
+//
+// One case Feishu cannot serve: a patch replaces the whole card content, so
+// there is no way to drop the buttons while leaving the body alone. Callers
+// asking for that (RestateOptions with no Text) get an error rather than a
+// card whose body has been blanked — losing the user's message would be worse
+// than leaving a stale menu up.
 func (b *Bot) Restate(ctx context.Context, ref core.MessageRef, opts core.RestateOptions) error {
 	if ref.IsZero() {
 		return core.NewInvalidTargetError(core.Platform(b.domain), ref.MessageID, "empty message reference")
+	}
+	if opts.Text == "" {
+		return core.NewBotError(core.ErrNotSupported,
+			"feishu cannot change a card's controls without also rewriting its body; supply RestateOptions.Text",
+			false)
 	}
 	if b.client == nil || b.client.Im == nil {
 		return fmt.Errorf("bot client is nil")

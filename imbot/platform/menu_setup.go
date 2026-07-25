@@ -22,12 +22,6 @@ var commandMenuSetup = map[core.Platform]func(core.Bot, *command.CommandRegistry
 	core.PlatformLark:     feishu.SetupQuickActions,
 }
 
-// SupportsCommandMenu reports whether a platform exposes a native command menu.
-func SupportsCommandMenu(platform core.Platform) bool {
-	_, ok := commandMenuSetup[platform]
-	return ok
-}
-
 // SetupCommandMenu installs the command registry into the platform's native
 // menu. Platforms without one are a no-op, so callers do not need to ask first.
 func SetupCommandMenu(bot core.Bot, platform core.Platform, reg *command.CommandRegistry) error {

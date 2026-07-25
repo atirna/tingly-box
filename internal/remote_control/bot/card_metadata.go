@@ -14,6 +14,8 @@ package bot
 // the flag asking the send path to remember this message's ID so the action
 // menu can be removed later.
 
+import "github.com/tingly-dev/tingly-box/imbot"
+
 const trackActionMenuIDKey = "_trackActionMenuID"
 
 // trackActionMenuMetadata marks an outbound message as the current action-menu
@@ -24,18 +26,26 @@ func trackActionMenuMetadata() map[string]interface{} {
 	}
 }
 
-// withContextToken copies the inbound reply-context token onto outbound
-// metadata when the platform needs it (Weixin/WeCom).
+// forwardReplyContext copies the inbound message's reply-context token onto
+// outbound options. Weixin and WeCom tie each reply to the inbound message it
+// answers, and drop or misattribute a reply that arrives without the token.
 //
-// TODO(phase-4): this should not be the caller's job either — the bot knows
-// which inbound message it is replying to. Seam 2 moves it into BaseBot.
-func withContextToken(metadata map[string]interface{}, contextToken string) map[string]interface{} {
-	if contextToken == "" {
-		return metadata
+// This was five copies of the same block across four files. Consolidating it
+// is also what makes Seam 2 a small change later: when the bot learns to carry
+// its own reply context, this is the single function that goes away.
+//
+// TODO(phase-4): this should not be the caller's job at all — the bot knows
+// which inbound message it is answering.
+func forwardReplyContext(opts *imbot.SendMessageOptions, inbound imbot.Message) {
+	if inbound.Metadata == nil {
+		return
 	}
-	if metadata == nil {
-		metadata = make(map[string]interface{})
+	token, _ := inbound.Metadata["context_token"].(string)
+	if token == "" {
+		return
 	}
-	metadata["context_token"] = contextToken
-	return metadata
+	if opts.Metadata == nil {
+		opts.Metadata = make(map[string]interface{})
+	}
+	opts.Metadata["context_token"] = token
 }

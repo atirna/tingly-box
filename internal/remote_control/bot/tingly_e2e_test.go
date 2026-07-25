@@ -62,7 +62,7 @@ func Test_UnknownCommand(t *testing.T) {
 
 	chat.SendText("/notacommand")
 
-	chat.WaitText(3 * time.Second).
+	chat.WaitText(3*time.Second).
 		AssertContains(t, "Unknown command").
 		AssertContains(t, "/help")
 }
@@ -75,16 +75,16 @@ func Test_PairingGate(t *testing.T) {
 
 	// Unpaired chat: any non-/bind text gets the pairing hint.
 	chat.SendText("/help")
-	chat.WaitText(3 * time.Second).AssertContains(t, "/bind <code>")
+	chat.WaitText(3*time.Second).AssertContains(t, "/bind <code>")
 
 	// Mint a code, then /bind it.
 	code, _ := harness.MintPairingCode()
 	chat.SendText("/bind " + code)
-	chat.WaitText(3 * time.Second).AssertContains(t, "Paired")
+	chat.WaitText(3*time.Second).AssertContains(t, "Paired")
 
 	// Now /help works.
 	chat.SendText("/help")
-	chat.WaitText(3 * time.Second).AssertContains(t, "@cc")
+	chat.WaitText(3*time.Second).AssertContains(t, "@cc")
 }
 
 // Test_Cd_And_Project covers the project binding command and the
@@ -98,11 +98,11 @@ func Test_Cd_And_Project(t *testing.T) {
 	// completeBind sends "Project bound" (DM) or "Group bound to project"
 	// (group); the registry handler additionally sends "Bound to project"
 	// — match on the common substring.
-	chat.WaitText(3 * time.Second).AssertContains(t, "ound to project")
+	chat.WaitText(3*time.Second).AssertContains(t, "ound to project")
 
 	// /project shows the bound path.
 	chat.SendText("/project")
-	chat.WaitText(3 * time.Second).AssertContains(t, "roject")
+	chat.WaitText(3*time.Second).AssertContains(t, "roject")
 
 	_ = harness
 }
@@ -117,7 +117,7 @@ func Test_Bash_Allowlist(t *testing.T) {
 	chat.WaitText(3 * time.Second) // pwd outputs whatever cwd the bot has
 
 	chat.SendText("/bash rm -rf /")
-	chat.WaitText(3 * time.Second).AssertContains(t, "not allowed")
+	chat.WaitText(3*time.Second).AssertContains(t, "not allowed")
 
 	_ = harness
 }
@@ -146,7 +146,7 @@ func Test_Interrupt_NoTask(t *testing.T) {
 	chat := alice.OpenDM(harness.Setting.UUID)
 
 	chat.SendText("/interrupt")
-	chat.WaitText(3 * time.Second).AssertContains(t, "No running task")
+	chat.WaitText(3*time.Second).AssertContains(t, "No running task")
 
 	_ = harness
 }
@@ -163,8 +163,8 @@ func Test_Clear(t *testing.T) {
 	chat.SendText("/cd " + tmp)
 	// /cd produces two replies — completeBind sends "...bound to project"
 	// and the registry handler echoes "Bound to project". Drain both.
-	chat.WaitText(3 * time.Second).AssertContains(t, "ound to project")
-	chat.WaitText(3 * time.Second).AssertContains(t, "ound to project")
+	chat.WaitText(3*time.Second).AssertContains(t, "ound to project")
+	chat.WaitText(3*time.Second).AssertContains(t, "ound to project")
 
 	harness.SetCurrentAgent(chat.ChatID, "mock")
 
@@ -199,12 +199,12 @@ func Test_GroupWhitelistGate(t *testing.T) {
 
 	chat.SendText("/help")
 	// Non-whitelisted: bot replies with the join hint.
-	chat.WaitText(3 * time.Second).AssertContains(t, "not enabled")
+	chat.WaitText(3*time.Second).AssertContains(t, "not enabled")
 
 	// Whitelist and try again — now /help works.
 	harness.WhitelistGroup(chat.ChatID, alice.ID)
 	chat.SendText("/help")
-	chat.WaitText(3 * time.Second).AssertContains(t, "@cc")
+	chat.WaitText(3*time.Second).AssertContains(t, "@cc")
 }
 
 // Test_PairingResetCleanup tickles a corner of the harness: the bot

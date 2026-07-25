@@ -165,20 +165,14 @@ func (c *SmartGuideCompletionCallback) OnComplete(result *smart_guide.Completion
 	// Send action keyboard on completion
 	kb := feature.BuildActionKeyboard()
 
-	metadata := trackActionMenuMetadata()
-	// Forward context_token from incoming message metadata (required by Weixin)
-	if c.hCtx.Message.Metadata != nil {
-		if ct, ok := c.hCtx.Message.Metadata["context_token"].(string); ok {
-			metadata = withContextToken(metadata, ct)
-		}
-	}
-
 	sgDoneText := IconDone + " " + MsgTaskDone + ". " + MsgContinueOrHelp + BuildFooter(c.meta.AgentType, c.meta.ProjectPath)
-	_, err := c.hCtx.Bot.SendMessage(context.Background(), c.hCtx.ChatID, &imbot.SendMessageOptions{
+	opts := &imbot.SendMessageOptions{
 		Text:     sgDoneText,
 		Actions:  kb.BuildActions(),
-		Metadata: metadata,
-	})
+		Metadata: trackActionMenuMetadata(),
+	}
+	forwardReplyContext(opts, c.hCtx.Message)
+	_, err := c.hCtx.Bot.SendMessage(context.Background(), c.hCtx.ChatID, opts)
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to send action keyboard for SmartGuide")
 	}

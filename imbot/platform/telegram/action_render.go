@@ -69,15 +69,14 @@ func (b *Bot) resolveReplyMarkup(opts *core.SendMessageOptions) *models.InlineKe
 	if !ok {
 		return nil
 	}
+	b.Logger().Debug("SendMessage: metadata[\"replyMarkup\"] is deprecated, use SendMessageOptions.Actions")
+
 	switch m := raw.(type) {
 	case models.InlineKeyboardMarkup:
-		b.Logger().Debug("SendMessage: metadata[\"replyMarkup\"] is deprecated, use SendMessageOptions.Actions")
 		return &m
 	case *models.InlineKeyboardMarkup:
-		b.Logger().Debug("SendMessage: metadata[\"replyMarkup\"] is deprecated, use SendMessageOptions.Actions")
 		return m
 	case interaction.InlineKeyboardMarkup:
-		b.Logger().Debug("SendMessage: metadata[\"replyMarkup\"] is deprecated, use SendMessageOptions.Actions")
 		markup := BuildInlineKeyboard(m.ToActionSet())
 		return &markup
 	}
@@ -153,8 +152,8 @@ func (b *Bot) Restate(ctx context.Context, ref core.MessageRef, opts core.Restat
 		if markup == nil {
 			markup = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}
 		}
-		return b.editReplyMarkup(ref.ChatID, ref.MessageID, markup)
+		return b.editReplyMarkup(ctx, ref.ChatID, ref.MessageID, markup)
 	}
 
-	return b.EditMessageWithKeyboard(ctx, ref.ChatID, ref.MessageID, opts.Text, markup)
+	return b.editMessageText(ctx, ref.ChatID, ref.MessageID, opts.Text, markup)
 }

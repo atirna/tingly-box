@@ -19,15 +19,7 @@ func (h *BotHandler) SendText(hCtx HandlerContext, text string) {
 		Text:      text,
 		ParseMode: imbot.ParseModeMarkdown,
 	}
-	// Forward context_token from incoming message metadata (required by Weixin)
-	if hCtx.Message.Metadata != nil {
-		if ct, ok := hCtx.Message.Metadata["context_token"].(string); ok {
-			if opts.Metadata == nil {
-				opts.Metadata = make(map[string]interface{})
-			}
-			opts.Metadata["context_token"] = ct
-		}
-	}
+	forwardReplyContext(opts, hCtx.Message)
 	resp, err := bot.SendMessage(context.Background(), hCtx.ChatID, opts)
 	_ = resp
 	if err != nil {
@@ -62,15 +54,7 @@ func (h *BotHandler) sendTextWithReply(hCtx HandlerContext, text string, replyTo
 		ParseMode: imbot.ParseModeMarkdown,
 		ReplyTo:   replyTo,
 	}
-	// Forward context_token from incoming message metadata (required by Weixin)
-	if hCtx.Message.Metadata != nil {
-		if ct, ok := hCtx.Message.Metadata["context_token"].(string); ok {
-			if opts.Metadata == nil {
-				opts.Metadata = make(map[string]interface{})
-			}
-			opts.Metadata["context_token"] = ct
-		}
-	}
+	forwardReplyContext(opts, hCtx.Message)
 	_, err := bot.SendMessage(context.Background(), hCtx.ChatID, opts)
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to send message")
@@ -88,14 +72,6 @@ func (h *BotHandler) sendTextWithActionKeyboard(hCtx HandlerContext, text string
 		return
 	}
 	kb := feature.BuildActionKeyboard()
-
-	// Extract context_token from incoming message metadata (required by Weixin)
-	var contextToken string
-	if hCtx.Message.Metadata != nil {
-		if ct, ok := hCtx.Message.Metadata["context_token"].(string); ok {
-			contextToken = ct
-		}
-	}
 
 	bot := h.botFromCtx(hCtx)
 	if bot == nil {
@@ -117,8 +93,7 @@ func (h *BotHandler) sendTextWithActionKeyboard(hCtx HandlerContext, text string
 			opts.Actions = kb.BuildActions()
 			opts.Metadata = trackActionMenuMetadata()
 		}
-		// Forward context_token for Weixin
-		opts.Metadata = withContextToken(opts.Metadata, contextToken)
+		forwardReplyContext(opts, hCtx.Message)
 
 		result, err := bot.SendMessage(context.Background(), hCtx.ChatID, opts)
 		if err != nil {

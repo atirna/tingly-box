@@ -471,24 +471,13 @@ const (
 	ActionOpenURL     = core.ActionOpenURL
 	ActionOpenMiniApp = core.ActionOpenMiniApp
 
-	FallbackDrop   = core.FallbackDrop
-	FallbackAsURL  = core.FallbackAsURL
-	FallbackAsText = core.FallbackAsText
+	FallbackDrop  = core.FallbackDrop
+	FallbackAsURL = core.FallbackAsURL
 )
 
 // NewActionSet creates an empty action set.
 func NewActionSet() *core.ActionSet {
 	return core.NewActionSet()
-}
-
-// CallbackAction builds a callback action, the common case.
-func CallbackAction(label, callbackData string) core.Action {
-	return core.Action{Label: label, CallbackData: callbackData}
-}
-
-// URLAction builds a link action.
-func URLAction(label, url string) core.Action {
-	return core.Action{Label: label, URL: url, Kind: core.ActionOpenURL}
 }
 
 // Message restating — replacing an already-sent message's presentation.
