@@ -117,8 +117,19 @@ func SwitchInlineButton(label, query string) core.Action
 但出站仍要调用方从 metadata 里挖出来再塞回去（19 处）。目标是 `BaseBot` 维护
 per-chat 的最近入站上下文，`SendMessage` 自动补齐。
 
-> 实施前须确认：`weixin.go` 的注释称"新 SDK 内部管理 context token"，若属实，
-> 手工透传可能已部分冗余，收益比预估更大。
+**未决的设计选择**：下沉成什么形态？
+
+- **per-chat 缓存最近入站** —— 简单，但并发聊天里新入站会覆盖，**比现状语义弱**。
+  今天调用方传的是它正在回复的那条 `hCtx.Message` 的 token，是精确的。
+- **回复绑定具体入站消息**（`SendMessageOptions.InReplyTo`）—— 忠实，但要再动一次
+  核心类型。
+
+即"删掉透传赌 SDK 自理"并不是本 seam 的实现方式；`weixin.go:243` 那句"新 SDK 内部
+管理 context token"只说明缺省路径存在，不说明手工透传冗余。
+
+**风险提示**：这条 seam 只影响 Weixin/WeCom，而本仓无这两个平台的测试手段。在完全
+无法验证的平台上做语义可能变弱的改动，是全盘风险回报最差的一项——应当在有真机
+验证条件时再做。
 
 ### Seam 3 — 能力与默认值统一到平台表 ✅ 已落地
 
@@ -236,14 +247,25 @@ Telegram 在**每一列**都是最紧的。它的约束已经泄漏成全平台�
 | **2a** | Seam 1 上半：`Actions` 进类型系统、13 个调用点迁移、Tier 3 逃生舱 | ✅ 已落地 |
 | **2b** | Seam 1 下半：按钮身份换 `Payload`、Telegram token 降级、补 64 字节校验、删索引导航与 NUL 编码 | ⏳ **独立 PR** |
 | **3** | Seam 3 + Seam 4：能力表、`MessageRestater` | ✅ 已落地 |
-| **4** | Seam 2 + 清理：回复上下文自动化、`FileResolver`、移除 `replyMarkup` 兼容路径 | ⏳ |
+| **4** | Seam 2（回复上下文自动化）+ `FileResolver` | ⏳ |
 | **5** | `menu` 包归位：让它建立在新 seam 之上 / 降级 / 删除，三选一 | ⏳ |
+| **6** | 移除 `Metadata["replyMarkup"]` 兼容路径 | ⏳ **依赖 5** |
 
 **2a / 2b 拆分的理由**：2b 是唯一触碰**回调协议**的一步，改错就是"按钮点了没反应"。
 拆开让 2a 的用户价值（Feishu 按钮可见）不被 2b 的风险绑架。
 
-**Phase 5 刻意排最后**：先让新 seam 的形状被真实使用验证过，再决定 `menu` 该不该
-活，而不是反过来。
+**Phase 5 刻意排在 seam 之后**：先让新 seam 的形状被真实使用验证过，再决定 `menu`
+该不该活，而不是反过来。
+
+**兼容路径的移除必须排在 Phase 5 之后**（原计划把它放在 Phase 4，顺序是错的）。
+`Metadata["replyMarkup"]` 至今仍有三个 in-repo 生产者：imbot 自己的通用交互
+Handler（`imbot/interaction.go:198`）、`menu` 包的 telegram/feishu 适配器
+（`telegram/menu.go:147`、`feishu/menu.go:170`）、以及 `examples/`。
+先删兼容路径会让 imbot 自身的交互路径哑掉——生产者迁完才轮到它。
+
+**Phase 4 的两件事互不依赖**：`FileResolver` 自足且低风险，随时可单独做；
+Seam 2 则有个未决的设计选择（见下），且只影响本仓无法测试的 Weixin/WeCom，
+是全盘里风险回报最差的一项，不宜赶。
 
 ### 已知的排序取舍
 
