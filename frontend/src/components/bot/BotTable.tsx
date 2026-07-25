@@ -1,6 +1,7 @@
 import {ContentCopy as CopyIcon, Delete as DeleteIcon, Edit as EditIcon, RestartAlt as RestartIcon, Route as ProxyIcon} from '@/components/icons';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import PairingCodePanel from './PairingCodePanel';
+import BotChatsButton from './BotChatsButton';
 import {isRemoteAgentMounted, isNotifyMounted} from '@/types/bot';
 import type {BotSettings} from '@/types/bot';
 import {notify} from '@/utils/notify';
@@ -264,6 +265,12 @@ const BotTable: React.FC<BotTableProps> = ({
                                     {/* Actions */}
                                     <TableCell align="right">
                                         <Stack direction="row" spacing={0.5} sx={{alignItems: 'center', justifyContent: 'flex-end'}}>
+                                            {/* Reachable chats — surfaces the chat_id the notify/interact API
+                                                needs in its body, copyable. Kept in Actions to avoid adding a
+                                                table column (the fixed 8-col layout is width-tuned). The button
+                                                owns its own tooltip so it can dismiss it when the popover opens
+                                                (a wrapping Tooltip here leaves its hover text lingering). */}
+                                            <BotChatsButton botUUID={bot.uuid!} disabled={toggling || restarting}/>
                                             <Tooltip title={isActive
                                                 ? t('remoteControl.card.restartBot', {defaultValue: 'Restart Bot'})
                                                 : t('remoteControl.card.enableToRestart', {defaultValue: 'Enable bot to restart'})}>

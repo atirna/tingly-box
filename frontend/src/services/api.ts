@@ -2,6 +2,7 @@
 
 import TinglyService from "@/bindings";
 import type {components} from '@/client';
+import type {BotChat} from '@/types/bot';
 import {getApiBaseUrl} from '../utils/protocol';
 import {
     controlApi,
@@ -1513,6 +1514,25 @@ export const api = {
             return response.data;
         } catch (error: any) {
             return {success: false, error: error.message};
+        }
+    },
+
+    // List the chats a bot can reach (GET /api/v1/bots/:bot/chats).
+    // Placeholder until codegen regenerates the client SDK for the new
+    // bot-interaction endpoint — calls the raw path directly.
+    listBotChats: async (botUUID: string): Promise<{chats?: BotChat[]; error?: string}> => {
+        try {
+            const base = await getApiBaseUrl();
+            const headers = await getAuthHeaders();
+            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/chats`, {
+                headers: {...headers, 'Content-Type': 'application/json'},
+            });
+            if (!response.ok) {
+                return {error: `failed to list chats (${response.status})`};
+            }
+            return await response.json();
+        } catch (error: any) {
+            return {error: error.message};
         }
     },
 

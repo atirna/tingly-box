@@ -146,6 +146,19 @@ export interface NotifyRoute {
     enabled?: boolean;
 }
 
+// A chat a bot can reach, as returned by GET /api/v1/bots/:bot/chats. The
+// chat_id is the channel-native conversation identifier the notify/interact
+// API requires in its request body — surfacing it here (and in BotTable) is
+// what makes those endpoints usable from the UI. Placeholder until codegen.
+export interface BotChat {
+    chat_id: string;
+    platform?: string;
+    is_paired?: boolean;
+    is_whitelisted?: boolean;
+    project_path?: string;
+    updated_at?: string;
+}
+
 // notifyRoutes extracts a bot's outbound scenario bindings (every scenarios
 // row that isn't the remote_agent mount) from its raw scenarios JSON.
 export function notifyRoutes(scenarios?: string): NotifyRoute[] {
