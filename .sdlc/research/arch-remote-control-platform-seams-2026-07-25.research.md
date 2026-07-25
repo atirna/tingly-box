@@ -1,7 +1,7 @@
 # Research: 抹平 `internal/remote_control` 残留的平台兼容逻辑
 
-**类型**: 架构研究 + 重构提案（未实施，待讨论）
-**日期**: 2026-07-25
+**类型**: 架构研究 + 重构提案（未实施；方向已拍板，见 §10）
+**日期**: 2026-07-25（rev.2 — 记录决议，补入 §5 Telegram 键盘专题）
 **范围**: `internal/remote_control/**`、`remote/channel/imchannel/**`、`imbot/**`
 **前置文档**: `.design/bot-arch.md`（三层模型）、`.design/ux-principles.md`
 
@@ -26,10 +26,16 @@ imbot 模块化确实抹平了**连接层**（认证、收发、重连、分片�
 Project / 目录浏览 / `/resume` 选择器）**当前是不显示的**——不是降级成文字，是静默
 丢失。详见 §3.1。这不是猜测，是类型开关不匹配导致的确定性行为，可复现。
 
-**提案**: 引入 4 条 seam（出站交互载荷、回复上下文、能力表、可编辑消息），把 5 类
-平台逻辑从 `remote_control` 推回 imbot。分 4 个阶段，每阶段独立可发布、可回滚。
+**提案**: 引入 4 条 seam（出站交互载荷、回复上下文、能力表、消息重述），把 5 类
+平台逻辑从 `remote_control` 推回 imbot。分 5 个阶段，每阶段独立可发布、可回滚。
 预计净减少 `remote_control` 约 400 行、消除 21 处平台条件分支，并顺带修掉 Feishu
 按钮丢失这个真实缺陷。
+
+**但真正的难点不在这 5 类，而在 Telegram 的内联键盘模型本身** —— 它是所有目标平台
+里约束最强的一个（64 字节 callback_data、消息级绑定、ACK 义务），而且它**已经悄悄
+成为整个应用的最小公分母**：`telegram_dir_browser.go` 的索引式导航和
+`BindFlowState.Dirs` 快照，纯粹是为了绕开 64 字节限制而发明的架构，却强加给了
+Feishu（button value 是任意 JSON，根本没有这个限制）。单独立为 §5 讨论。
 
 ---
 
@@ -190,10 +196,13 @@ type SendMessageOptions struct {
     Media     []MediaAttachment
     ReplyTo   string
     ...
-    // Keyboard 是平台中立的内联键盘。各平台自行渲染：Telegram → inline keyboard，
-    // Feishu/Lark → 卡片 action 元素，tingly → Button，无交互能力的平台 →
-    // 由 interaction adapter 降级为编号文本。
-    Keyboard *interaction.InlineKeyboardMarkup
+    // MessageActions 是挂在"这条消息"上的动作（消息级作用域）。各平台自行渲染：
+    // Telegram → inline keyboard，Feishu/Lark → 卡片 action 元素，tingly → Button，
+    // 无交互能力的平台 → 由 interaction adapter 降级为编号文本。
+    //
+    // 命名刻意不叫 Keyboard：Telegram 的 reply keyboard 是会话级的另一个概念
+    // （telegram/menu.go:142-147 已区分），两者不该共用一个词。见 §5.4(2)。
+    MessageActions []interaction.Action
 
     // Card 是更富的中立交互载荷（标题/分节/动作）。同时设置时 Card 优先。
     Card *interaction.Card
@@ -201,6 +210,13 @@ type SendMessageOptions struct {
     Metadata map[string]interface{} // 保留：平台专有逃生舱，不再承载交互载荷
 }
 ```
+
+按 §10 决议 1，`MessageActions` 与 `Card` **两者都保留**：`Card` 是超集，但 13 个
+调用点里多数只需要一行按钮，强制包一层 `Card` 会让常见情形变啰嗦。同时设置时
+`Card` 优先。
+
+`interaction.Action` 的载荷形态见 §5.3——`Payload map[string]any` 而非
+`CallbackData string`。这是 Seam 1 与 §5 的交汇点，也是 Phase 2 要拆成 2a/2b 的原因。
 
 渲染责任下沉到各 `platform/*/`：
 
@@ -283,25 +299,36 @@ type PlatformBehavior struct {
 **UX 收益**（对齐 `.design/ux-principles.md` #6「合理默认优于多一个开关」）：认证字段
 校验规则与前端表单渲染读同一张表，不会再出现"前端让你填、后端不校验"或反之的漂移。
 
-### Seam 4 — 可编辑消息升级为能力接口
+### Seam 4 — 「消息重述」能力，而不是「编辑消息」能力
 
-`imbot/imbot.go:14-37` 的 `TelegramBot` 接口 + `AsTelegramBot` 具体类型断言，拆成
-按能力划分的可选接口：
+原稿把这条设计成 `EditableMessages`（编辑 / 撤键盘）。**已按讨论修正**：编辑是
+*手段*，不是*意图*。调用方真正想表达的是"这条消息连同它的按钮已经过期了，用这个
+新状态取代它"——至于平台是原地编辑、重发卡片、还是发一条替代消息并撤掉旧键盘，
+应该由平台决定。
 
 ```go
 // core 包内定义，任何平台都可实现
-type EditableMessages interface {
-    EditMessage(ctx context.Context, chatID, messageID, text string, kb *interaction.InlineKeyboardMarkup) error
-    RemoveKeyboard(ctx context.Context, chatID, messageID string) error
+type MessageRestater interface {
+    // Restate 用新内容取代一条既有消息的呈现。平台自行选择实现路径：
+    // 原地编辑、卡片更新、或"发替代消息 + 撤旧键盘"。
+    // Actions 为 nil 表示"取代后不再有可点击动作"。
+    Restate(ctx context.Context, ref MessageRef, text string, actions []Action) error
 }
 
-func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体类型
+func AsRestater(bot Bot) (MessageRestater, bool)   // 接口断言，非具体类型
 ```
 
-- telegram：已有实现，改签名（去掉 `ctx interface{}` 这个历史遗留）
-- feishu/lark：用卡片更新 API 实现（**新能力**，修掉 §3.2）
-- tingly：测试环境同步实现，让 E2E 能覆盖非 Telegram 路径
-- 其他：不实现，`AsEditable` 返回 false，调用方逻辑不变
+各平台的实现自由度正是这条 seam 的价值：
+
+- **telegram**：`editMessageText` + `editMessageReplyMarkup`（已有实现，去掉
+  `ctx interface{}` 这个历史遗留签名）
+- **feishu/lark**：卡片更新 API；**若真机验证发现卡片更新会给用户推新通知**
+  （§10 决议 2 的顾虑），改成"撤掉旧卡片动作 + 发一条替代消息"，**接口不变**
+- **tingly**：测试环境同步实现，让 E2E 覆盖非 Telegram 路径
+- **其他**：不实现，`AsRestater` 返回 false，调用方逻辑与今天一致（什么都不做）
+
+这样 §9 决议 2 那个"编辑还是替代"的问题**不再是阻塞项**——它退化成 feishu 包内部
+的一个实现选择，真机验证的结论不会反过来推翻接口设计。
 
 `AsTelegramBot` 缩回真正 Telegram 专有的东西（`ResolveChatID` —— `/join` 命令本就
 是 Telegram-only 且已用 `WithPlatforms(PlatformTelegram)` 正确声明，见
@@ -319,7 +346,124 @@ func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体�
 
 ---
 
-## 5. 方案比较
+## 5. 最大的复杂点：Telegram 内联键盘不能再当最小公分母
+
+前面四条 seam 处理的是"渲染在错的地方"。这一节处理的是更深的一层：
+**Telegram 的键盘模型约束最强，而它的约束已经泄漏成了全平台的应用架构。**
+
+### 5.1 四个平台的交互模型其实不同构
+
+| | 按钮身份 | 载荷上限 | 作用域 | ACK 义务 | 更新方式 |
+|---|---|---|---|---|---|
+| **Telegram** | `callback_data` 字符串 | **64 字节**（硬限，超了整条消息被 API 拒） | 消息级（inline）/ 会话级（reply keyboard，另一套概念） | **必须** answer，否则客户端转圈 ~15s | `editMessageReplyMarkup` 原地改 |
+| **Feishu/Lark** | button `value` | 任意 **JSON 对象**，无实际上限 | 卡片级 | 无 | 重发 card content |
+| **Discord** | `custom_id` | 100 字符 | 消息级 | **3 秒内**必须 ACK，interaction token 15 分钟 | 编辑消息 components |
+| **Slack** | `action_id` + `value` | value ≤2000 字符 | Block 级 | **3 秒内** ACK，`response_url` 30 分钟/5 次 | `response_url` 重发 |
+| **tingly** | 任意 | 无 | 任意 | 无 | 任意 |
+
+Telegram 在**每一列**都是最紧的那个（或者是唯一有该约束的那个）。所以任何"直接把
+Telegram 的形状抬举成通用接口"的抽象，都会把它的约束强加给其他平台。
+
+### 5.2 这件事已经发生了，有代码为证
+
+**证据 A —— 目录浏览器被迫发明索引式导航**（`feature/telegram_dir_browser.go:274`）：
+
+```go
+// Directory buttons (use index instead of path to avoid 64-byte limit)
+callbackData := imbot.FormatCallbackData("bind", "dir", fmt.Sprintf("%d", i))
+```
+
+因为路径塞不进 64 字节，按钮只能携带**下标**，于是必须在服务端保存一份
+`BindFlowState.Dirs []string` 快照（`feature/telegram_keyboard.go:21`）来做下标还原，
+还得配套 `ExpiresAt`、`Page`、`MessageID` 一整套会话状态。
+
+这套状态机**只为 Telegram 的 64 字节而存在**，Feishu 完全不需要（button value 直接
+放整个路径即可），但今天 Feishu 也得吃这套——包括快照过期后下标错位的风险。
+
+**证据 B —— `FormatDirPath` 的编码方案是 Telegram 私货，且会在 Feishu 上损坏**
+（`imbot/interaction/keyboard.go:138-143`）：
+
+```go
+func FormatDirPath(path string) string {
+	// Telegram callback data max length is 64 bytes
+	return strings.ReplaceAll(path, ":", "\x00")   // 注释提了 64 字节，代码没管
+}
+```
+
+- 它把 `:` 换成 **NUL 字节**，只因为 `FormatCallbackData` 用 `:` 做分隔符。
+  这个"扁平字符串 + 冒号分隔"协议本身就是 Telegram 的 64 字节逼出来的。
+- Feishu 的 button `value` 是 **JSON 对象**，NUL 字节进 JSON 字符串是要么被转义成
+  `\u0000` 要么直接非法——这个编码在非 Telegram 平台上是**会坏的**。
+
+**证据 C —— 64 字节从未被校验，是个潜在真 bug**：
+
+全仓唯一提到 64 的地方是上面那行注释，**没有任何一处做长度检查**。而
+`feature/telegram_keyboard.go:62` 仍然直接把原始路径塞进去：
+
+```go
+imbot.CallbackButton("✅ Create", imbot.FormatCallbackData("bind", "create", imbot.FormatDirPath(path)))
+```
+
+`"bind:create:"` 是 12 字节，所以路径超过 **52 字节**就会让 Telegram API 返回
+`BUTTON_DATA_INVALID`，**整条消息发不出去**。
+`/home/user/projects/my-company/backend-services/api-gateway` 是 58 字节——不是极端
+构造，是日常路径。dir browser 那边绕开了，这条 `/cd` 创建确认路径没有。
+
+### 5.3 结论：按钮身份不能是 `callback_data`
+
+上面三条证据指向同一个设计错误：**把 Telegram 的传输编码当成了按钮的身份**。
+
+正确的 seam 是——**调用方给按钮附一个任意大小的应用载荷，由 imbot 负责让它到达对端**：
+
+```go
+type Action struct {
+    ID      string         // 稳定的动作名，如 "bind.create"
+    Label   string
+    Payload map[string]any // 任意大小；调用方不关心怎么送过去
+}
+```
+
+各平台自行决定投递方式：
+
+- **Feishu/Lark**：`Payload` 直接进 button `value` JSON。零损耗。
+- **Discord / Slack**：编码进 `custom_id` / `value`；超限再走 token。
+- **Telegram**：先尝试编码进 64 字节；**放不下时，由 imbot 侧存一个短 token**
+  （随消息生命周期回收，与 `pendingRequests` 同一套过期机制），`callback_data`
+  只带 `tok:<8字节>`，回调时还原成完整 `Payload` 再交给上层。
+
+**收益**：`BindFlowState.Dirs` 快照、索引式导航、`FormatDirPath` 的 NUL 编码，
+**这三样全部可以删掉**。dir browser 回归"按钮就带它自己的路径"这个本来该有的写法，
+Feishu 上零成本拿到正确行为，Telegram 上由 imbot 透明降级。§5.2 证据 C 的潜在 bug
+也随之消失——长度处理成为平台的责任，而不是每个调用方都要记得的事。
+
+### 5.4 另外两件必须显式建模的 Telegram 特性
+
+**(1) ACK 语义**。今天 `telegram/telegram.go:186-191` 在 `EmitMessage` **之后立刻**
+无条件 answer，所以不转圈。但这也意味着：answer 的 toast/alert 能力用不上，且这个
+"先 ACK 后处理"的选择被硬编码在平台里。Discord/Slack 的 3 秒硬性 ACK 让这件事不能
+一直含糊——抽象里需要一个显式的 `Ack(ctx, interaction, opts)` 概念，Telegram 的实现
+可以保持"已自动 ACK，此处为 no-op"，但接口先立住，等接 Discord 时不用返工。
+
+**(2) inline keyboard 与 reply keyboard 是两个概念**。前者绑定在**某条消息**上，
+后者是**整个会话**的输入区键盘，生命周期完全不同。`telegram/menu.go:142-147` 已经
+区分了 `replyKeyboard` / `replyMarkup`，但 `remote_control` 只用得到前者。
+按 UX 原则 #3（命名碰撞必须拆开），Seam 1 的字段应当叫
+`SendMessageOptions.MessageActions`（消息级）而不是笼统的 `Keyboard`，给未来的
+会话级键盘留出独立的轴。
+
+### 5.5 对实施计划的影响
+
+这不是"再加一个阶段"，而是**改变了 Seam 1 的目标形态**：`Keyboard` 字段不能只是
+把 `interaction.InlineKeyboardMarkup` 原样搬进类型系统（那样只是把 Telegram 编码
+搬了个家），必须同时引入 `Action.Payload` 与平台侧的投递责任。
+
+因此 Phase 2 拆成两步：**2a** 先把载荷搬进类型系统（修 §3.1 的 Feishu 按钮丢失，
+收益立刻兑现），**2b** 再把按钮身份从 `callback_data` 换成 `Payload`（删掉索引导航
+与 NUL 编码）。2a 不依赖 2b，可以先发。
+
+---
+
+## 6. 方案比较
 
 | 方案 | 做法 | 优点 | 缺点 | 结论 |
 |------|------|------|------|------|
@@ -335,7 +479,7 @@ func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体�
 
 ---
 
-## 6. 分阶段实施
+## 7. 分阶段实施
 
 每个阶段独立可发布、可回滚。建议顺序按"收益/风险比"排：
 
@@ -346,8 +490,9 @@ func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体�
 
 风险：极低。纯 move + import 调整。为 Phase 2 铺路。
 
-### Phase 2 — Seam 1（出站交互载荷）★ 修复 §3.1
-- `SendMessageOptions` 加 `Keyboard` / `Card`
+### Phase 2a — Seam 1 上半：载荷进类型系统 ★ 修复 §3.1
+- `SendMessageOptions` 加 `MessageActions` / `Card`（此阶段 `Action` 仍沿用
+  `CallbackData string`，**不动按钮身份**）
 - 各平台实现渲染；`Metadata["replyMarkup"]` 降级为带 deprecation 日志的兼容路径
 - 迁移 13 个调用点（**含 `imchannel/imprompter.go:176`**）
 - 从 `imbot` 公共 API 移除 `BuildTelegramActionKeyboard`
@@ -356,24 +501,46 @@ func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体�
 风险：中。核心类型变更，但有兼容路径兜底。
 验证：Feishu 真机确认按钮出现；`imbot/tests/telegram_e2e_test.go:83` 走新字段。
 
-### Phase 3 — Seam 3 + Seam 4（能力表 + 可编辑消息）★ 修复 §3.2 §3.3
+**这一步单独就把 §3.1 的用户可见缺陷修掉了**，不必等 2b。
+
+### Phase 2b — Seam 1 下半：按钮身份换成 `Payload` ★ 见 §5.3
+- `interaction.Action.CallbackData string` → `Payload map[string]any`
+- Telegram 侧实现"编码优先、超限走 token"的透明降级 + **补上缺失的 64 字节校验**
+  （§5.2 证据 C 的潜在 bug）
+- Feishu 侧 `Payload` 直接进 button `value`
+- 删除 `feature/telegram_dir_browser.go` 的索引式导航与 `BindFlowState.Dirs` 快照
+- 删除 `interaction/keyboard.go` 的 `FormatDirPath` / `ParseDirPath`（NUL 编码）
+
+风险：中高——这是本次唯一触碰**回调协议**的一步，改错会让按钮点了没反应。
+建议独立 PR，且先在 tingly E2E 上把"编码路径"和"token 路径"两条分支都覆盖到。
+
+### Phase 3 — Seam 3 + Seam 4（能力表 + 消息重述）★ 修复 §3.2 §3.3
 - `PlatformBehavior` 落表，替换 5 处 switch
-- `EditableMessages` 接口 + feishu/tingly 实现，替换 8 处 `AsTelegramBot`
+- `MessageRestater` 接口 + feishu/tingly 实现，替换 8 处 `AsTelegramBot`
 - 恢复 `handler_verbose.go` 被注释的能力判定
 
-风险：中低。查表替换是同义改写；feishu 卡片更新是新增能力（失败即退回现状的
-"什么都不做"，不会更糟）。
+风险：中低。查表替换是同义改写；feishu 侧无论选"更新卡片"还是"发替代消息"，
+失败都退回现状的"什么都不做"，不会更糟。
 
 ### Phase 4 — Seam 2（回复上下文）+ 清理
 - `BaseBot` 记忆入站上下文，删除 19 处手工透传
 - `FileResolver` 接口，Telegram getFile 下沉，删除 token 二次传递
-- 移除 Phase 2 留下的 `Metadata["replyMarkup"]` 兼容路径
+- 移除 Phase 2a 留下的 `Metadata["replyMarkup"]` 兼容路径
 
 风险：低。前置需确认 §Seam 2 里那条"是否已部分冗余"。
 
+### Phase 5 — `menu` 包归位（§10 决议 3）
+前四个阶段落地后，`imbot/menu` 与新 seam 会有明显重叠（`ShowMenu`/`HideMenu` ≈
+`MessageActions` + `MessageRestater`）。此阶段单独评估三选一：
+让 `menu` 建立在新 seam 之上（保留其"菜单会话"生命周期语义）、
+把它降级为 `remote_control` 用不到的独立能力、或直接删除。
+
+风险：低（此时它仍是零外部引用）。**刻意排在最后**——先让新 seam 的形状被真实
+使用验证过，再决定 `menu` 该不该活，而不是反过来。
+
 ---
 
-## 7. 影响面与风险
+## 8. 影响面与风险
 
 **跨仓库**：本次改动全部落在 `tingly-box` 主仓（`imbot/` 是仓内目录，非 submodule）。
 `libs/` 下三个 SDK submodule 不受影响。
@@ -383,9 +550,10 @@ func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体�
 | 风险 | 缓解 |
 |------|------|
 | `SendMessageOptions` 是全仓最热类型 | 只**新增**字段，不改既有字段；`Metadata` 兼容路径保留一个版本 |
-| Feishu 卡片更新 API 行为未知 | Phase 3 中该能力失败时退回"不实现 `EditableMessages`"，即当前行为，不会退化 |
+| Feishu 卡片更新 API 行为未知（会不会给用户推新通知） | 已由 §10 决议 2 化解：`MessageRestater` 只表达"取代"意图，feishu 内部选编辑还是发替代消息；两者都不可行时不实现该接口，退回当前行为，不会退化 |
 | 无真实 Feishu/Weixin 凭据可测 | tingly 平台是仓内 E2E harness（`imbot/platform/tingly/testenv/`），可覆盖中立路径；平台专有渲染用单测断言输出 JSON 形状；真机验证列为合入门槛 |
-| `menu` 包在本方案后更显冗余 | 不在本次范围内处理。Seam 4 完成后单独评估是删除还是让它建立在新 seam 之上 |
+| `menu` 包在本方案后更显冗余 | 已排为 Phase 5 单独处理（§10 决议 3）；此前它保持零外部引用，不构成阻塞 |
+| Phase 2b 触碰回调协议，改错则"按钮点了没反应" | 独立 PR；tingly E2E 必须同时覆盖"编码进 64 字节"和"走 token"两条分支；2a 先行确保用户可见缺陷不被 2b 的风险绑架 |
 
 **明确不在范围内**：
 - `internal/server/module/imbot/**`（108 处平台引用）—— 那是 HTTP facade 的
@@ -397,7 +565,7 @@ func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体�
 
 ---
 
-## 8. 验收标准
+## 9. 验收标准
 
 本次重构的可证伪定义：
 
@@ -410,27 +578,30 @@ func AsEditable(bot Bot) (EditableMessages, bool)   // 接口断言，非具体�
 4. `handler_verbose.go` 的能力判定恢复启用（§3.3 修复）
 5. 在 imbot 新增一个假想平台，`internal/remote_control` **零改动**即可跑通
    `manager_channel_test.go` 的 notify 全链路
+6. **回调载荷不再有长度约束泄漏到调用方**：`grep -rn "64" imbot/interaction/` 只在
+   Telegram 平台包内出现；`FormatDirPath` / `BindFlowState.Dirs` 已删除（Phase 2b）
 
 ---
 
-## 9. 待确认问题（需要产品/架构侧拍板）
+## 10. 决议（已拍板）
 
-1. **`Card` vs `Keyboard` 是否都要？** `Card` 是超集（键盘 = 只有 actions 的 card）。
-   只留 `Card` 更干净，但 13 个调用点里大部分只需要键盘，强制包一层 Card 会变啰嗦。
-   倾向：两个都留，`Card` 优先。
-2. **Feishu 上「消息编辑」的产品语义**：Feishu 卡片更新会不会给用户推新通知？如果会，
-   §3.2 的修复在 Feishu 上是否反而是负 UX？需要真机确认后再决定 Phase 3 是"编辑卡片"
-   还是"发一条替代消息"。
-3. **是否借这次把 `menu` 包处理掉？** 它有完整实现和测试但零外部引用。倾向：本次不动，
-   Phase 4 后单独评估。
+| # | 问题 | 决议 | 落点 |
+|---|------|------|------|
+| 1 | `Card` 与 `Keyboard` 是否都要 | **都留**，`Card` 优先 | Seam 1；字段名改为 `MessageActions`（§5.4(2)） |
+| 2 | Feishu「编辑卡片」的产品语义未知 | **增加"替代"抽象能力**，而不是把编辑写死 | Seam 4 由 `EditableMessages` 改为 `MessageRestater`；编辑 / 重发由平台内部决定，真机结论不影响接口 |
+| 3 | 是否借本次处理 `menu` 包 | **作为新阶段抽象** | 新增 Phase 5，排在四条 seam 之后 |
+
+**追加约束（讨论中提出）**：Telegram 的键盘交互能力是本次最大的复杂点。已展开为
+§5——结论是它的 64 字节约束已泄漏成全平台的应用架构，Seam 1 因此必须把按钮身份从
+`callback_data` 换成 `Payload`，并把 Phase 2 拆成 2a/2b。
 
 ---
 
-## 10. 下一步
+## 11. 下一步
 
-- [ ] 就 §9 三个问题达成一致
-- [ ] 通过则 `/sdlc spec` 产出 Phase 1+2 的实施规格（含 `SendMessageOptions` 精确签名
-      与兼容期策略）
+- [x] §10 三个问题达成一致
+- [ ] `/sdlc spec` 产出 Phase 1 + 2a 的实施规格（含 `SendMessageOptions` 精确签名
+      与兼容期策略）；Phase 2b 因触碰回调协议，单独出规格
 - [ ] 本文档在方案确认后升格为 `.design/imbot-platform-seams.md`
       （放在 `.sdlc/research/` 而非 skill 默认的 `.sdlc/docs/`，因为本仓
       `.gitignore:2` 的 `docs` 规则会忽略任意层级的 `docs/` 目录）
