@@ -26,7 +26,11 @@ type Settings struct {
 	AuthType      string            `json:"auth_type"`
 	Auth          map[string]string `json:"auth"`
 	ProxyURL      string            `json:"proxy_url,omitempty"`
-	ChatIDLock    string            `json:"chat_id,omitempty"`
+	// ChatIDLock, serialized as "chat_id_lock" — it is an operator-imposed
+	// restriction (only accept messages from this chat), NOT the identifier
+	// of any actual chat. The previous "chat_id" tag collided with the live
+	// chat id concept (Chat.ChatID) and misled callers. See ux-principles #3.
+	ChatIDLock    string            `json:"chat_id_lock,omitempty"`
 	BashAllowlist []string          `json:"bash_allowlist,omitempty"`
 	DefaultCwd    string            `json:"default_cwd,omitempty"`   // Default working directory
 	DefaultAgent  string            `json:"default_agent,omitempty"` // Default Agent UUID
