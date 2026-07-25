@@ -86,6 +86,9 @@ const Onboarding: React.FC = () => {
             return;
         }
         if (selection.kind === 'import') return;
+        // Paste & detect has its own dedicated tab in onboarding; the card is
+        // hidden in browse mode (showPasteCard={false}), so this is unreachable.
+        if (selection.kind === 'paste') return;
 
         const built = buildProviderFormData(selection)!;
 
@@ -190,6 +193,7 @@ const Onboarding: React.FC = () => {
                             hideOfficialInfo={true}
                             showDetails={true}
                             wide={true}
+                            showPasteCard={false}
                         />
                     )}
                     {tab === 'paste' && (
