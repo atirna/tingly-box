@@ -19,6 +19,7 @@ import { Link as LinkIcon } from '@/components/icons';
 import { VpnKey as VpnKeyIcon } from '@/components/icons';
 import {extractOnboardingCandidates, type OnboardingTokenCandidate} from '@/services/onboardingExtract';
 import type {EnhancedProviderFormData} from '@/components/ProviderFormDialog';
+import {emptyForm} from '@/hooks/useProviderDialog';
 
 // Shell-agnostic core of the "Paste & detect" experience: a paste textarea, a
 // Detect button backed by the backend regex extractor, and the URLs/tokens
@@ -80,11 +81,9 @@ const PasteDetectPanel: React.FC<PasteDetectPanelProps> = ({onPick, onManualFill
         // apiBase, fills the rest of the form, and lets the user override
         // anything before saving.
         onPick({
-            name: '',
+            ...emptyForm(),
             apiBase: selectedURL || '',
-            apiStyle: undefined,
             token: selectedToken || '',
-            enabled: true,
         });
     };
 

@@ -58,6 +58,10 @@ const ACCENT: Record<Accent, string> = {
     local: 'warning.main',
 };
 
+// Search terms that keep the "Custom" section visible. Module-level so it
+// isn't reallocated on every keystroke in the search box.
+const CUSTOM_SEARCH_TERMS = ['custom endpoint', 'import', 'paste & detect'];
+
 const SectionHeader: React.FC<{icon: React.ReactNode; title: string; count?: number; accent: Accent}> = ({
     icon, title, count, accent,
 }) => {
@@ -297,7 +301,7 @@ export const ProviderListContent: React.FC<ProviderListContentProps> = ({
     const filteredOAuth = needle
         ? oauthProviders.filter((p) => `${p.name} ${p.displayName} ${p.id}`.toLowerCase().includes(needle.toLowerCase()))
         : oauthProviders;
-    const showCustom = !needle || ['custom endpoint', 'import', 'paste & detect'].some(s => s.includes(needle));
+    const showCustom = !needle || CUSTOM_SEARCH_TERMS.some(s => s.toLowerCase().includes(needle.toLowerCase()));
 
     // Group key providers by region (CN vs Global vs Self-hosted)
     const {cnKeyProviders, globalKeyProviders, selfHostedProviders} = useMemo(() => {

@@ -9,6 +9,7 @@ import {
 import {ArrowBack, Close} from '@/components/icons';
 import PasteDetectPanel from './PasteDetectPanel';
 import type {EnhancedProviderFormData} from '@/components/ProviderFormDialog';
+import {emptyForm} from '@/hooks/useProviderDialog';
 
 // Dialog shell for the Connect AI "Paste & detect" path. Wraps the shared
 // PasteDetectPanel (the same core Onboarding uses inline) so the experience is
@@ -67,13 +68,7 @@ const PasteDetectDialog: React.FC<PasteDetectDialogProps> = ({open, onClose, onP
             >
                 <PasteDetectPanel
                     onPick={onPick}
-                    onManualFill={() => onPick({
-                        name: '',
-                        apiBase: '',
-                        apiStyle: undefined,
-                        token: '',
-                        enabled: true,
-                    })}
+                    onManualFill={() => onPick(emptyForm())}
                 />
             </DialogContent>
         </Dialog>

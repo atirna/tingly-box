@@ -9,8 +9,6 @@ interface UseProviderDialogOptions {
     onImport?: () => void;
     /** Invoked when the user picks an OAuth sign-in provider. */
     onOAuth?: (providerId: string) => void;
-    /** Invoked when the user picks "Paste & detect". */
-    onPaste?: () => void;
 }
 
 // ── Shared: ConnectSelection → form data ────────────────────────────
@@ -24,7 +22,7 @@ export interface ConnectFormResult {
     optionalEditableToken: boolean;
 }
 
-const emptyForm = (apiStyle?: 'openai' | 'anthropic'): EnhancedProviderFormData => ({
+export const emptyForm = (apiStyle?: 'openai' | 'anthropic'): EnhancedProviderFormData => ({
     name: '',
     apiBase: '',
     apiStyle: apiStyle || undefined,
@@ -36,7 +34,7 @@ const emptyForm = (apiStyle?: 'openai' | 'anthropic'): EnhancedProviderFormData 
 
 /**
  * Convert a picker selection into provider form data.
- * Returns null when the picker result doesn't open the form (oauth / import).
+ * Returns null when the picker result doesn't open the form (oauth / import / paste).
  */
 export function buildProviderFormData(selection: ConnectSelection): ConnectFormResult | null {
     if (selection.kind === 'oauth' || selection.kind === 'import' || selection.kind === 'paste') {
@@ -95,7 +93,7 @@ export const useProviderDialog = (
     showNotification: (message: string, severity: 'success' | 'error') => void,
     options: UseProviderDialogOptions = {}
 ): UseProviderDialogReturn => {
-    const { defaultApiStyle, onProviderAdded, onImport, onOAuth, onPaste } = options;
+    const { defaultApiStyle, onProviderAdded, onImport, onOAuth } = options;
 
     const [providerDialogOpen, setProviderDialogOpen] = useState(false);
     const [connectDialogOpen, setConnectDialogOpen] = useState(false);
@@ -128,11 +126,10 @@ export const useProviderDialog = (
             // oauth / import — handled by caller via other dialogs
             if (selection.kind === 'oauth') onOAuth?.(selection.providerId);
             if (selection.kind === 'import') onImport?.();
-            // paste — open the built-in PasteDetectDialog (this hook owns it so
-            // every consumer gets it for free; onPaste is an optional extra hook)
+            // paste — this hook owns the built-in PasteDetectDialog so every
+            // consumer gets it for free.
             if (selection.kind === 'paste') {
                 setPasteDialogOpen(true);
-                onPaste?.();
             }
             return;
         }
@@ -140,7 +137,7 @@ export const useProviderDialog = (
         setProviderFormData(built.formData);
         setOptionalEditableToken(built.optionalEditableToken);
         setProviderDialogOpen(true);
-    }, [defaultApiStyle, onImport, onOAuth, onPaste]);
+    }, [defaultApiStyle, onImport, onOAuth]);
 
     // Paste-detected prefill: apply it and open the form (token always required
     // here — paste produces an explicit value or the user chose manual fill).
