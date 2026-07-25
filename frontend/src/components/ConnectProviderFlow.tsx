@@ -1,5 +1,6 @@
 import ConnectProviderDialog, { type ConnectSelection } from '@/components/ConnectProviderDialog';
 import OAuthDialog from '@/components/OAuthDialog';
+import PasteDetectDialog from '@/components/paste-detect/PasteDetectDialog';
 import ProviderFormDialog, { type EnhancedProviderFormData } from '@/components/ProviderFormDialog';
 import { buildProviderFormData } from '@/hooks/useProviderDialog';
 import { useState, useCallback } from 'react';
@@ -23,14 +24,19 @@ const ConnectProviderFlow: React.FC<ConnectProviderFlowProps> = ({
     const [optionalEditableToken, setOptionalEditableToken] = useState(false);
     const [oauthDialogOpen, setOAuthDialogOpen] = useState(false);
     const [oauthAutoStartId, setOAuthAutoStartId] = useState<string | null>(null);
+    const [pasteDialogOpen, setPasteDialogOpen] = useState(false);
     const [providerFormData, setProviderFormData] = useState<EnhancedProviderFormData>({
         name: '', apiBase: '', apiStyle: undefined, token: '', enabled: true, noKeyRequired: false, proxyUrl: '',
     });
 
     const handleConnectSelect = useCallback((selection: ConnectSelection) => {
-        onClose();
-
-        // oauth / import are handled separately
+        // paste / oauth / import open their own dialogs and must NOT close the
+        // picker — otherwise the picker unmounts and Back/Escape from those
+        // dialogs has nowhere to return to.
+        if (selection.kind === 'paste') {
+            setPasteDialogOpen(true);
+            return;
+        }
         if (selection.kind === 'oauth') {
             setOAuthAutoStartId(selection.providerId);
             setOAuthDialogOpen(true);
@@ -43,10 +49,18 @@ const ConnectProviderFlow: React.FC<ConnectProviderFlowProps> = ({
             kind: selection.kind,
             selectedProviderId: built.formData.selectedProviderId,
         });
+        onClose(); // form path: close the picker, open the form
         setOptionalEditableToken(built.optionalEditableToken);
         setProviderFormData(built.formData);
         setApiKeyDialogOpen(true);
     }, [onClose]);
+
+    const handlePastePick = useCallback((prefill: EnhancedProviderFormData) => {
+        setPasteDialogOpen(false);
+        setOptionalEditableToken(false);
+        setProviderFormData(prefill);
+        setApiKeyDialogOpen(true);
+    }, []);
 
     const handleProviderSubmit = async (_e: React.FormEvent, resolved?: Partial<EnhancedProviderFormData>) => {
         const fd = { ...providerFormData, ...(resolved || {}) };
@@ -115,6 +129,11 @@ const ConnectProviderFlow: React.FC<ConnectProviderFlowProps> = ({
                     showNotification?.('Provider connected via OAuth!', 'success');
                     onProviderAdded?.();
                 }}
+            />
+            <PasteDetectDialog
+                open={pasteDialogOpen}
+                onClose={() => setPasteDialogOpen(false)}
+                onPick={handlePastePick}
             />
         </>
     );

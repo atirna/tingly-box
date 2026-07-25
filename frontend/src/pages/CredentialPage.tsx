@@ -3,6 +3,7 @@ import ConnectProviderDialog from '@/components/ConnectProviderDialog';
 import EmptyState from '@/components/EmptyState';
 import ImportModal from '@/components/ImportModal';
 import OAuthDialog from '@/components/OAuthDialog.tsx';
+import PasteDetectDialog from '@/components/paste-detect/PasteDetectDialog';
 import OAuthTable from '@/components/OAuthTable.tsx';
 import PageHeader from '@/components/PageHeader';
 import { PageLayout } from '@/components/PageLayout';
@@ -50,6 +51,9 @@ const CredentialPage = () => {
     const [showImportModal, setShowImportModal] = useState(false);
     const [importing, setImporting] = useState(false);
 
+    // Paste & detect Dialog state
+    const [pasteDialogOpen, setPasteDialogOpen] = useState(false);
+
     useEffect(() => { loadProviders(); }, []);
 
     const { quotaData, refreshing, refreshQuota } = useProviderQuota(providers, { fetchOnMount: true });
@@ -70,6 +74,7 @@ const CredentialPage = () => {
         handleConnectAIClick,
         handleConnectSelect,
         handleCloseConnect,
+        handlePastePick,
         fromConnectPicker,
         optionalEditableToken,
     } = useProviderDialog(showNotification, {
@@ -79,6 +84,7 @@ const CredentialPage = () => {
             setOAuthAutoStartId(providerId);
             setOAuthDialogOpen(true);
         },
+        onPaste: () => setPasteDialogOpen(true),
     });
 
     const loadProviders = async () => {
@@ -295,6 +301,11 @@ const CredentialPage = () => {
             {providerEditDialogs}
             {/* Import Modal */}
             <ImportModal open={showImportModal} onClose={() => setShowImportModal(false)} onImport={handleImportData} loading={importing}/>
+            <PasteDetectDialog
+                open={pasteDialogOpen}
+                onClose={() => setPasteDialogOpen(false)}
+                onPick={handlePastePick}
+            />
         </PageLayout>
     );
 };
