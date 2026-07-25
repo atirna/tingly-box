@@ -1,4 +1,4 @@
-import { BotCard, BotConfigDialog } from '@/components/bot';
+import { BotTable, BotConfigDialog } from '@/components/bot';
 import EmptyState from '@/components/EmptyState';
 import { PageLayout } from '@/components/PageLayout';
 import CollapsibleGuide from '@/components/remote-control/CollapsibleGuide';
@@ -206,19 +206,15 @@ const PlatformBotPage = ({ platformId, platformName, platformGuide }: PlatformBo
                         }}
                     />
                 ) : (
-                    filteredBots.map((bot) => (
-                        <div key={bot.uuid}>
-                            <BotCard
-                                bot={bot}
-                                onEdit={() => openEditDialog(bot.uuid!)}
-                                onDelete={() => handleDeleteBot(bot.uuid!)}
-                                onBotToggle={() => handleBotToggle(bot.uuid!, !bot.enabled)}
-                                onRestart={() => handleBotRestart(bot.uuid!)}
-                                isToggling={togglingBotUuid === bot.uuid}
-                                isRestarting={restartingBotUuid === bot.uuid}
-                            />
-                        </div>
-                    ))
+                    <BotTable
+                        bots={filteredBots}
+                        onEdit={(uuid) => openEditDialog(uuid)}
+                        onDelete={(uuid) => handleDeleteBot(uuid)}
+                        onBotToggle={(uuid, enabled) => handleBotToggle(uuid, enabled)}
+                        onRestart={(uuid) => handleBotRestart(uuid)}
+                        isToggling={(uuid) => togglingBotUuid === uuid}
+                        isRestarting={(uuid) => restartingBotUuid === uuid}
+                    />
                 )}
             </UnifiedCard>
             {/* Shared add/edit dialog for the bot resource */}
