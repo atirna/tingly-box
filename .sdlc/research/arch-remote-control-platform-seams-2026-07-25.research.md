@@ -1,7 +1,7 @@
 # Research: 抹平 `internal/remote_control` 残留的平台兼容逻辑
 
 **类型**: 架构研究 + 重构提案（未实施；方向已拍板，见 §10）
-**日期**: 2026-07-25（rev.2 — 记录决议，补入 §5 Telegram 键盘专题）
+**日期**: 2026-07-25（rev.3 — 补入 §5.5-5.7 平台专有能力的三层模型与逃生舱）
 **范围**: `internal/remote_control/**`、`remote/channel/imchannel/**`、`imbot/**`
 **前置文档**: `.design/bot-arch.md`（三层模型）、`.design/ux-principles.md`
 
@@ -451,7 +451,113 @@ Feishu 上零成本拿到正确行为，Telegram 上由 imbot 透明降级。§5
 `SendMessageOptions.MessageActions`（消息级）而不是笼统的 `Keyboard`，给未来的
 会话级键盘留出独立的轴。
 
-### 5.5 对实施计划的影响
+### 5.5 反向问题：那 Telegram 专有的键盘能力怎么办？（评审提出）
+
+前面五小节讲的都是"别让 Telegram 的**约束**绑架其他平台"。反过来的问题同样要害：
+**别让抽象把 Telegram 的能力抹掉。** 这两件事必须同时成立，否则就是从一个错误
+滑到另一个。
+
+**先说现状，比想象的糟。** 今天的中立按钮模型（`imbot/interaction/keyboard.go:8-13`）
+只有三个字段：
+
+```go
+type InlineKeyboardButton struct {
+	Text         string
+	CallbackData string
+	URL          string
+}
+```
+
+而 Telegram 的 `InlineKeyboardButton` 有九种变体：`web_app`（Mini App）、
+`login_url`、`switch_inline_query`（及 `_current_chat` / `_chosen_chat`）、
+`copy_text`、`pay`、`callback_game`。reply keyboard 那一侧还有
+`request_users` / `request_chat` / `request_contact` / `request_location` /
+`request_poll`、`is_persistent`、`input_field_placeholder`。
+
+**这些今天全都表达不了**——不是本次重构弄丢的，是本来就没有。今天唯一能用上它们的
+办法，是绕过中立模型、直接往 `Metadata["replyMarkup"]` 里塞原始
+`models.InlineKeyboardMarkup`。
+
+**而 Phase 2a 恰恰要删掉这条路。** 所以如果不同时提供替代品，Phase 2a 就是一次
+**能力回退**：把唯一的（虽然丑陋的）逃生舱堵死，却没开新门。这是本提案原稿的缺口，
+必须在 Phase 2a **同一个 PR 内**补上，不能延后。
+
+### 5.6 三层模型：什么该抽象，什么不该
+
+不是所有平台差异都该被抹平。判据是**这个差异对用户是不是有意义**：
+
+**Tier 1 — 通用动作（必须抽象）**
+每个目标平台都能表达的：可点击动作 + 打开链接。这是 `Action{ID, Label, Payload, URL}`
+的职责范围，也是 remote_control 今天 13 个调用点的全部所需。
+
+**Tier 2 — 能力门控动作（抽象语义，不抽象实现）**
+多个平台**各有实现但形式不同**的能力。用中立语义词表达，由平台能力表决定怎么落地：
+
+```go
+Action{Kind: ActionOpenMiniApp, URL: dashboardURL, Fallback: FallbackAsURL}
+// Telegram → web_app 按钮；Feishu → 小程序卡片；其余 → 退化成普通 URL 按钮
+```
+
+关键是 `Fallback` **必须显式声明**，不能静默丢弃——静默丢弃正是 §3.1 那个 Feishu
+缺陷的形成机理，不能在新设计里重演。
+
+**Tier 3 — 平台专有能力（不抽象，但要有正门）**
+只有一个平台有、且抽象它没有意义的（`pay`、`callback_game`、`switch_inline_query`）。
+这类**不进中立模型**，走**类型化逃生舱**——在平台包里提供构造器：
+
+```go
+// imbot/platform/telegram
+func WebAppButton(label, url string) interaction.Action
+func CopyTextButton(label, text string) interaction.Action
+func SwitchInlineButton(label, query string) interaction.Action
+```
+
+它们返回一个填好 `Ext[PlatformTelegram]` 的普通 `Action`，其他平台看到 `Ext` 里没有
+自己的 key，按 `Fallback` 处理。
+
+```go
+type Action struct {
+    ID       string
+    Label    string
+    Payload  map[string]any   // §5.3：任意大小，投递由平台负责
+    URL      string
+    Kind     ActionKind       // Tier 2 的中立语义
+    Ext      map[Platform]any // Tier 3：仅目标平台读取
+    Fallback FallbackPolicy   // 不支持时：Drop / AsURL / AsText / FailSend
+}
+```
+
+**为什么"类型化逃生舱"比今天的 `Metadata` 口袋好**，尽管两者都能装平台专有的东西：
+
+| | 今天 `Metadata["replyMarkup"]` | Tier 3 构造器 |
+|---|---|---|
+| 平台意图是否可见 | 不可见——`map[string]any`，要读实现才知道给谁的 | 可见——`import ".../platform/telegram"` 这行 import 本身就是声明 |
+| 能否 grep / lint | 不能 | 能：禁止/审计 `internal/**` 对 `imbot/platform/*` 的 import |
+| 类型安全 | 无，塞错形状静默丢（§3.1 就是这么来的） | 有，编译期检查 |
+| 其他平台行为 | 未定义 | 由 `Fallback` 显式声明 |
+
+**核心区别不是"有没有平台专有代码"，而是它是隐式的还是显式的。**
+本次重构要消灭的从来不是"Telegram 特化"，而是"**看不见的** Telegram 特化"。
+
+### 5.7 这条规则如何落到目录结构上
+
+由此推出两类平台专有代码的去处——它们性质不同，不能混谈：
+
+**(a) 平台专有的「基础设施」→ 进 imbot，remote_control 永不可见。**
+菜单注册、文件 URL 解析、键盘渲染、卡片序列化。这是本提案 §4 全部内容要搬走的东西。
+`manager.go:13-14` 今天 import 了 `imbotfeishu` / `imbottelegram` 就是这类越界，
+Seam 3 会消除它。
+
+**(b) 平台专有的「产品特性」→ 留在 remote_control，但必须大声。**
+"在 Telegram 上用 WebApp 按钮直接打开 tingly-box 仪表盘"——这是**刻意**给某个平台
+更好的体验，是产品决策，不是技术债。它就该待在 remote_control。
+
+仓库里已经有 (b) 做对了的先例：`/join` 命令（`command.go:535-543`）——
+`WithPlatforms(imbot.PlatformTelegram)` 显式声明适用平台，其他平台给明确提示而不是
+静默失败。**未来的 Telegram 键盘需求应当照抄这个形状**：Tier 3 构造器 +
+`WithPlatforms` 或 `Fallback` 声明。
+
+### 5.8 对实施计划的影响
 
 这不是"再加一个阶段"，而是**改变了 Seam 1 的目标形态**：`Keyboard` 字段不能只是
 把 `interaction.InlineKeyboardMarkup` 原样搬进类型系统（那样只是把 Telegram 编码
@@ -497,9 +603,14 @@ Feishu 上零成本拿到正确行为，Telegram 上由 imbot 透明降级。§5
 - 迁移 13 个调用点（**含 `imchannel/imprompter.go:176`**）
 - 从 `imbot` 公共 API 移除 `BuildTelegramActionKeyboard`
 - 删除 `card_metadata.go` 的 `card_json` 分支和 tingly 的双形状解码
+- **同一 PR 内**：`Action.Ext` + `Action.Fallback` 字段 + `imbot/platform/telegram`
+  的 Tier 3 构造器（至少 `WebAppButton`）。**这是硬性前置**——见 §5.5，移除
+  `Metadata["replyMarkup"]` 会堵死今天唯一能表达 Telegram 专有按钮的通路，
+  不同时开新门就是能力回退
 
 风险：中。核心类型变更，但有兼容路径兜底。
-验证：Feishu 真机确认按钮出现；`imbot/tests/telegram_e2e_test.go:83` 走新字段。
+验证：Feishu 真机确认按钮出现；`imbot/tests/telegram_e2e_test.go:83` 走新字段；
+新增一个 Tier 3 按钮的往返测试（Telegram 渲染成 `web_app`，Feishu 按 `Fallback` 降级）。
 
 **这一步单独就把 §3.1 的用户可见缺陷修掉了**，不必等 2b。
 
@@ -554,6 +665,8 @@ Feishu 上零成本拿到正确行为，Telegram 上由 imbot 透明降级。§5
 | 无真实 Feishu/Weixin 凭据可测 | tingly 平台是仓内 E2E harness（`imbot/platform/tingly/testenv/`），可覆盖中立路径；平台专有渲染用单测断言输出 JSON 形状；真机验证列为合入门槛 |
 | `menu` 包在本方案后更显冗余 | 已排为 Phase 5 单独处理（§10 决议 3）；此前它保持零外部引用，不构成阻塞 |
 | Phase 2b 触碰回调协议，改错则"按钮点了没反应" | 独立 PR；tingly E2E 必须同时覆盖"编码进 64 字节"和"走 token"两条分支；2a 先行确保用户可见缺陷不被 2b 的风险绑架 |
+| **移除 `Metadata["replyMarkup"]` = 堵死唯一的平台专有按钮通路**（评审发现） | Tier 3 逃生舱（`Action.Ext` + 平台构造器）必须与 Phase 2a **同 PR** 落地，不得延后；见 §5.5 |
+| 中立按钮模型只有 `{Text, CallbackData, URL}`，Telegram 九种变体中七种今天就表达不了 | 这是**既有缺口**而非本次引入；Tier 2/3 分层给了它一个正式去处，但补齐具体按钮类型按需推进，不在本次范围 |
 
 **明确不在范围内**：
 - `internal/server/module/imbot/**`（108 处平台引用）—— 那是 HTTP facade 的
@@ -569,10 +682,16 @@ Feishu 上零成本拿到正确行为，Telegram 上由 imbot 透明降级。§5
 
 本次重构的可证伪定义：
 
-1. **`grep -riE 'telegram|feishu|lark|dingtalk|wecom|weixin|discord|slack|whatsapp'
-   internal/remote_control --include='*.go' | grep -v _test` 只剩下**：
-   - `/join` 命令的 `WithPlatforms(PlatformTelegram)` 声明（`command.go:535-543`，合理特化）
+1. **`internal/remote_control` 里不再有*隐式*平台分支。** 注意判据不是"平台字面量归零"
+   —— 那会连带禁掉合理的产品特化（§5.7）。准确的判据是，每一处残留的平台引用必须
+   属于以下之一：
+   - `/join` 那样的**显式产品特化**：带 `WithPlatforms(...)` 或 `Fallback` 声明
+     （`command.go:535-543` 是先例）
+   - Tier 3 逃生舱调用：`import ".../imbot/platform/telegram"` + 显式 `Fallback`
    - 注释与日志文案
+
+   反过来，**基础设施类**的平台分支必须归零：`buildAuthConfig` / `hasValidAuth` /
+   菜单 switch / `AsTelegramBot` / 键盘预渲染 / `context_token` 透传，一处不留。
 2. Feishu/Lark 上 Clear / CD / Project 按钮**可见且可点**（§3.1 修复）
 3. Feishu 上点完按钮旧键盘被撤除（§3.2 修复）
 4. `handler_verbose.go` 的能力判定恢复启用（§3.3 修复）
@@ -591,9 +710,18 @@ Feishu 上零成本拿到正确行为，Telegram 上由 imbot 透明降级。§5
 | 2 | Feishu「编辑卡片」的产品语义未知 | **增加"替代"抽象能力**，而不是把编辑写死 | Seam 4 由 `EditableMessages` 改为 `MessageRestater`；编辑 / 重发由平台内部决定，真机结论不影响接口 |
 | 3 | 是否借本次处理 `menu` 包 | **作为新阶段抽象** | 新增 Phase 5，排在四条 seam 之后 |
 
-**追加约束（讨论中提出）**：Telegram 的键盘交互能力是本次最大的复杂点。已展开为
-§5——结论是它的 64 字节约束已泄漏成全平台的应用架构，Seam 1 因此必须把按钮身份从
-`callback_data` 换成 `Payload`，并把 Phase 2 拆成 2a/2b。
+**追加约束 1（讨论中提出）**：Telegram 的键盘交互能力是本次最大的复杂点。已展开为
+§5.1–5.4——结论是它的 64 字节约束已泄漏成全平台的应用架构，Seam 1 因此必须把按钮
+身份从 `callback_data` 换成 `Payload`，并把 Phase 2 拆成 2a/2b。
+
+**追加约束 2（评审提出「未来 TG keyboard 需求怎么办，也抽象吗？」）**：不是所有平台
+差异都该抽象。已展开为 §5.5–5.7，确立三层模型：Tier 1 通用动作（抽象）、Tier 2
+能力门控（抽象语义不抽象实现，`Fallback` 必须显式）、Tier 3 平台专有（**不抽象**，
+走类型化逃生舱 `Action.Ext` + 平台包构造器）。
+
+要点：本次要消灭的**不是"Telegram 特化"，而是"看不见的 Telegram 特化"**。因此
+Phase 2a 必须同 PR 提供逃生舱——否则删掉 `Metadata["replyMarkup"]` 是能力回退。
+§9 验收标准第 1 条据此改写，不再要求"平台字面量归零"。
 
 ---
 
