@@ -363,6 +363,12 @@
           "max_output": 128000
         },
         {
+          "id": "claude-opus-5",
+          "context": 1000000,
+          "max_output": 128000,
+          "created": "2026-05-31"
+        },
+        {
           "id": "claude-fable-5",
           "context": 1000000,
           "max_output": 128000
