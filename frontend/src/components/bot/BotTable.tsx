@@ -1,8 +1,8 @@
-import {ContentCopy as CopyIcon, Delete as DeleteIcon, Edit as EditIcon, RestartAlt as RestartIcon, Route as ProxyIcon} from '@/components/icons';
+import {ContentCopy as CopyIcon, Delete as DeleteIcon, Edit as EditIcon, RestartAlt as RestartIcon} from '@/components/icons';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import PairingCodePanel from './PairingCodePanel';
 import BotChatsButton from './BotChatsButton';
-import {isRemoteAgentMounted, isNotifyMounted} from '@/types/bot';
+import {isRemoteAgentMounted, isNotifyMounted, isPairingRequired} from '@/types/bot';
 import type {BotSettings} from '@/types/bot';
 import {notify} from '@/utils/notify';
 import {
@@ -53,27 +53,11 @@ interface BotTableProps {
 const statusChipSx = {height: 22, minWidth: 40} as const;
 // Fixed table layout with explicit per-column widths (mirrors ApiKeyTable) so
 // column proportions stay stable regardless of content — auto layout let the
-// Pairing column balloon and starved the others. Widths sum just under
-// tableMinWidth so the table fills the card at any width above it.
+// Pairing column balloon and starved the others. Widths sum to tableMinWidth
+// so the table fills the card at any width above it.
 const headCellSx = {fontWeight: 600, py: 1.25, whiteSpace: 'nowrap', overflow: 'hidden'} as const;
-const tableMinWidth = 1180;
+const tableMinWidth = 600;
 const col = (width: number, extra = {}) => ({...headCellSx, width, ...extra});
-
-// Token-DM platforms default to TOFU pairing on. Mirrors the same map in
-// PairingCodePanel (and bot.PlatformDefaultsRequirePairing on the backend) —
-// kept local because PairingCodePanel doesn't export its predicate.
-const PLATFORM_DEFAULT_REQUIRE_PAIRING: Record<string, boolean> = {
-    telegram: true,
-    discord: true,
-    slack: true,
-};
-
-const isPairingRequired = (bot: BotSettings): boolean => {
-    if (typeof bot.require_pairing === 'boolean') {
-        return bot.require_pairing;
-    }
-    return Boolean(PLATFORM_DEFAULT_REQUIRE_PAIRING[bot.platform || '']);
-};
 
 const BotTable: React.FC<BotTableProps> = ({
     bots,
@@ -106,7 +90,7 @@ const BotTable: React.FC<BotTableProps> = ({
         if (!uuid) return;
         try {
             await navigator.clipboard.writeText(uuid);
-            notify.success(t('bots.table.uuidCopied', {defaultValue: 'Bot ID copied'}));
+            notify.success(t('bots.table.uuidCopied', {defaultValue: 'Bot UUID copied'}));
         } catch {
             notify.error(t('bots.table.uuidCopyFailed', {defaultValue: 'Copy failed — check clipboard permissions'}));
         }
@@ -121,14 +105,13 @@ const BotTable: React.FC<BotTableProps> = ({
                 <Table sx={{tableLayout: 'fixed', minWidth: tableMinWidth}}>
                     <TableHead>
                         <TableRow sx={{bgcolor: 'action.hover'}}>
-                            <TableCell sx={col(90)}>{t('bots.table.status', {defaultValue: 'Status'})}</TableCell>
-                            <TableCell sx={col(140)}>{t('bots.table.name', {defaultValue: 'Name'})}</TableCell>
-                            <TableCell sx={col(170)}>{t('bots.table.botId', {defaultValue: 'Bot ID'})}</TableCell>
-                            <TableCell sx={col(100)}>{t('bots.table.platform', {defaultValue: 'Platform'})}</TableCell>
-                            <TableCell sx={col(210)}>{t('bots.table.purpose', {defaultValue: 'Purpose'})}</TableCell>
-                            <TableCell sx={col(240, {textAlign: 'center'})}>{t('bots.table.pairing', {defaultValue: 'Pairing'})}</TableCell>
-                            <TableCell sx={col(70, {textAlign: 'center'})}>{t('bots.table.proxy', {defaultValue: 'Proxy'})}</TableCell>
-                            <TableCell sx={col(160, {textAlign: 'right'})}>{t('bots.table.actions', {defaultValue: 'Actions'})}</TableCell>
+                            <TableCell sx={col(80)}>{t('bots.table.status', {defaultValue: 'Status'})}</TableCell>
+                            <TableCell sx={col(100)}>{t('bots.table.name', {defaultValue: 'Name'})}</TableCell>
+                            <TableCell sx={col(100)}>{t('bots.table.botId', {defaultValue: 'Bot UUID'})}</TableCell>
+                            <TableCell sx={col(80)}>{t('bots.table.platform', {defaultValue: 'Platform'})}</TableCell>
+                            <TableCell sx={col(120)}>{t('bots.table.purpose', {defaultValue: 'Purpose'})}</TableCell>
+                            <TableCell sx={col(200, {textAlign: 'left'})}>{t('bots.table.pairing', {defaultValue: 'Pairing'})}</TableCell>
+                            <TableCell sx={col(100, {textAlign: 'left'})}>{t('bots.table.actions', {defaultValue: 'Actions'})}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -180,12 +163,14 @@ const BotTable: React.FC<BotTableProps> = ({
                                             </Typography>
                                         </Tooltip>
                                     </TableCell>
-                                    {/* Bot ID — the UUID notify/interact needs, copyable. Icon + text
-                                        on one row (mirrors ApiKeyTable's API Key cell); UUID truncates
-                                        with the full value in the tooltip. */}
+                                    {/* Bot UUID — the identifier notify/interact takes in the path
+                                        (:bot), copyable. Icon + text on one row (mirrors ApiKeyTable's
+                                        API Key cell); UUID truncates with the full value in the tooltip.
+                                        Labeled "Bot UUID" (not "Bot ID") to split the name collision with
+                                        the Chat ID surfaced by BotChatsButton — ux-principles #3. */}
                                     <TableCell>
                                         <Stack direction="row" spacing={0.5} sx={{alignItems: 'center'}}>
-                                            <Tooltip title={t('bots.table.copyUuid', {defaultValue: 'Copy Bot ID'})}>
+                                            <Tooltip title={t('bots.table.copyUuid', {defaultValue: 'Copy Bot UUID'})}>
                                                 <span>
                                                     <IconButton
                                                         size="small"
@@ -245,19 +230,9 @@ const BotTable: React.FC<BotTableProps> = ({
                                     {/* Pairing — the full PairingCodePanel inline (reveal/copy/rotate
                                         + countdown), rendered directly so there's no popover layer.
                                         Returns null when TOFU isn't required for the platform. */}
-                                    <TableCell align="center">
+                                    <TableCell align="left">
                                         {pairingNeeded ? (
                                             <PairingCodePanel bot={bot}/>
-                                        ) : (
-                                            <Typography variant="body2" sx={{color: 'text.disabled'}}>—</Typography>
-                                        )}
-                                    </TableCell>
-                                    {/* Proxy — single icon with tooltip, like ApiKeyTable. */}
-                                    <TableCell align="center">
-                                        {bot.proxy_url ? (
-                                            <Tooltip title={bot.proxy_url}>
-                                                <ProxyIcon fontSize="small" sx={{color: 'text.secondary'}}/>
-                                            </Tooltip>
                                         ) : (
                                             <Typography variant="body2" sx={{color: 'text.disabled'}}>—</Typography>
                                         )}
@@ -266,11 +241,18 @@ const BotTable: React.FC<BotTableProps> = ({
                                     <TableCell align="right">
                                         <Stack direction="row" spacing={0.5} sx={{alignItems: 'center', justifyContent: 'flex-end'}}>
                                             {/* Reachable chats — surfaces the chat_id the notify/interact API
-                                                needs in its body, copyable. Kept in Actions to avoid adding a
-                                                table column (the fixed 8-col layout is width-tuned). The button
-                                                owns its own tooltip so it can dismiss it when the popover opens
-                                                (a wrapping Tooltip here leaves its hover text lingering). */}
-                                            <BotChatsButton botUUID={bot.uuid!} disabled={toggling || restarting}/>
+                                                needs in its body, copyable. Kept in Actions (rather than its
+                                                own column) because it is reference data the operator copies
+                                                on demand, not a per-row status; the fixed column budget is
+                                                tuned for the always-visible columns. The button owns its own
+                                                tooltip so it can dismiss it when the popover opens (a
+                                                wrapping Tooltip here leaves its hover text lingering). */}
+                                            <BotChatsButton
+                                                botUUID={bot.uuid!}
+                                                platform={bot.platform}
+                                                pairingRequired={pairingNeeded}
+                                                disabled={toggling || restarting}
+                                            />
                                             <Tooltip title={isActive
                                                 ? t('remoteControl.card.restartBot', {defaultValue: 'Restart Bot'})
                                                 : t('remoteControl.card.enableToRestart', {defaultValue: 'Enable bot to restart'})}>

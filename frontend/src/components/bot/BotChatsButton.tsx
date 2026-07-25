@@ -24,10 +24,15 @@ import {useTranslation} from 'react-i18next';
 // /bots/:bot/chats endpoint.
 interface BotChatsButtonProps {
     botUUID: string;
+    // platform + pairingRequired tailor the empty-chats hint: a bot that
+    // enforces TOFU pairing registers a chat only after the user pairs first,
+    // so the hint points there instead of just "send a message".
+    platform?: string;
+    pairingRequired?: boolean;
     disabled?: boolean;
 }
 
-const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, disabled}) => {
+const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairingRequired, disabled}) => {
     const {t} = useTranslation();
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const [tooltipOpen, setTooltipOpen] = useState(false);
@@ -88,9 +93,25 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, disabled}) => {
                         <Typography variant="body2" sx={{color: 'error.main', py: 1}}>{error}</Typography>
                     )}
                     {!loading && !error && chats.length === 0 && (
-                        <Typography variant="body2" sx={{color: 'text.disabled', py: 1}}>
-                            {t('bots.table.noChats', {defaultValue: 'No chats yet — message the bot once to register one.'})}
-                        </Typography>
+                        // Empty state names the mechanism that registers a chat
+                        // (not just "no chats") and points to the next action.
+                        // For TOFU bots the gating step is pairing — a chat only
+                        // appears after the user pairs — so we say so explicitly
+                        // rather than sending them to message an unpaired bot.
+                        // ux-principles #11: hand over the next action, not a notice.
+                        <Box sx={{py: 1}}>
+                            <Typography variant="body2" sx={{color: 'text.disabled'}}>
+                                {pairingRequired
+                                    ? t('bots.table.noChatsPairFirst', {
+                                        defaultValue: 'No chats yet. Pair this bot (see Pairing), then send it a message on {{platform}} — its Chat ID appears here.',
+                                        platform: platform || t('bots.table.itsPlatform', {defaultValue: 'its platform'}),
+                                    })
+                                    : t('bots.table.noChats', {
+                                        defaultValue: 'No chats yet. Send any message to this bot on {{platform}} and its Chat ID will appear here.',
+                                        platform: platform || t('bots.table.itsPlatform', {defaultValue: 'its platform'}),
+                                    })}
+                            </Typography>
+                        </Box>
                     )}
                     {!loading && !error && chats.length > 0 && (
                         <List dense disablePadding sx={{mt: 0.5}}>
