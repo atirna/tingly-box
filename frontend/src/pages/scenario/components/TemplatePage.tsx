@@ -9,6 +9,7 @@ import RuleCard from '@/components/RuleCard.tsx';
 import ImportModal from '@/components/ImportModal';
 import ProviderFormDialog from '@/components/ProviderFormDialog';
 import ConnectProviderDialog from '@/components/ConnectProviderDialog';
+import PasteDetectDialog from '@/components/paste-detect/PasteDetectDialog';
 import UnifiedCard from '@/components/UnifiedCard';
 import { EntryGuideDialog } from '@/components/tier/EntryGuideDialog';
 import type {TemplatePageProps} from './TemplatePage.types';
@@ -193,6 +194,9 @@ const TemplatePage: React.FC<TemplatePageProps> = (props) => {
         handleConnectAIClick,
         handleConnectSelect,
         handleCloseConnect,
+        handlePastePick,
+        pasteDialogOpen,
+        handleClosePasteDialog,
         fromConnectPicker,
     } = useProviderDialog(showNotification, {
         onProviderAdded: () => {
@@ -471,6 +475,11 @@ const TemplatePage: React.FC<TemplatePageProps> = (props) => {
                 open={connectDialogOpen}
                 onClose={handleCloseConnect}
                 onSelect={handleConnectSelect}
+            />
+            <PasteDetectDialog
+                open={pasteDialogOpen}
+                onClose={handleClosePasteDialog}
+                onPick={handlePastePick}
             />
 
             <ProviderFormDialog
