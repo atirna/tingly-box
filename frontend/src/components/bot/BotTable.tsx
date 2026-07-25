@@ -1,4 +1,4 @@
-import {ContentCopy as CopyIcon, Delete as DeleteIcon, Edit as EditIcon, Key as PairingIcon, RestartAlt as RestartIcon, Route as ProxyIcon} from '@/components/icons';
+import {ContentCopy as CopyIcon, Delete as DeleteIcon, Edit as EditIcon, RestartAlt as RestartIcon, Route as ProxyIcon} from '@/components/icons';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import PairingCodePanel from './PairingCodePanel';
 import {isRemoteAgentMounted, isNotifyMounted} from '@/types/bot';
@@ -8,7 +8,6 @@ import {
     Box,
     Chip,
     IconButton,
-    Popover,
     Stack,
     Switch,
     Table,
@@ -51,7 +50,13 @@ interface BotTableProps {
 // outlined), NOT by muting the whole row — ApiKeyTable doesn't hatch off rows,
 // and doing so here made the On and Off switches render inconsistently.
 const statusChipSx = {height: 22, minWidth: 40} as const;
-const headCellSx = {fontWeight: 600, py: 1.25, whiteSpace: 'nowrap'} as const;
+// Fixed table layout with explicit per-column widths (mirrors ApiKeyTable) so
+// column proportions stay stable regardless of content — auto layout let the
+// Pairing column balloon and starved the others. Widths sum just under
+// tableMinWidth so the table fills the card at any width above it.
+const headCellSx = {fontWeight: 600, py: 1.25, whiteSpace: 'nowrap', overflow: 'hidden'} as const;
+const tableMinWidth = 1180;
+const col = (width: number, extra = {}) => ({...headCellSx, width, ...extra});
 
 // Token-DM platforms default to TOFU pairing on. Mirrors the same map in
 // PairingCodePanel (and bot.PlatformDefaultsRequirePairing on the backend) —
@@ -85,11 +90,6 @@ const BotTable: React.FC<BotTableProps> = ({
         open: false,
         bot: null,
     });
-    // Pairing popover: one open at a time, anchored to the clicked row's icon.
-    const [pairingAnchor, setPairingAnchor] = useState<{el: HTMLElement | null; bot: BotSettings | null}>({
-        el: null,
-        bot: null,
-    });
 
     const handleDeleteClick = useCallback((bot: BotSettings) => {
         setDeleteModal({open: true, bot});
@@ -117,17 +117,17 @@ const BotTable: React.FC<BotTableProps> = ({
                 // No Paper, no border — the page's UnifiedCard is the shell.
                 sx={{overflowX: 'auto'}}
             >
-                <Table sx={{tableLayout: 'auto'}}>
+                <Table sx={{tableLayout: 'fixed', minWidth: tableMinWidth}}>
                     <TableHead>
                         <TableRow sx={{bgcolor: 'action.hover'}}>
-                            <TableCell sx={headCellSx}>{t('bots.table.status', {defaultValue: 'Status'})}</TableCell>
-                            <TableCell sx={headCellSx}>{t('bots.table.name', {defaultValue: 'Name'})}</TableCell>
-                            <TableCell sx={headCellSx}>{t('bots.table.botId', {defaultValue: 'Bot ID'})}</TableCell>
-                            <TableCell sx={headCellSx}>{t('bots.table.platform', {defaultValue: 'Platform'})}</TableCell>
-                            <TableCell sx={headCellSx}>{t('bots.table.purpose', {defaultValue: 'Purpose'})}</TableCell>
-                            <TableCell align="center" sx={{...headCellSx, width: 64}}>{t('bots.table.pairing', {defaultValue: 'Pairing'})}</TableCell>
-                            <TableCell align="center" sx={{...headCellSx, width: 64}}>{t('bots.table.proxy', {defaultValue: 'Proxy'})}</TableCell>
-                            <TableCell align="right" sx={headCellSx}>{t('bots.table.actions', {defaultValue: 'Actions'})}</TableCell>
+                            <TableCell sx={col(90)}>{t('bots.table.status', {defaultValue: 'Status'})}</TableCell>
+                            <TableCell sx={col(140)}>{t('bots.table.name', {defaultValue: 'Name'})}</TableCell>
+                            <TableCell sx={col(170)}>{t('bots.table.botId', {defaultValue: 'Bot ID'})}</TableCell>
+                            <TableCell sx={col(100)}>{t('bots.table.platform', {defaultValue: 'Platform'})}</TableCell>
+                            <TableCell sx={col(210)}>{t('bots.table.purpose', {defaultValue: 'Purpose'})}</TableCell>
+                            <TableCell sx={col(240, {textAlign: 'center'})}>{t('bots.table.pairing', {defaultValue: 'Pairing'})}</TableCell>
+                            <TableCell sx={col(70, {textAlign: 'center'})}>{t('bots.table.proxy', {defaultValue: 'Proxy'})}</TableCell>
+                            <TableCell sx={col(160, {textAlign: 'right'})}>{t('bots.table.actions', {defaultValue: 'Actions'})}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -179,34 +179,38 @@ const BotTable: React.FC<BotTableProps> = ({
                                             </Typography>
                                         </Tooltip>
                                     </TableCell>
-                                    {/* Bot ID — the UUID notify/interact needs, copyable. Wraps so the
-                                        full value is always visible, never truncated. */}
+                                    {/* Bot ID — the UUID notify/interact needs, copyable. Icon + text
+                                        on one row (mirrors ApiKeyTable's API Key cell); UUID truncates
+                                        with the full value in the tooltip. */}
                                     <TableCell>
-                                        <Stack direction="column" spacing={0.5} sx={{alignItems: 'flex-start'}}>
-                                            <Typography
-                                                variant="caption"
-                                                component="span"
-                                                sx={{
-                                                    fontFamily: 'monospace',
-                                                    color: 'text.secondary',
-                                                    wordBreak: 'break-all',
-                                                    maxWidth: 220,
-                                                    lineHeight: 1.3,
-                                                }}
-                                            >
-                                                {bot.uuid}
-                                            </Typography>
+                                        <Stack direction="row" spacing={0.5} sx={{alignItems: 'center'}}>
                                             <Tooltip title={t('bots.table.copyUuid', {defaultValue: 'Copy Bot ID'})}>
                                                 <span>
                                                     <IconButton
                                                         size="small"
                                                         onClick={() => handleCopyUuid(bot.uuid!)}
                                                         disabled={!bot.uuid}
-                                                        sx={{p: 0.25}}
+                                                        sx={{p: 0.25, flexShrink: 0}}
                                                     >
                                                         <CopyIcon fontSize="inherit"/>
                                                     </IconButton>
                                                 </span>
+                                            </Tooltip>
+                                            <Tooltip title={bot.uuid}>
+                                                <Typography
+                                                    variant="caption"
+                                                    component="span"
+                                                    sx={{
+                                                        fontFamily: 'monospace',
+                                                        color: 'text.secondary',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    {bot.uuid}
+                                                </Typography>
                                             </Tooltip>
                                         </Stack>
                                     </TableCell>
@@ -237,17 +241,12 @@ const BotTable: React.FC<BotTableProps> = ({
                                             </Tooltip>
                                         </Box>
                                     </TableCell>
-                                    {/* Pairing — single icon entry; full panel lives in a popover. */}
+                                    {/* Pairing — the full PairingCodePanel inline (reveal/copy/rotate
+                                        + countdown), rendered directly so there's no popover layer.
+                                        Returns null when TOFU isn't required for the platform. */}
                                     <TableCell align="center">
                                         {pairingNeeded ? (
-                                            <Tooltip title={t('bots.table.pairingHint', {defaultValue: 'Pairing code'})}>
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={(e) => setPairingAnchor({el: e.currentTarget, bot})}
-                                                >
-                                                    <PairingIcon fontSize="small" color="action"/>
-                                                </IconButton>
-                                            </Tooltip>
+                                            <PairingCodePanel bot={bot}/>
                                         ) : (
                                             <Typography variant="body2" sx={{color: 'text.disabled'}}>—</Typography>
                                         )}
@@ -307,19 +306,6 @@ const BotTable: React.FC<BotTableProps> = ({
                     </TableBody>
                 </Table>
             </TableContainer>
-
-            {/* Pairing popover — the full PairingCodePanel (reveal/copy/rotate +
-                countdown) in a positioned surface, not crammed into a cell. */}
-            <Popover
-                open={Boolean(pairingAnchor.el)}
-                anchorEl={pairingAnchor.el}
-                onClose={() => setPairingAnchor({el: null, bot: null})}
-                anchorOrigin={{vertical: 'bottom', horizontal: 'left'}}
-                transformOrigin={{vertical: 'top', horizontal: 'left'}}
-                PaperProps={{sx: {p: 2, maxWidth: 360}}}
-            >
-                {pairingAnchor.bot && <PairingCodePanel bot={pairingAnchor.bot}/>}
-            </Popover>
 
             <ConfirmDialog
                 open={deleteModal.open}
