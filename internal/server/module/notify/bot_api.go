@@ -51,15 +51,36 @@ const MaxInteractTimeout = 30 * time.Minute
 // BotAPIHandler is the HTTP front end for the general bot interaction API.
 // It resolves a bot's channel from the registry and drives it directly.
 type BotAPIHandler struct {
-	channels *channel.Registry
-	results  *interaction.Registry[interaction.Result]
-	audit    *audit.Logger
+	channels   *channel.Registry
+	results    *interaction.Registry[interaction.Result]
+	audit      *audit.Logger
+	chatLister ChatLister
 }
+
+// ChatSummary is the projection of a bot's chat record exposed by
+// GET /bots/:bot/chats. ChatID is the channel-native conversation identifier
+// the caller must pass as chat_id to /notify and /interact — surfacing it
+// here is what makes those endpoints usable (see ux-principles #5/#11).
+type ChatSummary struct {
+	ChatID      string `json:"chat_id"`
+	Platform    string `json:"platform,omitempty"`
+	IsPaired    bool   `json:"is_paired,omitempty"`
+	IsWhitelisted bool `json:"is_whitelisted,omitempty"`
+	ProjectPath string `json:"project_path,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+}
+
+// ChatLister returns the chats a bot can reach, scoped to that bot's
+// platform (and to its chat-id lock when one is set). Defined here so the
+// notify package does not import remote_control/bot — the server wires the
+// concrete implementation. Returns (nil, nil) when no lister is configured.
+type ChatLister func(botUUID string) ([]ChatSummary, error)
 
 // NewBotAPIHandler builds the handler. channels and results are the same
 // registries the Claude Code scenario path uses; audit may be nil.
-func NewBotAPIHandler(channels *channel.Registry, results *interaction.Registry[interaction.Result], auditLog *audit.Logger) *BotAPIHandler {
-	return &BotAPIHandler{channels: channels, results: results, audit: auditLog}
+// chatLister may be nil — the /chats endpoint then reports unavailable.
+func NewBotAPIHandler(channels *channel.Registry, results *interaction.Registry[interaction.Result], auditLog *audit.Logger, chatLister ChatLister) *BotAPIHandler {
+	return &BotAPIHandler{channels: channels, results: results, audit: auditLog, chatLister: chatLister}
 }
 
 // notifyRequest is the body of POST /bots/:bot/notify — a one-way push.
@@ -249,6 +270,40 @@ func (h *BotAPIHandler) Wait(c *gin.Context) {
 	case <-c.Request.Context().Done():
 		c.JSON(http.StatusGatewayTimeout, gin.H{"status": "pending"})
 	}
+}
+
+// ListChats handles GET /api/v1/bots/:bot/chats.
+//
+// Returns the chats a bot can reach, so a caller of /notify and /interact
+// can discover the channel-native chat_id those endpoints require. Without
+// this, the chat_id the request body demands is undiscoverable (it is not in
+// /help, not on the bot table, and not otherwise exposed).
+//
+//	200  chat list (possibly empty)
+//	404  bot not running
+//	503  chat listing unavailable (no store wired)
+func (h *BotAPIHandler) ListChats(c *gin.Context) {
+	botUUID := c.Param("bot")
+
+	if _, ok := h.resolveChannel(botUUID); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "bot not running"})
+		return
+	}
+	if h.chatLister == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "chat listing unavailable"})
+		return
+	}
+
+	chats, err := h.chatLister(botUUID)
+	if err != nil {
+		logrus.WithError(err).WithField("bot", botUUID).Warn("bot chats list failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "chat listing failed"})
+		return
+	}
+	if chats == nil {
+		chats = []ChatSummary{}
+	}
+	c.JSON(http.StatusOK, gin.H{"chats": chats})
 }
 
 // resolveChannel looks up the bot's channel. Centralized so both Notify and

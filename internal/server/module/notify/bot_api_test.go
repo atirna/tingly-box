@@ -44,7 +44,7 @@ func newBotTestRouter(t *testing.T, ch channel.Channel, botUUID string, resultsT
 		registry.Register(ch)
 	}
 	results := interaction.New[interaction.Result](resultsTTL)
-	handler := NewBotAPIHandler(registry, results, nil)
+	handler := NewBotAPIHandler(registry, results, nil, nil)
 
 	// Mount exactly as RegisterBotRoutes does, but on a plain group so the
 	// test doesn't need the swagger RouteManager. Same path shape.
@@ -52,6 +52,7 @@ func newBotTestRouter(t *testing.T, ch channel.Channel, botUUID string, resultsT
 	g.POST("/bots/:bot/notify", handler.Notify)
 	g.POST("/bots/:bot/interact", handler.Interact)
 	g.GET("/bots/:bot/interact/:request_id", handler.Wait)
+	g.GET("/bots/:bot/chats", handler.ListChats)
 	return r, handler
 }
 
@@ -238,6 +239,85 @@ func TestBotAPI_Interact_UnknownBot_404(t *testing.T) {
 	w := doJSON(t, r, http.MethodPost, "/api/v1/bots/bot-2/interact", gin.H{
 		"chat_id": "dm:ops", "kind": "ask", "title": "x",
 	})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown bot, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestListChats_ReturnsSummaries asserts the /chats endpoint surfaces the
+// chat_id values a caller needs for /notify and /interact, scoped through the
+// injected ChatLister (the server wires the real platform/lock scoping).
+func TestListChats_ReturnsSummaries(t *testing.T) {
+	ch := newFakeChannel("bot-1")
+	lister := func(botUUID string) ([]ChatSummary, error) {
+		if botUUID != "bot-1" {
+			return nil, nil
+		}
+		return []ChatSummary{
+			{ChatID: "telegram:123", Platform: "telegram", IsPaired: true},
+			{ChatID: "telegram:456", Platform: "telegram"},
+		}, nil
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	registry := channel.NewRegistry()
+	registry.Register(ch)
+	handler := NewBotAPIHandler(registry, nil, nil, lister)
+	g := r.Group("/api/v1")
+	g.GET("/bots/:bot/chats", handler.ListChats)
+
+	w := doJSON(t, r, http.MethodGet, "/api/v1/bots/bot-1/chats", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Chats []ChatSummary `json:"chats"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Chats) != 2 || resp.Chats[0].ChatID != "telegram:123" {
+		t.Fatalf("unexpected chats: %+v", resp.Chats)
+	}
+}
+
+// TestListChats_EmptyArray asserts an empty (never null) chat list, so the
+// frontend always receives a stable array shape.
+func TestListChats_EmptyArray(t *testing.T) {
+	ch := newFakeChannel("bot-2")
+	lister := func(string) ([]ChatSummary, error) { return nil, nil }
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	registry := channel.NewRegistry()
+	registry.Register(ch)
+	handler := NewBotAPIHandler(registry, nil, nil, lister)
+	g := r.Group("/api/v1")
+	g.GET("/bots/:bot/chats", handler.ListChats)
+
+	w := doJSON(t, r, http.MethodGet, "/api/v1/bots/bot-2/chats", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"chats":[]`) {
+		t.Fatalf("expected empty chats array, got: %s", w.Body.String())
+	}
+}
+
+// TestListChats_NotRunning asserts a bot that isn't registered returns 404,
+// matching the Notify/Interact contract.
+func TestListChats_NotRunning(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	handler := NewBotAPIHandler(channel.NewRegistry(), nil, nil, func(string) ([]ChatSummary, error) {
+		t.Fatalf("lister should not be called for an unknown bot")
+		return nil, nil
+	})
+	g := r.Group("/api/v1")
+	g.GET("/bots/:bot/chats", handler.ListChats)
+
+	w := doJSON(t, r, http.MethodGet, "/api/v1/bots/unknown/chats", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for unknown bot, got %d: %s", w.Code, w.Body.String())
 	}

@@ -29,6 +29,21 @@ type BotInteractOption struct {
 	Style string `json:"style,omitempty" example:"primary"`
 }
 
+// BotChatSummary is the swagger model for one entry in GET /bots/:bot/chats.
+type BotChatSummary struct {
+	ChatID        string `json:"chat_id" example:"telegram:123456789"`
+	Platform      string `json:"platform,omitempty" example:"telegram"`
+	IsPaired      bool   `json:"is_paired,omitempty" example:"true"`
+	IsWhitelisted bool   `json:"is_whitelisted,omitempty" example:"false"`
+	ProjectPath   string `json:"project_path,omitempty" example:"/home/user/proj"`
+	UpdatedAt     string `json:"updated_at,omitempty" example:"2026-07-25T12:00:00Z"`
+}
+
+// BotChatsResponse is the swagger model for the GET /bots/:bot/chats body.
+type BotChatsResponse struct {
+	Chats []BotChatSummary `json:"chats"`
+}
+
 // RegisterBotRoutes registers the general bot interaction API on a control-
 // plane route group (the existing apiV1 group, which already applies
 // getUserAuthMiddleware). Routes:
@@ -72,6 +87,17 @@ func RegisterBotRoutes(router *swagger.RouteGroup, handler *BotAPIHandler) {
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 404, Message: "Request expired"},
 			swagger.ErrorResponseConfig{Code: 503, Message: "Interaction registry unavailable"},
+		),
+	)
+
+	router.GET("/bots/:bot/chats", handler.ListChats,
+		swagger.WithTags("bot-interaction"),
+		swagger.WithDescription("List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact."),
+		swagger.WithPathParam("bot", "string", "Target bot UUID"),
+		swagger.WithResponseModel(BotChatsResponse{}),
+		swagger.WithErrorResponses(
+			swagger.ErrorResponseConfig{Code: 404, Message: "Bot not running"},
+			swagger.ErrorResponseConfig{Code: 503, Message: "Chat listing unavailable"},
 		),
 	)
 }

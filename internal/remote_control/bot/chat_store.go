@@ -3,6 +3,7 @@ package bot
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -156,6 +157,12 @@ type ChatStoreInterface interface {
 
 	// ListChatsByOwner lists all chats owned by a user
 	ListChatsByOwner(ownerID, platform string) ([]*Chat, error)
+
+	// ListChats returns every chat record this bot has seen, newest first by
+	// UpdatedAt. Used by the GET /bots/:bot/chats API so callers of the
+	// notify/interact endpoints can discover the channel-native chat_id they
+	// must pass in the request body.
+	ListChats() ([]*Chat, error)
 
 	// ListChatProjectPaths returns the MRU project-path history for a chat.
 	ListChatProjectPaths(chatID string) ([]string, error)
@@ -456,6 +463,27 @@ func (s *ChatStoreJSON) ListChatsByOwner(ownerID, platform string) ([]*Chat, err
 		}
 	}
 
+	return chats, nil
+}
+
+// ListChats returns every chat record this bot has seen, ordered newest-first
+// by UpdatedAt (then ChatID as a stable tiebreaker) so the most recently
+// active chats surface at the top. See ChatStoreInterface.ListChats.
+func (s *ChatStoreJSON) ListChats() ([]*Chat, error) {
+	if err := s.ensureStore(); err != nil {
+		return nil, err
+	}
+	items := s.store.List()
+	chats := make([]*Chat, 0, len(items))
+	for _, chat := range items {
+		chats = append(chats, chat)
+	}
+	sort.Slice(chats, func(i, j int) bool {
+		if !chats[i].UpdatedAt.Equal(chats[j].UpdatedAt) {
+			return chats[i].UpdatedAt.After(chats[j].UpdatedAt)
+		}
+		return chats[i].ChatID < chats[j].ChatID
+	})
 	return chats, nil
 }
 
