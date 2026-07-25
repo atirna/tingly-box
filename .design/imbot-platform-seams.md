@@ -120,36 +120,71 @@ per-chat 的最近入站上下文，`SendMessage` 自动补齐。
 > 实施前须确认：`weixin.go` 的注释称"新 SDK 内部管理 context token"，若属实，
 > 手工透传可能已部分冗余，收益比预估更大。
 
-### Seam 3 — 能力与默认值统一到 `PlatformDescriptor` ⏳ 计划中
+### Seam 3 — 能力与默认值统一到平台表 ✅ 已落地
 
-扩展 `imbot/core/platforms.go` 已有的单一事实表：
+`core.PlatformDescriptor.Behavior`（`imbot/core/platforms.go`）承载**产品级默认值**：
 
 ```go
 type PlatformBehavior struct {
-    RequiresPairingByDefault bool   // 仅凭 token 就能获得完整 DM 权限的平台
-    SupportsVerbose          bool
-    CommandMenuSetup         func(bot Bot, reg *command.CommandRegistry) error
+    RequiresPairingByDefault bool  // 仅凭 token 就能获得完整 DM 权限的平台
+    SuppressVerbose          bool  // 无法承载中间态进度消息的平台
 }
 ```
 
-替换 `chat_store.go` 的配对默认 switch、`handler_verbose.go` 被注释掉的能力判定、
-`manager.go` 的菜单 switch，以及 `buildAuthConfig` / `hasValidAuth`（后两者应由
-`imbot/platform.go` 的 `FieldSpec` 规格驱动，而不是各写一套并行 switch）。
+刻意用 `SuppressVerbose` 而非 `SupportsVerbose`——零值即"可以 verbose"，对除例外
+以外的所有平台都成立，未登记的平台不会因为忘了填而被误关。
 
-### Seam 4 — 「消息重述」能力，而不是「编辑消息」能力 ⏳ 计划中
+落地对照：
+
+| 原站点 | 现在 |
+|---|---|
+| `chat_store.go` 配对默认 switch | `imbot.GetPlatformBehavior(p).RequiresPairingByDefault` |
+| `handler_verbose.go` 被注释掉的判定 | 恢复启用，读 `SuppressVerbose`（§7.3） |
+| `manager.go` 菜单 switch | `imbot.SetupCommandMenu(bot, platform, reg)` |
+| `manager.go` `buildAuthConfig` | `imbot.BuildAuthConfig(platform, auth)` |
+| `manager.go` `hasValidAuth` | `imbot.MissingAuthKeys(platform, auth)` |
+| `manager.go` Weixin 专有 options | `imbot.AuthOptions(platform, auth)` |
+
+**两处刻意分开的表**：
+
+1. **菜单安装不进 `core`。** `command` 依赖 `core`，所以 `core` 不能持有
+   `func(Bot, *command.CommandRegistry) error`——会成环。菜单 dispatch 落在
+   `imbot/platform/menu_setup.go`，与 bot-creator registry 并列：数据在描述符表，
+   行为 dispatch 在平台 registry。
+2. **`AuthMapping` 不复用 `FieldSpec`。** 原计划让 `buildAuthConfig` 由
+   `PlatformConfigs.Fields` 驱动，但 `Fields` 描述的是**设置界面表单**，而 Weixin
+   的凭据来自扫码流程、表单字段为空——按 `Fields` 推导会让 Weixin bot 直接失去认证。
+   两者是正交的轴（UX 原则 #4），故 `PlatformAuthConfig.Auth` 是独立的 wire mapping。
+
+`manager.go` 现已无任何平台字面量（仅剩注释）。
+
+### Seam 4 — 「消息重述」能力，而不是「编辑消息」能力 ✅ 已落地
 
 编辑是*手段*不是*意图*。调用方真正想说的是"这条消息连同按钮已经过期了，用新状态
 取代它"；平台自行选择原地编辑、卡片更新、还是发替代消息 + 撤旧键盘。
 
 ```go
 type MessageRestater interface {
-    Restate(ctx context.Context, ref MessageRef, text string, actions []Action) error
+    Restate(ctx context.Context, ref MessageRef, opts RestateOptions) error
+}
+type RestateOptions struct {
+    Text      string      // "" = 保留原正文（只想撤控件时）
+    Actions   *ActionSet  // nil = 移除全部控件
+    ParseMode ParseMode
 }
 func AsRestater(bot Bot) (MessageRestater, bool)   // 接口断言，非具体类型
 ```
 
-这样"Feishu 卡片更新会不会给用户推新通知"这个未知**不再是阻塞项**——它退化为
-feishu 包内部的实现选择，真机结论不会反过来推翻接口。
+三个平台已实现：Telegram（原地编辑 / `editMessageReplyMarkup`）、
+Feishu/Lark（`PATCH /im/v1/messages/:id` 卡片原地更新）、tingly（记录
+`EventRestate`，让"用过的菜单被撤下"这件事能在**非 Telegram 平台上**被断言）。
+
+**"Feishu 卡片更新会不会推新通知"这个悬念已解**：`PatchMessage` 是原地更新，不产生
+新通知——所以 feishu 选择了"编辑"而非"发替代消息"。但要注意接口设计本身没有押注在
+这个结论上：真机若发现相反，改的是 feishu 包内部，接口不动。
+
+调用方统一用 `imbot.RestateOrIgnore(...)`：平台不支持就什么都不做并返回 false，
+撤菜单是 best-effort，绝不能打断按钮按下之后的流程。
 
 `AsTelegramBot` 缩回真正 Telegram 专有的 `ResolveChatID`（`/join` 命令，已用
 `WithPlatforms` 正确声明，是合理特化）。
@@ -200,7 +235,7 @@ Telegram 在**每一列**都是最紧的。它的约束已经泄漏成全平台�
 | **1** | 归属搬迁：Feishu 渲染器进 `platform/feishu`；Weixin QR 客户端去重；`telegram_keyboard.go` → `action_menu.go` | ✅ 已落地 |
 | **2a** | Seam 1 上半：`Actions` 进类型系统、13 个调用点迁移、Tier 3 逃生舱 | ✅ 已落地 |
 | **2b** | Seam 1 下半：按钮身份换 `Payload`、Telegram token 降级、补 64 字节校验、删索引导航与 NUL 编码 | ⏳ **独立 PR** |
-| **3** | Seam 3 + Seam 4：能力表、`MessageRestater` | ⏳ |
+| **3** | Seam 3 + Seam 4：能力表、`MessageRestater` | ✅ 已落地 |
 | **4** | Seam 2 + 清理：回复上下文自动化、`FileResolver`、移除 `replyMarkup` 兼容路径 | ⏳ |
 | **5** | `menu` 包归位：让它建立在新 seam 之上 / 降级 / 删除，三选一 | ⏳ |
 
@@ -236,16 +271,22 @@ Clear / CD / Project、目录浏览、`/resume` 选择器对 Feishu 用户全部
 > 仍待真机验证：本仓无 Feishu 凭据，类型开关的推导是确定的，但"用户实际看到什么"
 > 应由真机确认背书。
 
-### 7.2 非 Telegram 平台键盘撤不掉（Seam 4 待修）
+### 7.2 非 Telegram 平台键盘撤不掉（Seam 4 已修）
 
 `AsTelegramBot` 是**具体类型断言**（`bot.(*telegram.Bot)`），Feishu/tingly 永远走
 不进去。用户在 Feishu 上点完按钮旧键盘一直挂着，可重复点击进入陈旧状态——而代码
 注释明说撤键盘就是为了防这个。
 
-### 7.3 `handler_verbose.go` 的能力判定被注释掉（Seam 3 待修）
+现在 7 处调用点走 `imbot.RestateOrIgnore`，Feishu 通过卡片 patch 拿到该能力。
+
+### 7.3 `handler_verbose.go` 的能力判定被注释掉（Seam 3 已修）
 
 函数体注释掉、文档注释还留着（"Returns false for platforms that don't support
 verbose mode (e.g., Weixin)"）。说的和做的不一致——这是没有能力表可依的直接后果。
+
+现已恢复启用，读 `PlatformBehavior.SuppressVerbose`。**这对 Weixin 是行为变更**：
+中间态进度消息不再发送。这是恢复文档记载的原意，不是新策略。
+`handler_constructor.go` 里那段与函数分家的孤儿注释也一并删除，避免两处说法再漂移。
 
 ### 7.4 Weixin QR 客户端重复实现（1 已修）
 
@@ -253,6 +294,20 @@ verbose mode (e.g., Weixin)"）。说的和做的不一致——这是没有能�
 `feature.WeChatQRClient`（CLI 用，无测试）是同一组 API 的两份实现，且已在超时处理
 上漂移：CLI 版把任何网络超时当 `"wait"` 继续轮询，Web 版只认 `ctx.DeadlineExceeded`
 ——而 `httpClient.Timeout`(35s) 通常先触发。合并时保留了 CLI 的更稳行为。
+
+### 7.5 Lark bot 根本起不来（Seam 3 已修）
+
+`manager.go` 的两个手写 switch **都漏了 `"lark"`**，而 `PlatformConfigs` 里 lark
+是有条目的（AuthType `oauth`，表单收 clientId/clientSecret）。后果是两处独立失败：
+
+1. `hasValidAuth` 走 default 分支 → 要求 `auth["token"]`，而 Lark 表单根本不收
+   token → 一律判定"no valid auth credentials, not starting"。
+2. 即使绕过，`buildAuthConfig` 也走 default → `Type: "token"`，而
+   `feishu.NewBot`（Lark 复用其实现）在 `Auth.Type != "oauth"` 时直接报错。
+
+**同一个根因**：一张有条目的表，旁边并行维护着两个手写 switch。这正是把表变成唯一
+事实来源的价值——`TestAuthMappingCoversEveryConfiguredPlatform` 现在会在下一次
+漏填时直接失败。
 
 ## 8. 归属与命名规则
 
@@ -279,9 +334,10 @@ import cycles with imbot/platform packages"——不成立，它只需要 `inter
    `WithPlatforms` / `Fallback`）、Tier 3 逃生舱调用、或注释与日志文案。
    **基础设施类**分支必须归零：`buildAuthConfig` / `hasValidAuth` / 菜单 switch /
    `AsTelegramBot` / 键盘预渲染 / `context_token` 透传。
+   目前只剩 `context_token` 透传（Seam 2，Phase 4）——其余均已归零。
 2. Feishu/Lark 上 Clear / CD / Project 可见且可点。（2a ✅）
-3. Feishu 上点完按钮旧键盘被撤除。（Seam 4）
-4. `handler_verbose.go` 的能力判定恢复启用。（Seam 3）
+3. Feishu 上点完按钮旧键盘被撤除。（Seam 4 ✅）
+4. `handler_verbose.go` 的能力判定恢复启用。（Seam 3 ✅）
 5. 在 imbot 新增一个假想平台，`remote_control` **零改动**即可跑通
    `manager_channel_test.go` 的 notify 全链路。
 6. 回调载荷的长度约束不再泄漏到调用方：`grep -rn "64" imbot/interaction/` 只在
@@ -297,6 +353,13 @@ import cycles with imbot/platform packages"——不成立，它只需要 `inter
   未知形状报空。
 - `imbot/platform/feishu/card_render_test.go` — 卡片 JSON 合法性、分节字段、
   中立样式 → Feishu 按钮类型的映射。
+- `imbot/platform_auth_test.go` — 每平台的 auth 映射、缺失凭据的具名报告、
+  **Lark 的回归测试**，以及 `TestAuthMappingCoversEveryConfiguredPlatform`
+  ——它会在下一次给表加平台却漏填 wire mapping 时直接失败。
+- `imbot/core/behavior_test.go` — 配对默认值（往宽松方向错等于把 DM 命令权
+  交给任何持有泄漏 token 的人，值得显式钉住）、verbose 抑制、未知平台取零值。
+- `imbot/platform/tingly/restate_test.go` — 撤菜单、换文本+控件、
+  以及不支持平台/空引用时 `RestateOrIgnore` 安静返回 false。
 - `imbot/platform/tingly/tingly_test.go` — 新契约（`Actions`）与兼容期
   （legacy metadata）各一。原 `TestBot_SendWithTelegramKeyboard` 已删除：它断言的
   双形状解码正是本次消灭的耦合。

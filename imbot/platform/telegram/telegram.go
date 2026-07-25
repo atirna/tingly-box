@@ -335,32 +335,32 @@ func (b *Bot) EditMessageWithKeyboard(ctx interface{}, chatID string, messageID 
 
 // RemoveMessageKeyboard removes the inline keyboard from a message
 func (b *Bot) RemoveMessageKeyboard(ctx interface{}, chatID string, messageID string) error {
+	// An empty inline keyboard is how Telegram expresses "no controls".
+	return b.editReplyMarkup(chatID, messageID, &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{},
+	})
+}
+
+// editReplyMarkup swaps a message's inline keyboard without touching its body.
+func (b *Bot) editReplyMarkup(chatID string, messageID string, markup *models.InlineKeyboardMarkup) error {
 	if err := b.EnsureReady(); err != nil {
 		return err
 	}
 
-	// Parse chat ID
 	chatIDInt, err := strconv.ParseInt(chatID, 10, 64)
 	if err != nil {
 		return core.NewInvalidTargetError(core.PlatformTelegram, chatID, "invalid chat ID")
 	}
-
-	// Parse message ID
 	msgIDInt, err := strconv.Atoi(messageID)
 	if err != nil {
 		return core.NewInvalidTargetError(core.PlatformTelegram, messageID, "invalid message ID")
 	}
 
-	// Create edit config with empty inline keyboard to remove existing keyboard
-	params := &tgbot.EditMessageReplyMarkupParams{
-		ChatID:    chatIDInt,
-		MessageID: msgIDInt,
-		ReplyMarkup: &models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{},
-		},
-	}
-
-	_, err = b.api.EditMessageReplyMarkup(b.ctx, params)
+	_, err = b.api.EditMessageReplyMarkup(b.ctx, &tgbot.EditMessageReplyMarkupParams{
+		ChatID:      chatIDInt,
+		MessageID:   msgIDInt,
+		ReplyMarkup: markup,
+	})
 	if err != nil {
 		return core.WrapError(err, core.PlatformTelegram, core.ErrPlatformError)
 	}
