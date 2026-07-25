@@ -1,57 +1,41 @@
 package bot
 
-import (
-	"github.com/tingly-dev/tingly-box/imbot"
-	imbotfeishu "github.com/tingly-dev/tingly-box/imbot/platform/feishu"
-)
+// Outbound interactive controls now travel as a neutral imbot.ActionSet on
+// SendMessageOptions.Actions, and each platform renders them itself.
+//
+// This file used to build three parallel renderings of the same buttons into
+// the metadata bag — a Telegram markup under "replyMarkup", a neutral card
+// under "card", and Feishu card JSON under "card_json" — and hope the right
+// one got picked up. Two of the three were never read on any send path, and
+// the one that was carried a go-telegram type that Feishu could not decode,
+// so Feishu users got messages with no buttons at all.
+//
+// What is left here is the one thing that genuinely is out-of-band metadata:
+// the flag asking the send path to remember this message's ID so the action
+// menu can be removed later.
 
 const trackActionMenuIDKey = "_trackActionMenuID"
 
-func buildReplyMetadata(tgKeyboard interface{}) map[string]interface{} {
+// trackActionMenuMetadata marks an outbound message as the current action-menu
+// message, so its ID is recorded and the menu can be taken down later.
+func trackActionMenuMetadata() map[string]interface{} {
 	return map[string]interface{}{
-		"replyMarkup": tgKeyboard,
+		trackActionMenuIDKey: true,
 	}
 }
 
-func buildTrackedReplyMetadata(tgKeyboard interface{}) map[string]interface{} {
-	metadata := buildReplyMetadata(tgKeyboard)
-	metadata[trackActionMenuIDKey] = true
-	return metadata
-}
-
-// buildActionMenuMetadata builds metadata for action menu with platform-specific card rendering
-func buildActionCardMetadata(tgKeyboard interface{}, card imbot.Card) map[string]interface{} {
-	metadata := buildReplyMetadata(tgKeyboard)
-	metadata["card"] = card
-	return metadata
-}
-
-func buildActionMenuMetadata(hCtx HandlerContext, tgKeyboard interface{}, card imbot.Card) map[string]interface{} {
-	metadata := buildActionCardMetadata(tgKeyboard, card)
-
-	// For Feishu/Lark, add card_json.
-	//
-	// TODO(phase-2a): this whole branch goes away. The caller should not be
-	// rendering a platform's wire format at all — it should hand over a
-	// neutral Card and let the platform render it. Note that today nothing on
-	// the Feishu send path reads metadata["card_json"] (only feishu/menu.go
-	// does, and remote_control never goes through the menu adapter), so this
-	// is already inert; see .sdlc/research/arch-remote-control-platform-seams §3.1.
-	if hCtx.Platform == imbot.PlatformFeishu || hCtx.Platform == imbot.PlatformLark {
-		if cardJSON, err := imbotfeishu.RenderCard(card); err == nil {
-			metadata["card_json"] = cardJSON
-		}
+// withContextToken copies the inbound reply-context token onto outbound
+// metadata when the platform needs it (Weixin/WeCom).
+//
+// TODO(phase-4): this should not be the caller's job either — the bot knows
+// which inbound message it is replying to. Seam 2 moves it into BaseBot.
+func withContextToken(metadata map[string]interface{}, contextToken string) map[string]interface{} {
+	if contextToken == "" {
+		return metadata
 	}
-
-	return metadata
-}
-
-func (h *BotHandler) buildTrackedActionMenuMetadata(hCtx HandlerContext, tgKeyboard interface{}, card imbot.Card) map[string]interface{} {
-	return buildTrackedActionMenuMetadata(hCtx, tgKeyboard, card)
-}
-
-func buildTrackedActionMenuMetadata(hCtx HandlerContext, tgKeyboard interface{}, card imbot.Card) map[string]interface{} {
-	metadata := buildActionMenuMetadata(hCtx, tgKeyboard, card)
-	metadata[trackActionMenuIDKey] = true
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+	metadata["context_token"] = contextToken
 	return metadata
 }

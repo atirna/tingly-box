@@ -88,7 +88,6 @@ func (h *BotHandler) sendTextWithActionKeyboard(hCtx HandlerContext, text string
 		return
 	}
 	kb := feature.BuildActionKeyboard()
-	tgKeyboard := imbot.BuildTelegramActionKeyboard(kb.Build())
 
 	// Extract context_token from incoming message metadata (required by Weixin)
 	var contextToken string
@@ -97,8 +96,6 @@ func (h *BotHandler) sendTextWithActionKeyboard(hCtx HandlerContext, text string
 			contextToken = ct
 		}
 	}
-
-	actionCard := feature.BuildActionCard()
 
 	bot := h.botFromCtx(hCtx)
 	if bot == nil {
@@ -115,17 +112,13 @@ func (h *BotHandler) sendTextWithActionKeyboard(hCtx HandlerContext, text string
 		if replyTo != "" {
 			opts.ReplyTo = replyTo
 		}
-		// Only attach keyboard to the last chunk
+		// Only attach the action menu to the last chunk
 		if i == len(chunks)-1 {
-			opts.Metadata = h.buildTrackedActionMenuMetadata(hCtx, tgKeyboard, actionCard)
+			opts.Actions = kb.BuildActions()
+			opts.Metadata = trackActionMenuMetadata()
 		}
 		// Forward context_token for Weixin
-		if contextToken != "" {
-			if opts.Metadata == nil {
-				opts.Metadata = make(map[string]interface{})
-			}
-			opts.Metadata["context_token"] = contextToken
-		}
+		opts.Metadata = withContextToken(opts.Metadata, contextToken)
 
 		result, err := bot.SendMessage(context.Background(), hCtx.ChatID, opts)
 		if err != nil {
