@@ -2519,6 +2519,26 @@ export const handlers = [
         })
     }),
 
+    // Bot interaction API — GET /bots/:bot/chats and POST /bots/:bot/notify.
+    // Mirrors internal/server/module/notify/bot_api.go. Returns a couple of
+    // sample chats so the chat_id picker + copy is exercisable in mock mode.
+    http.get('/api/v1/bots/:bot/chats', () => {
+        return HttpResponse.json({
+            chats: [
+                { chat_id: 'telegram:123456789', platform: 'telegram', is_paired: true, updated_at: new Date().toISOString() },
+                { chat_id: 'telegram:987654321', platform: 'telegram', is_paired: false, updated_at: new Date().toISOString() },
+            ],
+        })
+    }),
+
+    http.post('/api/v1/bots/:bot/notify', async ({ request }) => {
+        const body = await request.json().catch(() => null) as any
+        if (!body || !body.chat_id || !body.body) {
+            return HttpResponse.json({ error: 'chat_id and body are required' }, { status: 400 })
+        }
+        return HttpResponse.json({ ok: true })
+    }),
+
     http.put('/api/v1/imbot-settings/:uuid', async ({ params, request }) => {
         const body = await request.json() as any
         return HttpResponse.json({ success: true, uuid: params.uuid, ...body })

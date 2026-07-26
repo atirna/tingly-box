@@ -1536,6 +1536,32 @@ export const api = {
         }
     },
 
+    // Send a one-way notification to a running bot's chat
+    // (POST /api/v1/bots/:bot/notify). Placeholder until codegen regenerates
+    // the client SDK — calls the raw path directly. Field names mirror the
+    // backend notifyRequest: chat_id + body required, title/level optional.
+    notifyBot: async (
+        botUUID: string,
+        body: {chat_id: string; title?: string; body: string; level?: string},
+    ): Promise<{ok?: boolean; error?: string}> => {
+        try {
+            const base = await getApiBaseUrl();
+            const headers = await getAuthHeaders();
+            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/notify`, {
+                method: 'POST',
+                headers: {...headers, 'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                return {error: data?.error || `notify failed (${response.status})`};
+            }
+            return await response.json();
+        } catch (error: any) {
+            return {error: error.message};
+        }
+    },
+
     getImBotSetting: async (uuid: string): Promise<any> => {
         try {
             const client = await getClient();
