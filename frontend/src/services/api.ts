@@ -1562,6 +1562,79 @@ export const api = {
         }
     },
 
+    // Start an interactive prompt on a running bot's chat
+    // (POST /api/v1/bots/:bot/interact). Placeholder until codegen regenerates
+    // the client SDK. Returns request_id + wait_url + expires_at, or {error}.
+    // Field names mirror backend interactRequest: chat_id/kind/title required,
+    // options required for confirm/choose, timeout_seconds optional (≤30m).
+    interactBot: async (
+        botUUID: string,
+        body: {
+            chat_id: string;
+            kind: 'confirm' | 'choose' | 'ask';
+            title: string;
+            body?: string;
+            options?: Array<{value: string; label: string; style?: string}>;
+            timeout_seconds?: number;
+        },
+    ): Promise<{request_id?: string; wait_url?: string; expires_at?: string; error?: string}> => {
+        try {
+            const base = await getApiBaseUrl();
+            const headers = await getAuthHeaders();
+            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/interact`, {
+                method: 'POST',
+                headers: {...headers, 'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                return {error: data?.error || `interact failed (${response.status})`};
+            }
+            return await response.json();
+        } catch (error: any) {
+            return {error: error.message};
+        }
+    },
+
+    // Long-poll for the reply to an interactive prompt
+    // (GET /api/v1/bots/:bot/interact/:request_id?timeout=Ns). Placeholder
+    // until codegen. Returns a normalized status:
+    //   'answered' | 'cancelled' (200, carries decision)
+    //   'timeout' | 'error'     (410, carries decision/reason)
+    //   'pending'               (504 — caller retries)
+    //   'expired'               (404)
+    //   'unavailable'           (503)
+    // Transport failures fold into {error} (mirrors runProbe.ts).
+    waitBotInteract: async (
+        botUUID: string,
+        requestID: string,
+        timeoutMs = 45000,
+    ): Promise<{status?: string; decision?: Record<string, unknown>; reason?: string; error?: string}> => {
+        try {
+            const base = await getApiBaseUrl();
+            const headers = await getAuthHeaders();
+            const response = await fetch(
+                `${base}/api/v1/bots/${encodeURIComponent(botUUID)}/interact/${encodeURIComponent(requestID)}?timeout=${Math.floor(timeoutMs / 1000)}s`,
+                {headers: {...headers, 'Content-Type': 'application/json'}},
+            );
+            const data = await response.json().catch(() => null);
+            if (response.status === 504) return {status: 'pending'};
+            if (response.status === 404) return {status: 'expired'};
+            if (response.status === 503) return {status: 'unavailable'};
+            if (!response.ok) {
+                return {error: data?.error || `wait failed (${response.status})`};
+            }
+            // 200 (answered/cancelled) or 410 (timeout/error) carry a status body.
+            return {
+                status: data?.status,
+                decision: data?.decision,
+                reason: data?.reason,
+            };
+        } catch (error: any) {
+            return {error: error.message};
+        }
+    },
+
     getImBotSetting: async (uuid: string): Promise<any> => {
         try {
             const client = await getClient();
