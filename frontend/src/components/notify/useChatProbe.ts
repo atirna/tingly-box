@@ -85,7 +85,14 @@ export function useChatProbe(): UseChatProbeResult {
             kind: 'confirm',
             title: 'Test: approve?',
             body: 'This verifies the bot\'s interactive prompt works. Tap Allow or Deny.',
-            options: [], // confirm ignores options — channel always shows Allow/Deny/Always-Allow
+            // confirm requires ≥1 option (handler validates len>0 before the
+            // channel renders). The channel's permission path renders
+            // Allow/Deny/Always-Allow regardless, and returns decision.selected
+            // ∈ {allow, deny, always} — so send those values.
+            options: [
+                {value: 'allow', label: 'Allow', style: 'primary'},
+                {value: 'deny', label: 'Deny', style: 'danger'},
+            ],
             timeout_seconds: 120,
         });
         if (start.error || !start.request_id) {
