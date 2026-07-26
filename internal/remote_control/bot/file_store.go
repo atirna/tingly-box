@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,10 +40,9 @@ var AllowedMIMETypes = map[string]string{
 
 // FileStore handles project-based file storage for bot media
 type FileStore struct {
-	maxImageSize  int64
-	maxDocSize    int64
-	httpClient    *http.Client
-	telegramToken string // For resolving Telegram file URLs
+	maxImageSize int64
+	maxDocSize   int64
+	httpClient   *http.Client
 }
 
 // NewFileStore creates a new file store with default limits
@@ -96,11 +94,6 @@ func NewFileStoreWithLimits(maxImageSize, maxDocSize int64) *FileStore {
 	}
 }
 
-// SetTelegramToken sets the Telegram bot token for resolving file URLs
-func (s *FileStore) SetTelegramToken(token string) {
-	s.telegramToken = token
-}
-
 // StoredFile represents a stored file
 type StoredFile struct {
 	Path     string // Full path: {projectPath}/.agent/{filename}
@@ -111,64 +104,12 @@ type StoredFile struct {
 	MimeType string
 }
 
-// TelegramFile represents the response from Telegram's getFile API
-type TelegramFile struct {
-	Ok     bool `json:"ok"`
-	Result struct {
-		FileID   string `json:"file_id"`
-		FileSize int    `json:"file_size"`
-		FilePath string `json:"file_path"`
-	} `json:"result"`
-}
-
-// resolveTelegramFileURL resolves a Telegram file ID to a download URL
-func (s *FileStore) resolveTelegramFileURL(ctx context.Context, tgFileURL string) (string, error) {
-	if !strings.HasPrefix(tgFileURL, "tgfile://") {
-		return tgFileURL, nil
-	}
-
-	if s.telegramToken == "" {
-		return "", fmt.Errorf("Telegram token not set, cannot resolve file URL")
-	}
-
-	fileID := strings.TrimPrefix(tgFileURL, "tgfile://")
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getFile", s.telegramToken)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Add file_id parameter
-	q := req.URL.Query()
-	q.Add("file_id", fileID)
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to get file info: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get file info: status %d", resp.StatusCode)
-	}
-
-	var tf TelegramFile
-	if err := json.NewDecoder(resp.Body).Decode(&tf); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if !tf.Ok || tf.Result.FilePath == "" {
-		return "", fmt.Errorf("file not found")
-	}
-
-	// Return the full download URL
-	return fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", s.telegramToken, tf.Result.FilePath), nil
-}
-
-// DownloadFile downloads a file from a URL to the project's .download directory
-// Returns an error if file size exceeds limits
+// DownloadFile downloads a file from a URL to the project's .download
+// directory. Returns an error if file size exceeds limits.
+//
+// url must already be fetchable. Platform-minted URLs (Telegram's tgfile://)
+// are resolved by the bot that produced them — see core.ResolveFileURL — so
+// this store holds no platform credentials and knows no platform schemes.
 func (s *FileStore) DownloadFile(ctx context.Context, projectPath, url, mimeType string) (*StoredFile, error) {
 	// Validate MIME type first
 	if !s.IsAllowedType(mimeType) {
@@ -178,18 +119,7 @@ func (s *FileStore) DownloadFile(ctx context.Context, projectPath, url, mimeType
 	// Determine file type for size limits
 	fileType := AllowedMIMETypes[mimeType]
 
-	// Resolve Telegram file URLs
-	downloadURL := url
-	var err error
-	if strings.HasPrefix(url, "tgfile://") {
-		downloadURL, err = s.resolveTelegramFileURL(ctx, url)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve file URL: %w", err)
-		}
-	}
-
-	// Create request
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

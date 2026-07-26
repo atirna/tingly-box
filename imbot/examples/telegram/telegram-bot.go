@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-telegram/bot/models"
 	"github.com/tingly-dev/tingly-box/imbot"
 )
 
@@ -460,26 +459,20 @@ func handleVoteCallback(ctx context.Context, bot imbot.Bot, msg imbot.Message, v
 func handleMenu(ctx context.Context, bot imbot.Bot, msg imbot.Message, args []string) error {
 	menuText := `🎛️ Please choose an option:`
 
-	// Create inline keyboard using new library
-	keyboard := models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "📚 Help", CallbackData: "menu_help"},
-				{Text: "ℹ️ About", CallbackData: "menu_about"},
-			},
-			{
-				{Text: "🕐 Time", CallbackData: "menu_time"},
-				{Text: "📊 Status", CallbackData: "menu_status"},
-			},
-		},
-	}
+	// Describe the controls; the platform renders them.
+	actions := imbot.NewActionSet().
+		AddRow(
+			imbot.NewAction("📚 Help", "menu_help"),
+			imbot.NewAction("ℹ️ About", "menu_about"),
+		).
+		AddRow(
+			imbot.NewAction("🕐 Time", "menu_time"),
+			imbot.NewAction("📊 Status", "menu_status"),
+		)
 
-	// Send message with keyboard using SendMessage
 	opts := &imbot.SendMessageOptions{
-		Text: menuText,
-		Metadata: map[string]interface{}{
-			"replyMarkup": keyboard,
-		},
+		Text:    menuText,
+		Actions: actions,
 	}
 
 	_, err := bot.SendMessage(ctx, msg.Sender.ID, opts)
@@ -492,22 +485,15 @@ func handlePoll(ctx context.Context, bot imbot.Bot, msg imbot.Message, args []st
 
 Do you like this bot?`
 
-	// Create inline keyboard for voting
-	keyboard := models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "✅ Yes", CallbackData: "vote_yes"},
-				{Text: "❌ No", CallbackData: "vote_no"},
-				{Text: "❓ Maybe", CallbackData: "vote_maybe"},
-			},
-		},
-	}
+	actions := imbot.NewActionSet().AddRow(
+		imbot.NewAction("✅ Yes", "vote_yes"),
+		imbot.NewAction("❌ No", "vote_no"),
+		imbot.NewAction("❓ Maybe", "vote_maybe"),
+	)
 
 	opts := &imbot.SendMessageOptions{
-		Text: pollText,
-		Metadata: map[string]interface{}{
-			"replyMarkup": keyboard,
-		},
+		Text:    pollText,
+		Actions: actions,
 	}
 
 	_, err := bot.SendMessage(ctx, msg.Sender.ID, opts)

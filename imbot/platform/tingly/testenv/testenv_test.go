@@ -65,12 +65,12 @@ func TestEnv_ButtonClick(t *testing.T) {
 		// First inbound — send a message with a keyboard.
 		kb := imbot.NewKeyboardBuilder().
 			AddRow(
-				imbot.CallbackButton("Approve", "ia:perm:approve"),
-				imbot.CallbackButton("Deny", "ia:perm:deny"),
-			).Build()
+				imbot.ActionButton("Approve", "ia", "perm", "approve"),
+				imbot.ActionButton("Deny", "ia", "perm", "deny"),
+			)
 		_, _ = bot.SendMessage(context.Background(), msg.GetReplyTarget(), &core.SendMessageOptions{
-			Text:     "decide?",
-			Metadata: map[string]any{"replyMarkup": kb},
+			Text:    "decide?",
+			Actions: kb.BuildActions(),
 		})
 	})
 	require.NoError(t, env.Manager().Start(env.Context()))

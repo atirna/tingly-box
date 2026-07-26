@@ -13,9 +13,6 @@ type Adapter interface {
 	// SupportsInteractions returns true if the platform supports native interactions
 	SupportsInteractions() bool
 
-	// BuildMarkup converts interactions to platform-specific markup
-	BuildMarkup(interactions []Interaction) (any, error)
-
 	// BuildFallbackText creates text-based numbered options
 	BuildFallbackText(message string, interactions []Interaction) string
 
@@ -51,6 +48,21 @@ func (a *BaseAdapter) SupportsInteractions() bool {
 // CanEditMessages returns true if platform supports message editing
 func (a *BaseAdapter) CanEditMessages() bool {
 	return a.canEditMessages
+}
+
+// BuildActions renders the interaction options as neutral actions. It is
+// shared rather than overridable: there is nothing platform-specific left in
+// the job, and the five hand-written versions this replaces had already
+// drifted into disagreeing with their own parsers.
+func (a *BaseAdapter) BuildActions(interactions []Interaction) *core.ActionSet {
+	return BuildActions(interactions)
+}
+
+// ParseResponse reads an interaction reply out of an inbound message. Shared
+// for the same reason as BuildActions — the two are the ends of one loop and
+// must agree.
+func (a *BaseAdapter) ParseResponse(msg core.Message) (*InteractionResponse, error) {
+	return ParseActionResponse(msg)
 }
 
 // UpdateMessage default implementation returns ErrNotSupported

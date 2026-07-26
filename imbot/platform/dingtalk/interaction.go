@@ -19,21 +19,10 @@ func NewInteractionAdapter() *InteractionAdapter {
 	}
 }
 
-// BuildMarkup is not supported for DingTalk stream mode
-func (a *InteractionAdapter) BuildMarkup(interactions []itx.Interaction) (any, error) {
-	return nil, itx.ErrNotSupported
-}
-
 // BuildFallbackText creates numbered text options
 // This is the PRIMARY mode for DingTalk, not a fallback
 func (a *InteractionAdapter) BuildFallbackText(message string, interactions []itx.Interaction) string {
 	return itx.BuildFallbackText(message, interactions, "请回复数字：", "取消")
-}
-
-// ParseResponse returns nil - text replies are handled by Handler.parseTextResponse
-func (a *InteractionAdapter) ParseResponse(msg core.Message) (*itx.InteractionResponse, error) {
-	// All text replies are handled by Handler.parseTextResponse
-	return nil, nil
 }
 
 // UpdateMessage is not supported for DingTalk stream mode

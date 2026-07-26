@@ -187,15 +187,12 @@ func (h *Handler) RequestInteraction(ctx context.Context, req InteractionRequest
 	var opts *core.SendMessageOptions
 
 	if useInteractive {
-		// Use native interactive elements
-		markup, err := adapter.BuildMarkup(req.Interactions)
-		if err != nil {
-			return nil, fmt.Errorf("build markup: %w", err)
-		}
+		// Native interactive controls. The platform renders them; this layer
+		// only says what the options are.
 		opts = &core.SendMessageOptions{
 			Text:      req.Message,
 			ParseMode: req.ParseMode,
-			Metadata:  map[string]any{"replyMarkup": markup},
+			Actions:   interaction.BuildActions(req.Interactions),
 		}
 	} else {
 		// Use text-based numbered replies (works on all platforms)

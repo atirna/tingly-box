@@ -116,7 +116,7 @@ func SwitchInlineButton(label, query string) core.Action
 兼容期：`Action.CallbackData` 与 `Metadata["replyMarkup"]` 各保留一个版本，读到时
 打 deprecation 日志。
 
-### Seam 2 — 回复上下文由 imbot 自己记 ⏳ 计划中
+### Seam 2 — 回复上下文由 imbot 自己记 ⏸️ 暂不做
 
 入站 `weixin/adapter.go` 已把 `context_token` 归一化进 `core.Message.ContextToken`，
 但出站仍要调用方从 metadata 里挖出来再塞回去（19 处）。目标是 `BaseBot` 维护
@@ -284,9 +284,10 @@ token 解析不到时（bot 重启，或被挤出），**明确告诉用户按�
 | **2a** | Seam 1 上半：`Actions` 进类型系统、13 个调用点迁移、Tier 3 逃生舱 | ✅ 已落地 |
 | **2b** | Seam 1 下半：按钮身份换 `Payload`、Telegram token 降级、补 64 字节校验、删索引导航与 NUL 编码；顺带把 Feishu 卡片回调接上 | ✅ 已落地 |
 | **3** | Seam 3 + Seam 4：能力表、`MessageRestater` | ✅ 已落地 |
-| **4** | Seam 2（回复上下文自动化）+ `FileResolver` | ⏳ |
-| **5** | `menu` 包归位：让它建立在新 seam 之上 / 降级 / 删除，三选一 | ⏳ |
-| **6** | 移除 `Metadata["replyMarkup"]` 兼容路径 | ⏳ **依赖 5** |
+| **4a** | `FileResolver`：平台自己解析自己铸的媒体 URL | ✅ 已落地 |
+| **4b** | Seam 2（回复上下文自动化） | ⏸️ **暂不做**，见下 |
+| **5** | `menu` 包归位 → **删除** | ✅ 已落地 |
+| **6** | 移除 `Metadata["replyMarkup"]` 兼容路径 | ✅ 已落地 |
 
 **2a / 2b 拆分的理由**：2b 是唯一触碰**回调协议**的一步，改错就是"按钮点了没反应"。
 拆开让 2a 的用户价值（Feishu 按钮可见）不被 2b 的风险绑架。
@@ -296,14 +297,26 @@ token 解析不到时（bot 重启，或被挤出），**明确告诉用户按�
 没有消费方，这个形状就无从验证。两者是同一条回路的两端，分开做等于把一端焊死在
 不可验证的状态。
 
-**Phase 5 刻意排在 seam 之后**：先让新 seam 的形状被真实使用验证过，再决定 `menu`
-该不该活，而不是反过来。
+**Phase 5 的结论是删除。** 刻意排在 seam 之后是为了先让新 seam 的形状被真实使用
+验证过，再决定 `menu` 该不该活。等真到了这一步，答案不需要权衡：
 
-**兼容路径的移除必须排在 Phase 5 之后**（原计划把它放在 Phase 4，顺序是错的）。
-`Metadata["replyMarkup"]` 至今仍有三个 in-repo 生产者：imbot 自己的通用交互
-Handler（`imbot/interaction.go:198`）、`menu` 包的 telegram/feishu 适配器
-（`telegram/menu.go:147`、`feishu/menu.go:170`）、以及 `examples/`。
-先删兼容路径会让 imbot 自身的交互路径哑掉——生产者迁完才轮到它。
+`imbot/menu` 只被三个平台的 `menu.go` 适配器引用，而这三个适配器**只在自己的测试里
+被构造过**——生产代码里没有任何一处 `NewMenuAdapter()`。整个子图从生产入口不可达，
+共 2738 行（含测试）。
+
+容易混淆的一点：真正在跑的命令菜单（Telegram menu button / Feishu quick actions）
+走的是 `platform/*/menu_setup.go`，经 Phase 3 的 `imbot.SetupCommandMenu` 派发，
+**完全不 import `imbot/menu`**。同名不同物——正是 UX 原则 #3 说的命名碰撞。
+
+**Phase 4b（Seam 2）暂不做**：它有个未决的设计选择（per-chat 缓存 vs `InReplyTo`
+绑定，前者语义比现状**弱**），且只影响本仓无测试手段的 Weixin/WeCom。在完全无法
+验证的平台上做可能变弱的语义改动，是全盘风险回报最差的一项。
+
+**兼容路径的移除排在 Phase 5 之后**（原计划放在 Phase 4，顺序是错的）。三个生产者
+里两个在 `menu` 包，随 Phase 5 一起消失；剩下 `imbot/interaction.go` 与 `examples/`
+迁到 `Actions` 之后，三个平台的兼容分支（telegram `resolveReplyMarkup` 的 fallback、
+feishu `sendText` 的 legacy 解码、tingly `decodeActions`）以及
+`actionSetFromLegacyMarkup` / `actionSetFromMap` 一并删除。
 
 **Phase 4 的两件事互不依赖**：`FileResolver` 自足且低风险，随时可单独做；
 Seam 2 则有个未决的设计选择（见下），且只影响本仓无法测试的 Weixin/WeCom，
@@ -423,6 +436,46 @@ case "oc_":  ...              // 永远不等
 不回话，直接 fallthrough 出 switch。用户点"✅ Create"，目录在磁盘上出现了，聊天里
 一个字都没有——无从判断绑定是否发生。现已补上 `completeBind` + 清理浏览状态。
 
+### 7.9 `menu` 包与它的三个平台适配器整体不可达（5 已删）
+
+`imbot/menu` 共 1250 行非测试代码，加上 `platform/{telegram,feishu,lark}/menu.go`
+的适配器，总计 2738 行。`grep -rn "NewMenuAdapter"` 的结果**全部落在这些包自己的
+测试里**——生产代码没有任何一处构造它们。
+
+它长期被误认为"在跑"，因为真正的命令菜单功能确实存在：Telegram 的 menu button 和
+Feishu 的 quick actions，走的是 `platform/*/menu_setup.go` + Phase 3 的
+`imbot.SetupCommandMenu`，**不 import `imbot/menu`**。两套同名的东西，一套在跑一套
+是死的（UX 原则 #3：命名碰撞要拆开）。
+
+### 7.10 交互按钮的"建"与"解"在 Feishu 上从不一致（6 已修）
+
+`interaction.Adapter` 要求每个平台实现 `BuildMarkup`，因为出站载荷当时没有类型。
+五份实现是同一个想法的五次重写，其中 Feishu 那份写出的 button value 是：
+
+```go
+button.Value(map[string]interface{}{"action": item.Value})   // 只有裸 value
+```
+
+而同文件的 `ParseResponse` 找的是 `ia:<interactionID>:<value>` ——命名空间和
+interaction ID 都被丢掉了。**任何 Feishu 交互都不可能解析成功。**
+
+之所以没人发现：Feishu 当时压根没有卡片入站路径（§7.6），这条回路两端都是断的。
+
+现在 `BuildActions` / `ParseActionResponse` 各一份，放在 `interaction` 包并挂到
+`BaseAdapter` 上——它们是同一条回路的两端，不该有分开漂移的机会。五份 `BuildMarkup`
+和五份 `ParseResponse` 全部删除。
+
+### 7.11 `remote_control` 手工拼 Telegram 文件下载 URL（4a 已修）
+
+`file_store.go` 知道 `tgfile://` 这个 scheme、知道 Telegram 的 getFile 端点、还自己
+拼 `https://api.telegram.org/bot<token>/...`——**把 bot token 拼进了 URL 路径**。
+这要求把 token 从设置里复制到 FileStore 再存一份，并在两处保持同步
+（`handler_constructor.go` 和 `handler_message.go` 各设一次）。
+
+铸出这个 URL 的是 Telegram 平台包，能解析它的也该是它，而且凭据本来就在它手上。
+现在走 `core.FileResolver`（**接口断言**，不是具体类型断言——参见 §7.2 的教训），
+Telegram 用 SDK 的 `GetFile` + `FileDownloadLink`，token 不再离开平台包。
+
 ## 8. 归属与命名规则
 
 **两类平台专有代码，性质不同，去处不同：**
@@ -462,6 +515,11 @@ import cycles with imbot/platform packages"——不成立，它只需要 `inter
    `NewPayload` 声明 segment。（2b ✅）
 8. Feishu 卡片按钮点击有入站路径，且与其它平台走同一套 dispatch。（2b ✅，
    待真机验证）
+9. `Metadata["replyMarkup"]` 在全仓（含测试与 examples）零出现，各平台的兼容分支
+   已删。（6 ✅）
+10. `internal/remote_control` 不再包含任何 Telegram 文件协议知识：
+    `grep -rn "tgfile\|api.telegram.org"` 在 `internal/` 下只剩一处解释性注释。
+    （4a ✅）
 
 ## 10. 测试
 
@@ -492,9 +550,15 @@ import cycles with imbot/platform packages"——不成立，它只需要 `inter
   `getReceiveIdType` 的前缀映射（§7.7）。
 - `internal/remote_control/bot/feature/dir_browser_test.go` — 目录按钮携带**路径**
   而非索引、含 `:` 的目录名可导航、create 确认按钮携带原始路径。
-- `imbot/platform/tingly/tingly_test.go` — 新契约（`Actions`）与兼容期
-  （legacy metadata）各一。原 `TestBot_SendWithTelegramKeyboard` 已删除：它断言的
-  双形状解码正是本次消灭的耦合。
+- `imbot/interaction/actions_test.go` — **建与解必须一致**（§7.10 的回归测试）、
+  导航共行而选择独占一行、input 动作不产生按钮、外部命名空间不被吞掉、非回调消息
+  落到文本路径、legacy 扁平串仍可解。
+- `imbot/core/file_resolver_test.go` — 不支持的平台原样返回（调用方不该先判 scheme）、
+  委派给 bot、解析失败必须上抛而不是退回未解析的 URL、以及**接口断言**而非具体类型
+  断言。
+- `imbot/platform/tingly/tingly_test.go` — 新契约（`Actions`）。原
+  `TestBot_SendWithTelegramKeyboard` 与 `TestBot_SendWithLegacyKeyboardMetadata`
+  均已删除：前者断言的双形状解码、后者钉住的兼容路径，都已不存在。
 
 **注意 `imbot/tests/` 在 `//go:build e2e` 之后**，默认 `go test ./...` 编译不到。
 改动 imbot 公共 API 后须跑 `go vet -tags e2e ./...`，否则会出现"主干已改坏、测试

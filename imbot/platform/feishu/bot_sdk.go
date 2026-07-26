@@ -384,19 +384,8 @@ func (b *Bot) sendText(ctx context.Context, target string, opts *core.SendMessag
 		return nil, err
 	}
 
-	// Interactive controls: prefer the neutral action set, fall back to the
-	// deprecated pre-rendered payload in Metadata["replyMarkup"].
 	if !opts.Actions.IsEmpty() {
 		return b.sendActionCard(ctx, target, opts, opts.Actions)
-	}
-	if replyMarkup, hasKeyboard := opts.Metadata["replyMarkup"]; hasKeyboard {
-		if set := actionSetFromLegacyMarkup(replyMarkup); !set.IsEmpty() {
-			b.Logger().Debug("sendText: metadata[\"replyMarkup\"] is deprecated, use SendMessageOptions.Actions")
-			return b.sendActionCard(ctx, target, opts, set)
-		}
-		// Unrecognised shape. Historically this produced a card with no
-		// buttons at all; say so rather than shipping a mutilated card.
-		b.Logger().Warn("sendText: metadata[\"replyMarkup\"] has an unsupported shape %T, actions dropped", replyMarkup)
 	}
 
 	// Regular text message using SDK builder

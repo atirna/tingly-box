@@ -4,41 +4,11 @@ import (
 	"time"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	itx "github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // decodeActions extracts the outbound keyboard for the test harness.
-//
-// It prefers the neutral SendMessageOptions.Actions and falls back to the
-// deprecated Metadata["replyMarkup"] convention while call sites migrate.
-// The previous version of this function accepted two shapes — the generic
-// interaction markup and the Telegram-specific one — because remote_control
-// pre-rendered a Telegram payload for every platform. That is exactly the
-// coupling the Actions field removes, so only the legacy generic shape is
-// still decoded here.
 func decodeActions(opts *core.SendMessageOptions) *Keyboard {
-	if !opts.Actions.IsEmpty() {
-		return convertActionSet(opts.Actions)
-	}
-	if opts.Metadata == nil {
-		return nil
-	}
-	raw, ok := opts.Metadata["replyMarkup"]
-	if !ok {
-		return nil
-	}
-	switch m := raw.(type) {
-	case *core.ActionSet:
-		return convertActionSet(m)
-	case itx.InlineKeyboardMarkup:
-		return convertActionSet(m.ToActionSet())
-	case *itx.InlineKeyboardMarkup:
-		if m == nil {
-			return nil
-		}
-		return convertActionSet(m.ToActionSet())
-	}
-	return nil
+	return convertActionSet(opts.Actions)
 }
 
 func convertActionSet(set *core.ActionSet) *Keyboard {

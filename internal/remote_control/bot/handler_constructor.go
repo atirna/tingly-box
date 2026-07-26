@@ -49,11 +49,6 @@ func NewBotHandler(
 		fileStore = NewFileStore()
 	}
 
-	// Set telegram token for file URL resolution
-	if token, ok := botSetting.Auth["token"]; ok {
-		fileStore.SetTelegramToken(token)
-	}
-
 	// Initialize handoff manager
 	handoffMgr := smart_guide.NewHandoffManager()
 

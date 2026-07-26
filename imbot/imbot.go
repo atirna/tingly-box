@@ -483,6 +483,29 @@ func NewActionSet() *core.ActionSet {
 	return core.NewActionSet()
 }
 
+// NewAction creates a labelled callback action from its payload segments.
+func NewAction(label string, segments ...string) core.Action {
+	return core.Action{Label: label, Payload: core.NewPayload(segments...)}
+}
+
+// File resolution — turning a platform-minted media URL into a fetchable one.
+//
+// Telegram hands out "tgfile://<file_id>" rather than a public URL, and the
+// resolution needs the bot token. Routing it through the bot keeps the
+// credential and the scheme inside the platform package that minted them.
+type FileResolver = core.FileResolver
+
+// AsFileResolver reports whether a bot can resolve its own media URLs.
+func AsFileResolver(bot Bot) (FileResolver, bool) {
+	return core.AsFileResolver(bot)
+}
+
+// ResolveFileURL resolves a media URL through the bot that produced it,
+// returning it unchanged when the platform has nothing to resolve.
+func ResolveFileURL(ctx context.Context, bot Bot, mediaURL string) (string, error) {
+	return core.ResolveFileURL(ctx, bot, mediaURL)
+}
+
 // Message restating — replacing an already-sent message's presentation.
 //
 // This replaces the AsTelegramBot + RemoveMessageKeyboard / EditMessageWithKeyboard

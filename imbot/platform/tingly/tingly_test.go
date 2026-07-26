@@ -53,12 +53,12 @@ func TestBot_SendWithGenericKeyboard(t *testing.T) {
 	bot, tr := newReadyBot(t)
 
 	kb := itx.InlineKeyboardMarkup{InlineKeyboard: [][]itx.InlineKeyboardButton{
-		{{Text: "Approve", CallbackData: "ia:1:approve"}},
-		{{Text: "Deny", CallbackData: "ia:1:deny"}},
+		{itx.ActionButton("Approve", "ia", "1", "approve")},
+		{itx.ActionButton("Deny", "ia", "1", "deny")},
 	}}
 	_, err := bot.SendMessage(context.Background(), "chat-1", &core.SendMessageOptions{
-		Text:     "decide?",
-		Metadata: map[string]any{"replyMarkup": kb},
+		Text:    "decide?",
+		Actions: kb.ToActionSet(),
 	})
 	require.NoError(t, err)
 
@@ -98,26 +98,6 @@ func TestBot_SendWithActions(t *testing.T) {
 		{Label: "Yes", CallbackData: "yes"},
 		{Label: "No", CallbackData: "no"},
 	}, events[0].Keyboard.Rows[0])
-}
-
-// TestBot_SendWithLegacyKeyboardMetadata pins the deprecated compatibility
-// path, which stays for one release while call sites migrate.
-func TestBot_SendWithLegacyKeyboardMetadata(t *testing.T) {
-	bot, tr := newReadyBot(t)
-
-	kb := itx.InlineKeyboardMarkup{InlineKeyboard: [][]itx.InlineKeyboardButton{
-		{{Text: "Yes", CallbackData: "yes"}},
-	}}
-	_, err := bot.SendMessage(context.Background(), "chat-1", &core.SendMessageOptions{
-		Text:     "ok?",
-		Metadata: map[string]any{"replyMarkup": kb},
-	})
-	require.NoError(t, err)
-
-	events := tr.EventsForChat("chat-1")
-	require.Len(t, events, 1)
-	require.NotNil(t, events[0].Keyboard)
-	assert.Equal(t, []Button{{Label: "Yes", CallbackData: "yes"}}, events[0].Keyboard.Rows[0])
 }
 
 func TestBot_EditDeleteReact(t *testing.T) {
@@ -202,15 +182,12 @@ func TestInteractionAdapter_BuildAndParse(t *testing.T) {
 	assert.True(t, adapter.SupportsInteractions())
 	assert.True(t, adapter.CanEditMessages())
 
-	markup, err := adapter.BuildMarkup([]itx.Interaction{
+	set := adapter.BuildActions([]itx.Interaction{
 		{ID: "perm", Type: itx.ActionConfirm, Label: "Approve", Value: "yes"},
 		{ID: "perm", Type: itx.ActionCancel, Label: "Deny", Value: "no"},
 	})
-	require.NoError(t, err)
-	kb, ok := markup.(itx.InlineKeyboardMarkup)
-	require.True(t, ok)
-	require.Len(t, kb.InlineKeyboard, 2)
-	assert.Equal(t, "ia:perm:yes", kb.InlineKeyboard[0][0].CallbackData)
+	require.Len(t, set.Rows, 2)
+	assert.Equal(t, "ia:perm:yes", set.Rows[0][0].Payload.FlatCallbackData())
 
 	cbMsg := NewIncomingCallback("cb-1", "chat-1", core.Sender{ID: "u"}, "ia:perm:yes", core.ChatTypeDirect)
 	resp, err := adapter.ParseResponse(cbMsg)

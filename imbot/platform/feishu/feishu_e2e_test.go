@@ -235,10 +235,8 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 
 				t.Logf("📤 Sending card to %s: %s", targetChat, msgText)
 				result, err := bot.SendMessage(ctx, targetChat, &core.SendMessageOptions{
-					Text: msgText,
-					Metadata: map[string]interface{}{
-						"replyMarkup": kb.Build(),
-					},
+					Text:    msgText,
+					Actions: kb.BuildActions(),
 				})
 				if err != nil {
 					echoText = fmt.Sprintf("❌ Failed: %v", err)
@@ -264,10 +262,8 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 
 				t.Logf("📤 Sending keyboard to %s", targetChat)
 				result, err := bot.SendMessage(ctx, targetChat, &core.SendMessageOptions{
-					Text: "🎨 **Select a Color**\n\nClick a button below:",
-					Metadata: map[string]interface{}{
-						"replyMarkup": kb.Build(),
-					},
+					Text:    "🎨 **Select a Color**\n\nClick a button below:",
+					Actions: kb.BuildActions(),
 				})
 				if err != nil {
 					echoText = fmt.Sprintf("❌ Failed: %v", err)
@@ -290,9 +286,7 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 						"**Command:** `ls -la`\n\n" +
 						"This command is not in the allowlist.\n" +
 						"Do you approve this action?",
-					Metadata: map[string]interface{}{
-						"replyMarkup": kb.Build(),
-					},
+					Actions: kb.BuildActions(),
 				})
 				if err != nil {
 					echoText = fmt.Sprintf("❌ Failed: %v", err)
@@ -444,9 +438,7 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 		result, err = bot.SendMessage(ctx, testChatID, &core.SendMessageOptions{
 			Text:      cardText,
 			ParseMode: core.ParseModeMarkdown,
-			Metadata: map[string]interface{}{
-				"replyMarkup": kb.Build(),
-			},
+			Actions:   kb.BuildActions(),
 		})
 		if err != nil {
 			t.Logf("Failed to send card message: %v", err)
@@ -562,10 +554,8 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 					)
 
 					result, err := bot.SendMessage(ctx, testChatID, &core.SendMessageOptions{
-						Text: "🎨 **Select a Color**\n\nClick a button below:",
-						Metadata: map[string]interface{}{
-							"replyMarkup": kb.Build(),
-						},
+						Text:    "🎨 **Select a Color**\n\nClick a button below:",
+						Actions: kb.BuildActions(),
 					})
 					if err != nil {
 						t.Logf("❌ Failed: %v", err)
@@ -591,9 +581,7 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 							"**Command:** `ls -la`\n\n" +
 							"This command is not in the allowlist.\n" +
 							"Do you approve this action?",
-						Metadata: map[string]interface{}{
-							"replyMarkup": kb.Build(),
-						},
+						Actions: kb.BuildActions(),
 					})
 					if err != nil {
 						t.Logf("❌ Failed: %v", err)
@@ -649,10 +637,8 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 
 					t.Logf("📤 Sending card: %s", msgText)
 					result, err := bot.SendMessage(ctx, testChatID, &core.SendMessageOptions{
-						Text: msgText,
-						Metadata: map[string]interface{}{
-							"replyMarkup": kb.Build(),
-						},
+						Text:    msgText,
+						Actions: kb.BuildActions(),
 					})
 					if err != nil {
 						t.Logf("❌ Failed: %v", err)

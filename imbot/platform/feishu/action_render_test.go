@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // TestBuildActionCardRendersButtons is the regression test for the defect this
@@ -94,27 +93,6 @@ func TestBuildActionCardTier3Fallback(t *testing.T) {
 	}
 	if strings.Contains(out, `"tag":"button"`) {
 		t.Errorf("FallbackDrop should omit the action\n%s", out)
-	}
-}
-
-func TestActionSetFromLegacyMarkup(t *testing.T) {
-	kb := interaction.InlineKeyboardMarkup{
-		InlineKeyboard: [][]interaction.InlineKeyboardButton{
-			{{Text: "Yes", CallbackData: "yes"}},
-		},
-	}
-	set := actionSetFromLegacyMarkup(kb)
-	if set.IsEmpty() {
-		t.Fatal("expected the legacy generic markup to decode")
-	}
-	if got := set.Flatten()[0].Label; got != "Yes" {
-		t.Errorf("label = %q, want Yes", got)
-	}
-
-	// A shape nobody recognises must report as empty so the caller can warn,
-	// rather than silently shipping a button-less card.
-	if !actionSetFromLegacyMarkup(struct{ Nope bool }{}).IsEmpty() {
-		t.Error("expected an unknown markup shape to decode to nothing")
 	}
 }
 

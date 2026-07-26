@@ -7,16 +7,10 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // sendActionCard renders text plus a neutral action set as a Feishu
 // interactive card.
-//
-// This replaces the previous path, which type-switched on whatever the caller
-// had stuffed into Metadata["replyMarkup"]. Callers in practice supplied a
-// go-telegram models.InlineKeyboardMarkup, which matched none of the cases, so
-// every remote-control keyboard reached Feishu users as a card with no buttons.
 func (b *Bot) sendActionCard(ctx context.Context, target string, opts *core.SendMessageOptions, set *core.ActionSet) (*core.SendResult, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("bot client is nil")
@@ -131,6 +125,7 @@ const payloadValueKey = "payload"
 // payloadFromButtonValue reads the segments back out of an inbound card action
 // value, accepting the flat callback string from buttons rendered by earlier
 // releases.
+//
 // Values that have been through the wire arrive as []interface{}; values read
 // back before serialisation are still []string. Both are accepted so a test
 // exercises the same decoder production does.
@@ -159,54 +154,6 @@ func payloadFromButtonValue(value map[string]interface{}) core.Payload {
 		return core.PayloadFromCallbackData(flat)
 	}
 	return nil
-}
-
-// actionSetFromLegacyMarkup accepts the shapes that used to be pushed through
-// Metadata["replyMarkup"] and normalises them to an action set. Kept for one
-// release while call sites migrate to SendMessageOptions.Actions.
-func actionSetFromLegacyMarkup(raw any) *core.ActionSet {
-	switch m := raw.(type) {
-	case *core.ActionSet:
-		return m
-	case interaction.InlineKeyboardMarkup:
-		return m.ToActionSet()
-	case *interaction.InlineKeyboardMarkup:
-		if m == nil {
-			return nil
-		}
-		return m.ToActionSet()
-	case map[string]interface{}:
-		return actionSetFromMap(m)
-	}
-	return nil
-}
-
-// actionSetFromMap handles a keyboard that arrived as decoded JSON.
-func actionSetFromMap(m map[string]interface{}) *core.ActionSet {
-	rows, ok := m["inline_keyboard"].([]interface{})
-	if !ok {
-		return nil
-	}
-	set := core.NewActionSet()
-	for _, row := range rows {
-		rowArray, ok := row.([]interface{})
-		if !ok {
-			continue
-		}
-		actions := make([]core.Action, 0, len(rowArray))
-		for _, btn := range rowArray {
-			btnMap, ok := btn.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			label, _ := btnMap["text"].(string)
-			callback, _ := btnMap["callback_data"].(string)
-			url, _ := btnMap["url"].(string)
-			actions = append(actions, core.Action{Label: label, CallbackData: callback, URL: url})
-		}
-		set.AddRow(actions...)
-	}
-	return set
 }
 
 // Restate implements core.MessageRestater.

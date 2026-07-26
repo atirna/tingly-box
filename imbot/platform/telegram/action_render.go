@@ -5,7 +5,6 @@ import (
 
 	"github.com/go-telegram/bot/models"
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // Tier 3 escape hatch for Telegram-only button capabilities.
@@ -52,35 +51,13 @@ func SwitchInlineButton(label, query string) core.Action {
 }
 
 // resolveReplyMarkup produces the Telegram inline keyboard for an outbound
-// message, preferring the neutral Actions field and falling back to the
-// deprecated Metadata["replyMarkup"] convention.
+// message.
 func (b *Bot) resolveReplyMarkup(opts *core.SendMessageOptions) *models.InlineKeyboardMarkup {
-	if !opts.Actions.IsEmpty() {
-		markup := b.BuildInlineKeyboard(opts.Actions)
-		return &markup
-	}
-
-	// Deprecated path: a pre-rendered platform payload in the metadata bag.
-	// Kept for one release so call sites can migrate incrementally.
-	if opts.Metadata == nil {
+	if opts.Actions.IsEmpty() {
 		return nil
 	}
-	raw, ok := opts.Metadata["replyMarkup"]
-	if !ok {
-		return nil
-	}
-	b.Logger().Debug("SendMessage: metadata[\"replyMarkup\"] is deprecated, use SendMessageOptions.Actions")
-
-	switch m := raw.(type) {
-	case models.InlineKeyboardMarkup:
-		return &m
-	case *models.InlineKeyboardMarkup:
-		return m
-	case interaction.InlineKeyboardMarkup:
-		markup := b.BuildInlineKeyboard(m.ToActionSet())
-		return &markup
-	}
-	return nil
+	markup := b.BuildInlineKeyboard(opts.Actions)
+	return &markup
 }
 
 // BuildInlineKeyboard renders a neutral action set as a Telegram inline

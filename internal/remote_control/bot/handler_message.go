@@ -195,18 +195,6 @@ func (h *BotHandler) handleMediaMessage(hCtx HandlerContext, media []imbot.Media
 		projectPath = h.getDefaultProjectPath()
 	}
 
-	// Set platform-specific token on FileStore if needed
-	if len(media) > 0 && strings.HasPrefix(media[0].URL, "tgfile://") {
-		// Get token from bot settings (check both Auth map and legacy Token field)
-		token := h.botSetting.Token
-		if token == "" && len(h.botSetting.Auth) > 0 {
-			token = h.botSetting.Auth["token"]
-		}
-		if token != "" {
-			h.fileStore.SetTelegramToken(token)
-		}
-	}
-
 	// 1. Download and store media files
 	var fileTags []string
 	for _, attachment := range media {
@@ -226,8 +214,17 @@ func (h *BotHandler) handleMediaMessage(hCtx HandlerContext, media []imbot.Media
 			return
 		}
 
+		// A platform that keeps attachments behind its own scheme resolves
+		// them itself; the bot holds the credential, so neither this handler
+		// nor the file store needs to know which platform it is talking to.
+		downloadURL, err := imbot.ResolveFileURL(h.ctx, hCtx.Bot, attachment.URL)
+		if err != nil {
+			h.SendText(hCtx, fmt.Sprintf("Failed to resolve file URL: %v", err))
+			return
+		}
+
 		// Download file to project's .download directory
-		storedFile, err := h.fileStore.DownloadFile(h.ctx, projectPath, attachment.URL, attachment.MimeType)
+		storedFile, err := h.fileStore.DownloadFile(h.ctx, projectPath, downloadURL, attachment.MimeType)
 		if err != nil {
 			h.SendText(hCtx, fmt.Sprintf("Failed to download file: %v", err))
 			return
