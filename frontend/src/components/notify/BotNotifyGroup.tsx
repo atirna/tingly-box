@@ -1,23 +1,22 @@
-import {Send as SendIcon, ContentCopy as CopyIcon} from '@/components/icons';
+import {ContentCopy as CopyIcon, Edit as CustomIcon, Close as CloseIcon, Code as CodeIcon} from '@/components/icons';
 import {api} from '@/services/api';
 import {notify} from '@/utils/notify';
 import {isPairingRequired} from '@/types/bot';
 import type {BotChat, BotSettings} from '@/types/bot';
 import {fontMono} from '@/theme/fonts';
 import NotifyTestDialog from '@/components/notify/NotifyTestDialog';
+import {CHAT_CAPABILITIES} from '@/components/notify/chatCapabilities';
+import useChatProbe, {type ChatCapability, type ChatProbeResult} from '@/components/notify/useChatProbe';
 import {
+    Alert,
     Box,
+    Button,
     Chip,
     CircularProgress,
+    Collapse,
     IconButton,
     Stack,
     Switch,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
     Tooltip,
     Typography,
 } from '@mui/material';
@@ -26,15 +25,15 @@ import {useTranslation} from 'react-i18next';
 
 // BotNotifyGroup is one bot's panel on the IM Notify page: a header (name +
 // platform + the enabled switch that governs whether this bot can be driven)
-// over an ALWAYS-EXPANDED table of the chats it can reach. Each chat row shows
-// the concrete value the operator needs — the channel-native chat_id that
-// POST /api/v1/bots/:bot/notify takes in its body — with copy + send-test
-// inline, so there is no extra click to reach the work surface (ux-principles
-// #1 organize IA around the user's question, #5 show the concrete value, #11
-// hand over the next action's artifact).
+// over an ALWAYS-EXPANDED list of the chats it can reach. Each chat row is a
+// CAPABILITY PROBE台 — a row of one-click buttons (Notify / Confirm active,
+// Choose / Ask gated, Custom → free-form dialog) that exercise each chat
+// capability end-to-end and show a probe-style verdict inline, exactly as the
+// model-routing probe does for providers (see components/probe/). This answers
+// the operator's real question — "do my bot's chat capabilities actually work?"
+// — not "can I compose one custom message?" (ux-principles #1/#5/#11).
 //
-// The chats are fetched eagerly when the bot is enabled, not behind a button:
-// "what can I send to?" is the page's whole point, so the answer is on screen.
+// The chats are fetched eagerly when the bot is enabled, not behind a button.
 // A disabled bot has no channel in the registry (404), so we don't fetch then.
 export interface BotNotifyGroupProps {
     bot: BotSettings;
@@ -42,11 +41,71 @@ export interface BotNotifyGroupProps {
     isToggling?: boolean;
 }
 
-// Em-dash placeholder for empty status/project/updated cells — shared so the
-// three columns stay visually consistent (one place to tweak the styling).
+// Em-dash placeholder for empty status/project/updated meta — shared styling.
 const Dash: React.FC = () => (
     <Typography variant="body2" sx={{color: 'text.secondary'}}>—</Typography>
 );
+
+// formatLatency mirrors probe/runProbe.ts: "850ms" / "1.2s".
+const formatLatency = (ms: number): string => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
+
+// One-glance verdict label + severity for a probe result, mirroring the probe
+// feature's StatusBar mapping of outcome → label.
+const verdict = (r: ChatProbeResult): {label: string; severity: 'success' | 'error' | 'warning' | 'info'} => {
+    switch (r.status) {
+        case 'delivered': return {label: `Delivered · ${formatLatency(r.latencyMs)}`, severity: 'success'};
+        case 'answered': return {label: `Answered: ${String(r.decision?.selected ?? '?')} · ${formatLatency(r.latencyMs)}`, severity: 'success'};
+        case 'cancelled': return {label: `Cancelled · ${formatLatency(r.latencyMs)}`, severity: 'warning'};
+        case 'timed-out': return {label: `Timed out · ${formatLatency(r.latencyMs)}`, severity: 'warning'};
+        case 'expired': return {label: `Expired · ${formatLatency(r.latencyMs)}`, severity: 'warning'};
+        default: return {label: r.error ? `Failed: ${r.error}` : 'Failed', severity: 'error'};
+    }
+};
+
+// ProbeResultLine is the inline verdict for one capability probe — an outlined
+// Alert (mirroring probe's StatusBar) with the capability, the one-glance
+// outcome, and a collapsible Raw JSON. Dismissible so the row stays clean.
+const ProbeResultLine: React.FC<{result: ChatProbeResult; onDismiss: () => void}> = ({result, onDismiss}) => {
+    const {t} = useTranslation();
+    const [showRaw, setShowRaw] = useState(false);
+    const v = verdict(result);
+    return (
+        <Alert
+            severity={v.severity}
+            variant="outlined"
+            icon={false}
+            sx={{py: 0.5, borderRadius: 1, '& .MuiAlert-message': {width: '100%'}}}
+        >
+            <Box sx={{display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap'}}>
+                <Chip label={result.capability} size="small" sx={{textTransform: 'capitalize', fontWeight: 600}} />
+                <Typography variant="body2" sx={{fontWeight: 600, color: v.severity === 'success' ? 'success.main' : v.severity === 'error' ? 'error.main' : 'warning.main'}}>
+                    {v.label}
+                </Typography>
+                {result.reason && (
+                    <Typography variant="caption" sx={{color: 'text.secondary'}}>{result.reason}</Typography>
+                )}
+                <Box sx={{flexGrow: 1}} />
+                <Tooltip title={t('notify.probe.showRaw', {defaultValue: 'Show raw payload'})}>
+                    <IconButton size="small" onClick={() => setShowRaw((s) => !s)}>
+                        <CodeIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('common.dismiss', {defaultValue: 'Dismiss'})}>
+                    <IconButton size="small" onClick={onDismiss}>
+                        <CloseIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+            </Box>
+            <Collapse in={showRaw}>
+                <Box sx={{mt: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1, fontFamily: fontMono, fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all'}}>
+                    {JSON.stringify(result.raw ?? result, null, 2)}
+                </Box>
+            </Collapse>
+        </Alert>
+    );
+};
+
+
 
 const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isToggling}) => {
     const {t} = useTranslation();
@@ -91,6 +150,15 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
 
     const openTest = useCallback((chatID: string) => setTestChatID(chatID), []);
     const closeTest = useCallback(() => setTestChatID(null), []);
+
+    // The capability probe runner — owns firing notify/confirm against a chat
+    // and the per-(chat,capability) results. Lives at the group level so a
+    // result persists across re-renders of the chat list.
+    const probe = useChatProbe();
+    const handleProbe = useCallback((chatID: string, capability: ChatCapability) => {
+        if (!bot.uuid) return;
+        void probe.run(bot.uuid, chatID, capability);
+    }, [bot.uuid, probe]);
 
     return (
         <Box
@@ -181,71 +249,104 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
                             : t('notify.group.empty', {defaultValue: 'No chats yet. Send any message to this bot on {{platform}} and its Chat ID appears here.', platform: bot.platform || 'its platform'})}
                     </Typography>
                 ) : (
-                    <TableContainer sx={{overflowX: 'auto'}}>
-                        <Table size="small" sx={{tableLayout: 'fixed'}}>
-                            <TableHead>
-                                <TableRow sx={{'& .MuiTableCell-head': {color: 'text.primary'}}}>
-                                    <TableCell sx={{fontWeight: 600, width: '45%'}}>{t('notify.group.colChatId', {defaultValue: 'Chat ID'})}</TableCell>
-                                    <TableCell sx={{fontWeight: 600, width: 90}}>{t('notify.group.colStatus', {defaultValue: 'Status'})}</TableCell>
-                                    <TableCell sx={{fontWeight: 600, width: '25%'}}>{t('notify.group.colProject', {defaultValue: 'Project'})}</TableCell>
-                                    <TableCell sx={{fontWeight: 600, width: 130}}>{t('notify.group.colUpdated', {defaultValue: 'Updated'})}</TableCell>
-                                    <TableCell sx={{fontWeight: 600, width: 90, textAlign: 'right'}}>{t('notify.group.colActions', {defaultValue: 'Actions'})}</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {chats.map((chat) => (
-                                    <TableRow key={chat.chat_id} hover>
-                                        <TableCell sx={{verticalAlign: 'middle'}}>
-                                            <Typography variant="body2" component="span" sx={{fontFamily: fontMono, color: 'text.primary'}}>
-                                                {chat.chat_id}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell sx={{verticalAlign: 'middle'}}>
-                                            {chat.is_paired ? (
-                                                <Chip label={t('notify.group.paired', {defaultValue: 'paired'})} size="small" color="success" variant="outlined" />
-                                            ) : (
-                                                <Dash/>
-                                            )}
-                                        </TableCell>
-                                        <TableCell sx={{verticalAlign: 'middle'}}>
-                                            {chat.project_path ? (
-                                                <Tooltip title={chat.project_path}>
-                                                    <Typography variant="body2" component="span" noWrap sx={{display: 'block', color: 'text.secondary'}}>
-                                                        {chat.project_path}
-                                                    </Typography>
-                                                </Tooltip>
-                                            ) : (
-                                                <Dash/>
-                                            )}
-                                        </TableCell>
-                                        <TableCell sx={{verticalAlign: 'middle'}}>
-                                            {chat.updated_at ? (
-                                                <Typography variant="body2" sx={{color: 'text.secondary'}}>
-                                                    {new Date(chat.updated_at).toLocaleString()}
+                    <Stack spacing={1}>
+                        {chats.map((chat) => {
+                            const running = (cap: ChatCapability) => probe.isRunning(chat.chat_id, cap);
+                            const anyRunning = running('notify') || running('confirm');
+                            return (
+                                <Box
+                                    key={chat.chat_id}
+                                    sx={{
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 1,
+                                        p: 1.25,
+                                    }}
+                                >
+                                    {/* Chat identity + meta row */}
+                                    <Box sx={{display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap'}}>
+                                        <Typography variant="body2" component="span" sx={{fontFamily: fontMono, color: 'text.primary', fontWeight: 600}}>
+                                            {chat.chat_id}
+                                        </Typography>
+                                        {chat.is_paired ? (
+                                            <Chip label={t('notify.group.paired', {defaultValue: 'paired'})} size="small" color="success" variant="outlined" />
+                                        ) : <Dash/>}
+                                        {chat.project_path && (
+                                            <Tooltip title={chat.project_path}>
+                                                <Typography variant="caption" component="span" noWrap sx={{color: 'text.secondary', maxWidth: 220}}>
+                                                    {chat.project_path}
                                                 </Typography>
-                                            ) : (
-                                                <Dash/>
-                                            )}
-                                        </TableCell>
-                                        <TableCell sx={{verticalAlign: 'middle'}}>
-                                            <Stack direction="row" spacing={0.5} sx={{justifyContent: 'flex-end'}}>
-                                                <Tooltip title={t('notify.group.copyChatId', {defaultValue: 'Copy Chat ID'})}>
-                                                    <IconButton size="small" onClick={() => handleCopy(chat.chat_id)}>
-                                                        <CopyIcon fontSize="small" />
-                                                    </IconButton>
+                                            </Tooltip>
+                                        )}
+                                        {chat.updated_at && (
+                                            <Typography variant="caption" sx={{color: 'text.disabled'}}>
+                                                {new Date(chat.updated_at).toLocaleString()}
+                                            </Typography>
+                                        )}
+                                        <Box sx={{flexGrow: 1}} />
+                                        <Tooltip title={t('notify.group.copyChatId', {defaultValue: 'Copy Chat ID'})}>
+                                            <IconButton size="small" onClick={() => handleCopy(chat.chat_id)}>
+                                                <CopyIcon fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Box>
+
+                                    {/* Capability probe controls + inline verdict.
+                                        Mirrors the probe feature: one-click trigger
+                                        per capability, result renders inline. */}
+                                    <Box sx={{display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: 1}}>
+                                        {CHAT_CAPABILITIES.map((cap) => {
+                                            const active = cap.capability === 'notify' || cap.capability === 'confirm';
+                                            const isRunning = active && running(cap.capability as ChatCapability);
+                                            const result = active ? probe.getResult(chat.chat_id, cap.capability as ChatCapability) : undefined;
+                                            const v = result ? verdict(result) : null;
+                                            return (
+                                                <Tooltip key={cap.capability} title={cap.hint}>
+                                                    <span>
+                                                        <Button
+                                                            size="small"
+                                                            variant="outlined"
+                                                            color={v?.severity === 'success' ? 'success' : v?.severity === 'error' ? 'error' : v?.severity === 'warning' ? 'warning' : 'primary'}
+                                                            disabled={!active || isRunning || anyRunning}
+                                                            onClick={() => active && handleProbe(chat.chat_id, cap.capability as ChatCapability)}
+                                                            startIcon={isRunning ? <CircularProgress size={14} color="inherit" /> : cap.icon}
+                                                            sx={{textTransform: 'none'}}
+                                                        >
+                                                            {cap.label}
+                                                        </Button>
+                                                    </span>
                                                 </Tooltip>
-                                                <Tooltip title={t('notify.group.sendToChat', {defaultValue: 'Send a test notification to this chat'})}>
-                                                    <IconButton size="small" color="primary" onClick={() => openTest(chat.chat_id)}>
-                                                        <SendIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Stack>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
+                                            );
+                                        })}
+                                        {/* Custom → free-form editor (the escape hatch). */}
+                                        <Tooltip title={t('notify.group.customHint', {defaultValue: 'Compose a custom message (free-form)'})}>
+                                            <Button
+                                                size="small"
+                                                variant="text"
+                                                color="primary"
+                                                startIcon={<CustomIcon fontSize="small" />}
+                                                onClick={() => openTest(chat.chat_id)}
+                                                sx={{textTransform: 'none'}}
+                                            >
+                                                {t('notify.group.custom', {defaultValue: 'Custom'})}
+                                            </Button>
+                                        </Tooltip>
+                                    </Box>
+
+                                    {/* Inline probe results (one per active capability that has run). */}
+                                    {(probe.getResult(chat.chat_id, 'notify') || probe.getResult(chat.chat_id, 'confirm')) && (
+                                        <Stack spacing={0.75} sx={{mt: 1}}>
+                                            {(['notify', 'confirm'] as const).map((cap) => {
+                                                const r = probe.getResult(chat.chat_id, cap);
+                                                if (!r) return null;
+                                                return <ProbeResultLine key={cap} result={r} onDismiss={() => probe.clear(chat.chat_id, cap)} />;
+                                            })}
+                                        </Stack>
+                                    )}
+                                </Box>
+                            );
+                        })}
+                    </Stack>
                 )}
             </Box>
 
