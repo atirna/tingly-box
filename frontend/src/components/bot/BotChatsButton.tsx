@@ -1,4 +1,4 @@
-import {Message as MessageIcon, ContentCopy as CopyIcon} from '@/components/icons';
+import {Message as MessageIcon, ContentCopy as CopyIcon, Refresh as RefreshIcon} from '@/components/icons';
 import type {BotChat} from '@/types/bot';
 import {api} from '@/services/api';
 import {notify} from '@/utils/notify';
@@ -38,14 +38,14 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
     const [tooltipOpen, setTooltipOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [chats, setChats] = useState<BotChat[]>([]);
+    const [running, setRunning] = useState<boolean | null>(null); // null = not loaded yet
     const [error, setError] = useState<string | null>(null);
 
-    const handleOpen = useCallback(async (e: React.MouseEvent<HTMLElement>) => {
-        // Close the tooltip the moment the popover opens, otherwise its hover
-        // text lingers over the open popover.
-        setTooltipOpen(false);
-        setAnchor(e.currentTarget);
-        if (chats.length || error) return; // already loaded this session
+    // load fetches the chat list and is shared by both first-open and manual
+    // refresh, so the refresh button can force a re-fetch at any time (a chat
+    // only registers after the bot actually receives a message on its
+    // channel, so a stale view is expected until the operator re-pulls).
+    const load = useCallback(async () => {
         setLoading(true);
         setError(null);
         const result = await api.listBotChats(botUUID);
@@ -54,8 +54,22 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
             setError(result.error);
         } else {
             setChats(result.chats ?? []);
+            setRunning(result.running ?? true);
         }
-    }, [botUUID, chats.length, error]);
+    }, [botUUID]);
+
+    const handleOpen = useCallback(async (e: React.MouseEvent<HTMLElement>) => {
+        // Close the tooltip the moment the popover opens, otherwise its hover
+        // text lingers over the open popover.
+        setTooltipOpen(false);
+        setAnchor(e.currentTarget);
+        if (running !== null || error) return; // already loaded this session
+        await load();
+    }, [running, error, load]);
+
+    const handleRefresh = useCallback(async () => {
+        await load();
+    }, [load]);
 
     const handleClose = useCallback(() => setAnchor(null), []);
 
@@ -81,10 +95,23 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
                 slotProps={{paper: {sx: {minWidth: 280, maxWidth: 380, mt: 0.5}}}}
             >
                 <Box sx={{p: 1.5}}>
-                    <Typography variant="caption" sx={{color: 'text.secondary', fontWeight: 600}}>
-                        {t('bots.table.chatsTitle', {defaultValue: 'Reachable chats — copy the Chat ID for notify/interact'})}
-                    </Typography>
-                    {loading && (
+                    <Stack direction="row" sx={{alignItems: 'center', justifyContent: 'space-between', mb: 0.5}}>
+                        <Typography variant="caption" sx={{color: 'text.secondary', fontWeight: 600}}>
+                            {t('bots.table.chatsTitle', {defaultValue: 'Reachable chats — copy the Chat ID for notify/interact'})}
+                        </Typography>
+                        <Tooltip title={t('bots.table.refreshChats', {defaultValue: 'Refresh'})}>
+                            <IconButton
+                                size="small"
+                                onClick={handleRefresh}
+                                disabled={loading}
+                                aria-label={t('bots.table.refreshChats', {defaultValue: 'Refresh chats'})}
+                                sx={{p: 0.25}}
+                            >
+                                {loading ? <CircularProgress size={14}/> : <RefreshIcon fontSize="inherit"/>}
+                            </IconButton>
+                        </Tooltip>
+                    </Stack>
+                    {loading && chats.length === 0 && (
                         <Box sx={{display: 'flex', justifyContent: 'center', py: 2}}>
                             <CircularProgress size={20}/>
                         </Box>
@@ -95,25 +122,30 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
                     {!loading && !error && chats.length === 0 && (
                         // Empty state names the mechanism that registers a chat
                         // (not just "no chats") and points to the next action.
-                        // For TOFU bots the gating step is pairing — a chat only
-                        // appears after the user pairs — so we say so explicitly
-                        // rather than sending them to message an unpaired bot.
+                        // A bot that isn't running has no reachable chats at
+                        // all, so the message points to starting it rather
+                        // than sending a message into the void.
                         // ux-principles #11: hand over the next action, not a notice.
                         <Box sx={{py: 1}}>
                             <Typography variant="body2" sx={{color: 'text.disabled'}}>
-                                {pairingRequired
-                                    ? t('bots.table.noChatsPairFirst', {
-                                        defaultValue: 'No chats yet. Pair this bot (see Pairing), then send it a message on {{platform}} — its Chat ID appears here.',
+                                {running === false
+                                    ? t('bots.table.notRunning', {
+                                        defaultValue: 'This bot isn’t running. Start it, then send it a message on {{platform}} — its Chat ID appears here.',
                                         platform: platform || t('bots.table.itsPlatform', {defaultValue: 'its platform'}),
                                     })
-                                    : t('bots.table.noChats', {
-                                        defaultValue: 'No chats yet. Send any message to this bot on {{platform}} and its Chat ID will appear here.',
-                                        platform: platform || t('bots.table.itsPlatform', {defaultValue: 'its platform'}),
-                                    })}
+                                    : pairingRequired
+                                        ? t('bots.table.noChatsPairFirst', {
+                                            defaultValue: 'No chats yet. Pair this bot (see Pairing), then send it a message on {{platform}} — its Chat ID appears here.',
+                                            platform: platform || t('bots.table.itsPlatform', {defaultValue: 'its platform'}),
+                                        })
+                                        : t('bots.table.noChats', {
+                                            defaultValue: 'No chats yet. Send any message to this bot on {{platform}} and its Chat ID will appear here.',
+                                            platform: platform || t('bots.table.itsPlatform', {defaultValue: 'its platform'}),
+                                        })}
                             </Typography>
                         </Box>
                     )}
-                    {!loading && !error && chats.length > 0 && (
+                    {chats.length > 0 && (
                         <List dense disablePadding sx={{mt: 0.5}}>
                             {chats.map((chat) => (
                                 <ListItem key={chat.chat_id} disableGutters sx={{py: 0.25}}>

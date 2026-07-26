@@ -1520,7 +1520,7 @@ export const api = {
     // List the chats a bot can reach (GET /api/v1/bots/:bot/chats).
     // Placeholder until codegen regenerates the client SDK for the new
     // bot-interaction endpoint — calls the raw path directly.
-    listBotChats: async (botUUID: string): Promise<{chats?: BotChat[]; error?: string}> => {
+    listBotChats: async (botUUID: string): Promise<{chats?: BotChat[]; running?: boolean; error?: string}> => {
         try {
             const base = await getApiBaseUrl();
             const headers = await getAuthHeaders();

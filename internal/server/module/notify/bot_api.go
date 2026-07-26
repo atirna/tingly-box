@@ -279,14 +279,22 @@ func (h *BotAPIHandler) Wait(c *gin.Context) {
 // this, the chat_id the request body demands is undiscoverable (it is not in
 // /help, not on the bot table, and not otherwise exposed).
 //
-//	200  chat list (possibly empty)
-//	404  bot not running
+// A bot that isn't running simply has no reachable chats — that's an empty
+// state, not an error — so this endpoint never returns 404. The response
+// carries a `running` flag so the UI can tailor the empty message ("start the
+// bot" vs "send it a message"). See ux-principles #11.
+//
+//	200  chat list (possibly empty) with running flag
 //	503  chat listing unavailable (no store wired)
 func (h *BotAPIHandler) ListChats(c *gin.Context) {
 	botUUID := c.Param("bot")
 
-	if _, ok := h.resolveChannel(botUUID); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "bot not running"})
+	_, running := h.resolveChannel(botUUID)
+	if !running {
+		// A stopped/unknown bot has zero reachable chats; surface that as a
+		// normal empty result rather than a 404 so the UI shows the empty
+		// state instead of "failed to list chats".
+		c.JSON(http.StatusOK, gin.H{"chats": []ChatSummary{}, "running": false})
 		return
 	}
 	if h.chatLister == nil {
@@ -303,7 +311,7 @@ func (h *BotAPIHandler) ListChats(c *gin.Context) {
 	if chats == nil {
 		chats = []ChatSummary{}
 	}
-	c.JSON(http.StatusOK, gin.H{"chats": chats})
+	c.JSON(http.StatusOK, gin.H{"chats": chats, "running": true})
 }
 
 // resolveChannel looks up the bot's channel. Centralized so both Notify and

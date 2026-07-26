@@ -92,11 +92,10 @@ func RegisterBotRoutes(router *swagger.RouteGroup, handler *BotAPIHandler) {
 
 	router.GET("/bots/:bot/chats", handler.ListChats,
 		swagger.WithTags("bot-interaction"),
-		swagger.WithDescription("List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact."),
+		swagger.WithDescription("List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact. A bot that isn't running returns an empty list with running:false rather than an error."),
 		swagger.WithPathParam("bot", "string", "Target bot UUID"),
 		swagger.WithResponseModel(BotChatsResponse{}),
 		swagger.WithErrorResponses(
-			swagger.ErrorResponseConfig{Code: 404, Message: "Bot not running"},
 			swagger.ErrorResponseConfig{Code: 503, Message: "Chat listing unavailable"},
 		),
 	)

@@ -305,8 +305,10 @@ func TestListChats_EmptyArray(t *testing.T) {
 	}
 }
 
-// TestListChats_NotRunning asserts a bot that isn't registered returns 404,
-// matching the Notify/Interact contract.
+// TestListChats_NotRunning asserts a bot that isn't registered returns a
+// normal empty result (not a 404): a stopped/unknown bot simply has no
+// reachable chats, which is an empty state, not an error. The response
+// carries running:false so the UI can tailor the empty message.
 func TestListChats_NotRunning(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -318,7 +320,13 @@ func TestListChats_NotRunning(t *testing.T) {
 	g.GET("/bots/:bot/chats", handler.ListChats)
 
 	w := doJSON(t, r, http.MethodGet, "/api/v1/bots/unknown/chats", nil)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for unknown bot, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unknown bot, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"chats":[]`) {
+		t.Fatalf("expected empty chats array, got: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"running":false`) {
+		t.Fatalf("expected running:false, got: %s", w.Body.String())
 	}
 }
