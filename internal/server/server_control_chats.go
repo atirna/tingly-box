@@ -48,9 +48,13 @@ func buildBotChatLister(reg *channel.Registry, provider botChatProvider) notifym
 				if c.ChatID != lock {
 					continue
 				}
-			} else if c.Platform != "" && c.Platform != platform {
-				// Platform mismatch: this chat belongs to a different bot's
-				// platform, so this bot's channel cannot deliver to it.
+			} else if c.Platform != platform {
+				// Strict platform scoping: a chat is reachable only when its
+				// stored platform matches the bot's channel platform. Empty
+				// platform is treated as "unattributed" and excluded — we have
+				// no proof it belongs to this bot, and the chat store key has
+				// no platform dimension, so showing it here would leak a
+				// different platform's chat_id into this bot's list.
 				continue
 			}
 			summary := notifymodule.ChatSummary{

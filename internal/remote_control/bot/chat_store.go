@@ -303,13 +303,22 @@ func (s *ChatStoreJSON) GetChat(chatID string) (*Chat, error) {
 	return s.store.Get(chatID), nil
 }
 
-// GetOrCreateChat gets a chat or creates it if not exists
+// GetOrCreateChat gets a chat or creates it if not exists.
+//
+// The store is keyed by chatID alone (no platform dimension), so when an
+// existing record's platform differs from the requested platform we refuse
+// rather than silently returning (and later overwriting) another platform's
+// chat. This is the止血 guard against cross-platform chatID-string collisions
+// leaking platform A's chat into platform B.
 func (s *ChatStoreJSON) GetOrCreateChat(chatID, platform string) (*Chat, error) {
 	if err := s.ensureStore(); err != nil {
 		return nil, err
 	}
 
 	if chat := s.store.Get(chatID); chat != nil {
+		if platform != "" && chat.Platform != "" && chat.Platform != platform {
+			return nil, fmt.Errorf("chat %q belongs to platform %q, not %q", chatID, chat.Platform, platform)
+		}
 		return chat, nil
 	}
 
@@ -370,7 +379,11 @@ func (s *ChatStoreJSON) UpdateChat(chatID string, fn func(*Chat)) error {
 
 // ============== Project Binding ==============
 
-// BindProject binds a project to a chat (creates chat if not exists)
+// BindProject binds a project to a chat (creates chat if not exists).
+//
+// Platform is set only when the record is new or already on the same
+// platform: GetOrCreateChat refuses a cross-platform collision, so the
+// assignment here can never re-stamp another platform's chat.
 func (s *ChatStoreJSON) BindProject(chatID, platform, projectPath, ownerID string) error {
 	chat, err := s.GetOrCreateChat(chatID, platform)
 	if err != nil {
