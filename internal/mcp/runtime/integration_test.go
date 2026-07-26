@@ -479,46 +479,50 @@ func TestToolSourceFactory_AllTransports(t *testing.T) {
 func TestHealthMonitor_Strategy(t *testing.T) {
 	strategy := NewExponentialBackoffStrategy()
 
-	// Test cases account for ±25% jitter in implementation
+	// NextRetry draws jitter randomly, so one sample per case tests the
+	// bounds only ~as often as the draw happens to land near them. That is
+	// how the retry_1 ceiling below came to be written as 12s when the real
+	// ceiling is 12.5s: the wrong bound failed about one run in five and read
+	// as flakiness rather than as the bug it was. Sample enough draws that
+	// any out-of-range value is caught the first time.
+	const samples = 500
+
 	testCases := []struct {
 		retryCount int
 		minDelay   time.Duration // Base delay - 25% jitter
 		maxDelay   time.Duration // Base delay + 25% jitter (or max)
 	}{
-		{0, 5 * time.Second, 5 * time.Second},    // No jitter for first attempt
-		{1, 7 * time.Second, 12 * time.Second},   // 10s ± 25%
-		{2, 15 * time.Second, 25 * time.Second},  // 20s ± 25%
-		{3, 30 * time.Second, 50 * time.Second},  // 40s ± 25%
-		{4, 45 * time.Second, 60 * time.Second},  // 60s ± 25% (capped at max)
-		{5, 45 * time.Second, 60 * time.Second},  // Still max
-		{10, 45 * time.Second, 60 * time.Second}, // Still max
+		{0, 5 * time.Second, 5 * time.Second},                  // No jitter for first attempt
+		{1, 7500 * time.Millisecond, 12500 * time.Millisecond}, // 10s ± 25%
+		{2, 15 * time.Second, 25 * time.Second},                // 20s ± 25%
+		{3, 30 * time.Second, 50 * time.Second},                // 40s ± 25%
+		{4, 45 * time.Second, 60 * time.Second},                // 60s ± 25% (capped at max)
+		{5, 45 * time.Second, 60 * time.Second},                // Still max
+		{10, 45 * time.Second, 60 * time.Second},               // Still max
 	}
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("retry_%d", tc.retryCount), func(t *testing.T) {
-			delay := strategy.NextRetry(tc.retryCount)
+			seen := make(map[time.Duration]struct{}, samples)
 
-			if delay < tc.minDelay {
-				t.Errorf("Delay %v is less than minimum %v", delay, tc.minDelay)
-			}
-			if delay > tc.maxDelay {
-				t.Errorf("Delay %v exceeds maximum %v", delay, tc.maxDelay)
-			}
+			for i := 0; i < samples; i++ {
+				delay := strategy.NextRetry(tc.retryCount)
+				seen[delay] = struct{}{}
 
-			// Check that delay follows exponential pattern (approximately)
-			if tc.retryCount > 0 && tc.retryCount <= 4 {
-				baseDelay := 5 * time.Second
-				multiplier := 1 << uint(tc.retryCount-1)
-				expectedDelay := time.Duration(float64(baseDelay) * float64(multiplier) * 2.0)
-				// Allow some tolerance for jitter
-				tolerance := time.Duration(float64(expectedDelay) * 0.5)
-				minExpected := expectedDelay - tolerance
-				maxExpected := expectedDelay + tolerance
-
-				if delay < minExpected || delay > maxExpected {
-					t.Logf("Warning: delay %v outside expected range [%v, %v] for retry %d",
-						delay, minExpected, maxExpected, tc.retryCount)
+				if delay < tc.minDelay {
+					t.Fatalf("Delay %v is less than minimum %v (sample %d)", delay, tc.minDelay, i)
 				}
+				if delay > tc.maxDelay {
+					t.Fatalf("Delay %v exceeds maximum %v (sample %d)", delay, tc.maxDelay, i)
+				}
+			}
+
+			// The jittered cases must actually vary. A strategy that returned a
+			// constant would satisfy the bounds above while defeating the point
+			// of jitter, which is to stop every client retrying in lockstep.
+			if tc.retryCount > 0 && tc.minDelay != tc.maxDelay && len(seen) == 1 {
+				t.Errorf("retry %d produced a constant delay across %d samples; jitter is not being applied",
+					tc.retryCount, samples)
 			}
 		})
 	}
