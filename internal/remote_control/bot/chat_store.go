@@ -158,11 +158,15 @@ type ChatStoreInterface interface {
 	// ListChatsByOwner lists all chats owned by a user
 	ListChatsByOwner(ownerID, platform string) ([]*Chat, error)
 
-	// ListChats returns every chat record this bot has seen, newest first by
-	// UpdatedAt. Used by the GET /bots/:bot/chats API so callers of the
+	// ListChats returns the chat records this bot can reach on the given
+	// platform — i.e. those whose Platform field is set AND equals platform.
+	// Records with an empty or mismatched Platform are dropped at the source:
+	// the store key has no platform dimension, so an unattributed record
+	// cannot be proven to belong to this bot's channel and must not leak into
+	// its /chats list. Used by the GET /bots/:bot/chats API so callers of the
 	// notify/interact endpoints can discover the channel-native chat_id they
 	// must pass in the request body.
-	ListChats() ([]*Chat, error)
+	ListChats(platform string) ([]*Chat, error)
 
 	// ListChatProjectPaths returns the MRU project-path history for a chat.
 	ListChatProjectPaths(chatID string) ([]string, error)
@@ -479,16 +483,21 @@ func (s *ChatStoreJSON) ListChatsByOwner(ownerID, platform string) ([]*Chat, err
 	return chats, nil
 }
 
-// ListChats returns every chat record this bot has seen, ordered newest-first
-// by UpdatedAt (then ChatID as a stable tiebreaker) so the most recently
-// active chats surface at the top. See ChatStoreInterface.ListChats.
-func (s *ChatStoreJSON) ListChats() ([]*Chat, error) {
+// ListChats returns the chat records this bot can reach on platform — those
+// whose Platform field is set AND matches. Empty/mismatched-platform records
+// are dropped at the source (see ChatStoreInterface.ListChats for why).
+// Ordered newest-first by UpdatedAt (then ChatID as a stable tiebreaker) so
+// the most recently active chats surface at the top.
+func (s *ChatStoreJSON) ListChats(platform string) ([]*Chat, error) {
 	if err := s.ensureStore(); err != nil {
 		return nil, err
 	}
 	items := s.store.List()
 	chats := make([]*Chat, 0, len(items))
 	for _, chat := range items {
+		if chat.Platform != platform {
+			continue
+		}
 		chats = append(chats, chat)
 	}
 	sort.Slice(chats, func(i, j int) bool {

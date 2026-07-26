@@ -37,24 +37,18 @@ func buildBotChatLister(reg *channel.Registry, provider botChatProvider) notifym
 		}
 		defer store.Close()
 
-		all, err := store.ListChats()
+		// ListChats scopes at the source: only records whose Platform field
+		// equals this bot's channel platform are returned, so unattributed or
+		// cross-platform chats never reach the API surface.
+		all, err := store.ListChats(platform)
 		if err != nil {
 			return nil, err
 		}
 
 		out := make([]notifymodule.ChatSummary, 0, len(all))
 		for _, c := range all {
-			if lock != "" {
-				if c.ChatID != lock {
-					continue
-				}
-			} else if c.Platform != platform {
-				// Strict platform scoping: a chat is reachable only when its
-				// stored platform matches the bot's channel platform. Empty
-				// platform is treated as "unattributed" and excluded — we have
-				// no proof it belongs to this bot, and the chat store key has
-				// no platform dimension, so showing it here would leak a
-				// different platform's chat_id into this bot's list.
+			if lock != "" && c.ChatID != lock {
+				// A chat-id lock collapses the reachable set to one chat id.
 				continue
 			}
 			summary := notifymodule.ChatSummary{
