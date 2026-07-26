@@ -7,6 +7,7 @@ import { BOT_PLATFORM_IDS, PLATFORM_BRAND_ICONS, platformDisplayName, usePlatfor
 import { api } from '@/services/api';
 import { countBotsByPlatform } from '@/types/bot';
 import type { BotSettings } from '@/types/bot';
+import { useBotToggle } from '@/hooks/useBotToggle';
 import { Add, ListAlt } from '@/components/icons';
 import { Alert, Box, Button, CircularProgress, Snackbar } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -35,7 +36,6 @@ const BotOverviewPage = () => {
     const [dialogPlatformId, setDialogPlatformId] = useState('telegram');
 
     const [botLoading, setBotLoading] = useState(true);
-    const [togglingBotUuid, setTogglingBotUuid] = useState<string | null>(null);
     const [restartingBotUuid, setRestartingBotUuid] = useState<string | null>(null);
 
     const [snackbar, setSnackbar] = useState<{
@@ -132,28 +132,9 @@ const BotOverviewPage = () => {
         }
     }, [searchParams, setSearchParams, dialogOpen, openAddDialog]);
 
-    const handleBotToggle = useCallback(async (uuid: string, enabled: boolean) => {
-        setTogglingBotUuid(uuid);
-        try {
-            const result = await api.toggleImBotSetting(uuid);
-            if (result?.success) {
-                showNotification(
-                    enabled
-                        ? t('remoteControl.notify.botEnabled', { defaultValue: 'Bot enabled' })
-                        : t('remoteControl.notify.botDisabled', { defaultValue: 'Bot disabled' }),
-                    'success'
-                );
-                await loadBotSettings();
-            } else {
-                showNotification(t('remoteControl.notify.toggleFailed', { defaultValue: 'Failed to toggle bot: {{error}}', error: result?.error || 'Unknown error' }), 'error');
-            }
-        } catch (err) {
-            console.error('Failed to toggle bot:', err);
-            showNotification(t('remoteControl.notify.toggleFailedGeneric', { defaultValue: 'Failed to toggle bot' }), 'error');
-        } finally {
-            setTogglingBotUuid(null);
-        }
-    }, [loadBotSettings, showNotification, t]);
+    // Toggle uses the shared useBotToggle hook (same op across all bot pages);
+    // restart/delete keep the page's own Snackbar.
+    const {toggle: handleBotToggle, isToggling} = useBotToggle({onDone: loadBotSettings});
 
     const handleBotRestart = useCallback(async (uuid: string) => {
         setRestartingBotUuid(uuid);
@@ -241,7 +222,7 @@ const BotOverviewPage = () => {
                         onDelete={(uuid) => handleDeleteBot(uuid)}
                         onBotToggle={(uuid, enabled) => handleBotToggle(uuid, enabled)}
                         onRestart={(uuid) => handleBotRestart(uuid)}
-                        isToggling={(uuid) => togglingBotUuid === uuid}
+                        isToggling={isToggling}
                         isRestarting={(uuid) => restartingBotUuid === uuid}
                     />
                 )}
