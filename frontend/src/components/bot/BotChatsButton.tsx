@@ -1,4 +1,4 @@
-import {Message as MessageIcon, ContentCopy as CopyIcon, Refresh as RefreshIcon} from '@/components/icons';
+import {Message as MessageIcon, ContentCopy as CopyIcon} from '@/components/icons';
 import type {BotChat} from '@/types/bot';
 import {api} from '@/services/api';
 import {notify} from '@/utils/notify';
@@ -41,11 +41,12 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
     const [running, setRunning] = useState<boolean | null>(null); // null = not loaded yet
     const [error, setError] = useState<string | null>(null);
 
-    // load fetches the chat list and is shared by both first-open and manual
-    // refresh, so the refresh button can force a re-fetch at any time (a chat
-    // only registers after the bot actually receives a message on its
-    // channel, so a stale view is expected until the operator re-pulls).
-    const load = useCallback(async () => {
+    const handleOpen = useCallback(async (e: React.MouseEvent<HTMLElement>) => {
+        // Close the tooltip the moment the popover opens, otherwise its hover
+        // text lingers over the open popover.
+        setTooltipOpen(false);
+        setAnchor(e.currentTarget);
+        if (running !== null || error) return; // already loaded this session
         setLoading(true);
         setError(null);
         const result = await api.listBotChats(botUUID);
@@ -56,20 +57,7 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
             setChats(result.chats ?? []);
             setRunning(result.running ?? true);
         }
-    }, [botUUID]);
-
-    const handleOpen = useCallback(async (e: React.MouseEvent<HTMLElement>) => {
-        // Close the tooltip the moment the popover opens, otherwise its hover
-        // text lingers over the open popover.
-        setTooltipOpen(false);
-        setAnchor(e.currentTarget);
-        if (running !== null || error) return; // already loaded this session
-        await load();
-    }, [running, error, load]);
-
-    const handleRefresh = useCallback(async () => {
-        await load();
-    }, [load]);
+    }, [botUUID, running, error]);
 
     const handleClose = useCallback(() => setAnchor(null), []);
 
@@ -95,23 +83,10 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
                 slotProps={{paper: {sx: {minWidth: 280, maxWidth: 380, mt: 0.5}}}}
             >
                 <Box sx={{p: 1.5}}>
-                    <Stack direction="row" sx={{alignItems: 'center', justifyContent: 'space-between', mb: 0.5}}>
-                        <Typography variant="caption" sx={{color: 'text.secondary', fontWeight: 600}}>
-                            {t('bots.table.chatsTitle', {defaultValue: 'Reachable chats — copy the Chat ID for notify/interact'})}
-                        </Typography>
-                        <Tooltip title={t('bots.table.refreshChats', {defaultValue: 'Refresh'})}>
-                            <IconButton
-                                size="small"
-                                onClick={handleRefresh}
-                                disabled={loading}
-                                aria-label={t('bots.table.refreshChats', {defaultValue: 'Refresh chats'})}
-                                sx={{p: 0.25}}
-                            >
-                                {loading ? <CircularProgress size={14}/> : <RefreshIcon fontSize="inherit"/>}
-                            </IconButton>
-                        </Tooltip>
-                    </Stack>
-                    {loading && chats.length === 0 && (
+                    <Typography variant="caption" sx={{color: 'text.secondary', fontWeight: 600}}>
+                        {t('bots.table.chatsTitle', {defaultValue: 'Reachable chats — copy the Chat ID for notify/interact'})}
+                    </Typography>
+                    {loading && (
                         <Box sx={{display: 'flex', justifyContent: 'center', py: 2}}>
                             <CircularProgress size={20}/>
                         </Box>
@@ -145,7 +120,7 @@ const BotChatsButton: React.FC<BotChatsButtonProps> = ({botUUID, platform, pairi
                             </Typography>
                         </Box>
                     )}
-                    {chats.length > 0 && (
+                    {!loading && !error && chats.length > 0 && (
                         <List dense disablePadding sx={{mt: 0.5}}>
                             {chats.map((chat) => (
                                 <ListItem key={chat.chat_id} disableGutters sx={{py: 0.25}}>

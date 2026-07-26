@@ -1,4 +1,4 @@
-import {ContentCopy as CopyIcon, Edit as CustomIcon, Close as CloseIcon, Code as CodeIcon} from '@/components/icons';
+import {ContentCopy as CopyIcon, Edit as CustomIcon, Close as CloseIcon, Code as CodeIcon, Refresh as RefreshIcon} from '@/components/icons';
 import {api} from '@/services/api';
 import {notify} from '@/utils/notify';
 import {isPairingRequired} from '@/types/bot';
@@ -193,12 +193,27 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
                 </Tooltip>
                 <Chip label={bot.platform} size="small" />
                 <Box sx={{flexGrow: 1}} />
-                {enabled && !loading && (
+                {enabled && (
                     <Typography variant="body2" sx={{color: 'text.secondary'}}>
                         {chats.length > 0
                             ? t('notify.group.chatCount', {defaultValue: '{{count}} reachable chat(s)', count: chats.length})
                             : t('notify.group.noChats', {defaultValue: 'No reachable chats'})}
                     </Typography>
+                )}
+                {enabled && (
+                    // Manual refresh: a chat only registers after the bot
+                    // actually receives a message on its channel, so the first
+                    // view is expected to be stale until the operator re-pulls.
+                    <Tooltip title={t('notify.group.refresh', {defaultValue: 'Refresh reachable chats'})}>
+                        <IconButton
+                            size="small"
+                            onClick={loadChats}
+                            disabled={loading || isToggling}
+                            aria-label={t('notify.group.refresh', {defaultValue: 'Refresh reachable chats'})}
+                        >
+                            {loading ? <CircularProgress size={16}/> : <RefreshIcon fontSize="small"/>}
+                        </IconButton>
+                    </Tooltip>
                 )}
                 <Tooltip title={enabled
                     ? t('notify.group.disableHint', {defaultValue: 'Disable this bot'})
