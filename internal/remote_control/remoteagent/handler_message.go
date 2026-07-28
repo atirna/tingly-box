@@ -23,6 +23,15 @@ func (h *BotHandler) HandleMessage(msg imbot.Message, platform imbot.Platform, b
 		return
 	}
 
+	// Blocklist gate: a disabled chat's traffic — messages AND button
+	// callbacks — is dropped before any handler runs. Silently: replying
+	// would give a blocked party a probe signal and generate outbound
+	// traffic for exactly the chats disable exists to stop.
+	if h.chatStore.IsChatDisabled(chatID) {
+		logrus.Debugf("chat %s is disabled, dropping message", chatID)
+		return
+	}
+
 	// An action firing (a button press) dispatches on its payload, not on
 	// message text.
 	if msg.IsCallback() {
