@@ -1519,16 +1519,66 @@ export const api = {
 
     // List the chats a bot can reach (GET /api/v1/bots/:bot/chats).
     // Placeholder until codegen regenerates the client SDK for the new
-    // bot-interaction endpoint — calls the raw path directly.
-    listBotChats: async (botUUID: string): Promise<{chats?: BotChat[]; running?: boolean; error?: string}> => {
+    // bot-interaction endpoint — calls the raw path directly. Pass
+    // includeDisabled to also list blocklisted chats.
+    listBotChats: async (botUUID: string, includeDisabled = false): Promise<{chats?: BotChat[]; running?: boolean; error?: string}> => {
         try {
             const base = await getApiBaseUrl();
             const headers = await getAuthHeaders();
-            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/chats`, {
+            const query = includeDisabled ? '?include_disabled=true' : '';
+            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/chats${query}`, {
                 headers: {...headers, 'Content-Type': 'application/json'},
             });
             if (!response.ok) {
                 return {error: `failed to list chats (${response.status})`};
+            }
+            return await response.json();
+        } catch (error: any) {
+            return {error: error.message};
+        }
+    },
+
+    // Hard-delete a chat record (DELETE /api/v1/bots/:bot/chats/:chat_id).
+    // Placeholder until codegen. Pairing/whitelist/binding are removed; the
+    // chat re-registers fresh if it messages the bot again. 409 = the chat is
+    // the bot's chat-id lock and cannot be deleted.
+    deleteBotChat: async (botUUID: string, chatID: string): Promise<{ok?: boolean; error?: string}> => {
+        try {
+            const base = await getApiBaseUrl();
+            const headers = await getAuthHeaders();
+            const response = await fetch(
+                `${base}/api/v1/bots/${encodeURIComponent(botUUID)}/chats/${encodeURIComponent(chatID)}`,
+                {method: 'DELETE', headers: {...headers, 'Content-Type': 'application/json'}},
+            );
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                return {error: data?.error || `delete failed (${response.status})`};
+            }
+            return await response.json();
+        } catch (error: any) {
+            return {error: error.message};
+        }
+    },
+
+    // Toggle a chat's inbound blocklist flag
+    // (PUT /api/v1/bots/:bot/chats/:chat_id/disabled). Placeholder until
+    // codegen. A disabled chat's messages are silently dropped and it drops
+    // out of the reachable list / notify / interact until re-enabled.
+    setBotChatDisabled: async (botUUID: string, chatID: string, disabled: boolean): Promise<{ok?: boolean; error?: string}> => {
+        try {
+            const base = await getApiBaseUrl();
+            const headers = await getAuthHeaders();
+            const response = await fetch(
+                `${base}/api/v1/bots/${encodeURIComponent(botUUID)}/chats/${encodeURIComponent(chatID)}/disabled`,
+                {
+                    method: 'PUT',
+                    headers: {...headers, 'Content-Type': 'application/json'},
+                    body: JSON.stringify({disabled}),
+                },
+            );
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                return {error: data?.error || `update failed (${response.status})`};
             }
             return await response.json();
         } catch (error: any) {

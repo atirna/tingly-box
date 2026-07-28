@@ -177,6 +177,8 @@ export interface BotChat {
     is_paired?: boolean;
     is_whitelisted?: boolean;
     project_path?: string;
+    disabled?: boolean;
+    disabled_at?: string;
     updated_at?: string;
 }
 
