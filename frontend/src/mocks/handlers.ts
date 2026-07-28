@@ -2443,6 +2443,10 @@ export const handlers = [
                     smartguide_provider: 'mock-provider-anthropic',
                     smartguide_model: 'claude-sonnet-5',
                     chat_id_lock: '123456789',
+                    // Notify route already active on the first mock chat, so the IM
+                    // Notify page shows both states: a "Routed" chip here and a
+                    // "Route here" button on the sibling chat.
+                    scenarios: JSON.stringify([{ name: 'claude_code', chat_id: 'telegram:123456789', enabled: true }]),
                     created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
                     auth: { token: 'mock-bot-token-****' },
                 },
@@ -2561,9 +2565,21 @@ export const handlers = [
         return HttpResponse.json({ status: 'answered', decision: { selected: 'allow' } })
     }),
 
+    // Mirrors the real SettingsResponse{success, settings} shape (not a flat
+    // echo) so notify_route round-trips through settings.scenarios the same
+    // way the real PUT /imbot-settings/:uuid does — BotNotifyGroup's "Route
+    // here" action reads result.settings.scenarios to flip the chip.
     http.put('/api/v1/imbot-settings/:uuid', async ({ params, request }) => {
         const body = await request.json() as any
-        return HttpResponse.json({ success: true, uuid: params.uuid, ...body })
+        const uuid = params.uuid as string
+        let scenarios = ''
+        if (body.notify_route) {
+            const nr = body.notify_route
+            scenarios = nr.remove ? '[]' : JSON.stringify([
+                { name: nr.name || 'claude_code', chat_id: nr.chat_id, enabled: nr.enabled !== false },
+            ])
+        }
+        return HttpResponse.json({ success: true, settings: { uuid, ...body, scenarios } })
     }),
 
     http.post('/api/v1/imbot-settings', async ({ request }) => {

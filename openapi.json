@@ -151,6 +151,268 @@
         }
       }
     },
+    "/api/v1/bots/{bot}/chats": {
+      "get": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact. A bot that isn't running returns an empty list with running:false rather than an error.",
+        "description": "List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact. A bot that isn't running returns an empty list with running:false rather than an error.",
+        "operationId": "apiV1BotsBotChatsGet",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotChatsResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat listing unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/interact": {
+      "post": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Start an interactive prompt on a running bot's chat and return a request_id to long-poll for the reply. Responds 202, not 200 (the schema's documented 200 is this tool's generic success code — the handler actually returns 202).",
+        "description": "Start an interactive prompt on a running bot's chat and return a request_id to long-poll for the reply. Responds 202, not 200 (the schema's documented 200 is this tool's generic success code — the handler actually returns 202).",
+        "operationId": "apiV1BotsBotInteractPost",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotInteractRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotInteractResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or kind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bot not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Interaction registry unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/interact/{request_id}": {
+      "get": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Long-poll for the reply to an interactive prompt started by POST /bots/:bot/interact. Status mapping: 200 answered/cancelled, 410 timeout/error, 504 pending (retry), 404 expired.",
+        "description": "Long-poll for the reply to an interactive prompt started by POST /bots/:bot/interact. Status mapping: 200 answered/cancelled, 410 timeout/error, 504 pending (retry), 404 expired.",
+        "operationId": "apiV1BotsBotInteractRequest_idGet",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Interaction request id from the interact response",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Long-poll budget, e.g. \"45s\" (default 45s, capped at 50s)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotWaitResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Interaction registry unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/notify": {
+      "post": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Deliver a one-way notification to a running bot's chat. Requires the operator user token.",
+        "description": "Deliver a one-way notification to a running bot's chat. Requires the operator user token.",
+        "operationId": "apiV1BotsBotNotifyPost",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotNotifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotNotifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bot not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Delivery failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/codex/import/openai": {
       "post": {
         "tags": [
@@ -329,6 +591,28 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClaudeConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/codex": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get the currently applied Codex preferences",
+        "description": "Get the currently applied Codex preferences",
+        "operationId": "apiV1ConfigCodexGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodexConfigResponse"
                 }
               }
             }
@@ -6094,6 +6378,222 @@
           "data"
         ]
       },
+      "BotChatSummary": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "telegram:123456789"
+          },
+          "is_paired": {
+            "type": "boolean",
+            "description": "Field is_paired",
+            "example": true
+          },
+          "is_whitelisted": {
+            "type": "boolean",
+            "description": "Field is_whitelisted",
+            "example": false
+          },
+          "platform": {
+            "type": "string",
+            "description": "Field platform",
+            "example": "telegram"
+          },
+          "project_path": {
+            "type": "string",
+            "description": "Field project_path",
+            "example": "/home/user/proj"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Field updated_at",
+            "example": "2026-07-25T12:00:00Z"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "BotChatsResponse": {
+        "type": "object",
+        "properties": {
+          "chats": {
+            "type": "array",
+            "description": "Field chats",
+            "items": {
+              "$ref": "#/components/schemas/BotChatSummary"
+            }
+          },
+          "running": {
+            "type": "boolean",
+            "description": "Field running",
+            "example": true
+          }
+        },
+        "required": [
+          "chats",
+          "running"
+        ]
+      },
+      "BotInteractOption": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Field label",
+            "example": "Yes"
+          },
+          "style": {
+            "type": "string",
+            "description": "Field style",
+            "example": "primary"
+          },
+          "value": {
+            "type": "string",
+            "description": "Field value",
+            "example": "yes"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ]
+      },
+      "BotInteractRequest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Field body",
+            "example": "commit a1b2c3"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "dm:ops"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Field kind",
+            "example": "confirm"
+          },
+          "options": {
+            "type": "array",
+            "description": "Field options",
+            "items": {
+              "$ref": "#/components/schemas/BotInteractOption"
+            }
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field timeout_seconds",
+            "example": 120
+          },
+          "title": {
+            "type": "string",
+            "description": "Field title",
+            "example": "Deploy to prod?"
+          }
+        },
+        "required": [
+          "chat_id",
+          "kind",
+          "title"
+        ]
+      },
+      "BotInteractResponse": {
+        "type": "object",
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "description": "Field expires_at",
+            "example": "2026-07-25T12:05:00Z"
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Field request_id",
+            "example": "a1b2c3d4e5f6"
+          },
+          "wait_url": {
+            "type": "string",
+            "description": "Field wait_url",
+            "example": "/api/v1/bots/\u003cbot\u003e/interact/a1b2c3d4e5f6"
+          }
+        },
+        "required": [
+          "request_id",
+          "wait_url",
+          "expires_at"
+        ]
+      },
+      "BotNotifyRequest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Field body",
+            "example": "main branch is red"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "dm:ops"
+          },
+          "level": {
+            "type": "string",
+            "description": "Field level",
+            "example": "info"
+          },
+          "title": {
+            "type": "string",
+            "description": "Field title",
+            "example": "Build #412 failed"
+          }
+        },
+        "required": [
+          "chat_id",
+          "body"
+        ]
+      },
+      "BotNotifyResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Field ok",
+            "example": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "BotWaitResponse": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "object",
+            "description": "Field decision",
+            "additionalProperties": {}
+          },
+          "reason": {
+            "type": "string",
+            "description": "Field reason",
+            "example": "context deadline exceeded"
+          },
+          "status": {
+            "type": "string",
+            "description": "Field status",
+            "example": "answered"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
       "ClaudeCodePrefs": {
         "type": "object",
         "properties": {
@@ -6300,6 +6800,32 @@
           "configToml",
           "authJson",
           "models"
+        ]
+      },
+      "CodexConfigResponse": {
+        "type": "object",
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "description": "Field exists"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/CodexPrefs"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          },
+          "writeCatalog": {
+            "type": "boolean",
+            "description": "Field writeCatalog"
+          }
+        },
+        "required": [
+          "success",
+          "exists",
+          "preferences",
+          "writeCatalog"
         ]
       },
       "CodexPrefs": {
@@ -6589,9 +7115,9 @@
               "type": "string"
             }
           },
-          "chat_id": {
+          "chat_id_lock": {
             "type": "string",
-            "description": "Field chat_id"
+            "description": "Field chat_id_lock"
           },
           "default_agent": {
             "type": "string",
@@ -6608,6 +7134,9 @@
           "name": {
             "type": "string",
             "description": "Field name"
+          },
+          "notify_route": {
+            "$ref": "#/components/schemas/NotifyRouteRequest"
           },
           "platform": {
             "type": "string",
@@ -8655,6 +9184,43 @@
           "total",
           "requests"
         ]
+      },
+      "NotifyRouteRequest": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Field enabled"
+          },
+          "events": {
+            "type": "array",
+            "description": "Field events",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name"
+          },
+          "on_timeout": {
+            "type": "string",
+            "description": "Field on_timeout"
+          },
+          "remove": {
+            "type": "boolean",
+            "description": "Field remove"
+          },
+          "total_budget_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field total_budget_seconds"
+          }
+        }
       },
       "OAuthAuthorizeRequest": {
         "type": "object",
@@ -10931,9 +11497,9 @@
               "type": "string"
             }
           },
-          "chat_id": {
+          "chat_id_lock": {
             "type": "string",
-            "description": "Field chat_id"
+            "description": "Field chat_id_lock"
           },
           "created_at": {
             "type": "string",
@@ -11899,9 +12465,9 @@
               "type": "string"
             }
           },
-          "chat_id": {
+          "chat_id_lock": {
             "type": "string",
-            "description": "Field chat_id"
+            "description": "Field chat_id_lock"
           },
           "default_agent": {
             "type": "string",
@@ -11918,6 +12484,9 @@
           "name": {
             "type": "string",
             "description": "Field name"
+          },
+          "notify_route": {
+            "$ref": "#/components/schemas/NotifyRouteRequest"
           },
           "platform": {
             "type": "string",
@@ -13391,6 +13960,10 @@
     {
       "name": "auth",
       "description": "Operations related to auth"
+    },
+    {
+      "name": "bot-interaction",
+      "description": "Operations related to bot-interaction"
     },
     {
       "name": "codex",

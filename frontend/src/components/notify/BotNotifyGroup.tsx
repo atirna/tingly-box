@@ -1,7 +1,7 @@
-import {ContentCopy as CopyIcon, Edit as CustomIcon, Close as CloseIcon, Code as CodeIcon, Refresh as RefreshIcon} from '@/components/icons';
+import {ContentCopy as CopyIcon, Edit as CustomIcon, Close as CloseIcon, Code as CodeIcon, Refresh as RefreshIcon, Bell as BellIcon} from '@/components/icons';
 import {api} from '@/services/api';
 import {notify} from '@/utils/notify';
-import {isPairingRequired} from '@/types/bot';
+import {isPairingRequired, claudeCodeRoute} from '@/types/bot';
 import type {BotChat, BotSettings} from '@/types/bot';
 import {fontMono} from '@/theme/fonts';
 import NotifyTestDialog from '@/components/notify/NotifyTestDialog';
@@ -41,6 +41,10 @@ export interface BotNotifyGroupProps {
     bot: BotSettings;
     onToggle: (uuid: string) => void;
     isToggling?: boolean;
+    // Called after a route mutation succeeds, with the bot's fresh scenarios
+    // JSON, so the parent page's bot list stays in sync (mirrors onToggle's
+    // "patch just this bot" pattern rather than a full re-fetch).
+    onRouteChange?: (uuid: string, scenarios: string) => void;
 }
 
 // Em-dash placeholder for empty status/project/updated meta — shared styling.
@@ -109,7 +113,7 @@ const ProbeResultLine: React.FC<{result: ChatProbeResult; onDismiss: () => void}
 
 
 
-const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isToggling}) => {
+const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isToggling, onRouteChange}) => {
     const {t} = useTranslation();
     const enabled = bot.enabled ?? true;
 
@@ -117,6 +121,12 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [testChatID, setTestChatID] = useState<string | null>(null);
+    // Chat ID currently mid-route-mutation, so only that row's button shows a
+    // spinner (routing is a single-flight action — one route per bot today).
+    const [routingChatID, setRoutingChatID] = useState<string | null>(null);
+
+    const route = claudeCodeRoute(bot.scenarios);
+    const routedChatID = route?.enabled !== false ? route?.chat_id : undefined;
 
     const loadChats = useCallback(async () => {
         if (!bot.uuid) return;
@@ -152,6 +162,30 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
 
     const openTest = useCallback((chatID: string) => setTestChatID(chatID), []);
     const closeTest = useCallback(() => setTestChatID(null), []);
+
+    // Route Claude Code's /tingly/claude_code/notify hook to this chat (or
+    // stop routing there). One route per bot today — claude_code is the only
+    // scenario plugin registered — so "route here" on a different chat moves
+    // it rather than adding a second route. See .design/bot-arch.md §10.
+    const handleSetRoute = useCallback(async (chatID: string) => {
+        if (!bot.uuid) return;
+        setRoutingChatID(chatID);
+        const isCurrentlyRouted = routedChatID === chatID;
+        const result = isCurrentlyRouted
+            ? await api.setNotifyRoute(bot.uuid, {remove: true})
+            : await api.setNotifyRoute(bot.uuid, {chat_id: chatID});
+        setRoutingChatID(null);
+        if (result.error) {
+            notify.error(result.error);
+            return;
+        }
+        if (typeof result.settings?.scenarios === 'string') {
+            onRouteChange?.(bot.uuid, result.settings.scenarios);
+        }
+        notify.success(isCurrentlyRouted
+            ? t('notify.group.routeRemoved', {defaultValue: 'Claude Code notifications no longer route here'})
+            : t('notify.group.routeSet', {defaultValue: 'Claude Code notifications now route to this chat'}));
+    }, [bot.uuid, routedChatID, onRouteChange, t]);
 
     // The capability probe runner — owns firing notify/confirm against a chat
     // and the per-(chat,capability) results. Lives at the group level so a
@@ -301,6 +335,41 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
                                             </Typography>
                                         )}
                                         <Box sx={{flexGrow: 1}} />
+                                        {/* Claude Code hook route — "routed here" chip on whichever
+                                            chat currently gets /tingly/claude_code/notify traffic, a
+                                            one-click button to route it here otherwise. One route per
+                                            bot today (claude_code is the only scenario plugin), so
+                                            picking a different chat moves it. See bot-arch.md §10. */}
+                                        {routedChatID === chat.chat_id ? (
+                                            <Tooltip title={t('notify.group.routedHint', {defaultValue: 'Claude Code notifications route here — click to stop'})}>
+                                                <Chip
+                                                    icon={<BellIcon fontSize="small" />}
+                                                    label={t('notify.group.routed', {defaultValue: 'Routed'})}
+                                                    size="small"
+                                                    color="primary"
+                                                    variant="outlined"
+                                                    onClick={() => handleSetRoute(chat.chat_id)}
+                                                    onDelete={() => handleSetRoute(chat.chat_id)}
+                                                    deleteIcon={routingChatID === chat.chat_id ? <CircularProgress size={12} /> : <CloseIcon fontSize="small" />}
+                                                    disabled={routingChatID !== null}
+                                                />
+                                            </Tooltip>
+                                        ) : (
+                                            <Tooltip title={t('notify.group.routeHint', {defaultValue: 'Route Claude Code hook notifications to this chat'})}>
+                                                <span>
+                                                    <Button
+                                                        size="small"
+                                                        variant="text"
+                                                        startIcon={routingChatID === chat.chat_id ? <CircularProgress size={14} /> : <BellIcon fontSize="small" />}
+                                                        onClick={() => handleSetRoute(chat.chat_id)}
+                                                        disabled={routingChatID !== null}
+                                                        sx={{textTransform: 'none'}}
+                                                    >
+                                                        {t('notify.group.route', {defaultValue: 'Route here'})}
+                                                    </Button>
+                                                </span>
+                                            </Tooltip>
+                                        )}
                                         <Tooltip title={t('notify.group.copyChatId', {defaultValue: 'Copy Chat ID'})}>
                                             <IconButton size="small" onClick={() => handleCopy(chat.chat_id)}>
                                                 <CopyIcon fontSize="small" />

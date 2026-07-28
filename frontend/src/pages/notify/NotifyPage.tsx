@@ -58,6 +58,12 @@ const NotifyPage = () => {
         void toggle(uuid, enabled);
     }, [toggle]);
 
+    // Patch just the mutated bot's scenarios after a route change (create/
+    // move/remove) — same "patch, don't re-fetch" shape as toggle above.
+    const handleRouteChange = useCallback((uuid: string, scenarios: string) => {
+        setBots((prev) => prev.map((b) => (b.uuid === uuid ? {...b, scenarios} : b)));
+    }, []);
+
     return (
         <PageLayout loading={loading}>
             {/* Usage guide — embedded education (ux-principles #8). Collapsed by
@@ -89,6 +95,7 @@ const NotifyPage = () => {
                                 bot={bot}
                                 onToggle={(uuid) => handleToggle(uuid, !(bot.enabled ?? true))}
                                 isToggling={isToggling(bot.uuid!)}
+                                onRouteChange={handleRouteChange}
                             />
                         ))}
                     </Stack>

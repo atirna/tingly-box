@@ -2,7 +2,7 @@
 
 import TinglyService from "@/bindings";
 import type {components} from '@/client';
-import type {BotChat} from '@/types/bot';
+import type {BotChat, BotSettings} from '@/types/bot';
 import {getApiBaseUrl} from '../utils/protocol';
 import {
     controlApi,
@@ -1518,55 +1518,57 @@ export const api = {
     },
 
     // List the chats a bot can reach (GET /api/v1/bots/:bot/chats).
-    // Placeholder until codegen regenerates the client SDK for the new
-    // bot-interaction endpoint — calls the raw path directly.
     listBotChats: async (botUUID: string): Promise<{chats?: BotChat[]; running?: boolean; error?: string}> => {
         try {
-            const base = await getApiBaseUrl();
+            const client = await getClient();
             const headers = await getAuthHeaders();
-            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/chats`, {
-                headers: {...headers, 'Content-Type': 'application/json'},
+            const response = await client.GET('/api/v1/bots/{bot}/chats', {
+                headers,
+                params: {path: {bot: botUUID}},
             });
-            if (!response.ok) {
-                return {error: `failed to list chats (${response.status})`};
+            if (response.error) {
+                return {error: `failed to list chats (${response.response.status})`};
             }
-            return await response.json();
+            return {chats: response.data?.chats, running: response.data?.running};
         } catch (error: any) {
             return {error: error.message};
         }
     },
 
     // Send a one-way notification to a running bot's chat
-    // (POST /api/v1/bots/:bot/notify). Placeholder until codegen regenerates
-    // the client SDK — calls the raw path directly. Field names mirror the
-    // backend notifyRequest: chat_id + body required, title/level optional.
+    // (POST /api/v1/bots/:bot/notify). Field names mirror the backend
+    // notifyRequest: chat_id + body required, title/level optional.
     notifyBot: async (
         botUUID: string,
         body: {chat_id: string; title?: string; body: string; level?: string},
     ): Promise<{ok?: boolean; error?: string}> => {
         try {
-            const base = await getApiBaseUrl();
+            const client = await getClient();
             const headers = await getAuthHeaders();
-            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/notify`, {
-                method: 'POST',
-                headers: {...headers, 'Content-Type': 'application/json'},
-                body: JSON.stringify(body),
+            const response = await client.POST('/api/v1/bots/{bot}/notify', {
+                headers,
+                params: {path: {bot: botUUID}},
+                body,
             });
-            if (!response.ok) {
-                const data = await response.json().catch(() => null);
-                return {error: data?.error || `notify failed (${response.status})`};
+            if (response.error) {
+                const data = response.error as {error?: string} | undefined;
+                return {error: data?.error || `notify failed (${response.response.status})`};
             }
-            return await response.json();
+            return {ok: response.data?.ok};
         } catch (error: any) {
             return {error: error.message};
         }
     },
 
     // Start an interactive prompt on a running bot's chat
-    // (POST /api/v1/bots/:bot/interact). Placeholder until codegen regenerates
-    // the client SDK. Returns request_id + wait_url + expires_at, or {error}.
-    // Field names mirror backend interactRequest: chat_id/kind/title required,
-    // options required for confirm/choose, timeout_seconds optional (≤30m).
+    // (POST /api/v1/bots/:bot/interact). Returns request_id + wait_url +
+    // expires_at, or {error}. Field names mirror backend interactRequest:
+    // chat_id/kind/title required, options required for confirm/choose,
+    // timeout_seconds optional (≤30m). The endpoint actually responds 202
+    // (not 200 — see bot_routes.go's WithDescription note on this codegen
+    // tool's generic-200 limitation), which openapi-fetch treats as an
+    // "error" status even though the body is the normal success shape —
+    // BotInteractResponse either way, so we read whichever bucket has it.
     interactBot: async (
         botUUID: string,
         body: {
@@ -1579,50 +1581,63 @@ export const api = {
         },
     ): Promise<{request_id?: string; wait_url?: string; expires_at?: string; error?: string}> => {
         try {
-            const base = await getApiBaseUrl();
+            const client = await getClient();
             const headers = await getAuthHeaders();
-            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/interact`, {
-                method: 'POST',
-                headers: {...headers, 'Content-Type': 'application/json'},
-                body: JSON.stringify(body),
+            const response = await client.POST('/api/v1/bots/{bot}/interact', {
+                headers,
+                params: {path: {bot: botUUID}},
+                body,
             });
-            if (!response.ok) {
-                const data = await response.json().catch(() => null);
-                return {error: data?.error || `interact failed (${response.status})`};
+            if (response.response.status === 202) {
+                const data = (response.data ?? response.error) as
+                    | {request_id?: string; wait_url?: string; expires_at?: string}
+                    | undefined;
+                return {request_id: data?.request_id, wait_url: data?.wait_url, expires_at: data?.expires_at};
             }
-            return await response.json();
+            const data = response.error as {error?: string} | undefined;
+            return {error: data?.error || `interact failed (${response.response.status})`};
         } catch (error: any) {
             return {error: error.message};
         }
     },
 
     // Long-poll for the reply to an interactive prompt
-    // (GET /api/v1/bots/:bot/interact/:request_id?timeout=Ns). Placeholder
-    // until codegen. Returns a normalized status:
+    // (GET /api/v1/bots/:bot/interact/:request_id?timeout=Ns). Returns a
+    // normalized status:
     //   'answered' | 'cancelled' (200, carries decision)
     //   'timeout' | 'error'     (410, carries decision/reason)
     //   'pending'               (504 — caller retries)
     //   'expired'               (404)
     //   'unavailable'           (503)
-    // Transport failures fold into {error} (mirrors runProbe.ts).
+    // Transport failures fold into {error} (mirrors runProbe.ts). Branches
+    // on the raw HTTP status (openapi-fetch only knows 200 as "success" per
+    // this codegen tool's limitation — see bot_routes.go) rather than
+    // response.data/.error, since 410/answered-vs-timeout both carry the
+    // same BotWaitResponse body shape.
     waitBotInteract: async (
         botUUID: string,
         requestID: string,
         timeoutMs = 45000,
     ): Promise<{status?: string; decision?: Record<string, unknown>; reason?: string; error?: string}> => {
         try {
-            const base = await getApiBaseUrl();
+            const client = await getClient();
             const headers = await getAuthHeaders();
-            const response = await fetch(
-                `${base}/api/v1/bots/${encodeURIComponent(botUUID)}/interact/${encodeURIComponent(requestID)}?timeout=${Math.floor(timeoutMs / 1000)}s`,
-                {headers: {...headers, 'Content-Type': 'application/json'}},
-            );
-            const data = await response.json().catch(() => null);
-            if (response.status === 504) return {status: 'pending'};
-            if (response.status === 404) return {status: 'expired'};
-            if (response.status === 503) return {status: 'unavailable'};
-            if (!response.ok) {
-                return {error: data?.error || `wait failed (${response.status})`};
+            const response = await client.GET('/api/v1/bots/{bot}/interact/{request_id}', {
+                headers,
+                params: {
+                    path: {bot: botUUID, request_id: requestID},
+                    query: {timeout: `${Math.floor(timeoutMs / 1000)}s`},
+                },
+            });
+            const status = response.response.status;
+            if (status === 504) return {status: 'pending'};
+            if (status === 404) return {status: 'expired'};
+            if (status === 503) return {status: 'unavailable'};
+            const data = (response.data ?? response.error) as
+                | {status?: string; decision?: Record<string, unknown>; reason?: string; error?: string}
+                | undefined;
+            if (status !== 200 && status !== 410) {
+                return {error: data?.error || `wait failed (${status})`};
             }
             // 200 (answered/cancelled) or 410 (timeout/error) carry a status body.
             return {
@@ -1693,6 +1708,15 @@ export const api = {
         smartguide_provider?: string;
         smartguide_model?: string;
         remote_agent?: boolean;
+        notify_route?: {
+            name?: string;
+            chat_id?: string;
+            events?: string[];
+            enabled?: boolean;
+            on_timeout?: string;
+            total_budget_seconds?: number;
+            remove?: boolean;
+        };
     }): Promise<any> => {
         try {
             const client = await getClient();
@@ -1709,6 +1733,18 @@ export const api = {
             }
             return {success: false, error: error.message};
         }
+    },
+
+    // Create, edit, or remove a bot's outbound notify route — the chat a
+    // Claude Code hook notification/prompt delivers through (see
+    // .design/bot-arch.md §10, internal/server/module/imbot.NotifyRouteRequest).
+    // Thin wrapper over updateImBotSetting so BotNotifyGroup's per-chat "route
+    // notifications here" action doesn't need to know the settings PUT shape.
+    setNotifyRoute: async (
+        uuid: string,
+        route: {chat_id: string; enabled?: boolean; on_timeout?: string; total_budget_seconds?: number} | {remove: true},
+    ): Promise<{success?: boolean; settings?: BotSettings; error?: string}> => {
+        return api.updateImBotSetting(uuid, {notify_route: route});
     },
 
     deleteImBotSetting: async (uuid: string): Promise<any> => {

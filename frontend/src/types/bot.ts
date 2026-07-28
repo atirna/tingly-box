@@ -156,10 +156,17 @@ export function isRemoteAgentMounted(scenarios?: string): boolean {
     }
 }
 
+// CLAUDE_CODE_ROUTE is the only outbound scenario plugin registered today
+// (remote/scenario/builtin/claudecode) — the route a Claude Code hook
+// notification/prompt delivers through. Mirrors the backend's default in
+// applyNotifyRoute (internal/server/module/imbot).
+export const CLAUDE_CODE_ROUTE = 'claude_code';
+
 // A route row in a bot's scenarios JSON: a real outbound scenario binding
-// (e.g. "claude_code") rather than the "remote_agent" mount row. Read-only
-// mirror of the Go struct in remote/binding — there is no write path for
-// these from the frontend yet (see NotifyPage).
+// (e.g. "claude_code") rather than the "remote_agent" mount row. Mirrors the
+// Go struct in remote/binding. Written via api.setNotifyRoute
+// (POST/PUT .../imbot-settings/:uuid with a notify_route field — see
+// internal/server/module/imbot.NotifyRouteRequest).
 export interface NotifyRoute {
     name: string;
     chat_id?: string;
@@ -199,6 +206,14 @@ export function notifyRoutes(scenarios?: string): NotifyRoute[] {
 // remote_agent, notify fails CLOSED — no bindings means not mounted.
 export function isNotifyMounted(scenarios?: string): boolean {
     return notifyRoutes(scenarios).some((r) => r.enabled !== false);
+}
+
+// claudeCodeRoute returns the bot's "claude_code" route (chat_id + active
+// state), if one exists. Since claude_code is the only outbound scenario
+// plugin registered today, a bot has at most one real route — this is what
+// BotNotifyGroup checks per chat row to show "routed here" / offer to route.
+export function claudeCodeRoute(scenarios?: string): NotifyRoute | undefined {
+    return notifyRoutes(scenarios).find((r) => r.name === CLAUDE_CODE_ROUTE);
 }
 
 // countBotsByPlatform tallies active/total bots per platform — feeds the
