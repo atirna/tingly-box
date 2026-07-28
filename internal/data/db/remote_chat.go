@@ -40,6 +40,13 @@ type Chat struct {
 	// Chat-level settings
 	Verbose *bool `json:"verbose,omitempty"` // Verbose mode: nil=use bot default, true=verbose, false=quiet
 
+	// Disabled is the inbound blocklist flag: a disabled chat's messages are
+	// dropped before any handler runs and the chat is excluded from the
+	// reachable list. Unlike deletion, the row survives auto-create paths —
+	// only an explicit enable clears it.
+	Disabled   bool      `json:"disabled,omitempty"`
+	DisabledAt time.Time `json:"disabled_at,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -72,6 +79,9 @@ type RemoteChatRecord struct {
 	CurrentAgent string `gorm:"column:current_agent"`
 
 	Verbose *bool `gorm:"column:verbose"`
+
+	Disabled   bool      `gorm:"column:disabled;index:idx_remote_chats_disabled"`
+	DisabledAt time.Time `gorm:"column:disabled_at"`
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`

@@ -89,6 +89,8 @@ func toChatRecord(c *Chat) *RemoteChatRecord {
 		BashCwd:        c.BashCwd,
 		CurrentAgent:   c.CurrentAgent,
 		Verbose:        c.Verbose,
+		Disabled:       c.Disabled,
+		DisabledAt:     c.DisabledAt,
 		CreatedAt:      c.CreatedAt,
 		UpdatedAt:      c.UpdatedAt,
 	}
@@ -110,6 +112,8 @@ func fromChatRecord(r *RemoteChatRecord) *Chat {
 		BashCwd:        r.BashCwd,
 		CurrentAgent:   r.CurrentAgent,
 		Verbose:        r.Verbose,
+		Disabled:       r.Disabled,
+		DisabledAt:     r.DisabledAt,
 		CreatedAt:      r.CreatedAt,
 		UpdatedAt:      r.UpdatedAt,
 	}
@@ -303,6 +307,46 @@ func (s *RemoteChatStore) mutate(chatID, platform string, fn func(*Chat)) error 
 	})
 }
 
+// DeleteChat hard-deletes the chat row. All chat state (pairing, whitelist,
+// project binding) is gone; a new message from the same chat recreates it
+// fresh via the normal auto-create path. Sessions are untouched. Deleting a
+// missing chat is a no-op.
+func (s *RemoteChatStore) DeleteChat(chatID string) error {
+	if !s.ready() {
+		return ErrStoreClosed
+	}
+	if chatID == "" {
+		return ErrChatIDRequired
+	}
+	if err := s.db.Where("chat_id = ?", chatID).Delete(&RemoteChatRecord{}).Error; err != nil {
+		return fmt.Errorf("delete chat %s: %w", chatID, err)
+	}
+	return nil
+}
+
+// SetChatDisabled toggles the inbound blocklist flag. A missing chat is a
+// no-op (there is nothing to block; the flag would be erased by the next
+// auto-create anyway).
+func (s *RemoteChatStore) SetChatDisabled(chatID string, disabled bool) error {
+	return s.UpdateChat(chatID, func(chat *Chat) {
+		chat.Disabled = disabled
+		if disabled {
+			chat.DisabledAt = time.Now().UTC()
+		} else {
+			chat.DisabledAt = time.Time{}
+		}
+	})
+}
+
+// IsChatDisabled reports the blocklist flag. Missing chat → false.
+func (s *RemoteChatStore) IsChatDisabled(chatID string) bool {
+	chat, err := s.GetChat(chatID)
+	if err != nil || chat == nil {
+		return false
+	}
+	return chat.Disabled
+}
+
 // ---------- project binding ----------
 
 // BindProject binds a project to a chat, creating the chat if needed, and
@@ -396,7 +440,7 @@ func (s *RemoteChatStore) ListChatsByOwner(ownerID, platform string) ([]*Chat, e
 // are dropped at the source (see bot.ChatStoreInterface.ListChats for why).
 // Ordered newest-first by updated_at, with chat_id as a stable tiebreaker, so
 // the most recently active chats surface at the top.
-func (s *RemoteChatStore) ListChats(platform string) ([]*Chat, error) {
+func (s *RemoteChatStore) ListChats(platform string, includeDisabled bool) ([]*Chat, error) {
 	if !s.ready() {
 		return nil, ErrStoreClosed
 	}
@@ -404,9 +448,14 @@ func (s *RemoteChatStore) ListChats(platform string) ([]*Chat, error) {
 	// Literal equality, including for the empty platform: callers always pass
 	// a real platform, and "" selecting exactly the unattributed records is
 	// the contract the interface documents.
+	q := s.db.Where("platform = ?", platform)
+	if !includeDisabled {
+		// NULL-safe: rows that predate the disabled column carry NULL, which
+		// `disabled = false` would silently drop (NULL never compares equal).
+		q = q.Where("disabled IS NOT ?", true)
+	}
 	var recs []RemoteChatRecord
-	if err := s.db.
-		Where("platform = ?", platform).
+	if err := q.
 		Order("updated_at DESC, chat_id ASC").
 		Find(&recs).Error; err != nil {
 		return nil, fmt.Errorf("list chats for platform %s: %w", platform, err)

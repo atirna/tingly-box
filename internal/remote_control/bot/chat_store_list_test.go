@@ -28,7 +28,7 @@ func TestListChats_ScopesToPlatform(t *testing.T) {
 		}
 	}
 
-	got, err := store.ListChats("telegram")
+	got, err := store.ListChats("telegram", false)
 	if err != nil {
 		t.Fatalf("ListChats: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestListChats_ScopesToPlatform(t *testing.T) {
 
 	// An unattributed record cannot be proven to belong to any bot, so asking
 	// for the empty platform must not hand it out either.
-	if got, err := store.ListChats(""); err != nil {
+	if got, err := store.ListChats("", false); err != nil {
 		t.Fatalf("ListChats(\"\"): %v", err)
 	} else if len(got) != 1 || got[0].ChatID != "orphan" {
 		// Documenting the current contract: "" matches only records whose
@@ -61,7 +61,7 @@ func TestListChats_NewestFirst(t *testing.T) {
 		}
 	}
 
-	got, err := store.ListChats("telegram")
+	got, err := store.ListChats("telegram", false)
 	if err != nil {
 		t.Fatalf("ListChats: %v", err)
 	}
