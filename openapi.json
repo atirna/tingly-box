@@ -151,6 +151,414 @@
         }
       }
     },
+    "/api/v1/bots/{bot}/chats": {
+      "get": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact. Pass include_disabled=true to also list blocklisted chats. A bot that isn't running returns an empty list with running:false rather than an error.",
+        "description": "List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact. Pass include_disabled=true to also list blocklisted chats. A bot that isn't running returns an empty list with running:false rather than an error.",
+        "operationId": "apiV1BotsBotChatsGet",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotChatsResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat listing unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/chats/{chat_id}": {
+      "delete": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Hard-delete a chat record: pairing, whitelist, and project binding are removed. If the chat messages the bot again it re-registers as a brand-new chat (re-pair required when pairing is enforced). Session history is untouched.",
+        "description": "Hard-delete a chat record: pairing, whitelist, and project binding are removed. If the chat messages the bot again it re-registers as a brand-new chat (re-pair required when pairing is enforced). Session history is untouched.",
+        "operationId": "apiV1BotsBotChatsChat_idDelete",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "chat_id",
+            "in": "path",
+            "description": "Channel-native chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotChatOKResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Chat not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Chat is the bot's chat-id lock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat management unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/chats/{chat_id}/disabled": {
+      "put": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Toggle a chat's inbound blocklist flag. A disabled chat's messages are silently dropped (including /bind — it cannot re-enable itself), and the chat is excluded from the reachable list, notify, and interact until re-enabled.",
+        "description": "Toggle a chat's inbound blocklist flag. A disabled chat's messages are silently dropped (including /bind — it cannot re-enable itself), and the chat is excluded from the reachable list, notify, and interact until re-enabled.",
+        "operationId": "apiV1BotsBotChatsChat_idDisabledPut",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "chat_id",
+            "in": "path",
+            "description": "Channel-native chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotChatSetDisabledRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotChatOKResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Chat not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat management unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/interact": {
+      "post": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Start an interactive prompt on a running bot's chat and return a request_id to long-poll for the reply.",
+        "description": "Start an interactive prompt on a running bot's chat and return a request_id to long-poll for the reply.",
+        "operationId": "apiV1BotsBotInteractPost",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotInteractRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or kind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bot not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Interaction registry unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/interact/{request_id}": {
+      "get": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Long-poll for the reply to an interactive prompt started by POST /bots/:bot/interact.",
+        "description": "Long-poll for the reply to an interactive prompt started by POST /bots/:bot/interact.",
+        "operationId": "apiV1BotsBotInteractRequest_idGet",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Interaction request id from the interact response",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Interaction registry unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bots/{bot}/notify": {
+      "post": {
+        "tags": [
+          "bot-interaction"
+        ],
+        "summary": "Deliver a one-way notification to a running bot's chat. Requires the operator user token.",
+        "description": "Deliver a one-way notification to a running bot's chat. Requires the operator user token.",
+        "operationId": "apiV1BotsBotNotifyPost",
+        "parameters": [
+          {
+            "name": "bot",
+            "in": "path",
+            "description": "Target bot UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotNotifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bot not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Delivery failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/codex/import/openai": {
       "post": {
         "tags": [
@@ -329,6 +737,28 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClaudeConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/codex": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get the currently applied Codex preferences",
+        "description": "Get the currently applied Codex preferences",
+        "operationId": "apiV1ConfigCodexGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodexConfigResponse"
                 }
               }
             }
@@ -6094,6 +6524,197 @@
           "data"
         ]
       },
+      "BotChatOKResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Field ok",
+            "example": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "BotChatSetDisabledRequest": {
+        "type": "object",
+        "properties": {
+          "disabled": {
+            "type": "boolean",
+            "description": "Field disabled",
+            "example": true
+          }
+        },
+        "required": [
+          "disabled"
+        ]
+      },
+      "BotChatSummary": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "telegram:123456789"
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "Field disabled",
+            "example": false
+          },
+          "disabled_at": {
+            "type": "string",
+            "description": "Field disabled_at",
+            "example": "2026-07-28T12:00:00Z"
+          },
+          "is_paired": {
+            "type": "boolean",
+            "description": "Field is_paired",
+            "example": true
+          },
+          "is_whitelisted": {
+            "type": "boolean",
+            "description": "Field is_whitelisted",
+            "example": false
+          },
+          "platform": {
+            "type": "string",
+            "description": "Field platform",
+            "example": "telegram"
+          },
+          "project_path": {
+            "type": "string",
+            "description": "Field project_path",
+            "example": "/home/user/proj"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Field updated_at",
+            "example": "2026-07-25T12:00:00Z"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "BotChatsResponse": {
+        "type": "object",
+        "properties": {
+          "chats": {
+            "type": "array",
+            "description": "Field chats",
+            "items": {
+              "$ref": "#/components/schemas/BotChatSummary"
+            }
+          },
+          "running": {
+            "type": "boolean",
+            "description": "Field running",
+            "example": true
+          }
+        },
+        "required": [
+          "chats",
+          "running"
+        ]
+      },
+      "BotInteractOption": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Field label",
+            "example": "Yes"
+          },
+          "style": {
+            "type": "string",
+            "description": "Field style",
+            "example": "primary"
+          },
+          "value": {
+            "type": "string",
+            "description": "Field value",
+            "example": "yes"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ]
+      },
+      "BotInteractRequest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Field body",
+            "example": "commit a1b2c3"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "dm:ops"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Field kind",
+            "example": "confirm"
+          },
+          "options": {
+            "type": "array",
+            "description": "Field options",
+            "items": {
+              "$ref": "#/components/schemas/BotInteractOption"
+            }
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field timeout_seconds",
+            "example": 120
+          },
+          "title": {
+            "type": "string",
+            "description": "Field title",
+            "example": "Deploy to prod?"
+          }
+        },
+        "required": [
+          "chat_id",
+          "kind",
+          "title"
+        ]
+      },
+      "BotNotifyRequest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Field body",
+            "example": "main branch is red"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "dm:ops"
+          },
+          "level": {
+            "type": "string",
+            "description": "Field level",
+            "example": "info"
+          },
+          "title": {
+            "type": "string",
+            "description": "Field title",
+            "example": "Build #412 failed"
+          }
+        },
+        "required": [
+          "chat_id",
+          "body"
+        ]
+      },
       "ClaudeCodePrefs": {
         "type": "object",
         "properties": {
@@ -6300,6 +6921,32 @@
           "configToml",
           "authJson",
           "models"
+        ]
+      },
+      "CodexConfigResponse": {
+        "type": "object",
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "description": "Field exists"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/CodexPrefs"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          },
+          "writeCatalog": {
+            "type": "boolean",
+            "description": "Field writeCatalog"
+          }
+        },
+        "required": [
+          "success",
+          "exists",
+          "preferences",
+          "writeCatalog"
         ]
       },
       "CodexPrefs": {
@@ -6589,9 +7236,9 @@
               "type": "string"
             }
           },
-          "chat_id": {
+          "chat_id_lock": {
             "type": "string",
-            "description": "Field chat_id"
+            "description": "Field chat_id_lock"
           },
           "default_agent": {
             "type": "string",
@@ -10931,9 +11578,9 @@
               "type": "string"
             }
           },
-          "chat_id": {
+          "chat_id_lock": {
             "type": "string",
-            "description": "Field chat_id"
+            "description": "Field chat_id_lock"
           },
           "created_at": {
             "type": "string",
@@ -11899,9 +12546,9 @@
               "type": "string"
             }
           },
-          "chat_id": {
+          "chat_id_lock": {
             "type": "string",
-            "description": "Field chat_id"
+            "description": "Field chat_id_lock"
           },
           "default_agent": {
             "type": "string",
@@ -13391,6 +14038,10 @@
     {
       "name": "auth",
       "description": "Operations related to auth"
+    },
+    {
+      "name": "bot-interaction",
+      "description": "Operations related to bot-interaction"
     },
     {
       "name": "codex",

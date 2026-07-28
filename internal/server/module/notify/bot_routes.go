@@ -36,7 +36,20 @@ type BotChatSummary struct {
 	IsPaired      bool   `json:"is_paired,omitempty" example:"true"`
 	IsWhitelisted bool   `json:"is_whitelisted,omitempty" example:"false"`
 	ProjectPath   string `json:"project_path,omitempty" example:"/home/user/proj"`
+	Disabled      bool   `json:"disabled,omitempty" example:"false"`
+	DisabledAt    string `json:"disabled_at,omitempty" example:"2026-07-28T12:00:00Z"`
 	UpdatedAt     string `json:"updated_at,omitempty" example:"2026-07-25T12:00:00Z"`
+}
+
+// BotChatSetDisabledRequest is the swagger model for
+// PUT /bots/:bot/chats/:chat_id/disabled.
+type BotChatSetDisabledRequest struct {
+	Disabled *bool `json:"disabled" example:"true"`
+}
+
+// BotChatOKResponse is the swagger model for the chat mutation endpoints.
+type BotChatOKResponse struct {
+	OK bool `json:"ok" example:"true"`
 }
 
 // BotChatsResponse is the swagger model for the GET /bots/:bot/chats body.
@@ -97,11 +110,38 @@ func RegisterBotRoutes(router *swagger.RouteGroup, handler *BotAPIHandler) {
 
 	router.GET("/bots/:bot/chats", handler.ListChats,
 		swagger.WithTags("bot-interaction"),
-		swagger.WithDescription("List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact. A bot that isn't running returns an empty list with running:false rather than an error."),
+		swagger.WithDescription("List the chats a running bot can reach. Use the returned chat_id as the chat_id field in POST /bots/:bot/notify and /interact. Pass include_disabled=true to also list blocklisted chats. A bot that isn't running returns an empty list with running:false rather than an error."),
 		swagger.WithPathParam("bot", "string", "Target bot UUID"),
 		swagger.WithResponseModel(BotChatsResponse{}),
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 503, Message: "Chat listing unavailable"},
+		),
+	)
+
+	router.DELETE("/bots/:bot/chats/:chat_id", handler.DeleteChat,
+		swagger.WithTags("bot-interaction"),
+		swagger.WithDescription("Hard-delete a chat record: pairing, whitelist, and project binding are removed. If the chat messages the bot again it re-registers as a brand-new chat (re-pair required when pairing is enforced). Session history is untouched."),
+		swagger.WithPathParam("bot", "string", "Target bot UUID"),
+		swagger.WithPathParam("chat_id", "string", "Channel-native chat id"),
+		swagger.WithResponseModel(BotChatOKResponse{}),
+		swagger.WithErrorResponses(
+			swagger.ErrorResponseConfig{Code: 404, Message: "Chat not found"},
+			swagger.ErrorResponseConfig{Code: 409, Message: "Chat is the bot's chat-id lock"},
+			swagger.ErrorResponseConfig{Code: 503, Message: "Chat management unavailable"},
+		),
+	)
+
+	router.PUT("/bots/:bot/chats/:chat_id/disabled", handler.SetChatDisabled,
+		swagger.WithTags("bot-interaction"),
+		swagger.WithDescription("Toggle a chat's inbound blocklist flag. A disabled chat's messages are silently dropped (including /bind — it cannot re-enable itself), and the chat is excluded from the reachable list, notify, and interact until re-enabled."),
+		swagger.WithPathParam("bot", "string", "Target bot UUID"),
+		swagger.WithPathParam("chat_id", "string", "Channel-native chat id"),
+		swagger.WithRequestModel(BotChatSetDisabledRequest{}),
+		swagger.WithResponseModel(BotChatOKResponse{}),
+		swagger.WithErrorResponses(
+			swagger.ErrorResponseConfig{Code: 400, Message: "Invalid request body"},
+			swagger.ErrorResponseConfig{Code: 404, Message: "Chat not found"},
+			swagger.ErrorResponseConfig{Code: 503, Message: "Chat management unavailable"},
 		),
 	)
 }

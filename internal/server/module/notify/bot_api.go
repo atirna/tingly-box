@@ -50,9 +50,12 @@ const MaxInteractTimeout = 30 * time.Minute
 // BotAPIHandler is the HTTP front end for the general bot interaction API.
 // It resolves a bot's channel from the registry and drives it directly.
 type BotAPIHandler struct {
-	channels   *channel.Registry
-	results    *interaction.Registry[interaction.Result]
-	chatLister ChatLister
+	channels     *channel.Registry
+	results      *interaction.Registry[interaction.Result]
+	chatLister   ChatLister
+	chatDeleter  ChatDeleter
+	chatDisabler ChatDisabler
+	chatDisabled ChatDisabledChecker
 }
 
 // ChatSummary is the projection of a bot's chat record exposed by
@@ -65,20 +68,53 @@ type ChatSummary struct {
 	IsPaired      bool   `json:"is_paired,omitempty"`
 	IsWhitelisted bool   `json:"is_whitelisted,omitempty"`
 	ProjectPath   string `json:"project_path,omitempty"`
+	Disabled      bool   `json:"disabled,omitempty"`
+	DisabledAt    string `json:"disabled_at,omitempty"`
 	UpdatedAt     string `json:"updated_at,omitempty"`
 }
 
 // ChatLister returns the chats a bot can reach, scoped to that bot's
-// platform (and to its chat-id lock when one is set). Defined here so the
-// notify package does not import remote_control/bot — the server wires the
-// concrete implementation. Returns (nil, nil) when no lister is configured.
-type ChatLister func(botUUID string) ([]ChatSummary, error)
+// platform (and to its chat-id lock when one is set). includeDisabled adds
+// blocklisted chats to the result. Defined here so the notify package does
+// not import remote_control/bot — the server wires the concrete
+// implementation. Returns (nil, nil) when no lister is configured.
+type ChatLister func(botUUID string, includeDisabled bool) ([]ChatSummary, error)
+
+// ChatDeleter hard-deletes a chat record reachable by the bot. Wired by the
+// server for the same import-direction reason as ChatLister.
+type ChatDeleter func(botUUID, chatID string) error
+
+// ChatDisabler toggles a reachable chat's inbound blocklist flag.
+type ChatDisabler func(botUUID, chatID string, disabled bool) error
+
+// ChatDisabledChecker reports whether a chat is blocklisted. Used by Notify
+// and Interact so disable cuts both directions — a disabled chat neither
+// reaches the bot nor is reachable from it. Unknown chats report false so
+// pushes to fresh chat ids keep working.
+type ChatDisabledChecker func(chatID string) bool
+
+// ErrChatNotFound is returned by ChatDeleter/ChatDisabler when the chat is
+// not in the bot's reachable set (unknown, wrong platform, or paired to a
+// different bot). Mapped to HTTP 404.
+var ErrChatNotFound = errors.New("chat not found")
+
+// ErrChatLocked is returned by ChatDeleter when the chat is the bot's
+// chat-id lock — its only reachable chat; deleting it is almost certainly a
+// mistake. Mapped to HTTP 409.
+var ErrChatLocked = errors.New("chat is the bot's chat-id lock")
 
 // NewBotAPIHandler builds the handler. channels and results are the same
 // registries the Claude Code scenario path uses.
-// chatLister may be nil — the /chats endpoint then reports unavailable.
-func NewBotAPIHandler(channels *channel.Registry, results *interaction.Registry[interaction.Result], chatLister ChatLister) *BotAPIHandler {
-	return &BotAPIHandler{channels: channels, results: results, chatLister: chatLister}
+// chatLister/chatDeleter/chatDisabler may be nil — the corresponding
+// endpoints then report unavailable.
+func NewBotAPIHandler(channels *channel.Registry, results *interaction.Registry[interaction.Result], chatLister ChatLister, chatDeleter ChatDeleter, chatDisabler ChatDisabler, chatDisabled ChatDisabledChecker) *BotAPIHandler {
+	return &BotAPIHandler{channels: channels, results: results, chatLister: chatLister, chatDeleter: chatDeleter, chatDisabler: chatDisabler, chatDisabled: chatDisabled}
+}
+
+// isChatDisabled reports the blocklist flag through the wired checker; a nil
+// checker (stock setups without chat management) never blocks.
+func (h *BotAPIHandler) isChatDisabled(chatID string) bool {
+	return h.chatDisabled != nil && h.chatDisabled(chatID)
 }
 
 // notifyRequest is the body of POST /bots/:bot/notify — a one-way push.
@@ -126,6 +162,12 @@ func (h *BotAPIHandler) Notify(c *gin.Context) {
 		// Uniform 404 for unknown and stopped bots — see spec §3.5 (defend in
 		// depth: an authenticated caller must not probe which bots exist).
 		c.JSON(http.StatusNotFound, gin.H{"error": "bot not running"})
+		return
+	}
+	if h.isChatDisabled(req.ChatID) {
+		// Disable cuts both directions: same body as an unknown chat so the
+		// caller cannot distinguish blocked from nonexistent.
+		c.JSON(http.StatusNotFound, gin.H{"error": "chat not reachable"})
 		return
 	}
 
@@ -194,6 +236,11 @@ func (h *BotAPIHandler) Interact(c *gin.Context) {
 	ch, ok := h.resolveChannel(botUUID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "bot not running"})
+		return
+	}
+	if h.isChatDisabled(req.ChatID) {
+		// Disable cuts both directions — see Notify.
+		c.JSON(http.StatusNotFound, gin.H{"error": "chat not reachable"})
 		return
 	}
 
@@ -286,6 +333,7 @@ func (h *BotAPIHandler) Wait(c *gin.Context) {
 //	503  chat listing unavailable (no store wired)
 func (h *BotAPIHandler) ListChats(c *gin.Context) {
 	botUUID := c.Param("bot")
+	includeDisabled := c.Query("include_disabled") == "true"
 
 	_, running := h.resolveChannel(botUUID)
 	if !running {
@@ -300,7 +348,7 @@ func (h *BotAPIHandler) ListChats(c *gin.Context) {
 		return
 	}
 
-	chats, err := h.chatLister(botUUID)
+	chats, err := h.chatLister(botUUID, includeDisabled)
 	if err != nil {
 		logrus.WithError(err).WithField("bot", botUUID).Warn("bot chats list failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "chat listing failed"})
@@ -310,6 +358,93 @@ func (h *BotAPIHandler) ListChats(c *gin.Context) {
 		chats = []ChatSummary{}
 	}
 	c.JSON(http.StatusOK, gin.H{"chats": chats, "running": true})
+}
+
+// DeleteChat handles DELETE /api/v1/bots/:bot/chats/:chat_id.
+//
+// Hard-deletes the chat record: pairing, whitelist, and project binding are
+// gone. If the chat messages the bot again, the normal auto-create path
+// rebuilds it as a brand-new chat (re-pair required when pairing is
+// enforced). Session history is untouched.
+//
+//	200  deleted
+//	404  chat not in this bot's reachable set
+//	409  chat_id is the bot's chat-id lock (its only reachable chat)
+//	503  chat management unavailable (no deleter wired)
+func (h *BotAPIHandler) DeleteChat(c *gin.Context) {
+	botUUID := c.Param("bot")
+	chatID := c.Param("chat_id")
+
+	if h.chatDeleter == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "chat management unavailable"})
+		return
+	}
+
+	if err := h.chatDeleter(botUUID, chatID); err != nil {
+		if errors.Is(err, ErrChatNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
+			return
+		}
+		if errors.Is(err, ErrChatLocked) {
+			c.JSON(http.StatusConflict, gin.H{"error": "chat is this bot's chat-id lock; unlock the bot first"})
+			return
+		}
+		logrus.WithError(err).WithFields(logrus.Fields{"bot": botUUID, "chat_id": chatID}).Warn("bot chat delete failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "chat delete failed"})
+		return
+	}
+
+	h.auditLog(botUUID, "bot.chat.delete", map[string]any{"chat_id": chatID})
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// SetChatDisabled handles PUT /api/v1/bots/:bot/chats/:chat_id/disabled.
+//
+// Toggles the chat's inbound blocklist flag. A disabled chat's messages are
+// dropped before any handler runs (including /bind — it cannot re-enable
+// itself) and it disappears from the reachable list, notify, and interact.
+//
+//	200  updated
+//	400  malformed body
+//	404  chat not in this bot's reachable set
+//	503  chat management unavailable (no disabler wired)
+func (h *BotAPIHandler) SetChatDisabled(c *gin.Context) {
+	botUUID := c.Param("bot")
+	chatID := c.Param("chat_id")
+
+	if h.chatDisabler == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "chat management unavailable"})
+		return
+	}
+
+	var req setChatDisabledRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
+		return
+	}
+	if req.Disabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "disabled field is required"})
+		return
+	}
+
+	if err := h.chatDisabler(botUUID, chatID, *req.Disabled); err != nil {
+		if errors.Is(err, ErrChatNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
+			return
+		}
+		logrus.WithError(err).WithFields(logrus.Fields{"bot": botUUID, "chat_id": chatID}).Warn("bot chat disable failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "chat update failed"})
+		return
+	}
+
+	h.auditLog(botUUID, "bot.chat.disabled", map[string]any{"chat_id": chatID, "disabled": *req.Disabled})
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// setChatDisabledRequest is the body of PUT /bots/:bot/chats/:chat_id/disabled.
+// Disabled is a pointer so an omitted field is a 400, not a silent enable.
+type setChatDisabledRequest struct {
+	Disabled *bool `json:"disabled"`
 }
 
 // resolveChannel looks up the bot's channel. Centralized so both Notify and

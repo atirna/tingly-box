@@ -208,13 +208,23 @@ func (s *Server) UseUIEndpoints(ctx context.Context) {
 	if s.channelRegistry != nil && s.interactionRegistry != nil {
 		// chatLister backs GET /bots/:bot/chats — it scopes the shared chat
 		// store to the bot's platform (a bot can only reach chats on its own
-		// platform) and to its chat-id lock when one is set. nil when no IM
-		// handler is wired, in which case /chats reports unavailable.
-		var chatLister notifymodule.ChatLister
+		// platform) and to its chat-id lock when one is set. The deleter /
+		// disabler / disabled-checker back the chat lifecycle endpoints and
+		// the outbound blocklist check. All nil when no IM handler is wired,
+		// in which case the endpoints report unavailable.
+		var (
+			chatLister   notifymodule.ChatLister
+			chatDeleter  notifymodule.ChatDeleter
+			chatDisabler notifymodule.ChatDisabler
+			chatDisabled notifymodule.ChatDisabledChecker
+		)
 		if imbotHandler != nil {
 			chatLister = buildBotChatLister(s.channelRegistry, imbotHandler)
+			chatDeleter = buildBotChatDeleter(s.channelRegistry, imbotHandler)
+			chatDisabler = buildBotChatDisabler(s.channelRegistry, imbotHandler)
+			chatDisabled = buildBotChatDisabledChecker(imbotHandler)
 		}
-		botAPI := notifymodule.NewBotAPIHandler(s.channelRegistry, s.interactionRegistry, chatLister)
+		botAPI := notifymodule.NewBotAPIHandler(s.channelRegistry, s.interactionRegistry, chatLister, chatDeleter, chatDisabler, chatDisabled)
 		notifymodule.RegisterBotRoutes(apiV1, botAPI)
 	}
 
