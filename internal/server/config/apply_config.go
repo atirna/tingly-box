@@ -570,6 +570,32 @@ func writeManagedFileIfChanged(path string, content []byte, perm os.FileMode) (b
 	return created, nil
 }
 
+// HookTokenEnvVar is the settings.json `env` key the notify/im hook scripts
+// read their bearer token from (internal/script/tingly-notify.sh,
+// tingly-im-hook.sh). /tingly/:scenario/* requires the operator's user token
+// like every other control-plane surface (see .design/bot-interaction-api.md
+// §3.6) — the scripts run locally as Claude Code hook subprocesses, so
+// settings.json's `env` block (which Claude Code merges into every hook's
+// environment) is how they receive it without a separate distribution step.
+const HookTokenEnvVar = "TINGLY_HOOK_TOKEN"
+
+// mergeHookToken writes token into existingConfig["env"][HookTokenEnvVar],
+// preserving any other env entries already present. token == "" is a no-op
+// (leaves existing env, if any, untouched) so callers that don't have a
+// token yet (or intentionally run without auth) don't clobber a
+// hand-configured value.
+func mergeHookToken(existingConfig map[string]interface{}, token string) {
+	if token == "" {
+		return
+	}
+	env, ok := existingConfig["env"].(map[string]interface{})
+	if !ok {
+		env = make(map[string]interface{})
+	}
+	env[HookTokenEnvVar] = token
+	existingConfig["env"] = env
+}
+
 // NotifyHookEntries defines the Claude Code hooks to install for PUSH-ONLY notifications.
 // This includes Stop events and completion-type notifications.
 // For interactive approval hooks (PreToolUse, permission notifications), use ImHookEntries instead.
@@ -607,10 +633,13 @@ func ImHookEntries() map[string]interface{} {
 	}
 }
 
-// ApplyNotifyHooks installs the notify script and merges notification hooks into settings.json.
-// This is independent of the agent apply flow — it can be called standalone.
-// Existing hooks with different matchers are preserved.
-func ApplyNotifyHooks() (*ApplyResult, error) {
+// ApplyNotifyHooks installs the notify script and merges notification hooks
+// into settings.json. This is independent of the agent apply flow — it can
+// be called standalone. Existing hooks with different matchers are
+// preserved. token is the operator's user token, written to the settings
+// `env` block (see HookTokenEnvVar) so the script can authenticate against
+// /tingly/:scenario/notify; pass "" to skip (e.g. no token configured yet).
+func ApplyNotifyHooks(token string) (*ApplyResult, error) {
 	_, _, err := InstallNotifyScript()
 	if err != nil {
 		return nil, fmt.Errorf("failed to install notify script: %w", err)
@@ -666,6 +695,7 @@ func ApplyNotifyHooks() (*ApplyResult, error) {
 		existingHooks[event] = merged
 	}
 	existingConfig["hooks"] = existingHooks
+	mergeHookToken(existingConfig, token)
 
 	// Write
 	output, err := json.MarshalIndent(existingConfig, "", "  ")
@@ -685,10 +715,12 @@ func ApplyNotifyHooks() (*ApplyResult, error) {
 	return result, nil
 }
 
-// ApplyImHooks installs the IM hook script (interactive approval) and merges IM hooks into settings.json.
-// This is independent of the agent apply flow — it can be called standalone.
-// Existing hooks with different matchers are preserved.
-func ApplyImHooks() (*ApplyResult, error) {
+// ApplyImHooks installs the IM hook script (interactive approval) and merges
+// IM hooks into settings.json. This is independent of the agent apply flow —
+// it can be called standalone. Existing hooks with different matchers are
+// preserved. token is the operator's user token, written to the settings
+// `env` block (see HookTokenEnvVar); pass "" to skip.
+func ApplyImHooks(token string) (*ApplyResult, error) {
 	_, _, err := InstallIMHookScript()
 	if err != nil {
 		return nil, fmt.Errorf("failed to install IM hook script: %w", err)
@@ -744,6 +776,7 @@ func ApplyImHooks() (*ApplyResult, error) {
 		existingHooks[event] = merged
 	}
 	existingConfig["hooks"] = existingHooks
+	mergeHookToken(existingConfig, token)
 
 	// Write
 	output, err := json.MarshalIndent(existingConfig, "", "  ")

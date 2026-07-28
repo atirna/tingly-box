@@ -140,7 +140,12 @@ func (s *Server) UseUIEndpoints(ctx context.Context) {
 	} else {
 		notifyHandler = notifymodule.NewHandler()
 	}
-	notifymodule.RegisterRoutes(s.engine, notifyHandler)
+	// The Claude Code hook path reuses the operator's own user token — the
+	// same credential the web UI and /api/v1/bots/* already require — closing
+	// the gap where anyone who could reach the port could push notifications
+	// or fire interactive prompts into an operator's chats. See
+	// .design/bot-interaction-api.md §3.6/§5.
+	notifymodule.RegisterRoutes(s.engine, notifyHandler, s.getUserAuthMiddleware())
 
 	// Create route manager
 	manager := swagger.NewRouteManager(s.engine)

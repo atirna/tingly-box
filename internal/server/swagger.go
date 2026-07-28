@@ -61,9 +61,11 @@ func registerAllAPIRoutes(engine *gin.Engine, manager *swagger.RouteManager, s *
 	statusHandler := statusline.NewHandler(cfg, nil, quotaMgr, nil)
 	statusline.RegisterRoutes(engine, statusHandler)
 
-	// Claude Code notification hook endpoint (no auth required)
+	// Claude Code notification hook endpoint — gated the same as the running
+	// server (s.getUserAuthMiddleware()) so the generated OpenAPI doc reflects
+	// reality.
 	notifyHandler := notifymodule.NewHandler()
-	notifymodule.RegisterRoutes(engine, notifyHandler)
+	notifymodule.RegisterRoutes(engine, notifyHandler, s.getUserAuthMiddleware())
 
 	// Web API endpoints (uses the same method as the running server)
 	s.UseWebAPIEndpoints(manager)

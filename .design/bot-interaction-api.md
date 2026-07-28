@@ -1,6 +1,6 @@
 # Bot Interaction Interface — auth + open two-kind API (notify / interactive)
 
-> Status: **spec** · Date: 2026-07-25
+> Status: **PR1 + PR2 shipped** · Date: 2026-07-25 (PR2 auth follow-up: 2026-07-28)
 > Builds on: [`.design/bot-arch.md`](bot-arch.md) (resource → channel → consumers),
 > [`.design/security.md`](security.md) (random default tokens, no silent fallback).
 > Scope: the *inbound* HTTP surface that lets external callers drive a bot's
@@ -327,9 +327,31 @@ modes behind one entrypoint — exactly the picker we're avoiding.
 
 1. **PR 1 (this spec):** `/api/v1/bots/*` general API, registered on the
    existing `apiV1` group (inheriting `getUserAuthMiddleware`). Claude Code
-   path untouched → zero behavior change for existing users.
+   path untouched → zero behavior change for existing users. ✅ shipped.
 2. **PR 2:** gate `/tingly/:scenario/*` behind `getUserAuthMiddleware()`; update
    the Claude Code hook helper to send the token. Document the requirement.
+   ✅ shipped 2026-07-28: `notifymodule.RegisterRoutes` now takes an
+   `authMW gin.HandlerFunc` param (`internal/server/module/notify/routes.go`),
+   wired to `s.getUserAuthMiddleware()` in `server_control.go`. Both hook
+   scripts (`internal/script/tingly-notify.sh`, `tingly-im-hook.sh`) read a new
+   `TINGLY_HOOK_TOKEN` env var and send it as `Authorization: Bearer …`;
+   `ApplyNotifyHooks`/`ApplyImHooks` (`internal/server/config/apply_config.go`)
+   now take a `token string` param and merge `TINGLY_HOOK_TOKEN` into
+   `settings.json`'s `env` block via `mergeHookToken`, the same block Claude
+   Code already merges into every hook subprocess's environment.
+   **Caveat found while shipping this:** those two `Apply*Hooks` functions —
+   and `InstallNotifyScript`/`InstallIMHookScript`, which write the scripts
+   themselves to `~/.claude/` — have had **zero callers** anywhere in the
+   product (no HTTP endpoint, no CLI command, no frontend button) since they
+   were introduced; today the only way to actually get either hook installed
+   is to hand-copy the JSON snippet in the script's header comment into
+   `settings.json`. That's a pre-existing, separate gap from the auth hole
+   this PR closes — auth now works for whoever *has* installed a hook, but
+   nothing in the product currently helps an operator install one. Left
+   unfixed here pending a decision on where that trigger should live (a CLI
+   command, since these scripts always run on the same machine as the
+   Claude Code process, vs. a UI toggle in the existing "connect Claude Code"
+   flow next to `InstallStatusLine`).
 
 No third step is committed. A scoped per-bot token for third-party integrations
 is **not** pre-built; if it is ever needed it arrives as its own proposal, and

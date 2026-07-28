@@ -99,7 +99,11 @@ func TestNotifyAndWait_PreToolUseAllow(t *testing.T) {
 	handler := NewHandlerWithRouting(scenarios, results, runtime)
 
 	router := gin.New()
-	RegisterRoutes(router, handler)
+	// A no-op passthrough middleware: these tests exercise Notify/Wait
+	// dispatch behavior, not auth (that's TestRegisterRoutes_AppliesAuthMiddleware
+	// below and the production wiring in server_control.go, which passes the
+	// real getUserAuthMiddleware()).
+	RegisterRoutes(router, handler, func(c *gin.Context) { c.Next() })
 	srv := httptest.NewServer(router)
 	defer srv.Close()
 
@@ -182,7 +186,11 @@ func TestWaitUnknownIDReturns404(t *testing.T) {
 	results := interaction.New[interaction.Result](time.Second)
 	handler := NewHandlerWithRouting(scenario.NewRegistry(), results, nil)
 	router := gin.New()
-	RegisterRoutes(router, handler)
+	// A no-op passthrough middleware: these tests exercise Notify/Wait
+	// dispatch behavior, not auth (that's TestRegisterRoutes_AppliesAuthMiddleware
+	// below and the production wiring in server_control.go, which passes the
+	// real getUserAuthMiddleware()).
+	RegisterRoutes(router, handler, func(c *gin.Context) { c.Next() })
 	srv := httptest.NewServer(router)
 	defer srv.Close()
 
@@ -203,7 +211,11 @@ func TestNotifyPushFallsBackToDesktopWhenUnregistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler() // no routing
 	router := gin.New()
-	RegisterRoutes(router, handler)
+	// A no-op passthrough middleware: these tests exercise Notify/Wait
+	// dispatch behavior, not auth (that's TestRegisterRoutes_AppliesAuthMiddleware
+	// below and the production wiring in server_control.go, which passes the
+	// real getUserAuthMiddleware()).
+	RegisterRoutes(router, handler, func(c *gin.Context) { c.Next() })
 	srv := httptest.NewServer(router)
 	defer srv.Close()
 
@@ -248,7 +260,11 @@ func TestNotifyAndWait_AutoChannelHeadless(t *testing.T) {
 	handler := NewHandlerWithRouting(scenarios, results, runtime)
 
 	router := gin.New()
-	RegisterRoutes(router, handler)
+	// A no-op passthrough middleware: these tests exercise Notify/Wait
+	// dispatch behavior, not auth (that's TestRegisterRoutes_AppliesAuthMiddleware
+	// below and the production wiring in server_control.go, which passes the
+	// real getUserAuthMiddleware()).
+	RegisterRoutes(router, handler, func(c *gin.Context) { c.Next() })
 	srv := httptest.NewServer(router)
 	defer srv.Close()
 
@@ -293,5 +309,62 @@ func TestNotifyAndWait_AutoChannelHeadless(t *testing.T) {
 	hso, _ := dec["hookSpecificOutput"].(map[string]interface{})
 	if hso["permissionDecision"] != "allow" {
 		t.Fatalf("expected allow from auto-policy, got %v", hso["permissionDecision"])
+	}
+}
+
+// TestRegisterRoutes_AppliesAuthMiddleware verifies /tingly/:scenario/* is
+// actually gated by whatever middleware RegisterRoutes is given — the fix
+// for the previously-unauthenticated hook path (see
+// .design/bot-interaction-api.md §3.6/§5). Production wires the real
+// getUserAuthMiddleware(); here a stand-in bearer-token check is enough to
+// confirm the group applies it to both routes.
+func TestRegisterRoutes_AppliesAuthMiddleware(t *testing.T) {
+	const validToken = "tb-user-test-token"
+	requireBearer := func(c *gin.Context) {
+		if c.GetHeader("Authorization") != "Bearer "+validToken {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		c.Next()
+	}
+
+	handler := NewHandler() // fallback-only handler; desktop notify never invoked in this test
+	router := gin.New()
+	RegisterRoutes(router, handler, requireBearer)
+	srv := httptest.NewServer(router)
+	defer srv.Close()
+
+	body := strings.NewReader(`{"hook_event_name":"Stop"}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/tingly/claude_code/notify", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token, got %d", resp.StatusCode)
+	}
+
+	req2, _ := http.NewRequest(http.MethodGet, srv.URL+"/tingly/claude_code/wait/some-id", nil)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token on /wait, got %d", resp2.StatusCode)
+	}
+
+	req3, _ := http.NewRequest(http.MethodPost, srv.URL+"/tingly/claude_code/notify", strings.NewReader(`{"hook_event_name":"Stop"}`))
+	req3.Header.Set("Content-Type", "application/json")
+	req3.Header.Set("Authorization", "Bearer "+validToken)
+	resp3, err := http.DefaultClient.Do(req3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp3.Body.Close()
+	if resp3.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with a valid token, got %d", resp3.StatusCode)
 	}
 }

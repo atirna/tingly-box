@@ -11,6 +11,7 @@
 #
 # Usage (from Claude Code settings.json hooks):
 #   {
+#     "env": { "TINGLY_HOOK_TOKEN": "<your tingly-box user token>" },
 #     "hooks": {
 #       "PreToolUse": [{
 #         "matcher": "",
@@ -22,6 +23,13 @@
 #       }]
 #     }
 #   }
+#
+# TINGLY_HOOK_TOKEN is the same user token used to sign into the tingly-box
+# web UI (Settings > user token) — /tingly/:scenario/{notify,wait} requires
+# it. Without it the server responds 401 to the initial POST, which this
+# script treats like any other unexpected error: log and let Claude proceed
+# unblocked (see the case statement below) rather than hang a tool call on a
+# misconfigured token.
 
 set -u
 
@@ -31,6 +39,12 @@ TINGLY_API_URL="${TINGLY_API_URL:-http://localhost:12580}"
 TINGLY_SCENARIO="${TINGLY_SCENARIO:-claude_code}"
 TINGLY_HOOK_POLL_SECONDS="${TINGLY_HOOK_POLL_SECONDS:-45}"
 TINGLY_HOOK_TOTAL_BUDGET_SECONDS="${TINGLY_HOOK_TOTAL_BUDGET_SECONDS:-300}"
+TINGLY_HOOK_TOKEN="${TINGLY_HOOK_TOKEN:-}"
+
+AUTH_HEADER=()
+if [ -n "$TINGLY_HOOK_TOKEN" ]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${TINGLY_HOOK_TOKEN}")
+fi
 
 # json_field <key> < json   -> echoes the string value of the top-level
 # key (or empty if missing). Avoids a hard jq dependency.
@@ -64,6 +78,7 @@ printf '%s' "$CC_INPUT" >"$POST_BODY"
 RESP=$(curl -sS -o - -w '\n%{http_code}' \
   -X POST \
   -H 'Content-Type: application/json' \
+  "${AUTH_HEADER[@]}" \
   --data-binary "@$POST_BODY" \
   "${TINGLY_API_URL}/tingly/${TINGLY_SCENARIO}/notify" 2>/dev/null) || {
   # Network failure: do not block Claude.
@@ -80,6 +95,12 @@ case "$HTTP_CODE" in
     ;;
   200)
     # Push delivered (no IM binding configured); continue without blocking.
+    exit 0
+    ;;
+  401)
+    # Missing/invalid TINGLY_HOOK_TOKEN; a clear message beats a generic
+    # "HTTP 401" for anyone diagnosing why prompts stopped arriving.
+    printf 'tingly-im-hook: 401 unauthorized — set TINGLY_HOOK_TOKEN in settings.json env to your tingly-box user token\n' >&2
     exit 0
     ;;
   404)
