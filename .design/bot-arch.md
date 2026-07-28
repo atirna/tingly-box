@@ -441,16 +441,41 @@ defaults to `true`) so the platform selector is live; Remote keeps opening
 it locked to whichever platform tab is active, exactly as before. `?add=1`
 on `/bots/overview` still deep-links into the create flow.
 
-**Notify's write-path gap.** `notifyConsumer.Mounted` is implicit — at
-least one outbound scenario binding (`claude_code`, …) present and not
-disabled (§4) — not a stored boolean like `remote_agent`. There is no
-existing UI or API for creating/editing those route rows (they're
-currently CLI/config-only), so `NotifyPage` reads real status
-(`isNotifyMounted` / `notifyRoutes` in `types/bot.ts`, parsed client-side
-from the same `scenarios` JSON the backend already returns) but the
-"attach a route" action is a disabled placeholder. Making that real needs
-a backend endpoint + swagger definition for outbound route CRUD — not done
-in this pass; do that before promising notify configuration in-product.
+**Notify's write-path gap — closed 2026-07-28.** `notifyConsumer.Mounted` is
+implicit — at least one outbound scenario binding (`claude_code`, …) present
+and not disabled (§4) — not a stored boolean like `remote_agent`. There was no
+UI or API for creating/editing those route rows (CLI/config-only), so
+`NotifyPage` could read real status (`isNotifyMounted` / `notifyRoutes` in
+`types/bot.ts`) but not act on it.
+
+Rather than a new route family, the write path reuses the existing
+`PUT/POST /api/v1/imbot-settings/:uuid` `remote_agent`-mount-toggle machinery
+(`internal/server/module/imbot`), since it's the same shape of problem — flip
+a row in the bot's `Scenarios` JSON, cascade `Enabled` if the result is
+active — one field on `CreateRequest`/`UpdateRequest`:
+
+```
+"notify_route": {
+  "chat_id": "dm:ops",           // required unless remove:true
+  "name": "claude_code",         // optional — the only real plugin today
+  "events": ["Stop"],            // optional — empty = all events
+  "enabled": true,               // optional — nil on create = on
+  "on_timeout": "deny",          // optional — claudecode.PermissionPolicy
+  "total_budget_seconds": 120,   // optional
+  "remove": false                // true → delete the route instead
+}
+```
+
+`remote/binding` gained the general-purpose primitives this needed —
+`UpsertBinding` / `RemoveBinding` (raw-row read-modify-write, preserving
+every other row's unknown fields verbatim, same technique as
+`SetScenarioEnabled`) and `ListOutboundBindings` (typed read of every
+non-`remote_agent` row) — so the write path and `notifyRoutes()`'s read path
+share one source of truth. `internal/server/module/imbot.applyNotifyRoute`
+is the thin HTTP-facing wrapper both `CreateSettings` and `UpdateSettings`
+call; activating a route cascades `Enabled = true` exactly like the
+`remote_agent` toggle does, so "attach a route" alone is enough to bring a
+notify-only bot up — no separate "and now enable the bot" step.
 
 **Old per-platform Bots pages (`/bots/telegram`, `/bots/weixin`, …) stay
 live but out of nav** — same "hidden, not removed" precedent as before,

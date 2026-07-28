@@ -193,6 +193,153 @@ func SetScenarioEnabled(scenariosJSON, name string, enabled bool) (string, error
 	return string(out), nil
 }
 
+// UpsertBinding inserts or replaces (by Name) an outbound route in
+// scenariosJSON, preserving every other row — other routes and the
+// remote_agent mount row — verbatim. This is the write path bot-arch.md §10
+// flagged as missing: until this existed, creating/editing a route (e.g. the
+// "claude_code" route the notify purpose delivers through) was CLI/config-only.
+//
+// b.Enabled == nil is written as "mounted" by omission (ScenarioMounted /
+// OutboundScenarioMounted already treat an absent enabled key as on), so a
+// freshly created route is active without the caller needing to spell out
+// enabled:true.
+func UpsertBinding(scenariosJSON string, b Binding) (string, error) {
+	if b.Name == "" {
+		return scenariosJSON, fmt.Errorf("binding name is required")
+	}
+	rows, err := parseRawRows(scenariosJSON)
+	if err != nil {
+		return scenariosJSON, err
+	}
+
+	row, err := bindingToRow(b)
+	if err != nil {
+		return scenariosJSON, err
+	}
+
+	found := false
+	for i, r := range rows {
+		if rowName(r) == b.Name {
+			rows[i] = row
+			found = true
+			break
+		}
+	}
+	if !found {
+		rows = append(rows, row)
+	}
+
+	return marshalRows(rows)
+}
+
+// RemoveBinding deletes the binding with the given name from scenariosJSON,
+// if present. A no-op (returns scenariosJSON's equivalent parse, nil error)
+// when no binding with that name exists.
+func RemoveBinding(scenariosJSON, name string) (string, error) {
+	rows, err := parseRawRows(scenariosJSON)
+	if err != nil {
+		return scenariosJSON, err
+	}
+
+	kept := rows[:0]
+	for _, r := range rows {
+		if rowName(r) == name {
+			continue
+		}
+		kept = append(kept, r)
+	}
+
+	return marshalRows(kept)
+}
+
+// ListOutboundBindings returns every outbound route in scenariosJSON — every
+// row except the remote_agent mount switch — as typed Bindings. Read-only
+// counterpart to UpsertBinding/RemoveBinding.
+func ListOutboundBindings(scenariosJSON string) ([]Binding, error) {
+	all, err := parse(scenariosJSON)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Binding, 0, len(all))
+	for _, b := range all {
+		if b.Name == "" || b.Name == RemoteAgentScenario {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out, nil
+}
+
+// parseRawRows parses scenariosJSON into the raw row representation
+// UpsertBinding/RemoveBinding/SetScenarioEnabled operate on, so unknown
+// fields on rows the caller isn't touching survive round-tripping.
+func parseRawRows(scenariosJSON string) ([]map[string]json.RawMessage, error) {
+	var rows []map[string]json.RawMessage
+	if trimmed := strings.TrimSpace(scenariosJSON); trimmed != "" {
+		if err := json.Unmarshal([]byte(trimmed), &rows); err != nil {
+			return nil, fmt.Errorf("parse scenarios: %w", err)
+		}
+	}
+	return rows, nil
+}
+
+func marshalRows(rows []map[string]json.RawMessage) (string, error) {
+	out, err := json.Marshal(rows)
+	if err != nil {
+		return "", fmt.Errorf("marshal scenarios: %w", err)
+	}
+	return string(out), nil
+}
+
+func rowName(row map[string]json.RawMessage) string {
+	var n string
+	if raw, ok := row["name"]; ok {
+		_ = json.Unmarshal(raw, &n)
+	}
+	return n
+}
+
+// bindingToRow renders a typed Binding back into the raw row shape, flattening
+// Options into top-level keys (the inverse of parse's Options-collection).
+func bindingToRow(b Binding) (map[string]json.RawMessage, error) {
+	row := map[string]json.RawMessage{}
+	nameRaw, err := json.Marshal(b.Name)
+	if err != nil {
+		return nil, fmt.Errorf("marshal name: %w", err)
+	}
+	row["name"] = nameRaw
+
+	if b.ChatID != "" {
+		v, err := json.Marshal(b.ChatID)
+		if err != nil {
+			return nil, fmt.Errorf("marshal chat_id: %w", err)
+		}
+		row["chat_id"] = v
+	}
+	if len(b.Events) > 0 {
+		v, err := json.Marshal(b.Events)
+		if err != nil {
+			return nil, fmt.Errorf("marshal events: %w", err)
+		}
+		row["events"] = v
+	}
+	if b.Enabled != nil {
+		v, err := json.Marshal(*b.Enabled)
+		if err != nil {
+			return nil, fmt.Errorf("marshal enabled: %w", err)
+		}
+		row["enabled"] = v
+	}
+	for k, val := range b.Options {
+		v, err := json.Marshal(val)
+		if err != nil {
+			return nil, fmt.Errorf("marshal option %q: %w", k, err)
+		}
+		row[k] = v
+	}
+	return row, nil
+}
+
 // rawBinding mirrors Binding but uses a free-form map[string]json.RawMessage
 // so we can keep all unknown fields in Options.
 type rawBinding map[string]json.RawMessage

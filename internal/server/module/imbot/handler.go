@@ -184,6 +184,21 @@ func (h *Handler) CreateSettings(c *gin.Context) {
 		}
 	}
 
+	// Attach a notify route at birth, e.g. creating a notify-only bot
+	// (remote_agent off + an active route) in one call. Same cascade as
+	// RemoteAgent: an active route with no live bot is useless.
+	if req.NotifyRoute != nil {
+		updated, err := applyNotifyRoute(settings.Scenarios, req.NotifyRoute)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid notify route", "details": err.Error()})
+			return
+		}
+		settings.Scenarios = updated
+		if notifyRouteActivates(req.NotifyRoute) {
+			settings.Enabled = true
+		}
+	}
+
 	created, err := h.store.CreateSettings(settings)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -355,6 +370,20 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 		settings.Scenarios = updated
 		if *req.RemoteAgent {
+			settings.Enabled = true
+		}
+	}
+
+	// Attach/edit/remove the outbound notify route (bot-arch.md §10's
+	// write-path gap). Same cascade as RemoteAgent when activating a route.
+	if req.NotifyRoute != nil {
+		updated, err := applyNotifyRoute(settings.Scenarios, req.NotifyRoute)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid notify route", "details": err.Error()})
+			return
+		}
+		settings.Scenarios = updated
+		if notifyRouteActivates(req.NotifyRoute) {
 			settings.Enabled = true
 		}
 	}
@@ -604,6 +633,50 @@ func normalizeAllowlist(values []string) []string {
 		out = append(out, entry)
 	}
 	return out
+}
+
+// applyNotifyRoute upserts or removes a bot's outbound notify route on
+// scenariosJSON per req — the write path bot-arch.md §10 flagged as missing.
+// name defaults to "claude_code" (the only registered scenario plugin today)
+// when req.Name is empty. Shared by CreateSettings and UpdateSettings so
+// "attach a route" works the same at both call sites.
+func applyNotifyRoute(scenariosJSON string, req *NotifyRouteRequest) (string, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = "claude_code"
+	}
+
+	if req.Remove {
+		return binding.RemoveBinding(scenariosJSON, name)
+	}
+
+	chatID := strings.TrimSpace(req.ChatID)
+	if chatID == "" {
+		return scenariosJSON, fmt.Errorf("chat_id is required to create or update a notify route")
+	}
+
+	options := map[string]any{}
+	if req.OnTimeout != "" {
+		options["on_timeout"] = req.OnTimeout
+	}
+	if req.TotalBudgetSeconds != nil {
+		options["total_budget_seconds"] = *req.TotalBudgetSeconds
+	}
+
+	return binding.UpsertBinding(scenariosJSON, binding.Binding{
+		Name:    name,
+		ChatID:  chatID,
+		Events:  req.Events,
+		Enabled: req.Enabled,
+		Options: options,
+	})
+}
+
+// notifyRouteActivates reports whether req results in an active (mounted)
+// route, i.e. whether the bot's Enabled flag should cascade on — mirrors the
+// RemoteAgent cascade ("a mount with no live bot is useless").
+func notifyRouteActivates(req *NotifyRouteRequest) bool {
+	return !req.Remove && (req.Enabled == nil || *req.Enabled)
 }
 
 // SetChannelRegistry wires the remote channel registry through to the

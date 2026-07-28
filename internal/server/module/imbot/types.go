@@ -43,6 +43,10 @@ type CreateRequest struct {
 	// control Claude Code / SmartGuide from chat. nil → default (mounted). When
 	// set true it also enables the bot (a mount with no live bot is useless).
 	RemoteAgent *bool `json:"remote_agent,omitempty"`
+	// NotifyRoute attaches an outbound notify route at creation, e.g. to
+	// create a notify-only bot (RemoteAgent: false + an active route) in one
+	// call. nil → no route. See NotifyRouteRequest.
+	NotifyRoute *NotifyRouteRequest `json:"notify_route,omitempty"`
 }
 
 // UpdateRequest represents the request to update ImBot settings
@@ -66,6 +70,41 @@ type UpdateRequest struct {
 	// setting it false leaves Enabled as-is but the bot stops if it was the only
 	// active mount.
 	RemoteAgent *bool `json:"remote_agent,omitempty"`
+	// NotifyRoute creates/edits/removes the bot's outbound notify route.
+	// nil → unchanged. See NotifyRouteRequest.
+	NotifyRoute *NotifyRouteRequest `json:"notify_route,omitempty"`
+}
+
+// NotifyRouteRequest creates, edits, or removes the bot's outbound "notify"
+// route — the write path bot-arch.md §10 called out as missing (until now
+// these were CLI/config-only). "claude_code" is the only scenario plugin
+// registered today (remote/scenario/builtin/claudecode), so Name defaults to
+// it rather than exposing a picker with a single option (ux-principles #6 —
+// smart defaults over toggles).
+//
+// OnTimeout/TotalBudgetSeconds are typed fields (not a free-form options map)
+// so the swagger schema documents the two settings an operator actually sets
+// — they map onto claudecode.PermissionPolicy's on_timeout/
+// total_budget_seconds, stored in the binding's Options.
+type NotifyRouteRequest struct {
+	// Name defaults to "claude_code" when empty.
+	Name string `json:"name,omitempty"`
+	// ChatID is required unless Remove is true. Discover it via
+	// GET /api/v1/bots/{bot}/chats.
+	ChatID string `json:"chat_id,omitempty"`
+	// Events restricts which hook events route here; empty = all events.
+	Events []string `json:"events,omitempty"`
+	// Enabled is the route's own on/off switch, independent of ChatID —
+	// nil on create means "on"; nil on an existing route leaves it as-is.
+	Enabled *bool `json:"enabled,omitempty"`
+	// OnTimeout is claude_code's PermissionPolicy.OnTimeout ("deny" | "allow").
+	OnTimeout string `json:"on_timeout,omitempty"`
+	// TotalBudgetSeconds is claude_code's PermissionPolicy.TotalBudgetSeconds;
+	// nil keeps the plugin's own default.
+	TotalBudgetSeconds *int `json:"total_budget_seconds,omitempty"`
+	// Remove deletes the route instead of creating/updating it. When true,
+	// only Name is read.
+	Remove bool `json:"remove,omitempty"`
 }
 
 // PairingCodeResponse represents the response for pairing-code reveal/rotate.
