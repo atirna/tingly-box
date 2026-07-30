@@ -50,6 +50,7 @@ import {
     getTotalTokens,
     getCacheHitRate,
     getCacheHitRateColor,
+    formatCacheBreakdown,
     getErrorRateColor,
 } from '@/components/dashboard';
 import type { AggregatedStat } from '@/components/dashboard';
@@ -75,6 +76,7 @@ interface UserUsageRow extends APITokenInfo {
     total_input_tokens: number;
     total_output_tokens: number;
     cache_input_tokens: number;
+    cache_write_tokens: number;
     error_count: number;
     error_rate: number;
 }
@@ -265,6 +267,7 @@ export default function UserUsagePage() {
                 total_input_tokens: stat?.total_input_tokens || 0,
                 total_output_tokens: stat?.total_output_tokens || 0,
                 cache_input_tokens: stat?.cache_input_tokens || 0,
+                cache_write_tokens: stat?.cache_write_tokens || 0,
                 error_count: stat?.error_count || 0,
                 error_rate: stat?.error_rate || 0,
             };
@@ -332,12 +335,13 @@ export default function UserUsagePage() {
                 acc.tokens += row.total_tokens;
                 acc.inputTokens += row.total_input_tokens;
                 acc.cacheTokens += row.cache_input_tokens;
+                acc.cacheWriteTokens += row.cache_write_tokens;
                 acc.requests += row.request_count;
                 acc.errors += row.error_count;
                 if (row.request_count > 0) acc.activeUsers += 1;
                 return acc;
             },
-            { tokens: 0, inputTokens: 0, cacheTokens: 0, requests: 0, errors: 0, activeUsers: 0 },
+            { tokens: 0, inputTokens: 0, cacheTokens: 0, cacheWriteTokens: 0, requests: 0, errors: 0, activeUsers: 0 },
         );
         return {
             ...totals,
@@ -348,6 +352,7 @@ export default function UserUsagePage() {
     const {
         tokens: totalTokens,
         cacheTokens: totalCacheTokens,
+        cacheWriteTokens: totalCacheWriteTokens,
         requests: totalRequests,
         errors: totalErrors,
         activeUsers,
@@ -382,10 +387,9 @@ export default function UserUsagePage() {
         {
             label: t('dashboard.userUsage.cacheHitRate', { defaultValue: 'Cache hit rate' }),
             value: `${cacheHitRate.toFixed(1)}%`,
-            hint: t('dashboard.userUsage.cached', {
-                value: formatNumber(totalCacheTokens),
-                defaultValue: `${formatNumber(totalCacheTokens)} cached`,
-            }),
+            // Already a fully composed string; wrapping it in t() would be an
+            // identity call against a key that does not exist.
+            hint: formatCacheBreakdown(totalCacheTokens, totalCacheWriteTokens, formatNumber),
             icon: <CachedIcon />,
             color: getCacheHitRateColor(cacheHitRate),
         },
@@ -803,7 +807,7 @@ export default function UserUsagePage() {
                                     {[
                                         { label: t('dashboard.userUsage.input', { defaultValue: 'Input' }), value: selectedUser.total_input_tokens, color: TOKEN_COLORS.input.main },
                                         { label: t('dashboard.userUsage.output', { defaultValue: 'Output' }), value: selectedUser.total_output_tokens, color: TOKEN_COLORS.output.main },
-                                        { label: t('dashboard.userUsage.cache', { defaultValue: 'Cache' }), value: selectedUser.cache_input_tokens, color: TOKEN_COLORS.cache.main },
+                                        { label: t('dashboard.userUsage.cacheRead', { defaultValue: 'Cache Read' }), value: selectedUser.cache_input_tokens, color: TOKEN_COLORS.cache.main },
                                     ].map(({ label, value, color }) => (
                                         <Grid
                                             key={label}

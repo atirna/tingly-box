@@ -71,6 +71,7 @@ export const formatChartData = (data: TimeSeriesData[], isDayMode: boolean): Cha
             inputTokens: item.input_tokens,
             outputTokens: item.output_tokens,
             cacheTokens: cache,
+            cacheWriteTokens: item.cache_write_tokens || 0,
             cacheRatio,
         };
     });
@@ -99,6 +100,7 @@ export const aggregateTo5MinBuckets = (data: TimeSeriesData[]): TimeSeriesData[]
         input_tokens: number;
         output_tokens: number;
         cache_input_tokens: number;
+        cache_write_tokens: number;
         request_count: number;
         error_count: number;
         total_latency_weight: number;
@@ -128,6 +130,7 @@ export const aggregateTo5MinBuckets = (data: TimeSeriesData[]): TimeSeriesData[]
             existing.input_tokens += item.input_tokens || 0;
             existing.output_tokens += item.output_tokens || 0;
             existing.cache_input_tokens += item.cache_input_tokens || 0;
+            existing.cache_write_tokens += item.cache_write_tokens || 0;
             existing.request_count += requestCount;
             existing.error_count += item.error_count || 0;
             existing.total_latency_weight += latency * requestCount;
@@ -137,6 +140,7 @@ export const aggregateTo5MinBuckets = (data: TimeSeriesData[]): TimeSeriesData[]
                 input_tokens: item.input_tokens || 0,
                 output_tokens: item.output_tokens || 0,
                 cache_input_tokens: item.cache_input_tokens || 0,
+                cache_write_tokens: item.cache_write_tokens || 0,
                 request_count: requestCount,
                 error_count: item.error_count || 0,
                 total_latency_weight: latency * requestCount,
@@ -152,6 +156,7 @@ export const aggregateTo5MinBuckets = (data: TimeSeriesData[]): TimeSeriesData[]
             input_tokens: bucket.input_tokens,
             output_tokens: bucket.output_tokens,
             cache_input_tokens: bucket.cache_input_tokens,
+            cache_write_tokens: bucket.cache_write_tokens,
             request_count: bucket.request_count,
             error_count: bucket.error_count,
             avg_latency_ms: bucket.request_count > 0

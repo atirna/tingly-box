@@ -13,7 +13,7 @@ import {
     useTheme,
 } from '@mui/material';
 import { useState } from 'react';
-import { formatNumber } from './chartStyles';
+import { formatNumber, hasCacheWrites } from './chartStyles';
 
 export interface AggregatedStat {
     key: string;
@@ -27,6 +27,7 @@ export interface AggregatedStat {
     total_input_tokens: number;
     total_output_tokens: number;
     cache_input_tokens?: number;
+    cache_write_tokens?: number;
     avg_latency_ms?: number;
     error_count?: number;
     error_rate?: number;
@@ -38,6 +39,7 @@ interface ServiceStatsTableProps {
 }
 
 export default function ServiceStatsTable({ stats }: ServiceStatsTableProps) {
+    const showCacheWrite = hasCacheWrites(stats);
     const theme = useTheme();
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -120,8 +122,13 @@ export default function ServiceStatsTable({ stats }: ServiceStatsTableProps) {
                                 Requests
                             </TableCell>
                             <TableCell align="right" sx={{ fontWeight: 600 }}>
-                                Cache Tokens
+                                Cache Read
                             </TableCell>
+                            {showCacheWrite && (
+                                <TableCell align="right" sx={{ fontWeight: 600 }}>
+                                    Cache Write
+                                </TableCell>
+                            )}
                             <TableCell align="right" sx={{ fontWeight: 600 }}>
                                 Cache Hit
                             </TableCell>
@@ -216,6 +223,9 @@ export default function ServiceStatsTable({ stats }: ServiceStatsTableProps) {
                                         </TableCell>
                                         <TableCell align="right">{formatRequests(stat.request_count)}</TableCell>
                                         <TableCell align="right">{formatTokens(stat.cache_input_tokens || 0)}</TableCell>
+                                        {showCacheWrite && (
+                                            <TableCell align="right">{formatTokens(stat.cache_write_tokens || 0)}</TableCell>
+                                        )}
                                         <TableCell align="right">
                                             <Typography
                                                 variant="body2"

@@ -30,7 +30,7 @@ import {
     ResponsiveContainer,
 } from 'recharts';
 import { WaveSine as StreamIcon } from '@/components/icons';
-import { getThemeChartStyles, TOKEN_COLORS, formatNumber } from './chartStyles';
+import { getThemeChartStyles, TOKEN_COLORS, formatNumber, hasCacheWrites } from './chartStyles';
 import api from '@/services/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -49,6 +49,7 @@ export interface UsageRecord {
     output_tokens: number;
     total_tokens: number;
     cache_input_tokens: number;
+    cache_write_tokens?: number;
     status: string;
     error_code?: string;
     latency_ms: number;
@@ -105,12 +106,17 @@ function TokenDonut({ records }: { records: UsageRecord[] }) {
     const totalInput  = records.reduce((s, r) => s + r.input_tokens, 0);
     const totalOutput = records.reduce((s, r) => s + r.output_tokens, 0);
     const totalCache  = records.reduce((s, r) => s + r.cache_input_tokens, 0);
+    // Cache writes live INSIDE input_tokens, so they must not become a fourth
+    // slice — that would inflate the total by counting them twice. They annotate
+    // the Input slice instead.
+    const totalCacheWrite = records.reduce((s, r) => s + (r.cache_write_tokens || 0), 0);
     const total = totalInput + totalOutput + totalCache;
 
     const pieData = [
-        { name: 'Input',  value: totalInput,  color: TOKEN_COLORS.input.main,  pct: total > 0 ? ((totalInput  / total) * 100).toFixed(1) : '0' },
-        { name: 'Output', value: totalOutput, color: TOKEN_COLORS.output.main, pct: total > 0 ? ((totalOutput / total) * 100).toFixed(1) : '0' },
-        { name: 'Cache',  value: totalCache,  color: TOKEN_COLORS.cache.main,  pct: total > 0 ? ((totalCache  / total) * 100).toFixed(1) : '0' },
+        { name: 'Input',  value: totalInput,  color: TOKEN_COLORS.input.main,  pct: total > 0 ? ((totalInput  / total) * 100).toFixed(1) : '0',
+          note: totalCacheWrite > 0 ? `incl. ${fmtTokens(totalCacheWrite)} written` : '' },
+        { name: 'Output', value: totalOutput, color: TOKEN_COLORS.output.main, pct: total > 0 ? ((totalOutput / total) * 100).toFixed(1) : '0', note: '' },
+        { name: 'Cache Read', value: totalCache, color: TOKEN_COLORS.cache.main, pct: total > 0 ? ((totalCache / total) * 100).toFixed(1) : '0', note: '' },
     ].filter(d => d.value > 0);
 
     return (
@@ -156,6 +162,11 @@ function TokenDonut({ records }: { records: UsageRecord[] }) {
                                             {d.pct}%
                                         </Typography>
                                     </Typography>
+                                    {d.note && (
+                                        <Typography sx={{ fontSize: '0.62rem', color: 'text.secondary', lineHeight: 1.2 }}>
+                                            {d.note}
+                                        </Typography>
+                                    )}
                                 </Box>
                             </Box>
                         ))}
@@ -278,6 +289,7 @@ interface TableSectionProps {
 
 function RequestTable({ records, total, page, rowsPerPage, statusFilter, loading, onStatusFilterChange, onPageChange, onRowsPerPageChange }: TableSectionProps) {
     const theme = useTheme();
+    const showCacheWrite = hasCacheWrites(records);
 
     return (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden', backgroundColor: 'background.paper', boxShadow: 'none', width: '100%', minWidth: 0 }}>
@@ -312,7 +324,8 @@ function RequestTable({ records, total, page, rowsPerPage, statusFilter, loading
                             <TableCell>Time</TableCell>
                             <TableCell>Model</TableCell>
                             <TableCell>Scenario</TableCell>
-                            <TableCell align="right" sx={{ minWidth: 96 }}>Cache</TableCell>
+                            <TableCell align="right" sx={{ minWidth: 96 }}>Cache Read</TableCell>
+                            {showCacheWrite && <TableCell align="right">Cache Write</TableCell>}
                             <TableCell align="right">Input</TableCell>
                             <TableCell align="right">Output</TableCell>
                             <TableCell align="right">Latency</TableCell>
@@ -384,6 +397,14 @@ function RequestTable({ records, total, page, rowsPerPage, statusFilter, loading
                                         );
                                     })()}
                                 </TableCell>
+
+                                {showCacheWrite && (
+                                    <TableCell align="right">
+                                        <Typography sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: (r.cache_write_tokens || 0) > 0 ? 'text.primary' : 'text.disabled' }}>
+                                            {(r.cache_write_tokens || 0) > 0 ? fmtTokens(r.cache_write_tokens || 0) : '-'}
+                                        </Typography>
+                                    </TableCell>
+                                )}
                                 <TableCell align="right">
                                     <Typography sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: TOKEN_COLORS.input.main }}>
                                         {fmtTokens(r.input_tokens)}

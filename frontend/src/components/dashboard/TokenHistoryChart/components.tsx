@@ -49,7 +49,7 @@ export function LegendItem({ label, color, visible, onToggle }: LegendItemProps)
     );
 }
 
-const SERIES_ORDER = ['Cache Tokens', 'Input Tokens', 'Output Tokens'];
+const SERIES_ORDER = ['Cache Read', 'Input Tokens', 'Output Tokens'];
 
 export function CustomTooltip({ active, payload }: any) {
     const theme = useTheme();
@@ -107,6 +107,14 @@ export function CustomTooltip({ active, payload }: any) {
                     </Box>
                     <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
                         {entry.value.toLocaleString()}
+                        {/* Cache writes are part of the input tokens already plotted,
+                            so they annotate the Input row instead of getting their own
+                            series — a fourth stacked band would count them twice. */}
+                        {entry.name === 'Input Tokens' && data.cacheWriteTokens > 0 && (
+                            <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary', ml: 0.5 }}>
+                                (incl. {data.cacheWriteTokens.toLocaleString()} written)
+                            </Box>
+                        )}
                     </Typography>
                 </Box>
             ))}

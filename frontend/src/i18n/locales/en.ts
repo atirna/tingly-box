@@ -1078,7 +1078,7 @@ export default {
       "joined": "Added {{value}}",
       "input": "Input",
       "output": "Output",
-      "cache": "Cache",
+      "cacheRead": "Cache Read",
       "allModels": "All models",
       "modelMix": "Where their tokens went",
       "noUsers": "No users match your search.",

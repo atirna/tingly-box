@@ -39,7 +39,7 @@ export function HourlyTokenHistoryChart({data}: HourlyTokenHistoryChartProps) {
                 <>
                     <Box sx={{display: 'flex', justifyContent: 'center', gap: 3, mb: 2}}>
                         <LegendItem
-                            label="Cache"
+                            label="Cache Read"
                             color={chartStyles.token.cache.main}
                             visible={visibleSeries.cache}
                             onToggle={() => toggleSeries('cache')}
@@ -101,7 +101,7 @@ export function HourlyTokenHistoryChart({data}: HourlyTokenHistoryChartProps) {
                             <Area
                                 type="monotone"
                                 dataKey="cacheTokens"
-                                name="Cache Tokens"
+                                name="Cache Read"
                                 stackId="1"
                                 stroke={chartStyles.token.cache.main}
                                 strokeWidth={1}

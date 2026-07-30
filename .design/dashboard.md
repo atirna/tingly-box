@@ -40,6 +40,12 @@ server-side equality filter matches the UI's Success/Error toggle 1:1.
 Time bounds are sent as local ISO strings with timezone offset
 (`toLocalISOString`) because the backend stores local time.
 
+The dashboard components declare these response shapes as **local
+interfaces**, not types generated from `openapi.json`. That is why
+`cache_write_tokens` could ship ahead of a codegen run — `openapi.json`
+currently lags the Go models by that one field. Anything that does consume
+the generated SDK needs `task codegen` first.
+
 ## Backend query path
 
 - **`usage_daily` pre-aggregation** (`internal/data/db/usage_daily.go`): one
@@ -102,6 +108,9 @@ Usage" side panel used to sit next to the chart; it was removed as a
 near-duplicate of the "Usage by Model" table below — both read the same
 `group_by=model` stats — so the table is now the sole per-model view.)
 
+Three stacked series: **Cache Read**, **Input**, **Output**. Cache *writes*
+are deliberately not a fourth series — see the cache read/write section below.
+
 ### By Request (`RequestsView.tsx`)
 
 The page always fetches a **sample**: the most recent 500 records for the
@@ -144,6 +153,37 @@ Layout facts that keep the grid stable:
   `transform` to cells**: transformed bounds of edge cells extend the
   scrollable overflow of the `overflowX: auto` container, making the scrollbar
   flicker and the grid jump under the cursor.
+
+## Cache reads vs cache writes
+
+Caching is two costs, not one. Reads are the discount; writes are billed at a
+premium (Anthropic `cache_creation`, OpenAI `cache_write_tokens` since
+gpt-5.6). The API exposes both: `cache_input_tokens` is reads only,
+`cache_write_tokens` is writes.
+
+**`cache_write_tokens` is a SUBSET of `total_input_tokens`, never an addend.**
+This is the one thing to get right here — the backend folds the write cost
+into input on purpose (see `.design/stream-usage-tracking.md` §2). So cache
+writes must never become a fourth stacked series, a fourth donut slice, or a
+term in any total; doing so double counts the same tokens and inflates every
+figure on the page.
+
+They surface as annotations on the Input figure instead:
+
+- Chart tooltip: `Input Tokens: 12,570 (incl. 1,508 written)`
+- Token Breakdown donut: `incl. 107K written` under the Input legend entry
+- Cache Hit Rate card subtitle: `40M read · 4.8M written`
+- Own column (`Cache Write`) in Usage by Model and the By Request table
+
+Vocabulary: every previously-"Cache" label is now **Cache Read**, so the word
+means one thing. The write column and the "written" annotations render only
+when there is a non-zero write in the data (`hasCacheWrites`) — pre-gpt-5.6
+models and Azure never report writes, so an always-on column would be a
+permanent wall of zeros. `formatCacheBreakdown` in `chartStyles.ts` owns that
+decision for the stat cards.
+
+The Cache Hit Rate formula is unchanged: `read / (read + input)`. Since input
+already contains the writes, a write correctly counts as a miss.
 
 ## Invariants / gotchas
 

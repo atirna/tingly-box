@@ -153,6 +153,25 @@ export const getTotalTokens = (stat: {
 export const getCacheHitRate = (cacheTokens: number, inputTokens: number): number =>
     (cacheTokens + inputTokens) > 0 ? (cacheTokens / (cacheTokens + inputTokens)) * 100 : 0;
 
+// Formats the read/write breakdown shown under a cache stat. Cache writes are
+// only reported by gpt-5.6+ and Anthropic; on every other channel the count is
+// permanently zero, so the write half is omitted rather than shown as noise.
+export const formatCacheBreakdown = (
+    cacheReadTokens: number,
+    cacheWriteTokens: number,
+    format: (n: number) => string,
+): string =>
+    cacheWriteTokens > 0
+        ? `${format(cacheReadTokens)} read \u00b7 ${format(cacheWriteTokens)} written`
+        : `${format(cacheReadTokens)} read`;
+
+// Whether any row carries a cache write, i.e. whether the write dimension is
+// worth showing at all. Owns the "omit when there is nothing to attribute"
+// policy for the tables, the same way formatCacheBreakdown owns it for the
+// stat cards — keep both readings of that policy in this one file.
+export const hasCacheWrites = (rows: { cache_write_tokens?: number }[]): boolean =>
+    rows.some((r) => (r.cache_write_tokens ?? 0) > 0);
+
 // Health-gauge color for a Cache Hit Rate stat card (higher is better).
 export const getCacheHitRateColor = (percent: number): 'success' | 'warning' | 'error' =>
     percent >= 50 ? 'success' : percent >= 20 ? 'warning' : 'error';

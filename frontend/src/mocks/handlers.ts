@@ -2117,11 +2117,11 @@ export const handlers = [
         const groupBy = url.searchParams.get('group_by')
         const userID = url.searchParams.get('user_id')
         const userUsage = [
-            { key: 'admin', user_id: 'admin', request_count: 2310, total_tokens: 11200000, total_input_tokens: 6180000, total_output_tokens: 4220000, cache_input_tokens: 800000, error_count: 9, error_rate: 0.0039 },
-            { key: 'user-platform', user_id: 'user-platform', request_count: 1884, total_tokens: 8460000, total_input_tokens: 4620000, total_output_tokens: 3140000, cache_input_tokens: 700000, error_count: 13, error_rate: 0.0069 },
-            { key: 'user-design', user_id: 'user-design', request_count: 1256, total_tokens: 5790000, total_input_tokens: 3110000, total_output_tokens: 2260000, cache_input_tokens: 420000, error_count: 4, error_rate: 0.0032 },
-            { key: 'user-mobile', user_id: 'user-mobile', request_count: 934, total_tokens: 3680000, total_input_tokens: 2180000, total_output_tokens: 1420000, cache_input_tokens: 80000, error_count: 19, error_rate: 0.0203 },
-            { key: 'user-support', user_id: 'user-support', request_count: 226, total_tokens: 930000, total_input_tokens: 540000, total_output_tokens: 370000, cache_input_tokens: 20000, error_count: 1, error_rate: 0.0044 },
+            { key: 'admin', user_id: 'admin', request_count: 2310, total_tokens: 11200000, total_input_tokens: 6180000, total_output_tokens: 4220000, cache_input_tokens: 800000, cache_write_tokens: 96000, error_count: 9, error_rate: 0.0039 },
+            { key: 'user-platform', user_id: 'user-platform', request_count: 1884, total_tokens: 8460000, total_input_tokens: 4620000, total_output_tokens: 3140000, cache_input_tokens: 700000, cache_write_tokens: 84000, error_count: 13, error_rate: 0.0069 },
+            { key: 'user-design', user_id: 'user-design', request_count: 1256, total_tokens: 5790000, total_input_tokens: 3110000, total_output_tokens: 2260000, cache_input_tokens: 420000, cache_write_tokens: 50400, error_count: 4, error_rate: 0.0032 },
+            { key: 'user-mobile', user_id: 'user-mobile', request_count: 934, total_tokens: 3680000, total_input_tokens: 2180000, total_output_tokens: 1420000, cache_input_tokens: 80000, cache_write_tokens: 9600, error_count: 19, error_rate: 0.0203 },
+            { key: 'user-support', user_id: 'user-support', request_count: 226, total_tokens: 930000, total_input_tokens: 540000, total_output_tokens: 370000, cache_input_tokens: 20000, cache_write_tokens: 2400, error_count: 1, error_rate: 0.0044 },
         ]
         if (groupBy === 'user') {
             return HttpResponse.json({ success: true, data: userUsage })
@@ -2145,6 +2145,7 @@ export const handlers = [
                     total_input_tokens: scale(1140000),
                     total_output_tokens: scale(920000),
                     cache_input_tokens: scale(23860000),
+                    cache_write_tokens: scale(2863200),
                     avg_latency_ms: 1240,
                     error_count: scale(12),
                     error_rate: 0.65,
@@ -2161,6 +2162,7 @@ export const handlers = [
                     total_input_tokens: scale(620000),
                     total_output_tokens: scale(380000),
                     cache_input_tokens: scale(7180000),
+                    cache_write_tokens: scale(861600),
                     avg_latency_ms: 2100,
                     error_count: scale(3),
                     error_rate: 0.71,
@@ -2177,6 +2179,7 @@ export const handlers = [
                     total_input_tokens: scale(890000),
                     total_output_tokens: scale(520000),
                     cache_input_tokens: scale(5310000),
+                    cache_write_tokens: scale(637200),
                     avg_latency_ms: 980,
                     error_count: scale(8),
                     error_rate: 0.85,
@@ -2193,6 +2196,7 @@ export const handlers = [
                     total_input_tokens: scale(390000),
                     total_output_tokens: scale(410000),
                     cache_input_tokens: scale(3510000),
+                    cache_write_tokens: scale(421200),
                     avg_latency_ms: 420,
                     error_count: scale(5),
                     error_rate: 0.23,
@@ -2209,6 +2213,7 @@ export const handlers = [
                     total_input_tokens: scale(1050000),
                     total_output_tokens: scale(120000),
                     cache_input_tokens: scale(180000),
+                    cache_write_tokens: scale(21600),
                     avg_latency_ms: 3200,
                     error_count: scale(2),
                     error_rate: 0.64,
@@ -2268,6 +2273,8 @@ export const handlers = [
                     input_tokens: input,
                     output_tokens: output,
                     cache_input_tokens: cache,
+                    // Writes are a slice of the uncached input, never on top of it.
+                    cache_write_tokens: Math.round(input * 0.12),
                     total_tokens: input + output + cache,
                     error_count: Math.round(Math.random() * 3),
                     avg_latency_ms: Math.round(900 + Math.random() * 600),
@@ -2344,6 +2351,7 @@ export const handlers = [
                 output_tokens: output,
                 total_tokens: input + output + cache,
                 cache_input_tokens: cache,
+                cache_write_tokens: Math.round(input * 0.12),
                 status: isError ? 'error' : 'success',
                 error_code: isError ? 'rate_limit_exceeded' : '',
                 latency_ms: latency,

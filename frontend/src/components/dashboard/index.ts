@@ -15,6 +15,8 @@ export {
     getTotalTokens,
     getCacheHitRate,
     getCacheHitRateColor,
+    formatCacheBreakdown,
+    hasCacheWrites,
     getErrorRateColor,
 } from './chartStyles';
 

@@ -1078,7 +1078,7 @@ export default {
       "joined": "添加于 {{value}}",
       "input": "输入",
       "output": "输出",
-      "cache": "缓存",
+      "cacheRead": "缓存读取",
       "allModels": "全部模型",
       "modelMix": "Token 用在了哪里",
       "noUsers": "没有匹配的用户。",

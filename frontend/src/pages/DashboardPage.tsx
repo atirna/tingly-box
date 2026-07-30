@@ -18,7 +18,7 @@ import {
     Divider,
 } from '@mui/material';
 import { Refresh as RefreshIcon, Outbound as CallMadeIcon, ErrorOutline as ErrorOutlineIcon, Token as PaidIcon, Stream as StreamIcon, Autorenew as CachedIcon, FilterOff } from '@/components/icons';
-import { StatCard, DailyTokenHistoryChart, HourlyTokenHistoryChart, ServiceStatsTable, AgentQuickNav, RequestsView, DashboardHeatmapSection, formatNumber, getTotalTokens, getCacheHitRate, getCacheHitRateColor, getErrorRateColor } from '@/components/dashboard';
+import { StatCard, DailyTokenHistoryChart, HourlyTokenHistoryChart, ServiceStatsTable, AgentQuickNav, RequestsView, DashboardHeatmapSection, formatNumber, getTotalTokens, getCacheHitRate, getCacheHitRateColor, formatCacheBreakdown, getErrorRateColor } from '@/components/dashboard';
 import type { TimeSeriesData, AggregatedStat, UsageRecord } from '@/components/dashboard';
 import { ToggleButtonGroup, ToggleButton } from '@mui/material';
 import PageHeader from '@/components/PageHeader';
@@ -374,6 +374,10 @@ export default function DashboardPage() {
     const totalInputTokens = stats.reduce((sum, s) => sum + (s.total_input_tokens || 0), 0);
     const totalOutputTokens = stats.reduce((sum, s) => sum + (s.total_output_tokens || 0), 0);
     const totalCacheTokens = stats.reduce((sum, s) => sum + (s.cache_input_tokens || 0), 0);
+    // Cache writes are already inside total_input_tokens (they are billed at a
+    // premium but are still this prompt's input), so they are reported next to
+    // the read hits rather than added to any total.
+    const totalCacheWriteTokens = stats.reduce((sum, s) => sum + (s.cache_write_tokens || 0), 0);
     const totalTokens = totalInputTokens + totalOutputTokens + totalCacheTokens;
 
     // Calculate error rate
@@ -672,7 +676,7 @@ export default function DashboardPage() {
                         <StatCard
                             title="Cache Hit Rate"
                             value={`${cacheHitRate.toFixed(1)}%`}
-                            subtitle={`${formatNumber(totalCacheTokens)} cached`}
+                            subtitle={formatCacheBreakdown(totalCacheTokens, totalCacheWriteTokens, formatNumber)}
                             icon={<CachedIcon />}
                             color={getCacheHitRateColor(cacheHitRate)}
                         />
