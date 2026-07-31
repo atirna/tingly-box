@@ -171,7 +171,8 @@ verified against AWS/Google/Anthropic/Microsoft docs (Jul 2026): Bedrock
   whose remote registry predates them. External entries still win on id
   collision, but embedded-only ids are now merged back in
   (`mergeEmbeddedOnly`, applied on cache load and both fetch paths).
-- Covered by `internal/data/cloud_template_test.go`.
+- Covered in `internal/data/provider_template_test.go` (cloud resolution,
+  Vertex disambiguation, embedded-only merge).
 
 ## 10. Cross-cutting
 
