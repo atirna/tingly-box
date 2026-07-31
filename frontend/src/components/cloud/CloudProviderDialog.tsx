@@ -21,7 +21,7 @@ import {api} from '../../services/api';
 import {getServiceProvider} from '@/services/serviceProviders';
 import ProviderIcon from '@/components/ProviderIcon';
 import ProxyUrlField from '@/components/provider-form-dialog/ProxyUrlField';
-import {getCloudFields, buildCloudApiBase, validateCloudFields, type CloudField} from './cloudCredentialSchema';
+import {getCloudFields, buildCloudApiBase, validateCloudFields, cloudFieldLabel, type CloudField} from './cloudCredentialSchema';
 
 interface CloudProviderDialogProps {
     open: boolean;
@@ -49,7 +49,13 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
     open, presetId, onClose, onSuccess, onBack, onNotification,
 }) => {
     const {t} = useTranslation();
-    const template = presetId ? getServiceProvider(presetId) : null;
+    // Retain the last-opened template so the dialog can animate out after
+    // presetId is nulled on close, instead of hard-unmounting mid-transition.
+    const lastTemplateRef = React.useRef<ReturnType<typeof getServiceProvider>>(null);
+    if (presetId) {
+        lastTemplateRef.current = getServiceProvider(presetId);
+    }
+    const template = lastTemplateRef.current;
     const authType = template?.auth_type || '';
     const fields = getCloudFields(authType);
 
@@ -93,7 +99,11 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
         setError(null);
     };
 
-    const validationError = validateCloudFields(authType, values);
+    const validationError = validateCloudFields(authType, values, t);
+    // Surface the non-obvious rules (AWS either/or, format checks) live once the
+    // required fields are filled; plain missing-required is already communicated
+    // by the asterisks.
+    const requiredFilled = fields.filter((f) => f.required).every((f) => (values[f.key] || '').trim().length > 0);
     const canSubmit = name.trim().length > 0 && !validationError && !submitting;
 
     const handleUseGlobalProxyChange = (checked: boolean) => {
@@ -139,9 +149,7 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
                 onSuccess();
                 onClose();
             } else {
-                const msg = result?.error || t('cloudDialog.connectFailed', {defaultValue: 'Failed to connect provider'});
-                setError(msg);
-                onNotification?.(`${t('cloudDialog.connectFailed', {defaultValue: 'Failed to connect provider'})}: ${msg}`, 'error');
+                setError(result?.error || t('cloudDialog.connectFailed', {defaultValue: 'Failed to connect provider'}));
             }
         } catch (e: any) {
             setError(e?.message || t('cloudDialog.connectFailed', {defaultValue: 'Failed to connect provider'}));
@@ -159,9 +167,9 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
                 size="small"
                 fullWidth
                 required={f.required}
-                label={f.label}
+                label={cloudFieldLabel(f, t)}
                 placeholder={f.placeholder}
-                helperText={f.helper}
+                helperText={f.helper ? t(`cloudDialog.fields.${f.key}.helper`, {defaultValue: f.helper}) : undefined}
                 value={values[f.key] || ''}
                 onChange={(e) => setValue(f.key, e.target.value)}
                 multiline={f.type === 'multiline'}
@@ -217,7 +225,17 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
                         onChange={(e) => setName(e.target.value)}
                     />
 
+                    {authType === 'aws_sigv4' && (
+                        <Typography variant="caption" color="text.secondary" sx={{mb: -1}}>
+                            {t('cloudDialog.awsAuthHint', {defaultValue: 'Authenticate with an Access Key ID + Secret pair, or a Bedrock API Key alone.'})}
+                        </Typography>
+                    )}
                     {primaryFields.map(renderField)}
+                    {requiredFilled && validationError && (
+                        <Typography variant="caption" color="warning.main" sx={{mt: -1.5}}>
+                            {validationError}
+                        </Typography>
+                    )}
 
                     <ProxyUrlField
                         mode="add"

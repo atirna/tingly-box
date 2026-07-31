@@ -79,6 +79,26 @@ func TestValidateCredential(t *testing.T) {
 			fields:  map[string]string{CredFieldAzureEndpoint: "https://x", CredFieldAzureAPIKey: "key"},
 			wantErr: true,
 		},
+		{
+			name: "gcp malformed sa json",
+			auth: AuthTypeGCPVertex,
+			fields: map[string]string{
+				CredFieldGCPProjectID:          "proj",
+				CredFieldGCPLocation:           "us-east5",
+				CredFieldGCPServiceAccountJSON: "{not json",
+			},
+			wantErr: true,
+		},
+		{
+			name: "azure endpoint without scheme",
+			auth: AuthTypeAzureKey,
+			fields: map[string]string{
+				CredFieldAzureEndpoint:   "my-res.openai.azure.com",
+				CredFieldAzureAPIVersion: "2024-10-21",
+				CredFieldAzureAPIKey:     "key",
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,6 +131,46 @@ func TestIsSecretCredentialField(t *testing.T) {
 	for _, c := range cases {
 		if got := IsSecretCredentialField(c.auth, c.key); got != c.want {
 			t.Errorf("IsSecretCredentialField(%s, %q) = %v, want %v", c.auth, c.key, got, c.want)
+		}
+	}
+}
+
+func TestValidateCredentialAPIStyle(t *testing.T) {
+	cases := []struct {
+		auth    AuthType
+		style   string
+		wantErr bool
+	}{
+		{AuthTypeAWSSigV4, "anthropic", false},
+		{AuthTypeAWSSigV4, "openai", true},
+		{AuthTypeGCPVertex, "anthropic", false},
+		{AuthTypeGCPVertex, "google", false},
+		{AuthTypeGCPVertex, "openai", true},
+		{AuthTypeAzureKey, "openai", false},
+		{AuthTypeAzureKey, "anthropic", true},
+		{AuthTypeAPIKey, "anything", false}, // unrestricted
+	}
+	for _, c := range cases {
+		err := ValidateCredentialAPIStyle(c.auth, c.style)
+		if (err != nil) != c.wantErr {
+			t.Errorf("ValidateCredentialAPIStyle(%s, %s) error = %v, wantErr %v", c.auth, c.style, err, c.wantErr)
+		}
+	}
+}
+
+func TestNormalizeCredential(t *testing.T) {
+	got := NormalizeCredential(map[string]string{
+		"region":  " us-east-1\n",
+		"empty":   "   ",
+		" spaced": "v",
+	})
+	want := map[string]string{"region": "us-east-1", "spaced": "v"}
+	if len(got) != len(want) {
+		t.Fatalf("NormalizeCredential = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("NormalizeCredential[%q] = %q, want %q", k, got[k], v)
 		}
 	}
 }

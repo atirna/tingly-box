@@ -1,7 +1,9 @@
 package ai
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -114,6 +116,67 @@ func ValidateCredential(a AuthType, fields map[string]string) error {
 				return fmt.Errorf("%s: %q is required", a, f.Key)
 			}
 		}
+		// Cheap format checks so obviously-broken values fail at create time
+		// instead of on the first request.
+		switch a {
+		case AuthTypeGCPVertex:
+			if !json.Valid([]byte(get(CredFieldGCPServiceAccountJSON))) {
+				return fmt.Errorf("%s: %q is not valid JSON", a, CredFieldGCPServiceAccountJSON)
+			}
+		case AuthTypeAzureKey:
+			u, err := url.Parse(get(CredFieldAzureEndpoint))
+			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+				return fmt.Errorf("%s: %q must be a full URL like https://<resource>.openai.azure.com", a, CredFieldAzureEndpoint)
+			}
+		}
 		return nil
 	}
+}
+
+// NormalizeCredential returns a copy of fields with keys and values trimmed
+// and empty entries dropped — the shape handlers should validate and store, so
+// a stray "us-east-1\n" from a raw API caller never reaches host construction.
+func NormalizeCredential(fields map[string]string) map[string]string {
+	out := make(map[string]string, len(fields))
+	for k, v := range fields {
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if k == "" || v == "" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// AllowedAPIStyles returns the api_styles the client layer can actually route
+// for a multi-field cloud auth type (see internal/client/pool.go), or nil for
+// auth types with no style restriction.
+func AllowedAPIStyles(a AuthType) []string {
+	switch a {
+	case AuthTypeAWSSigV4:
+		return []string{"anthropic"}
+	case AuthTypeGCPVertex:
+		return []string{"anthropic", "google"}
+	case AuthTypeAzureKey:
+		return []string{"openai"}
+	}
+	return nil
+}
+
+// ValidateCredentialAPIStyle rejects auth_type × api_style pairs the client
+// layer cannot dispatch. Without this, a mismatched pair (e.g. aws_sigv4 +
+// openai) creates a provider that validates fine but routes to a generic
+// client which, for multi-field types, attaches no credentials at all — every
+// request goes out unauthenticated.
+func ValidateCredentialAPIStyle(a AuthType, apiStyle string) error {
+	allowed := AllowedAPIStyles(a)
+	if allowed == nil {
+		return nil
+	}
+	for _, s := range allowed {
+		if apiStyle == s {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s providers require api_style %s, got %q", a, strings.Join(allowed, " or "), apiStyle)
 }

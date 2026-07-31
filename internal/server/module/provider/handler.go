@@ -143,9 +143,6 @@ func (h *Handler) CreateProvider(c *gin.Context) {
 	if !req.Enabled {
 		req.Enabled = true
 	}
-	if req.APIStyle == "" {
-		req.APIStyle = "openai"
-	}
 	if req.AuthType == "" {
 		req.AuthType = string(typ.AuthTypeAPIKey)
 	}
@@ -158,10 +155,27 @@ func (h *Handler) CreateProvider(c *gin.Context) {
 		return
 	}
 
+	// Default api_style after the auth type is known: cloud auth types with a
+	// single routable style get that style, everything else keeps "openai".
+	if req.APIStyle == "" {
+		if styles := ai.AllowedAPIStyles(authType); len(styles) == 1 {
+			req.APIStyle = styles[0]
+		} else {
+			req.APIStyle = "openai"
+		}
+	}
+	// Reject pairs the client layer can't dispatch (e.g. aws_sigv4 + openai):
+	// they would route to a generic client that sends unauthenticated requests.
+	if err := ai.ValidateCredentialAPIStyle(authType, req.APIStyle); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
 	// Credential requirements differ by auth type: multi-field cloud creds
 	// (aws_sigv4/azure_key/gcp_sa) validate the bundle; every other type keeps
 	// the pre-existing rule — a token is required unless NoKeyRequired.
 	if authType.IsMultiFieldCredential() {
+		req.Credential = ai.NormalizeCredential(req.Credential)
 		if err := ai.ValidateCredential(authType, req.Credential); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 			return
@@ -330,18 +344,27 @@ func (h *Handler) UpdateProvider(c *gin.Context) {
 	if req.APIBaseAnthropic != nil {
 		p.APIBaseAnthropic = *req.APIBaseAnthropic
 	}
-	if req.Token != nil && *req.Token != "" {
+	// Multi-field providers authenticate via the credential bundle only; ignore
+	// a stray token so the two credential shapes never coexist on one row.
+	if req.Token != nil && *req.Token != "" && !p.AuthType.IsMultiFieldCredential() {
 		p.Token = *req.Token
 	}
 	// Replace the whole credential bundle when provided. The edit UI resends the
 	// complete map (the read path returns it in full), so a non-empty map is a
 	// full replacement; a nil map leaves the stored credentials untouched.
 	if p.AuthType.IsMultiFieldCredential() && len(req.Credential) > 0 {
-		if err := ai.ValidateCredential(p.AuthType, req.Credential); err != nil {
+		normalized := ai.NormalizeCredential(req.Credential)
+		if err := ai.ValidateCredential(p.AuthType, normalized); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 			return
 		}
-		p.Credential = &typ.CredentialBundle{Fields: req.Credential}
+		p.Credential = &typ.CredentialBundle{Fields: normalized}
+	}
+	// Reject auth_type × api_style pairs the client layer can't dispatch,
+	// post-merge so a PATCH can't flip a cloud provider onto an unroutable style.
+	if err := ai.ValidateCredentialAPIStyle(p.AuthType, string(p.APIStyle)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
 	}
 	if req.NoKeyRequired != nil {
 		p.NoKeyRequired = *req.NoKeyRequired

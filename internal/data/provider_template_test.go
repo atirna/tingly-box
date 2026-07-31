@@ -612,6 +612,15 @@ func TestCloudTemplatesResolveModels(t *testing.T) {
 			wantModel: "gemini-2.5-pro",
 		},
 		{
+			// Multi-regional "us"/"eu" hosts don't contain the canonical
+			// domain; matching must key off auth_type + api_style, not URL.
+			name:      "vertex-claude-multiregional",
+			apiBase:   "https://aiplatform.us.rep.googleapis.com",
+			apiStyle:  protocol.APIStyleAnthropic,
+			authType:  typ.AuthTypeGCPVertex,
+			wantModel: "claude-opus-4-8",
+		},
+		{
 			name:      "azure",
 			apiBase:   "https://my-res.openai.azure.com",
 			apiStyle:  protocol.APIStyleOpenAI,
@@ -704,14 +713,18 @@ func TestExternalRegistryKeepsEmbeddedOnlyTemplates(t *testing.T) {
 	if all["remote-only"] == nil {
 		t.Error("remote-only template missing after fetch")
 	}
-	// ...but embedded-only ids (the other cloud presets) must stay visible,
-	// both in GetAllTemplates and in the registry the refresh endpoint returns.
+	// ...but embedded-only ids (the other cloud presets) must stay visible in
+	// the merged view.
 	for _, id := range []string{"gcp-vertex-claude", "gcp-vertex-gemini", "azure-openai"} {
 		if all[id] == nil {
 			t.Errorf("embedded-only template %q hidden by external registry", id)
 		}
-		if registry.Providers[id] == nil {
-			t.Errorf("embedded-only template %q missing from fetched registry response", id)
+		// The fetched registry itself must stay pure remote content — it is
+		// what gets persisted to the disk cache, and laundering embedded
+		// entries into it would let a stale cache shadow a newer binary's
+		// embedded fixes until the TTL expires.
+		if registry.Providers[id] != nil {
+			t.Errorf("embedded-only template %q leaked into the remote registry", id)
 		}
 	}
 }

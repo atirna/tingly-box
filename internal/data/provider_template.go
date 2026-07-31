@@ -273,8 +273,7 @@ func (tm *TemplateManager) fetchFromFile(filePath string) (*ProviderTemplateRegi
 	}
 
 	tm.mu.Lock()
-	registry.Providers = tm.mergeEmbeddedOnly(registry.Providers)
-	tm.templates = registry.Providers
+	tm.templates = tm.mergeEmbeddedOnly(registry.Providers)
 	tm.capabilitySchemas = registry.CapabilitySchemas
 	tm.version = registry.Version
 	tm.lastUpdated = time.Now()
@@ -348,10 +347,14 @@ func (tm *TemplateManager) fetchFromHTTP(ctx context.Context) (*ProviderTemplate
 		return nil, fmt.Errorf("failed to parse registry JSON: %w", err)
 	}
 
+	// Persist the pure remote registry before merging: the cache must never
+	// contain this binary's embedded entries, or a later binary's embedded
+	// fixes would lose to them until the cache expires.
+	_ = tm.saveCache(&registry)
+
 	// Update templates storage
 	tm.mu.Lock()
-	registry.Providers = tm.mergeEmbeddedOnly(registry.Providers)
-	tm.templates = registry.Providers
+	tm.templates = tm.mergeEmbeddedOnly(registry.Providers)
 	tm.capabilitySchemas = registry.CapabilitySchemas
 	tm.lastUpdated = time.Now()
 	tm.version = registry.Version
@@ -404,9 +407,9 @@ func (tm *TemplateManager) loadCache() (*ProviderTemplateRegistry, error) {
 func (tm *TemplateManager) saveCache(registry *ProviderTemplateRegistry) error {
 	cacheFile := filepath.Join(tm.cachePath, TemplateCacheFileName)
 
-	tm.mu.RLock()
+	tm.etagMu.RLock()
 	etag := tm.etag
-	tm.mu.RUnlock()
+	tm.etagMu.RUnlock()
 
 	cacheData := TemplateCacheData{
 		Registry: *registry,
@@ -479,12 +482,10 @@ func (tm *TemplateManager) Initialize(ctx context.Context) error {
 				tm.sourceMu.Unlock()
 				return nil
 			}
-			// Cache miss or expired - try GitHub
-			registry, err := tm.FetchTemplates(ctx)
+			// Cache miss or expired - try GitHub. fetchFromHTTP persists the
+			// pure remote registry to the cache itself.
+			_, err = tm.FetchTemplates(ctx)
 			if err == nil {
-				// GitHub fetch successful - save to cache
-				_ = tm.saveCache(registry) // Ignore save errors, we have the data
-
 				tm.sourceMu.Lock()
 				tm.source = TemplateSourceGitHub
 				tm.sourceMu.Unlock()
@@ -501,21 +502,23 @@ func (tm *TemplateManager) Initialize(ctx context.Context) error {
 	}
 }
 
-// mergeEmbeddedOnly adds deep copies of embedded templates whose id is absent
-// from an externally sourced set (GitHub registry or its disk cache). External
-// entries win on id collision, but templates that ship only with this binary —
-// e.g. the cloud presets a new feature depends on — must stay visible even when
-// the remote registry predates them. Callers must hold tm.mu.
+// mergeEmbeddedOnly returns a new map combining an externally sourced set
+// (GitHub registry or its disk cache) with this binary's embedded templates.
+// External entries win on id collision, but templates that ship only with this
+// binary — e.g. the cloud presets a new feature depends on — must stay visible
+// even when the remote registry predates them. The input is not mutated: the
+// external set (and hence the disk cache built from it) stays pure remote
+// content, so a newer binary's embedded fixes are never shadowed by embedded
+// values a previous binary laundered into the cache. Callers must hold tm.mu.
 func (tm *TemplateManager) mergeEmbeddedOnly(external map[string]*ProviderTemplate) map[string]*ProviderTemplate {
-	if external == nil {
-		external = make(map[string]*ProviderTemplate, len(tm.embedded))
-	}
+	merged := make(map[string]*ProviderTemplate, len(external)+len(tm.embedded))
 	for id, tmpl := range tm.embedded {
-		if _, ok := external[id]; !ok {
-			external[id] = deepCopyTemplate(tmpl)
-		}
+		merged[id] = deepCopyTemplate(tmpl)
 	}
-	return external
+	for id, tmpl := range external {
+		merged[id] = tmpl
+	}
+	return merged
 }
 
 // loadEmbeddedTemplates loads templates from embedded JSON file into both templates and embedded
@@ -587,6 +590,14 @@ func (tm *TemplateManager) findTemplateByProvider(provider *typ.Provider) *Provi
 		})
 	}
 
+	// Multi-field cloud providers (Bedrock/Vertex/Azure): match by identity —
+	// auth_type plus api_style — not by URL. The credential-derived host varies
+	// by region, and Vertex multi-regional hosts (aiplatform.us.rep.googleapis.com)
+	// don't even contain the canonical domain.
+	if provider.AuthType.IsMultiFieldCredential() {
+		return tm.searchTemplates(cloudTemplateMatcher(provider))
+	}
+
 	// API key providers: match by APIBase based on APIStyle
 	apiBase := provider.APIBase
 	// BUGFIX: ignore all "/" in right to make it consistent
@@ -618,6 +629,16 @@ func (tm *TemplateManager) findTemplateByProvider(provider *typ.Provider) *Provi
 		return tm.searchTemplates(func(tmpl *ProviderTemplate) bool {
 			return tmpl.BaseURLOpenAI == apiBase
 		})
+	}
+}
+
+// cloudTemplateMatcher matches a multi-field cloud provider to its template by
+// auth_type, with api_style disambiguating templates that share an auth type
+// (Vertex Claude vs Gemini).
+func cloudTemplateMatcher(provider *typ.Provider) func(*ProviderTemplate) bool {
+	return func(tmpl *ProviderTemplate) bool {
+		return tmpl.AuthType == string(provider.AuthType) &&
+			(tmpl.APIStyle == "" || tmpl.APIStyle == string(provider.APIStyle))
 	}
 }
 
@@ -664,6 +685,16 @@ func deepCopyTemplate(tmpl *ProviderTemplate) *ProviderTemplate {
 		for k, v := range tmpl.ModelCapacities {
 			result.ModelCapacities[k] = v
 		}
+	}
+
+	// Copy pointer scalars so the copy shares no memory with the original
+	if tmpl.TotalCapacity != nil {
+		v := *tmpl.TotalCapacity
+		result.TotalCapacity = &v
+	}
+	if tmpl.DefaultModelCapacity != nil {
+		v := *tmpl.DefaultModelCapacity
+		result.DefaultModelCapacity = &v
 	}
 
 	return &result
@@ -742,6 +773,10 @@ func (tm *TemplateManager) findEmbeddedTemplateByProvider(provider *typ.Provider
 		return tm.searchEmbedded(func(tmpl *ProviderTemplate) bool {
 			return tmpl.OAuthProvider == string(issuer)
 		})
+	}
+
+	if provider.AuthType.IsMultiFieldCredential() {
+		return tm.searchEmbedded(cloudTemplateMatcher(provider))
 	}
 
 	apiBase := strings.TrimRight(provider.APIBase, "/")

@@ -126,6 +126,15 @@ Wiring / gotchas:
   the bundle when a non-empty map is sent. `maskForResponse` returns the fields in
   full — matching the existing Token behavior for the local admin UI (real masking
   of both is a follow-up; see §11).
+- Hardening (review round 2): `ai.ValidateCredentialAPIStyle` rejects
+  auth_type × api_style pairs `pool.go` can't route (a mismatch would dispatch to
+  a generic client that sends **unauthenticated** requests); cloud creates default
+  api_style from `ai.AllowedAPIStyles` when single-valued; both handlers store
+  `ai.NormalizeCredential` (trimmed, empties dropped); `ValidateCredential` also
+  format-checks SA JSON (`json.Valid`) and the Azure endpoint URL; update ignores
+  a stray `token` for multi-field rows. count_tokens: Bedrock has no such
+  endpoint → tiktoken estimate; nil client (bad stored credential) → tiktoken
+  instead of panic (`anthropic_count_tokens.go`).
 - `openapi.json` regenerated (`go run ./cli/tingly-box swagger`).
 
 ## 8. Frontend (Connect AI)
@@ -156,9 +165,11 @@ verified against AWS/Google/Anthropic/Microsoft docs (Jul 2026): Bedrock
 `claude-haiku-4-5@20251001`; Gemini `gemini-3-flash` / `gemini-2.5-pro`; Azure
 `gpt-5` / `o4-mini`.
 
-- `ProviderTemplate.APIStyle` added; `findTemplateByProvider` now matches
-  `canonical_domain` **and** `api_style`, so the two Vertex templates (same
-  `aiplatform.googleapis.com`) resolve to the right model family.
+- `ProviderTemplate.APIStyle` added. Multi-field cloud providers match templates
+  by **auth_type + api_style** (`cloudTemplateMatcher`), not URL: the
+  credential-derived host varies by region and Vertex multi-regional hosts
+  (`aiplatform.us.rep.googleapis.com`) don't contain the canonical domain.
+  api_style still disambiguates the two Vertex templates.
 - `ValidateTemplate` exempts cloud (and OAuth) templates from the base-URL rule.
 - `GetProviderTemplates` serializes the full template map → new fields reach the
   frontend with no codegen change.
@@ -169,8 +180,11 @@ verified against AWS/Google/Anthropic/Microsoft docs (Jul 2026): Bedrock
   wholesale with the GitHub registry (or its 12h disk cache), which hid the
   cloud templates — and thus the whole Cloud picker section — on any install
   whose remote registry predates them. External entries still win on id
-  collision, but embedded-only ids are now merged back in
-  (`mergeEmbeddedOnly`, applied on cache load and both fetch paths).
+  collision, but embedded-only ids are now merged back in (`mergeEmbeddedOnly`,
+  non-mutating, applied on cache load and both fetch paths). The disk cache
+  stays **pure remote** (save moved into `fetchFromHTTP`, pre-merge) so a stale
+  cache can never shadow a newer binary's embedded fixes; the refresh endpoint
+  serves the merged `GetAllTemplates()` view.
 - Covered in `internal/data/provider_template_test.go` (cloud resolution,
   Vertex disambiguation, embedded-only merge).
 

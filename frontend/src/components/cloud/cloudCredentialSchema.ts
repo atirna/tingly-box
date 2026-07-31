@@ -30,18 +30,19 @@ export function isCloudAuthType(authType?: string | null): boolean {
 
 /**
  * Credential field schema per cloud auth type (mirror of ai.CredentialSchema).
- * AWS access key / secret are intentionally NOT flagged required: the backend
- * accepts EITHER the key pair OR a Bedrock API key (bearer_token); that
+ * AWS access key / secret / bearer are intentionally NOT flagged required: the
+ * backend accepts EITHER the key pair OR a Bedrock API key (bearer_token); that
  * either/or rule lives in validateCloudFields below, matching
- * ai.ValidateCredential.
+ * ai.ValidateCredential. All three are primary fields so both alternatives are
+ * visible — only the rare session_token hides behind Advanced.
  */
 export const CLOUD_FIELDS: Record<string, CloudField[]> = {
     aws_sigv4: [
         {key: 'region', label: 'Region', type: 'text', required: true, placeholder: 'us-east-1'},
-        {key: 'access_key_id', label: 'Access Key ID', type: 'text', placeholder: 'AKIA…', helper: 'Leave empty when using a Bedrock API key (Advanced)'},
+        {key: 'access_key_id', label: 'Access Key ID', type: 'text', placeholder: 'AKIA…'},
         {key: 'secret_access_key', label: 'Secret Access Key', type: 'password'},
+        {key: 'bearer_token', label: 'Bedrock API Key', type: 'password', helper: 'Alternative to the access key pair — provide one or the other'},
         {key: 'session_token', label: 'Session Token', type: 'password', advanced: true, helper: 'Optional — for temporary (STS) credentials'},
-        {key: 'bearer_token', label: 'Bedrock API Key', type: 'password', advanced: true, helper: 'Optional — use instead of access key / secret'},
     ],
     gcp_sa: [
         {key: 'project_id', label: 'Project ID', type: 'text', required: true, placeholder: 'my-gcp-project'},
@@ -60,22 +61,88 @@ export function getCloudFields(authType?: string | null): CloudField[] {
 }
 
 /**
- * Validate trimmed credential values against the auth type's rules, mirroring
- * ai.ValidateCredential (including AWS's keys-OR-bearer alternative). Returns a
- * human-readable error, or null when the values are submittable.
+ * Minimal translator seam so validation messages and field labels go through
+ * i18next when available. Matches the `t(key, {defaultValue, ...})` call shape;
+ * the fallback interpolates {{var}} into the defaultValue.
  */
-export function validateCloudFields(authType: string, v: Record<string, string>): string | null {
+export type CloudTranslate = (key: string, options: {defaultValue: string; [k: string]: unknown}) => string;
+
+const passthrough: CloudTranslate = (_key, o) =>
+    o.defaultValue.replace(/\{\{(\w+)\}\}/g, (_, k) => String(o[k] ?? ''));
+
+export function cloudFieldLabel(f: CloudField, t: CloudTranslate = passthrough): string {
+    return t(`cloudDialog.fields.${f.key}.label`, {defaultValue: f.label});
+}
+
+// Cloud region/location identifiers: lowercase alphanumerics and hyphens
+// (us-east-1, us-east5, global, us, eu).
+const REGION_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * Validate trimmed credential values against the auth type's rules, mirroring
+ * ai.ValidateCredential (including AWS's keys-OR-bearer alternative and the
+ * backend's cheap format checks). Returns a human-readable error, or null when
+ * the values are submittable.
+ */
+export function validateCloudFields(
+    authType: string,
+    v: Record<string, string>,
+    t: CloudTranslate = passthrough,
+): string | null {
     const fields = getCloudFields(authType);
     const get = (k: string) => (v[k] || '').trim();
-    const missing = fields.filter((f) => f.required && !get(f.key)).map((f) => f.label);
+    const missing = fields.filter((f) => f.required && !get(f.key)).map((f) => cloudFieldLabel(f, t));
     if (missing.length > 0) {
-        return `Missing required field(s): ${missing.join(', ')}`;
+        return t('cloudDialog.validation.missing', {
+            defaultValue: 'Missing required field(s): {{fields}}',
+            fields: missing.join(', '),
+        });
     }
-    if (authType === 'aws_sigv4') {
-        const hasKeys = !!get('access_key_id') && !!get('secret_access_key');
-        const hasBearer = !!get('bearer_token');
-        if (!hasKeys && !hasBearer) {
-            return 'Provide either Access Key ID + Secret Access Key, or a Bedrock API Key';
+    switch (authType) {
+        case 'aws_sigv4': {
+            const hasKeys = !!get('access_key_id') && !!get('secret_access_key');
+            const hasBearer = !!get('bearer_token');
+            if (!hasKeys && !hasBearer) {
+                return t('cloudDialog.validation.awsEitherOr', {
+                    defaultValue: 'Provide either Access Key ID + Secret Access Key, or a Bedrock API Key',
+                });
+            }
+            if (!REGION_RE.test(get('region'))) {
+                return t('cloudDialog.validation.badRegion', {
+                    defaultValue: 'Region must look like "us-east-1" (lowercase letters, digits, hyphens)',
+                });
+            }
+            break;
+        }
+        case 'gcp_sa': {
+            if (!REGION_RE.test(get('location'))) {
+                return t('cloudDialog.validation.badLocation', {
+                    defaultValue: 'Location must look like "us-east5" or "global" (lowercase letters, digits, hyphens)',
+                });
+            }
+            try {
+                JSON.parse(get('service_account_json'));
+            } catch {
+                return t('cloudDialog.validation.badSaJson', {
+                    defaultValue: 'Service Account JSON is not valid JSON — paste the full key file content',
+                });
+            }
+            break;
+        }
+        case 'azure_key': {
+            let ok = false;
+            try {
+                const u = new URL(get('endpoint'));
+                ok = (u.protocol === 'https:' || u.protocol === 'http:') && !!u.host;
+            } catch {
+                ok = false;
+            }
+            if (!ok) {
+                return t('cloudDialog.validation.badEndpoint', {
+                    defaultValue: 'Endpoint must be a full URL like https://my-resource.openai.azure.com',
+                });
+            }
+            break;
         }
     }
     return null;
@@ -86,7 +153,8 @@ export function validateCloudFields(authType: string, v: Record<string, string>)
  * but the create API still requires a non-empty api_base. Build a meaningful one
  * from the (trimmed) values so the provider list shows the actual host. The GCP
  * shape mirrors genai's Vertex host rules: "global" and the multi-regional
- * "us"/"eu" locations have dedicated hosts.
+ * "us"/"eu" locations have dedicated hosts. (Backend template matching keys off
+ * auth_type + api_style, not this host.)
  */
 export function buildCloudApiBase(authType: string, v: Record<string, string>): string {
     const get = (k: string) => (v[k] || '').trim();
@@ -100,7 +168,7 @@ export function buildCloudApiBase(authType: string, v: Record<string, string>): 
             return `https://${loc}-aiplatform.googleapis.com`;
         }
         case 'azure_key':
-            return get('endpoint');
+            return get('endpoint').replace(/\/+$/, '');
         default:
             return '';
     }

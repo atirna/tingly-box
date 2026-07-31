@@ -44,13 +44,14 @@ func TestVertexAnthropicOption_Validation(t *testing.T) {
 		t.Error("expected error for incomplete GCP bundle")
 	}
 
-	// complete bundle but malformed SA JSON → parse error, not a panic
+	// complete bundle but malformed SA JSON → error (caught by schema
+	// validation), not a panic
 	_, err := vertexAnthropicOption(context.Background(), gcpProvider(map[string]string{
 		ai.CredFieldGCPServiceAccountJSON: "{not json",
 		ai.CredFieldGCPProjectID:          "proj",
 		ai.CredFieldGCPLocation:           "us-east5",
 	}))
-	if err == nil || !strings.Contains(err.Error(), "invalid GCP service account JSON") {
+	if err == nil || !strings.Contains(err.Error(), "JSON") {
 		t.Errorf("expected invalid-SA-JSON error, got %v", err)
 	}
 

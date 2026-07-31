@@ -1,5 +1,6 @@
 import OAuthDetailDialog from '@/components/OAuthDetailDialog';
 import ProviderFormDialog, { type EnhancedProviderFormData } from '@/components/ProviderFormDialog';
+import { isCloudAuthType } from '@/components/cloud/cloudCredentialSchema';
 import { api } from '@/services/api';
 import type { Provider } from '@/types/provider';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
@@ -70,6 +71,17 @@ export function useProviderEditDialog({ onUpdated, showNotification }: UseProvid
             if (provider.auth_type === 'oauth') {
                 setOAuthDetailProvider(provider);
                 setOAuthDetailDialogOpen(true);
+            } else if (isCloudAuthType(provider.auth_type)) {
+                // Cloud providers (Bedrock/Vertex/Azure) hold multi-field
+                // credentials the token-based form can neither show nor edit —
+                // opening it would present the wrong fields and risk a bad
+                // update. A dedicated cloud edit flow is a declared follow-up
+                // (.design/third-party-credentials.md §11); until then, be
+                // honest instead of opening a broken form.
+                showNotification?.(
+                    'Editing cloud credentials is not supported yet — delete the provider and re-add it to change them.',
+                    'error'
+                );
             } else {
                 setProviderFormData({
                     uuid: provider.uuid,

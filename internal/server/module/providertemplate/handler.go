@@ -94,9 +94,11 @@ func (h *Handler) RefreshProviderTemplates(c *gin.Context) {
 		return
 	}
 
+	// Serve the manager's merged view, not registry.Providers: the fetched
+	// registry is pure remote content and may lack embedded-only templates.
 	c.JSON(http.StatusOK, TemplateResponse{
 		Success: true,
-		Data:    registry.Providers,
+		Data:    h.templateManager.GetAllTemplates(),
 		Version: registry.Version,
 		Message: "Templates refreshed successfully",
 	})
