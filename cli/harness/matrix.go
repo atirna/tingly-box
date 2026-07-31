@@ -26,7 +26,7 @@ type MatrixCmd struct {
 	Targets    []string `kong:"name='target',sep=',',help='Filter by target protocol (can repeat or comma-separate)'"`
 	Streaming  bool     `kong:"name='streaming',help='Run only streaming tests'"`
 	NonStream  bool     `kong:"name='non-streaming',help='Run only non-streaming tests'"`
-	Mode       string   `kong:"name='mode',default='default',enum='default,all,single,transitive,idempotent,flags,content_shapes',help='Section selection: default (single + idempotent round-trip; two-hop OFF), all (single + transitive + idempotent + flags + content_shapes), single (A→B only), transitive (A→B→C only), idempotent (round-trip g(f(A))==A only), flags (per-rule flag behavior only), content_shapes (request content-shape regression only)'"`
+	Mode       string   `kong:"name='mode',default='default',enum='default,all,single,transitive,idempotent,flags,content_shapes,cache_controls',help='Section selection: default (single + idempotent round-trip; two-hop OFF), all (every section), single (A→B only), transitive (A→B→C only), idempotent (round-trip g(f(A))==A only), flags (per-rule flag behavior only), content_shapes (request content-shape regression only), cache_controls (single-hop + ABA cache/no-cache requests)'"`
 	Client     string   `kong:"name='client',default='http',enum='http,gosdk,python,node,aisdk',help='Client driver: http (raw JSON over net/http, default), gosdk (official anthropic-sdk-go / openai-go), python (real Python SDKs via subprocess driver), node (real Node SDKs via subprocess driver), aisdk (AI SDK by Vercel via subprocess driver)'"`
 	JsonOutput bool     `kong:"name='json',help='Output results as JSON'"`
 	Verbose    int      `kong:"name='verbose',short='v',type='counter',help='Verbose output (repeat for more detail)'"`
@@ -54,6 +54,7 @@ var matrixSections = []matrixSection{
 	{name: "idempotent", modes: []string{"default", "all", "idempotent"}, exec: (*protocoltest.Matrix).ExecuteAllIdempotent},
 	{name: "flags", modes: []string{"all", "flags"}, httpOnly: true, exec: (*protocoltest.Matrix).ExecuteAllFlags},
 	{name: "content_shapes", modes: []string{"all", "content_shapes"}, httpOnly: true, exec: (*protocoltest.Matrix).ExecuteAllContentShapes},
+	{name: "cache_controls", modes: []string{"all", "cache_controls"}, httpOnly: true, exec: (*protocoltest.Matrix).ExecuteAllCacheControls},
 }
 
 // Help returns extended help text shown by `harness matrix --help`.
@@ -77,6 +78,9 @@ func (*MatrixCmd) Help() string {
 
   # Run only request content-shape regression tests
   harness matrix --mode=content_shapes
+
+  # Run single-hop + ABA prompt-cache request tests
+  harness matrix --mode=cache_controls
 
   # Run only single-hop (A→B) tests
   harness matrix --mode=single

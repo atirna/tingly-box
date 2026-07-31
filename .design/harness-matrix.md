@@ -13,6 +13,10 @@
 > §10.1. The matrix itself always sends the same fixed single-turn prompt and
 > only varies the mocked *response* shape, so it cannot catch bugs in how
 > unusual *request* shapes are forwarded upstream.
+>
+> Related: prompt-cache request metadata is covered by `cache_controls.go` —
+> see §10.2. It validates cache/no-cache over every single hop and every ABA
+> idempotent chain.
 
 ---
 
@@ -98,8 +102,8 @@ Assertions + SemanticEquivalence checks
 
 ### Section drivers (`section.go`)
 
-Every section (single-hop, transitive, idempotent, flags, content_shapes)
-contributes only its combos and per-combo execution; the env-per-scenario
+Every section (single-hop, transitive, idempotent, flags, content_shapes,
+cache_controls) contributes only its combos and per-combo execution; the env-per-scenario
 lifecycle, setup-failure fan-out, and `testing.T` scaffolding live once in
 `internal/protocoltest/section.go`:
 
@@ -107,14 +111,15 @@ lifecycle, setup-failure fan-out, and `testing.T` scaffolding live once in
 |--------|---------|---------|
 | `Matrix.executePerScenario(skip, combosFor)` | `ExecuteAll` / `ExecuteAllTransitive` / `ExecuteAllIdempotent` | CLI-side: one env per scenario, scenarios run concurrently (§3.1), combos within a scenario run sequentially against the shared env |
 | `Matrix.runPerScenario(t, skip, run)` | `RunTransitive` / `RunIdempotent` | `testing.T` counterpart: one env per scenario subtest, `t.Parallel()` scenarios, combos sequential |
-| `Matrix.runRecorderCases(cases)` | `ExecuteAllFlags` / `ExecuteAllContentShapes` | CLI-side: one env per case, cases run concurrently (§3.1) |
-| `runRecorderCase(name, scenario, run)` | `runRecorderCases` | Runs one `flagTB`-style case body under the recording shim (`flagRecorder`), returns its `TestResult` |
+| `Matrix.runRecorderCases(cases)` | `ExecuteAllFlags` / `ExecuteAllContentShapes` / `ExecuteAllCacheControls` | CLI-side: one env per case, cases run concurrently (§3.1) |
+| `runRecorderCase(case)` | `runRecorderCases` | Runs one `flagTB`-style case body under the recording shim (`flagRecorder`), returns its `TestResult` |
 | `setupFailureResult(base, err)` | `executeScenarioCombos` / `runRecorderCase` | Shared "env failed to boot" `TestResult` construction |
 
 A `scenarioCombo` is `{meta TestResult, run func(*TestEnv) TestResult}` — the
 `meta` doubles as the setup-failure result when the scenario's env cannot be
-created. A `recorderCase` is the equivalent for the flags/content_shapes
-suites: `{name, scenario string, run func(flagTB, *TestEnv)}`. (Single-hop
+created. A `recorderCase` is the equivalent for the
+flags/content_shapes/cache_controls suites: it carries result metadata plus
+`run func(flagTB, *TestEnv)`. (Single-hop
 `Matrix.Run(t)` keeps its own deeper subtest nesting —
 `scenario/source/target/mode` with one env per leaf — because its test-name
 contract and per-leaf parallelism differ from the per-scenario sections.)
@@ -208,22 +213,23 @@ go test -tags e2e ./internal/protocoltest/... -run TestContentShapes
 executor (`ExecuteAll*`) so the CLI can run it directly — including idempotence
 and the rule-flag suite, which would otherwise be go-test-only.
 
-| `--mode` | single (A→B) | transitive (A→B→C) | idempotent (`g(f(A))==A`) | flags (per-rule) | content_shapes (§10.1) |
-|----------|:---:|:---:|:---:|:---:|:---:|
-| `default` *(no flag)* | ✅ | — | ✅ | — | — |
-| `all` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `single` | ✅ | — | — | — | — |
-| `transitive` | — | ✅ | — | — | — |
-| `idempotent` | — | — | ✅ | — | — |
-| `flags` | — | — | — | ✅ | — |
-| `content_shapes` | — | — | — | — | ✅ |
+| `--mode` | single (A→B) | transitive (A→B→C) | idempotent (`g(f(A))==A`) | flags (per-rule) | content_shapes (§10.1) | cache_controls (§10.2) |
+|----------|:---:|:---:|:---:|:---:|:---:|:---:|
+| `default` *(no flag)* | ✅ | — | ✅ | — | — | — |
+| `all` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `single` | ✅ | — | — | — | — | — |
+| `transitive` | — | ✅ | — | — | — | — |
+| `idempotent` | — | — | ✅ | — | — | — |
+| `flags` | — | — | — | ✅ | — | — |
+| `content_shapes` | — | — | — | — | ✅ | — |
+| `cache_controls` | — | — | — | — | — | ✅ |
 
 This mode → section mapping is declared in one place: the `matrixSections`
 registry in `cli/harness/matrix.go`. Each entry names the section, lists the
-`--mode` values that include it, marks whether it is http-only (`flags` /
-`content_shapes` drive raw requests directly), and points at its
-`ExecuteAll*` executor. Adding a section = one registry entry + extending the
-`--mode` enum (see §8 for why this replaced a hand-maintained if-chain).
+`--mode` values that include it, marks whether it is http-only (`flags`,
+`content_shapes`, and `cache_controls` drive raw requests directly), and points
+at its `ExecuteAll*` executor. Adding a section = one registry entry + extending
+the `--mode` enum (see §8 for why this replaced a hand-maintained if-chain).
 
 ```bash
 # Default: single-hop + idempotent round-trips. Two-hop and flags are OFF by
@@ -240,6 +246,7 @@ go run ./cli/harness matrix --mode=transitive
 go run ./cli/harness matrix --mode=idempotent
 go run ./cli/harness matrix --mode=flags     # per-rule flag behavior
 go run ./cli/harness matrix --mode=content_shapes  # request content-shape regression
+go run ./cli/harness matrix --mode=cache_controls  # single-hop + ABA cache/no-cache
 
 # Filter by scenario / source / target
 go run ./cli/harness matrix --scenario text --source anthropic_v1
@@ -254,6 +261,11 @@ The `flags` section is documented in detail in
 
 The `content_shapes` section is documented in §10.1 below; `ExecuteAllContentShapes`
 reports one `TestResult` per case (`Name: "content_shapes/<case name>"`).
+
+The `cache_controls` section is documented in §10.2 below;
+`ExecuteAllCacheControls` reports one result per protocol path and stream mode.
+Each result verifies both the positive cache request and the negative no-cache
+request against the final provider capture.
 
 Other CLI flags (`--batch`, `--record-dir`, `--mcp`, `-v`) are documented in
 [`cli/harness/README.md`](../cli/harness/README.md); `--batch` and
@@ -559,3 +571,31 @@ under both `*testing.T` (`TestContentShapes`) and the CLI
 See `contentShapeCases()` in `content_shapes.go` for current coverage. Extend
 that list, not the matrix's `Scenario`/`buildRequest`, when a future bug is
 "the gateway dropped an unusual request shape while forwarding it."
+
+### 10.2 Prompt-cache request suite (`cache_controls.go`)
+
+Prompt-cache metadata is also request-shaped and therefore cannot be exercised
+by the matrix's fixed request. `cache_controls.go` uses the same raw-request and
+provider-capture approach as `content_shapes`, across two path classes:
+
+- **single-hop**: every pair in `DefaultPairs()` (A→B);
+- **ABA**: every case in `DefaultIdempotentCases()` (A→B→A).
+
+ABA cases reuse `setupChainHopRoute`: the A→B provider points back at the
+gateway's B endpoint, so the same request genuinely re-enters the HTTP gateway
+and executes B→A before reaching `VirtualServer`. This is distinct from the
+`transitive` section, whose two hops are separate requests.
+
+For every path and stream mode, the suite sends:
+
+1. a cached request with two stable-prefix markers and verifies both markers
+   plus OpenAI explicit mode at the final provider;
+2. the matching no-cache request and verifies that no marker or explicit mode
+   was synthesized.
+
+Run it with:
+
+```bash
+go test ./internal/protocoltest -run TestCacheControls -count=1
+go run ./cli/harness matrix --mode=cache_controls
+```

@@ -6,14 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"golang.org/x/sync/errgroup"
 )
 
-// This file holds the shared drivers behind the matrix's sections
-// (single-hop, transitive, idempotent, flags, content_shapes). Each section
+// This file holds the shared drivers behind the matrix's sections (single-hop,
+// transitive, idempotent, flags, content_shapes, cache_controls). Each section
 // contributes only its combos and per-combo execution; the env-per-scenario
-// lifecycle, setup-failure fan-out, parallelism, and testing.T scaffolding
-// live here once.
+// lifecycle, setup-failure fan-out, parallelism, and testing.T scaffolding live
+// here once.
 
 // scenarioCombo is one runnable cell within a per-scenario section: the
 // TestResult metadata that identifies it plus the function that executes it
@@ -149,13 +150,16 @@ func (m *Matrix) runPerScenario(t *testing.T, skipScenario func(Scenario) bool, 
 	}
 }
 
-// recorderCase is one flagTB-style case body (flags, content_shapes): a
-// section-prefixed result name, the short case name shown in the CLI table's
-// Scenario column, and the case body itself.
+// recorderCase is one flagTB-style case body (flags, content_shapes,
+// cache_controls): a section-prefixed result name, CLI result metadata, and the
+// case body itself.
 type recorderCase struct {
-	name     string
-	scenario string
-	run      func(flagTB, *TestEnv)
+	name      string
+	scenario  string
+	source    protocol.APIType
+	target    protocol.APIType
+	streaming bool
+	run       func(flagTB, *TestEnv)
 }
 
 // runRecorderCases executes recorder cases with bounded parallelism — each
@@ -164,15 +168,21 @@ type recorderCase struct {
 func (m *Matrix) runRecorderCases(cases []recorderCase) []TestResult {
 	results := make([]TestResult, len(cases))
 	runIndexed(len(cases), m.sectionParallelism(), func(i int) {
-		results[i] = runRecorderCase(cases[i].name, cases[i].scenario, cases[i].run)
+		results[i] = runRecorderCase(cases[i])
 	})
 	return results
 }
 
 // runRecorderCase executes one flagTB-style case body against a fresh env,
 // converting recorded failures into a CLI TestResult.
-func runRecorderCase(name, scenario string, run func(flagTB, *TestEnv)) TestResult {
-	res := TestResult{Name: name, Scenario: scenario}
+func runRecorderCase(c recorderCase) TestResult {
+	res := TestResult{
+		Name:      c.name,
+		Scenario:  c.scenario,
+		Source:    c.source,
+		Target:    c.target,
+		Streaming: c.streaming,
+	}
 	start := time.Now()
 
 	env, err := NewTestEnvForCLI()
@@ -191,7 +201,7 @@ func runRecorderCase(name, scenario string, run func(flagTB, *TestEnv)) TestResu
 				panic(r)
 			}
 		}()
-		run(rec, env)
+		c.run(rec, env)
 	}()
 
 	res.Errors = rec.errs
