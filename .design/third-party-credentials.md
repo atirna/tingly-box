@@ -165,6 +165,12 @@ verified against AWS/Google/Anthropic/Microsoft docs (Jul 2026): Bedrock
 - The dialog's computed `api_base` (`bedrock-runtime.<region>…`,
   `<location>-aiplatform.googleapis.com`, the Azure endpoint) matches each
   template's `canonical_domain`, so the model list resolves after connect.
+- **Embedded-only merge**: `TemplateManager` used to replace `tm.templates`
+  wholesale with the GitHub registry (or its 12h disk cache), which hid the
+  cloud templates — and thus the whole Cloud picker section — on any install
+  whose remote registry predates them. External entries still win on id
+  collision, but embedded-only ids are now merged back in
+  (`mergeEmbeddedOnly`, applied on cache load and both fetch paths).
 - Covered by `internal/data/cloud_template_test.go`.
 
 ## 10. Cross-cutting

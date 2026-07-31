@@ -273,6 +273,7 @@ func (tm *TemplateManager) fetchFromFile(filePath string) (*ProviderTemplateRegi
 	}
 
 	tm.mu.Lock()
+	registry.Providers = tm.mergeEmbeddedOnly(registry.Providers)
 	tm.templates = registry.Providers
 	tm.capabilitySchemas = registry.CapabilitySchemas
 	tm.version = registry.Version
@@ -349,6 +350,7 @@ func (tm *TemplateManager) fetchFromHTTP(ctx context.Context) (*ProviderTemplate
 
 	// Update templates storage
 	tm.mu.Lock()
+	registry.Providers = tm.mergeEmbeddedOnly(registry.Providers)
 	tm.templates = registry.Providers
 	tm.capabilitySchemas = registry.CapabilitySchemas
 	tm.lastUpdated = time.Now()
@@ -467,7 +469,7 @@ func (tm *TemplateManager) Initialize(ctx context.Context) error {
 			if err == nil && cachedRegistry != nil {
 				// Cache hit - use cached templates
 				tm.mu.Lock()
-				tm.templates = cachedRegistry.Providers
+				tm.templates = tm.mergeEmbeddedOnly(cachedRegistry.Providers)
 				tm.lastUpdated = time.Now()
 				tm.version = cachedRegistry.Version
 				tm.mu.Unlock()
@@ -497,6 +499,23 @@ func (tm *TemplateManager) Initialize(ctx context.Context) error {
 		tm.sourceMu.Unlock()
 		return nil
 	}
+}
+
+// mergeEmbeddedOnly adds deep copies of embedded templates whose id is absent
+// from an externally sourced set (GitHub registry or its disk cache). External
+// entries win on id collision, but templates that ship only with this binary —
+// e.g. the cloud presets a new feature depends on — must stay visible even when
+// the remote registry predates them. Callers must hold tm.mu.
+func (tm *TemplateManager) mergeEmbeddedOnly(external map[string]*ProviderTemplate) map[string]*ProviderTemplate {
+	if external == nil {
+		external = make(map[string]*ProviderTemplate, len(tm.embedded))
+	}
+	for id, tmpl := range tm.embedded {
+		if _, ok := external[id]; !ok {
+			external[id] = deepCopyTemplate(tmpl)
+		}
+	}
+	return external
 }
 
 // loadEmbeddedTemplates loads templates from embedded JSON file into both templates and embedded

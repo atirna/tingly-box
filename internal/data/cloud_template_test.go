@@ -2,6 +2,8 @@ package data
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -102,6 +104,54 @@ func TestVertexDisambiguationByStyle(t *testing.T) {
 	}
 	if !slices.Contains(geminiModels, "gemini-2.5-pro") || slices.Contains(geminiModels, "claude-opus-4-8") {
 		t.Errorf("google-style Vertex resolved wrong family: %v", geminiModels)
+	}
+}
+
+// TestExternalRegistryKeepsEmbeddedOnlyTemplates guards the failure mode that
+// hid the Cloud picker section: a remote registry (or its disk cache) that
+// predates the cloud templates used to replace tm.templates wholesale, so the
+// /provider-templates endpoint served no cloud entries and the frontend had
+// nothing to render. External entries must still win on id collision, but
+// embedded-only ids must survive the swap.
+func TestExternalRegistryKeepsEmbeddedOnlyTemplates(t *testing.T) {
+	registryPath := filepath.Join(t.TempDir(), "registry.json")
+	remote := `{
+		"version": "remote-1",
+		"providers": {
+			"remote-only": {"id": "remote-only", "name": "Remote Only", "base_url_openai": "https://remote.example.com/v1"},
+			"aws-bedrock": {"id": "aws-bedrock", "name": "Remote Bedrock Override", "auth_type": "aws_sigv4"}
+		}
+	}`
+	if err := os.WriteFile(registryPath, []byte(remote), 0o644); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+
+	tm := NewTemplateManager("file://" + registryPath)
+	if err := tm.loadEmbeddedTemplates(); err != nil {
+		t.Fatalf("loadEmbeddedTemplates: %v", err)
+	}
+	registry, err := tm.FetchTemplates(context.Background())
+	if err != nil {
+		t.Fatalf("FetchTemplates: %v", err)
+	}
+
+	all := tm.GetAllTemplates()
+	// The remote set is authoritative for ids it carries...
+	if got := all["aws-bedrock"]; got == nil || got.Name != "Remote Bedrock Override" {
+		t.Errorf("external template should win on id collision, got %+v", got)
+	}
+	if all["remote-only"] == nil {
+		t.Error("remote-only template missing after fetch")
+	}
+	// ...but embedded-only ids (the other cloud presets) must stay visible,
+	// both in GetAllTemplates and in the registry the refresh endpoint returns.
+	for _, id := range []string{"gcp-vertex-claude", "gcp-vertex-gemini", "azure-openai"} {
+		if all[id] == nil {
+			t.Errorf("embedded-only template %q hidden by external registry", id)
+		}
+		if registry.Providers[id] == nil {
+			t.Errorf("embedded-only template %q missing from fetched registry response", id)
+		}
 	}
 }
 
