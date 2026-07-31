@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	anthropicparam "github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
@@ -56,6 +57,10 @@ type anthropicBlockView struct {
 	ImageMediaType string
 	ImageData      string
 	ImageURL       string
+
+	// CacheControl marks the end of a reusable prompt prefix. OpenAI Chat has
+	// the same concept under prompt_cache_breakpoint.
+	CacheControl bool
 }
 
 // anthropicMessageView is a normalized view of a v1/beta message.
@@ -66,8 +71,9 @@ type anthropicMessageView struct {
 
 // anthropicToolView is a normalized view of a v1/beta tool definition.
 type anthropicToolView struct {
-	Name        string
-	Description string
+	Name         string
+	Description  string
+	CacheControl bool
 	// InputSchema is the full schema param value (marshalled for Google).
 	InputSchema any
 	// Properties/Required are the schema fields (used for OpenAI parameters).
@@ -90,11 +96,12 @@ type anthropicRequestView struct {
 	MaxTokens int64
 	// SystemTexts holds one entry per system text block; the OpenAI core
 	// joins them without separators, the Google core joins with "\n".
-	SystemTexts []string
-	Messages    []anthropicMessageView
-	Tools       []anthropicToolView
-	HasTools    bool
-	ToolChoice  anthropicToolChoiceView
+	SystemTexts         []string
+	SystemCacheControls []bool
+	Messages            []anthropicMessageView
+	Tools               []anthropicToolView
+	HasTools            bool
+	ToolChoice          anthropicToolChoiceView
 	// ThinkingEnabled reflects Thinking.OfEnabled/OfAdaptive or the
 	// model-level IsThinkingEnabled* check.
 	ThinkingEnabled bool
@@ -104,28 +111,32 @@ type anthropicRequestView struct {
 // ───────────────────────── v1 adapters ─────────────────────────
 
 func viewAnthropicV1Block(block anthropic.ContentBlockParamUnion) anthropicBlockView {
+	cacheControl := block.GetCacheControl()
+	hasCacheControl := cacheControl != nil && !anthropicparam.IsOmitted(*cacheControl)
 	switch {
 	case block.OfText != nil:
-		return anthropicBlockView{Kind: blockViewText, Text: block.OfText.Text}
+		return anthropicBlockView{Kind: blockViewText, Text: block.OfText.Text, CacheControl: hasCacheControl}
 	case block.OfThinking != nil:
 		return anthropicBlockView{Kind: blockViewThinking, Text: block.OfThinking.Thinking}
 	case block.OfRedactedThinking != nil:
 		return anthropicBlockView{Kind: blockViewRedactedThinking}
 	case block.OfToolUse != nil:
 		return anthropicBlockView{
-			Kind:      blockViewToolUse,
-			ToolID:    block.OfToolUse.ID,
-			ToolName:  block.OfToolUse.Name,
-			ToolInput: block.OfToolUse.Input,
+			Kind:         blockViewToolUse,
+			ToolID:       block.OfToolUse.ID,
+			ToolName:     block.OfToolUse.Name,
+			ToolInput:    block.OfToolUse.Input,
+			CacheControl: hasCacheControl,
 		}
 	case block.OfToolResult != nil:
 		return anthropicBlockView{
 			Kind:           blockViewToolResult,
 			ToolResultID:   block.OfToolResult.ToolUseID,
 			ToolResultText: convertToolResultContent(block.OfToolResult.Content),
+			CacheControl:   hasCacheControl,
 		}
 	case block.OfImage != nil:
-		v := anthropicBlockView{Kind: blockViewImage}
+		v := anthropicBlockView{Kind: blockViewImage, CacheControl: hasCacheControl}
 		if block.OfImage.Source.OfBase64 != nil {
 			v.ImageMediaType = string(block.OfImage.Source.OfBase64.MediaType)
 			v.ImageData = block.OfImage.Source.OfBase64.Data
@@ -162,6 +173,7 @@ func viewAnthropicV1Tools(tools []anthropic.ToolUnionParam) []anthropicToolView 
 			Properties:    tool.InputSchema.Properties,
 			Required:      tool.InputSchema.Required,
 			HasProperties: tool.InputSchema.Properties != nil,
+			CacheControl:  !anthropicparam.IsOmitted(tool.CacheControl),
 		})
 	}
 	return out
@@ -191,6 +203,7 @@ func viewAnthropicV1Request(req *anthropic.MessageNewParams) anthropicRequestVie
 	}
 	for _, sys := range req.System {
 		view.SystemTexts = append(view.SystemTexts, sys.Text)
+		view.SystemCacheControls = append(view.SystemCacheControls, !anthropicparam.IsOmitted(sys.CacheControl))
 	}
 	for _, msg := range req.Messages {
 		view.Messages = append(view.Messages, viewAnthropicV1Message(msg))
@@ -201,28 +214,32 @@ func viewAnthropicV1Request(req *anthropic.MessageNewParams) anthropicRequestVie
 // ───────────────────────── beta adapters ─────────────────────────
 
 func viewAnthropicBetaBlock(block anthropic.BetaContentBlockParamUnion) anthropicBlockView {
+	cacheControl := block.GetCacheControl()
+	hasCacheControl := cacheControl != nil && !anthropicparam.IsOmitted(*cacheControl)
 	switch {
 	case block.OfText != nil:
-		return anthropicBlockView{Kind: blockViewText, Text: block.OfText.Text}
+		return anthropicBlockView{Kind: blockViewText, Text: block.OfText.Text, CacheControl: hasCacheControl}
 	case block.OfThinking != nil:
 		return anthropicBlockView{Kind: blockViewThinking, Text: block.OfThinking.Thinking}
 	case block.OfRedactedThinking != nil:
 		return anthropicBlockView{Kind: blockViewRedactedThinking}
 	case block.OfToolUse != nil:
 		return anthropicBlockView{
-			Kind:      blockViewToolUse,
-			ToolID:    block.OfToolUse.ID,
-			ToolName:  block.OfToolUse.Name,
-			ToolInput: block.OfToolUse.Input,
+			Kind:         blockViewToolUse,
+			ToolID:       block.OfToolUse.ID,
+			ToolName:     block.OfToolUse.Name,
+			ToolInput:    block.OfToolUse.Input,
+			CacheControl: hasCacheControl,
 		}
 	case block.OfToolResult != nil:
 		return anthropicBlockView{
 			Kind:           blockViewToolResult,
 			ToolResultID:   block.OfToolResult.ToolUseID,
 			ToolResultText: convertBetaToolResultContent(block.OfToolResult.Content),
+			CacheControl:   hasCacheControl,
 		}
 	case block.OfImage != nil:
-		v := anthropicBlockView{Kind: blockViewImage}
+		v := anthropicBlockView{Kind: blockViewImage, CacheControl: hasCacheControl}
 		if block.OfImage.Source.OfBase64 != nil {
 			v.ImageMediaType = string(block.OfImage.Source.OfBase64.MediaType)
 			v.ImageData = block.OfImage.Source.OfBase64.Data
@@ -259,6 +276,7 @@ func viewAnthropicBetaTools(tools []anthropic.BetaToolUnionParam) []anthropicToo
 			Properties:    tool.InputSchema.Properties,
 			Required:      tool.InputSchema.Required,
 			HasProperties: tool.InputSchema.Properties != nil,
+			CacheControl:  !anthropicparam.IsOmitted(tool.CacheControl),
 		})
 	}
 	return out
@@ -288,6 +306,7 @@ func viewAnthropicBetaRequest(req *anthropic.BetaMessageNewParams) anthropicRequ
 	}
 	for _, sys := range req.System {
 		view.SystemTexts = append(view.SystemTexts, sys.Text)
+		view.SystemCacheControls = append(view.SystemCacheControls, !anthropicparam.IsOmitted(sys.CacheControl))
 	}
 	for _, msg := range req.Messages {
 		view.Messages = append(view.Messages, viewAnthropicBetaMessage(msg))
@@ -319,9 +338,23 @@ func convertAnthropicViewToOpenAIRequest(view anthropicRequestView, isStreaming 
 		}
 	}
 
-	// Convert system message (joined without separators)
+	// Convert system messages. Keep block boundaries when cache controls are
+	// present so their exact prompt prefix survives A→O→A gateway chaining.
 	if len(view.SystemTexts) > 0 {
-		systemMsg := openai.SystemMessage(strings.Join(view.SystemTexts, ""))
+		var systemMsg openai.ChatCompletionMessageParamUnion
+		if hasCacheControl(view.SystemCacheControls) {
+			parts := make([]openai.ChatCompletionContentPartTextParam, 0, len(view.SystemTexts))
+			for i, text := range view.SystemTexts {
+				part := openai.ChatCompletionContentPartTextParam{Text: text}
+				if i < len(view.SystemCacheControls) && view.SystemCacheControls[i] {
+					part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+				}
+				parts = append(parts, part)
+			}
+			systemMsg = openai.SystemMessage(parts)
+		} else {
+			systemMsg = openai.SystemMessage(strings.Join(view.SystemTexts, ""))
+		}
 		// Add system message at the beginning
 		openaiReq.Messages = append([]openai.ChatCompletionMessageParamUnion{systemMsg}, openaiReq.Messages...)
 	}
@@ -331,6 +364,19 @@ func convertAnthropicViewToOpenAIRequest(view anthropicRequestView, isStreaming 
 		openaiReq.Tools = convertAnthropicToolViewsToOpenAI(view.Tools)
 		// Convert tool choice
 		openaiReq.ToolChoice = convertAnthropicToolChoiceViewToOpenAI(view.ToolChoice)
+	}
+
+	hasRepresentableCacheControl := viewHasRepresentableCacheControl(view)
+	hasToolDefinitionCacheControl := viewHasToolDefinitionCacheControl(view)
+	if hasRepresentableCacheControl || hasToolDefinitionCacheControl {
+		openaiReq.PromptCacheOptions.Mode = "explicit"
+		if !hasRepresentableCacheControl && hasToolDefinitionCacheControl {
+			// OpenAI cannot put a breakpoint on a tool definition.
+			// Advance that boundary to the first cacheable content block, which
+			// still includes the tools prefix and avoids dropping caching
+			// entirely when gateways are chained.
+			applyFirstOpenAICacheBreakpoint(openaiReq)
+		}
 	}
 
 	// thinking
@@ -358,6 +404,7 @@ func convertAnthropicViewToOpenAIRequest(view anthropicRequestView, isStreaming 
 // in the "x_thinking" extra field for provider-specific transforms.
 func convertAnthropicViewAssistantToOpenAI(blocks []anthropicBlockView) openai.ChatCompletionMessageParamUnion {
 	var textContent strings.Builder
+	var textParts []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion
 	var toolCalls []openai.ChatCompletionMessageToolCallUnionParam
 	var thinking string
 
@@ -365,6 +412,10 @@ func convertAnthropicViewAssistantToOpenAI(blocks []anthropicBlockView) openai.C
 		switch block.Kind {
 		case blockViewText:
 			textContent.WriteString(block.Text)
+			part := openAITextPart(block.Text, block.CacheControl)
+			textParts = append(textParts, openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
+				OfText: &part,
+			})
 		case blockViewToolUse:
 			// Convert tool_use block to OpenAI tool_call format;
 			// marshal input to a JSON string for OpenAI
@@ -390,7 +441,11 @@ func convertAnthropicViewAssistantToOpenAI(blocks []anthropicBlockView) openai.C
 	assistant := &openai.ChatCompletionAssistantMessageParam{
 		ToolCalls: toolCalls,
 	}
-	assistant.Content.OfString = openai.Opt(textContent.String())
+	if blocksHaveCacheControl(blocks) {
+		assistant.Content.OfArrayOfContentParts = textParts
+	} else {
+		assistant.Content.OfString = openai.Opt(textContent.String())
+	}
 
 	// Preserve x_thinking in ExtraFields for provider transforms (e.g., DeepSeek/Moonshot)
 	// Must set on OfAssistant (variant level), not on union level, because
@@ -405,7 +460,7 @@ func convertAnthropicViewAssistantToOpenAI(blocks []anthropicBlockView) openai.C
 // blocks turn the message into a multimodal content-part array.
 func convertAnthropicViewUserToOpenAI(blocks []anthropicBlockView) []openai.ChatCompletionMessageParamUnion {
 	var result []openai.ChatCompletionMessageParamUnion
-	var hasToolResult, hasImage bool
+	var hasToolResult, hasImage, hasCache bool
 
 	for _, block := range blocks {
 		switch block.Kind {
@@ -414,39 +469,59 @@ func convertAnthropicViewUserToOpenAI(blocks []anthropicBlockView) []openai.Chat
 		case blockViewImage:
 			hasImage = true
 		}
+		hasCache = hasCache || block.CacheControl
 	}
 
 	switch {
 	case hasToolResult:
 		// When there are tool_result blocks, we need to create separate messages
-		var textContent strings.Builder
+		var textBlocks []anthropicBlockView
 		for _, block := range blocks {
 			switch block.Kind {
 			case blockViewText:
-				textContent.WriteString(block.Text)
+				textBlocks = append(textBlocks, block)
 			case blockViewToolResult:
 				// Convert tool_result to OpenAI role="tool" message.
 				// Truncate tool_call_id to meet OpenAI's 40 character limit.
-				result = append(result, openai.ToolMessage(block.ToolResultText, truncateToolCallID(block.ToolResultID)))
+				if block.CacheControl {
+					part := openAITextPart(block.ToolResultText, true)
+					result = append(result, openai.ChatCompletionMessageParamUnion{
+						OfTool: &openai.ChatCompletionToolMessageParam{
+							ToolCallID: truncateToolCallID(block.ToolResultID),
+							Content: openai.ChatCompletionToolMessageParamContentUnion{
+								OfArrayOfContentParts: []openai.ChatCompletionContentPartTextParam{part},
+							},
+						},
+					})
+				} else {
+					result = append(result, openai.ToolMessage(block.ToolResultText, truncateToolCallID(block.ToolResultID)))
+				}
 			}
 		}
 		// If there was text content alongside tool results, add it as a user message
-		if textContent.Len() > 0 {
-			result = append(result, openai.UserMessage(textContent.String()))
+		if len(textBlocks) > 0 {
+			result = append(result, convertAnthropicViewUserToOpenAI(textBlocks)...)
 		}
-	case hasImage:
+	case hasImage || hasCache:
 		// Multimodal user message: emit an array of text + image_url content parts
 		parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(blocks))
 		for _, block := range blocks {
 			switch block.Kind {
 			case blockViewText:
-				parts = append(parts, openai.TextContentPart(block.Text))
+				part := openAITextPart(block.Text, block.CacheControl)
+				parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfText: &part})
 			case blockViewImage:
 				url := imageViewToOpenAIURL(block)
 				if url == "" {
 					continue
 				}
-				parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: url}))
+				imagePart := openai.ChatCompletionContentPartImageParam{
+					ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: url},
+				}
+				if block.CacheControl {
+					imagePart.PromptCacheBreakpoint = openai.NewChatCompletionContentPartImagePromptCacheBreakpointParam()
+				}
+				parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfImageURL: &imagePart})
 			}
 		}
 		if len(parts) > 0 {
@@ -466,6 +541,93 @@ func convertAnthropicViewUserToOpenAI(blocks []anthropicBlockView) []openai.Chat
 	}
 
 	return result
+}
+
+func openAITextPart(text string, cacheControl bool) openai.ChatCompletionContentPartTextParam {
+	part := openai.ChatCompletionContentPartTextParam{Text: text}
+	if cacheControl {
+		part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+	}
+	return part
+}
+
+func hasCacheControl(values []bool) bool {
+	for _, value := range values {
+		if value {
+			return true
+		}
+	}
+	return false
+}
+
+func blocksHaveCacheControl(blocks []anthropicBlockView) bool {
+	for _, block := range blocks {
+		if block.CacheControl &&
+			(block.Kind == blockViewText || block.Kind == blockViewImage || block.Kind == blockViewToolResult) {
+			return true
+		}
+	}
+	return false
+}
+
+func viewHasRepresentableCacheControl(view anthropicRequestView) bool {
+	if hasCacheControl(view.SystemCacheControls) {
+		return true
+	}
+	for _, message := range view.Messages {
+		if blocksHaveCacheControl(message.Blocks) {
+			return true
+		}
+	}
+	return false
+}
+
+func viewHasToolDefinitionCacheControl(view anthropicRequestView) bool {
+	for _, tool := range view.Tools {
+		if tool.CacheControl {
+			return true
+		}
+	}
+	return false
+}
+
+func applyFirstOpenAICacheBreakpoint(req *openai.ChatCompletionNewParams) {
+	for i := range req.Messages {
+		msg := &req.Messages[i]
+		switch {
+		case msg.OfSystem != nil:
+			if text := msg.OfSystem.Content.OfString.Value; text != "" {
+				msg.OfSystem.Content.OfString = param.Opt[string]{}
+				msg.OfSystem.Content.OfArrayOfContentParts = []openai.ChatCompletionContentPartTextParam{
+					openAITextPart(text, true),
+				}
+				return
+			}
+			if len(msg.OfSystem.Content.OfArrayOfContentParts) > 0 {
+				msg.OfSystem.Content.OfArrayOfContentParts[0].PromptCacheBreakpoint =
+					openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+				return
+			}
+		case msg.OfUser != nil:
+			if text := msg.OfUser.Content.OfString.Value; text != "" {
+				msg.OfUser.Content.OfString = param.Opt[string]{}
+				part := openAITextPart(text, true)
+				msg.OfUser.Content.OfArrayOfContentParts = []openai.ChatCompletionContentPartUnionParam{{OfText: &part}}
+				return
+			}
+			for j := range msg.OfUser.Content.OfArrayOfContentParts {
+				part := &msg.OfUser.Content.OfArrayOfContentParts[j]
+				if part.OfText != nil {
+					part.OfText.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+					return
+				}
+				if part.OfImageURL != nil {
+					part.OfImageURL.PromptCacheBreakpoint = openai.NewChatCompletionContentPartImagePromptCacheBreakpointParam()
+					return
+				}
+			}
+		}
+	}
 }
 
 // imageViewToOpenAIURL renders an image block view as the URL string OpenAI's

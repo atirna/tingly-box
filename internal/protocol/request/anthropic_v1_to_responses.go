@@ -14,23 +14,39 @@ import (
 func ConvertAnthropicV1ToResponsesRequest(anthropicReq *anthropic.MessageNewParams) *responses.ResponseNewParams {
 	params := &responses.ResponseNewParams{}
 	params.Model = shared.ResponsesModel(anthropicReq.Model)
+	hasSystemCacheControl := false
 
 	// Convert system messages to Instructions (system role in v1)
 	// In v1, system messages are passed via the System param
 	if len(anthropicReq.System) > 0 {
+		for _, block := range anthropicReq.System {
+			hasSystemCacheControl = hasSystemCacheControl || !param.IsOmitted(block.CacheControl)
+		}
 		// Join system text blocks into a single instruction string
 		var instructionsStr string
 		for _, block := range anthropicReq.System {
 			instructionsStr += block.Text
 		}
-		if instructionsStr != "" {
+		if instructionsStr != "" && !hasSystemCacheControl {
 			params.Instructions = param.NewOpt(instructionsStr)
 		}
 	}
 
 	// Convert messages to Input items (Responses API format)
 	// Always set Input field, even if empty, as Responses API requires it
-	inputItems := convertV1MessagesToResponsesInput(anthropicReq.Messages)
+	var inputItems responses.ResponseInputParam
+	if hasSystemCacheControl {
+		content := make(responses.ResponseInputMessageContentListParam, 0, len(anthropicReq.System))
+		for _, block := range anthropicReq.System {
+			part := &responses.ResponseInputTextParam{Text: block.Text}
+			if !param.IsOmitted(block.CacheControl) {
+				part.PromptCacheBreakpoint = responses.NewResponseInputTextPromptCacheBreakpointParam()
+			}
+			content = append(content, responses.ResponseInputContentUnionParam{OfInputText: part})
+		}
+		inputItems = append(inputItems, responseMessageWithContent("system", content))
+	}
+	inputItems = append(inputItems, convertV1MessagesToResponsesInput(anthropicReq.Messages)...)
 	params.Input = responses.ResponseNewParamsInputUnion{
 		OfInputItemList: responses.ResponseInputParam(inputItems),
 	}
@@ -59,6 +75,15 @@ func ConvertAnthropicV1ToResponsesRequest(anthropicReq *anthropic.MessageNewPara
 		params.ToolChoice = ConvertAnthropicV1ToolChoiceToResponses(&anthropicReq.ToolChoice)
 	}
 
+	hasRepresentableCacheControl := hasSystemCacheControl || anthropicV1MessagesHaveRepresentableCacheControl(anthropicReq.Messages)
+	hasToolCacheControl := anthropicV1ToolsHaveCacheControl(anthropicReq.Tools)
+	if hasRepresentableCacheControl || hasToolCacheControl {
+		params.PromptCacheOptions.Mode = "explicit"
+		if !hasRepresentableCacheControl && hasToolCacheControl {
+			applyFirstResponsesCacheBreakpoint(params)
+		}
+	}
+
 	return params
 }
 
@@ -83,13 +108,16 @@ func convertV1MessagesToResponsesInput(messages []anthropic.MessageParam) respon
 func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []responses.ResponseInputItemUnionParam {
 	var items []responses.ResponseInputItemUnionParam
 
-	var hasToolResult, hasImage bool
+	var hasToolResult, hasImage, hasCacheControl bool
 	for _, block := range msg.Content {
 		if block.OfToolResult != nil {
 			hasToolResult = true
 		}
 		if block.OfImage != nil {
 			hasImage = true
+		}
+		if cacheControl := block.GetCacheControl(); cacheControl != nil {
+			hasCacheControl = hasCacheControl || !param.IsOmitted(*cacheControl)
 		}
 	}
 
@@ -98,11 +126,22 @@ func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []response
 		for _, block := range msg.Content {
 			if block.OfToolResult != nil {
 				// Convert tool_result to function_call_output
+				output := responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}
+				content := convertV1ToolResultContentToString(block.OfToolResult.Content)
+				if !param.IsOmitted(block.OfToolResult.CacheControl) {
+					text := &responses.ResponseInputTextContentParam{
+						Text:                  content,
+						PromptCacheBreakpoint: responses.NewResponseInputTextContentPromptCacheBreakpointParam(),
+					}
+					output.OfResponseFunctionCallOutputItemArray = responses.ResponseFunctionCallOutputItemListParam{
+						{OfInputText: text},
+					}
+				} else {
+					output.OfString = param.NewOpt(content)
+				}
 				outputItem := responses.ResponseInputItemFunctionCallOutputParam{
 					CallID: block.OfToolResult.ToolUseID,
-					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-						OfString: param.NewOpt(convertV1ToolResultContentToString(block.OfToolResult.Content)),
-					},
+					Output: output,
 					Status: "completed",
 				}
 				items = append(items, responses.ResponseInputItemUnionParam{
@@ -110,12 +149,24 @@ func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []response
 				})
 			} else if block.OfText != nil {
 				// Text content alongside tool results
+				content := responses.EasyInputMessageContentUnionParam{
+					OfString: param.NewOpt(block.OfText.Text),
+				}
+				if !param.IsOmitted(block.OfText.CacheControl) {
+					text := &responses.ResponseInputTextParam{
+						Text:                  block.OfText.Text,
+						PromptCacheBreakpoint: responses.NewResponseInputTextPromptCacheBreakpointParam(),
+					}
+					content = responses.EasyInputMessageContentUnionParam{
+						OfInputItemContentList: responses.ResponseInputMessageContentListParam{
+							{OfInputText: text},
+						},
+					}
+				}
 				messageItem := responses.EasyInputMessageParam{
-					Type: responses.EasyInputMessageTypeMessage,
-					Role: responses.EasyInputMessageRole("user"),
-					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: param.NewOpt(block.OfText.Text),
-					},
+					Type:    responses.EasyInputMessageTypeMessage,
+					Role:    responses.EasyInputMessageRole("user"),
+					Content: content,
 				}
 				items = append(items, responses.ResponseInputItemUnionParam{
 					OfMessage: &messageItem,
@@ -125,25 +176,29 @@ func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []response
 		return items
 	}
 
-	if hasImage {
+	if hasImage || hasCacheControl {
 		// Multimodal user message: emit input_text + input_image content parts
 		contentList := make(responses.ResponseInputMessageContentListParam, 0, len(msg.Content))
 		for _, block := range msg.Content {
 			switch {
 			case block.OfText != nil:
+				text := &responses.ResponseInputTextParam{Text: block.OfText.Text}
+				if !param.IsOmitted(block.OfText.CacheControl) {
+					text.PromptCacheBreakpoint = responses.NewResponseInputTextPromptCacheBreakpointParam()
+				}
 				contentList = append(contentList, responses.ResponseInputContentUnionParam{
-					OfInputText: &responses.ResponseInputTextParam{Text: block.OfText.Text},
+					OfInputText: text,
 				})
 			case block.OfImage != nil:
 				url := imageBlockToOpenAIURL(block.OfImage)
 				if url == "" {
 					continue
 				}
-				contentList = append(contentList, responses.ResponseInputContentUnionParam{
-					OfInputImage: &responses.ResponseInputImageParam{
-						ImageURL: param.NewOpt(url),
-					},
-				})
+				image := &responses.ResponseInputImageParam{ImageURL: param.NewOpt(url)}
+				if !param.IsOmitted(block.OfImage.CacheControl) {
+					image.PromptCacheBreakpoint = responses.NewResponseInputImagePromptCacheBreakpointParam()
+				}
+				contentList = append(contentList, responses.ResponseInputContentUnionParam{OfInputImage: image})
 			}
 		}
 		if len(contentList) > 0 {
@@ -183,11 +238,13 @@ func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []response
 func convertV1AssistantMessageToResponsesInput(msg anthropic.MessageParam) []responses.ResponseInputItemUnionParam {
 	var items []responses.ResponseInputItemUnionParam
 	var textContent string
+	var textBlocks []anthropic.TextBlockParam
 
 	// Process content blocks to collect text and find tool_use blocks
 	for _, block := range msg.Content {
 		if block.OfText != nil {
 			textContent += block.OfText.Text
+			textBlocks = append(textBlocks, *block.OfText)
 		}
 	}
 
@@ -210,12 +267,25 @@ func convertV1AssistantMessageToResponsesInput(msg anthropic.MessageParam) []res
 
 	// Add text content as a separate message if present
 	if textContent != "" {
+		content := responses.EasyInputMessageContentUnionParam{OfString: param.NewOpt(textContent)}
+		for _, block := range textBlocks {
+			if !param.IsOmitted(block.CacheControl) {
+				parts := make(responses.ResponseInputMessageContentListParam, 0, len(textBlocks))
+				for _, textBlock := range textBlocks {
+					part := &responses.ResponseInputTextParam{Text: textBlock.Text}
+					if !param.IsOmitted(textBlock.CacheControl) {
+						part.PromptCacheBreakpoint = responses.NewResponseInputTextPromptCacheBreakpointParam()
+					}
+					parts = append(parts, responses.ResponseInputContentUnionParam{OfInputText: part})
+				}
+				content = responses.EasyInputMessageContentUnionParam{OfInputItemContentList: parts}
+				break
+			}
+		}
 		messageItem := responses.EasyInputMessageParam{
-			Type: responses.EasyInputMessageTypeMessage,
-			Role: responses.EasyInputMessageRole("assistant"),
-			Content: responses.EasyInputMessageContentUnionParam{
-				OfString: param.NewOpt(textContent),
-			},
+			Type:    responses.EasyInputMessageTypeMessage,
+			Role:    responses.EasyInputMessageRole("assistant"),
+			Content: content,
 		}
 		items = append(items, responses.ResponseInputItemUnionParam{
 			OfMessage: &messageItem,
@@ -224,6 +294,31 @@ func convertV1AssistantMessageToResponsesInput(msg anthropic.MessageParam) []res
 
 	// An assistant message with no text and no tool_use blocks is empty — skip it.
 	return items
+}
+
+func anthropicV1MessagesHaveRepresentableCacheControl(messages []anthropic.MessageParam) bool {
+	for _, message := range messages {
+		for _, block := range message.Content {
+			cacheControl := block.GetCacheControl()
+			if cacheControl == nil || param.IsOmitted(*cacheControl) {
+				continue
+			}
+			if block.OfText != nil || block.OfImage != nil || block.OfToolResult != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func anthropicV1ToolsHaveCacheControl(tools []anthropic.ToolUnionParam) bool {
+	for _, tool := range tools {
+		cacheControl := tool.GetCacheControl()
+		if cacheControl != nil && !param.IsOmitted(*cacheControl) {
+			return true
+		}
+	}
+	return false
 }
 
 // convertV1ContentBlocksToString converts v1 content blocks to string

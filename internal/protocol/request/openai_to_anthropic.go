@@ -5,12 +5,13 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
+	openaiparam "github.com/openai/openai-go/v3/packages/param"
 )
 
 // ConvertOpenAIToAnthropicRequest converts OpenAI ChatCompletionNewParams to Anthropic SDK format
 func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaultMaxTokens int64) *anthropic.BetaMessageNewParams {
 	messages := make([]anthropic.BetaMessageParam, 0, len(req.Messages))
-	var systemParts []string
+	var systemBlocks []anthropic.BetaTextBlockParam
 
 	for _, msg := range req.Messages {
 		// Read the typed union fields directly — no JSON round-trip needed.
@@ -18,9 +19,14 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 		case msg.OfSystem != nil:
 			// System message → params.System (string or array-of-text form)
 			if content := msg.OfSystem.Content.OfString.Value; content != "" {
-				systemParts = append(systemParts, content)
-			} else if text := joinTextContentParts(msg.OfSystem.Content.OfArrayOfContentParts); text != "" {
-				systemParts = append(systemParts, text)
+				systemBlocks = append(systemBlocks, anthropic.BetaTextBlockParam{Text: content})
+			} else {
+				for _, part := range msg.OfSystem.Content.OfArrayOfContentParts {
+					if part.Text == "" {
+						continue
+					}
+					systemBlocks = append(systemBlocks, betaTextBlockFromOpenAI(part))
+				}
 			}
 
 		case msg.OfUser != nil:
@@ -36,10 +42,17 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 					switch {
 					case part.OfText != nil:
 						if part.OfText.Text != "" {
-							blocks = append(blocks, anthropic.NewBetaTextBlock(part.OfText.Text))
+							block := anthropic.NewBetaTextBlock(part.OfText.Text)
+							if hasOpenAITextCacheBreakpoint(*part.OfText) {
+								block.OfText.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+							}
+							blocks = append(blocks, block)
 						}
 					case part.OfImageURL != nil:
 						if block, ok := openAIImageURLToAnthropicBetaBlock(part.OfImageURL.ImageURL.URL); ok {
+							if !openaiparam.IsOmitted(part.OfImageURL.PromptCacheBreakpoint) {
+								block.OfImage.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+							}
 							blocks = append(blocks, block)
 						}
 					}
@@ -57,8 +70,17 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 			// Add text content if present (string or array-of-text form)
 			if content := msg.OfAssistant.Content.OfString.Value; content != "" {
 				blocks = append(blocks, anthropic.NewBetaTextBlock(content))
-			} else if text := joinAssistantTextContentParts(msg.OfAssistant.Content.OfArrayOfContentParts); text != "" {
-				blocks = append(blocks, anthropic.NewBetaTextBlock(text))
+			} else {
+				for _, part := range msg.OfAssistant.Content.OfArrayOfContentParts {
+					if part.OfText == nil || part.OfText.Text == "" {
+						continue
+					}
+					block := anthropic.NewBetaTextBlock(part.OfText.Text)
+					if hasOpenAITextCacheBreakpoint(*part.OfText) {
+						block.OfText.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+					}
+					blocks = append(blocks, block)
+				}
 			}
 
 			// Convert tool calls to tool_use blocks
@@ -87,12 +109,18 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 			// Tool result message → tool_result block (must be USER role).
 			// Content may be a plain string or an array of text blocks.
 			content := msg.OfTool.Content.OfString.Value
+			hasCacheControl := false
 			if content == "" {
 				content = joinTextContentParts(msg.OfTool.Content.OfArrayOfContentParts)
+				for _, part := range msg.OfTool.Content.OfArrayOfContentParts {
+					hasCacheControl = hasCacheControl || hasOpenAITextCacheBreakpoint(part)
+				}
 			}
-			blocks := []anthropic.BetaContentBlockParamUnion{
-				anthropic.NewBetaToolResultBlock(msg.OfTool.ToolCallID, content, false),
+			block := anthropic.NewBetaToolResultBlock(msg.OfTool.ToolCallID, content, false)
+			if hasCacheControl {
+				block.OfToolResult.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
 			}
+			blocks := []anthropic.BetaContentBlockParamUnion{block}
 			messages = append(messages, anthropic.NewBetaUserMessage(blocks...))
 		}
 	}
@@ -109,12 +137,10 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 		MaxTokens: maxTokens,
 	}
 
-	// Add system parts if any
-	if len(systemParts) > 0 {
-		params.System = make([]anthropic.BetaTextBlockParam, len(systemParts))
-		for i, part := range systemParts {
-			params.System[i] = anthropic.BetaTextBlockParam{Text: part}
-		}
+	// Add system blocks if any. Array-form OpenAI content keeps standard
+	// prompt_cache_breakpoint markers from an earlier Anthropic hop.
+	if len(systemBlocks) > 0 {
+		params.System = systemBlocks
 	}
 
 	// Convert tools from OpenAI format to Anthropic format
@@ -126,6 +152,18 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 	}
 
 	return params
+}
+
+func hasOpenAITextCacheBreakpoint(part openai.ChatCompletionContentPartTextParam) bool {
+	return !openaiparam.IsOmitted(part.PromptCacheBreakpoint)
+}
+
+func betaTextBlockFromOpenAI(part openai.ChatCompletionContentPartTextParam) anthropic.BetaTextBlockParam {
+	block := anthropic.BetaTextBlockParam{Text: part.Text}
+	if hasOpenAITextCacheBreakpoint(part) {
+		block.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+	}
+	return block
 }
 
 // openAIImageURLToAnthropicBetaBlock turns an OpenAI image_url.url string into

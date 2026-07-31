@@ -41,6 +41,8 @@ func ConvertOpenAIResponsesToAnthropicBetaRequest(
 
 	// Convert input to messages
 	if !param.IsOmitted(params.Input.OfInputItemList) {
+		anthropicParams.System = append(anthropicParams.System,
+			convertResponsesSystemInputToAnthropicBeta(params.Input.OfInputItemList)...)
 		messages := convertResponsesInputToAnthropicBetaMessages(params.Input.OfInputItemList)
 		if len(messages) > 0 {
 			anthropicParams.Messages = messages
@@ -82,6 +84,37 @@ func ConvertOpenAIResponsesToAnthropicBetaRequest(
 	}
 
 	return anthropicParams
+}
+
+func convertResponsesSystemInputToAnthropicBeta(inputItems responses.ResponseInputParam) []anthropic.BetaTextBlockParam {
+	var system []anthropic.BetaTextBlockParam
+	for _, item := range inputItems {
+		if item.OfMessage == nil {
+			continue
+		}
+		msg := item.OfMessage
+		role := string(msg.Role)
+		if role != "system" && role != "developer" {
+			continue
+		}
+		if msg.Content.OfString.Valid() {
+			if msg.Content.OfString.Value != "" {
+				system = append(system, anthropic.BetaTextBlockParam{Text: msg.Content.OfString.Value})
+			}
+			continue
+		}
+		for _, content := range msg.Content.OfInputItemContentList {
+			if content.OfInputText == nil || content.OfInputText.Text == "" {
+				continue
+			}
+			block := anthropic.BetaTextBlockParam{Text: content.OfInputText.Text}
+			if !param.IsOmitted(content.OfInputText.PromptCacheBreakpoint) {
+				block.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+			}
+			system = append(system, block)
+		}
+	}
+	return system
 }
 
 // convertResponsesInputToAnthropicBetaMessages converts Responses API input items to Anthropic Beta messages
@@ -129,7 +162,11 @@ func convertResponsesUserMessageToAnthropicBeta(msg *responses.EasyInputMessageP
 		for _, contentItem := range msg.Content.OfInputItemContentList {
 			switch {
 			case !param.IsOmitted(contentItem.OfInputText):
-				blocks = append(blocks, anthropic.NewBetaTextBlock(contentItem.OfInputText.Text))
+				block := anthropic.NewBetaTextBlock(contentItem.OfInputText.Text)
+				if !param.IsOmitted(contentItem.OfInputText.PromptCacheBreakpoint) {
+					block.OfText.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+				}
+				blocks = append(blocks, block)
 			case !param.IsOmitted(contentItem.OfInputImage):
 				img := contentItem.OfInputImage
 				if !img.ImageURL.Valid() {
@@ -137,6 +174,9 @@ func convertResponsesUserMessageToAnthropicBeta(msg *responses.EasyInputMessageP
 					continue
 				}
 				if block, ok := openAIImageURLToAnthropicBetaBlock(img.ImageURL.Value); ok {
+					if !param.IsOmitted(img.PromptCacheBreakpoint) {
+						block.OfImage.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+					}
 					blocks = append(blocks, block)
 				}
 			default:
@@ -167,7 +207,11 @@ func convertResponsesAssistantMessageToAnthropicBeta(msg *responses.EasyInputMes
 		var blocks []anthropic.BetaContentBlockParamUnion
 		for _, contentItem := range msg.Content.OfInputItemContentList {
 			if !param.IsOmitted(contentItem.OfInputText) {
-				blocks = append(blocks, anthropic.NewBetaTextBlock(contentItem.OfInputText.Text))
+				block := anthropic.NewBetaTextBlock(contentItem.OfInputText.Text)
+				if !param.IsOmitted(contentItem.OfInputText.PromptCacheBreakpoint) {
+					block.OfText.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+				}
+				blocks = append(blocks, block)
 			} else {
 				// Log unsupported content types
 				logrus.Warnf("Unsupported content type in Responses API beta user message, skipping. Content types available: %v", contentItem)
@@ -211,14 +255,25 @@ func convertResponsesFunctionCallToAnthropicBeta(call *responses.ResponseFunctio
 func convertResponsesFunctionCallOutputToAnthropicBeta(output *responses.ResponseInputItemFunctionCallOutputParam) anthropic.BetaMessageParam {
 	// Extract output content
 	var outputStr string
+	hasCacheControl := false
 	if !param.IsOmitted(output.Output.OfString) {
 		outputStr = output.Output.OfString.Value
+	} else {
+		for _, item := range output.Output.OfResponseFunctionCallOutputItemArray {
+			if item.OfInputText == nil {
+				continue
+			}
+			outputStr += item.OfInputText.Text
+			hasCacheControl = hasCacheControl || !param.IsOmitted(item.OfInputText.PromptCacheBreakpoint)
+		}
 	}
 
 	// Create user message with tool_result block
-	return anthropic.NewBetaUserMessage(
-		anthropic.NewBetaToolResultBlock(output.CallID, outputStr, false),
-	)
+	block := anthropic.NewBetaToolResultBlock(output.CallID, outputStr, false)
+	if hasCacheControl {
+		block.OfToolResult.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+	}
+	return anthropic.NewBetaUserMessage(block)
 }
 
 // ConvertResponsesToolsToAnthropicBeta converts Responses API tools to Anthropic Beta tools

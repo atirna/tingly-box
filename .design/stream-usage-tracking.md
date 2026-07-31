@@ -579,7 +579,7 @@ cost_input = (prompt_tokens − cached_tokens − cache_write_tokens) × input_r
 
 `cached_tokens` 与 `cache_write_tokens` 都是 `prompt_tokens` 的子集且**互不重叠**。OpenAI 文档没有一句话明说这点，但 `prompt_tokens_details` 的定义就是「prompt 的拆分」；社区曾上报 `cached + write > prompt_tokens` 的账单，OpenAI 确认是 bug 并退款。**如果上游真的发来 `cached + write > prompt`，那是上游 bug，不要跟着算。**
 
-### 12.2 请求侧参数（当前为透传，无本地语义）
+### 12.2 请求侧参数与跨协议转换
 
 | 参数 | 状态 | 说明 |
 |---|---|---|
@@ -591,6 +591,14 @@ cost_input = (prompt_tokens − cached_tokens − cache_write_tokens) × input_r
 `prompt_cache_breakpoint` 的可挂载位置：Chat 是 `text` / `image_url` / `input_audio` / `file` 四种 content part（**不含 tools 定义**）；Responses 是 `input_text` / `input_image` / `input_file`。`implicit` 模式下 1 个隐式 + 最新 3 个显式断点，`explicit` 模式下无隐式 + 最新 4 个显式（无显式断点 = 完全不走缓存）。前缀仍需 ≥1024 token 才可缓存。
 
 > ⚠️ 5.6+ 的 `ttl` 只有 `30m`，比老模型的 `24h` 短——长会话代理的缓存命中率会下降，路由策略若依赖长缓存需要重新评估。
+
+协议转换必须保留缓存语义：
+
+- Chat ↔ Responses 双向复制 `prompt_cache_key`、`prompt_cache_options`、`prompt_cache_retention`，并逐 content block 映射 `prompt_cache_breakpoint`。
+- Anthropic Messages 的 `cache_control` 与 Chat / Responses 的显式 content breakpoint 双向映射；有断点时设置 OpenAI `prompt_cache_options.mode = "explicit"`。
+- Responses 的 `instructions` 是纯字符串，不能承载断点；带 cache 的 Anthropic system block 或 Chat system content 必须转换为 `role = "system"` 的 input item，不能塞进 `instructions`。
+- OpenAI 不允许在 tool definition 上挂 breakpoint。Anthropic tool definition 上的 `cache_control` 转换时推进到 tools 后第一个可缓存 content block，使缓存前缀仍包含完整 tools，不能直接丢弃。
+- Anthropic `5m` / `1h` 与 OpenAI 当前 `30m` TTL 不同，跨协议只保证 breakpoint 语义，不伪造等价 TTL。
 
 ### 12.3 通道差异
 

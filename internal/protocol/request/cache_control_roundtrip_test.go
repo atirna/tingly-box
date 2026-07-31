@@ -1,0 +1,259 @@
+package request
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	anthropicparam "github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/openai/openai-go/v3"
+	openaiparam "github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/stretchr/testify/require"
+)
+
+func TestAnthropicOpenAIAnthropicPreservesCacheControl(t *testing.T) {
+	userBlock := anthropic.NewTextBlock("stable conversation prefix")
+	userBlock.OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+
+	in := &anthropic.MessageNewParams{
+		Model:     "claude-test",
+		MaxTokens: 256,
+		System: []anthropic.TextBlockParam{
+			{
+				Text:         "stable system prompt",
+				CacheControl: anthropic.NewCacheControlEphemeralParam(),
+			},
+		},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(userBlock),
+		},
+	}
+
+	openAIReq, _ := ConvertAnthropicToOpenAIRequest(in, true, true, false)
+	require.Equal(t, "explicit", openAIReq.PromptCacheOptions.Mode)
+	require.Len(t, openAIReq.Messages, 2)
+
+	systemParts := openAIReq.Messages[0].OfSystem.Content.OfArrayOfContentParts
+	require.Len(t, systemParts, 1)
+	require.False(t, openaiparam.IsOmitted(systemParts[0].PromptCacheBreakpoint))
+
+	userParts := openAIReq.Messages[1].OfUser.Content.OfArrayOfContentParts
+	require.Len(t, userParts, 1)
+	require.NotNil(t, userParts[0].OfText)
+	require.False(t, openaiparam.IsOmitted(userParts[0].OfText.PromptCacheBreakpoint))
+
+	wire, err := json.Marshal(openAIReq)
+	require.NoError(t, err)
+	require.Contains(t, string(wire), `"prompt_cache_breakpoint":{"mode":"explicit"}`)
+
+	out := ConvertOpenAIToAnthropicRequest(openAIReq, 4096)
+	require.Len(t, out.System, 1)
+	require.False(t, anthropicparam.IsOmitted(out.System[0].CacheControl))
+	require.Len(t, out.Messages, 1)
+	require.Len(t, out.Messages[0].Content, 1)
+	require.NotNil(t, out.Messages[0].Content[0].OfText)
+	require.False(t, anthropicparam.IsOmitted(out.Messages[0].Content[0].OfText.CacheControl))
+}
+
+func TestAnthropicToolCacheControlAdvancesToOpenAICacheableContent(t *testing.T) {
+	in := &anthropic.MessageNewParams{
+		Model:     "claude-test",
+		MaxTokens: 256,
+		Tools: []anthropic.ToolUnionParam{{
+			OfTool: &anthropic.ToolParam{
+				Name: "lookup",
+				InputSchema: anthropic.ToolInputSchemaParam{
+					Type:       "object",
+					Properties: map[string]any{},
+				},
+				CacheControl: anthropic.NewCacheControlEphemeralParam(),
+			},
+		}},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("look this up")),
+		},
+	}
+
+	openAIReq, _ := ConvertAnthropicToOpenAIRequest(in, true, true, false)
+	require.Equal(t, "explicit", openAIReq.PromptCacheOptions.Mode)
+	require.Len(t, openAIReq.Messages, 1)
+
+	// OpenAI does not support breakpoints on tool definitions, so the boundary
+	// advances to the first content block after the tools prefix.
+	userParts := openAIReq.Messages[0].OfUser.Content.OfArrayOfContentParts
+	require.Len(t, userParts, 1)
+	require.NotNil(t, userParts[0].OfText)
+	require.False(t, openaiparam.IsOmitted(userParts[0].OfText.PromptCacheBreakpoint))
+
+	out := ConvertOpenAIToAnthropicRequest(openAIReq, 4096)
+	require.Len(t, out.Messages, 1)
+	require.Len(t, out.Messages[0].Content, 1)
+	require.False(t, anthropicparam.IsOmitted(out.Messages[0].Content[0].OfText.CacheControl))
+}
+
+func TestAnthropicResponsesAnthropicPreservesCacheControl(t *testing.T) {
+	userBlock := anthropic.NewTextBlock("stable conversation prefix")
+	userBlock.OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	in := &anthropic.MessageNewParams{
+		Model:     "claude-test",
+		MaxTokens: 256,
+		System: []anthropic.TextBlockParam{{
+			Text:         "stable system prompt",
+			CacheControl: anthropic.NewCacheControlEphemeralParam(),
+		}},
+		Messages: []anthropic.MessageParam{anthropic.NewUserMessage(userBlock)},
+	}
+
+	responsesReq := ConvertAnthropicV1ToResponsesRequest(in)
+	require.Equal(t, "explicit", responsesReq.PromptCacheOptions.Mode)
+	require.False(t, responsesReq.Instructions.Valid())
+	require.Len(t, responsesReq.Input.OfInputItemList, 2)
+	requireResponsesTextBreakpoint(t, responsesReq.Input.OfInputItemList[0], "system")
+	requireResponsesTextBreakpoint(t, responsesReq.Input.OfInputItemList[1], "user")
+
+	out := ConvertOpenAIResponsesToAnthropicBetaRequest(*responsesReq, 4096)
+	require.Len(t, out.System, 1)
+	require.False(t, anthropicparam.IsOmitted(out.System[0].CacheControl))
+	require.Len(t, out.Messages, 1)
+	require.False(t, anthropicparam.IsOmitted(out.Messages[0].Content[0].OfText.CacheControl))
+
+	betaIn := ConvertAnthropicV1ToBetaRequest(in)
+	require.NotNil(t, betaIn)
+	betaResponsesReq := ConvertAnthropicBetaToResponsesRequest(betaIn)
+	require.Equal(t, "explicit", betaResponsesReq.PromptCacheOptions.Mode)
+	require.Len(t, betaResponsesReq.Input.OfInputItemList, 2)
+	requireResponsesTextBreakpoint(t, betaResponsesReq.Input.OfInputItemList[0], "system")
+	requireResponsesTextBreakpoint(t, betaResponsesReq.Input.OfInputItemList[1], "user")
+}
+
+func TestAnthropicResponsesPreservesToolCacheControls(t *testing.T) {
+	t.Run("tool definition advances to first content", func(t *testing.T) {
+		in := &anthropic.MessageNewParams{
+			Model:     "claude-test",
+			MaxTokens: 256,
+			Tools: []anthropic.ToolUnionParam{{
+				OfTool: &anthropic.ToolParam{
+					Name: "lookup",
+					InputSchema: anthropic.ToolInputSchemaParam{
+						Type:       "object",
+						Properties: map[string]any{},
+					},
+					CacheControl: anthropic.NewCacheControlEphemeralParam(),
+				},
+			}},
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock("look this up")),
+			},
+		}
+
+		responsesReq := ConvertAnthropicV1ToResponsesRequest(in)
+		require.Equal(t, "explicit", responsesReq.PromptCacheOptions.Mode)
+		require.Len(t, responsesReq.Input.OfInputItemList, 1)
+		requireResponsesTextBreakpoint(t, responsesReq.Input.OfInputItemList[0], "user")
+	})
+
+	t.Run("tool result round trip", func(t *testing.T) {
+		toolResult := anthropic.NewToolResultBlock("call_1", "stable tool output", false)
+		toolResult.OfToolResult.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		in := &anthropic.MessageNewParams{
+			Model:     "claude-test",
+			MaxTokens: 256,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(toolResult),
+			},
+		}
+
+		responsesReq := ConvertAnthropicV1ToResponsesRequest(in)
+		require.Equal(t, "explicit", responsesReq.PromptCacheOptions.Mode)
+		require.Len(t, responsesReq.Input.OfInputItemList, 1)
+		output := responsesReq.Input.OfInputItemList[0].OfFunctionCallOutput
+		require.NotNil(t, output)
+		require.Len(t, output.Output.OfResponseFunctionCallOutputItemArray, 1)
+		require.False(t, openaiparam.IsOmitted(
+			output.Output.OfResponseFunctionCallOutputItemArray[0].OfInputText.PromptCacheBreakpoint))
+
+		out := ConvertOpenAIResponsesToAnthropicBetaRequest(*responsesReq, 4096)
+		require.Len(t, out.Messages, 1)
+		require.NotNil(t, out.Messages[0].Content[0].OfToolResult)
+		require.False(t, anthropicparam.IsOmitted(out.Messages[0].Content[0].OfToolResult.CacheControl))
+	})
+}
+
+func TestChatResponsesChatPreservesCacheControlsAndOptions(t *testing.T) {
+	systemPart := openai.ChatCompletionContentPartTextParam{
+		Text:                  "stable system prompt",
+		PromptCacheBreakpoint: openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam(),
+	}
+	userPart := openai.ChatCompletionContentPartTextParam{
+		Text:                  "stable conversation prefix",
+		PromptCacheBreakpoint: openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam(),
+	}
+	toolPart := openai.ChatCompletionContentPartTextParam{
+		Text:                  "stable tool output",
+		PromptCacheBreakpoint: openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam(),
+	}
+	in := &openai.ChatCompletionNewParams{
+		Model: "gpt-test",
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage([]openai.ChatCompletionContentPartTextParam{systemPart}),
+			openai.UserMessage([]openai.ChatCompletionContentPartUnionParam{{OfText: &userPart}}),
+			{
+				OfTool: &openai.ChatCompletionToolMessageParam{
+					ToolCallID: "call_1",
+					Content: openai.ChatCompletionToolMessageParamContentUnion{
+						OfArrayOfContentParts: []openai.ChatCompletionContentPartTextParam{toolPart},
+					},
+				},
+			},
+		},
+		PromptCacheKey: openai.Opt("stable-key"),
+		PromptCacheOptions: openai.ChatCompletionNewParamsPromptCacheOptions{
+			Mode: "explicit",
+			Ttl:  "30m",
+		},
+		PromptCacheRetention: openai.ChatCompletionNewParamsPromptCacheRetention24h,
+	}
+
+	responsesReq := ConvertChatToOpenAIResponses(in, 4096)
+	require.Equal(t, "stable-key", responsesReq.PromptCacheKey.Value)
+	require.Equal(t, "explicit", responsesReq.PromptCacheOptions.Mode)
+	require.Equal(t, "30m", responsesReq.PromptCacheOptions.Ttl)
+	require.Equal(t, responses.ResponseNewParamsPromptCacheRetention24h, responsesReq.PromptCacheRetention)
+	require.False(t, responsesReq.Instructions.Valid())
+	require.Len(t, responsesReq.Input.OfInputItemList, 3)
+	requireResponsesTextBreakpoint(t, responsesReq.Input.OfInputItemList[0], "system")
+	requireResponsesTextBreakpoint(t, responsesReq.Input.OfInputItemList[1], "user")
+	toolOutput := responsesReq.Input.OfInputItemList[2].OfFunctionCallOutput
+	require.NotNil(t, toolOutput)
+	require.Len(t, toolOutput.Output.OfResponseFunctionCallOutputItemArray, 1)
+	require.False(t, openaiparam.IsOmitted(
+		toolOutput.Output.OfResponseFunctionCallOutputItemArray[0].OfInputText.PromptCacheBreakpoint))
+
+	out := ConvertOpenAIResponsesToChat(responsesReq, 4096)
+	require.Equal(t, "stable-key", out.PromptCacheKey.Value)
+	require.Equal(t, "explicit", out.PromptCacheOptions.Mode)
+	require.Equal(t, "30m", out.PromptCacheOptions.Ttl)
+	require.Equal(t, openai.ChatCompletionNewParamsPromptCacheRetention24h, out.PromptCacheRetention)
+	require.Len(t, out.Messages, 3)
+	require.False(t, openaiparam.IsOmitted(
+		out.Messages[0].OfSystem.Content.OfArrayOfContentParts[0].PromptCacheBreakpoint))
+	require.False(t, openaiparam.IsOmitted(
+		out.Messages[1].OfUser.Content.OfArrayOfContentParts[0].OfText.PromptCacheBreakpoint))
+	require.False(t, openaiparam.IsOmitted(
+		out.Messages[2].OfTool.Content.OfArrayOfContentParts[0].PromptCacheBreakpoint))
+}
+
+func requireResponsesTextBreakpoint(
+	t *testing.T,
+	item responses.ResponseInputItemUnionParam,
+	role string,
+) {
+	t.Helper()
+	require.NotNil(t, item.OfMessage)
+	require.Equal(t, role, string(item.OfMessage.Role))
+	require.Len(t, item.OfMessage.Content.OfInputItemContentList, 1)
+	require.NotNil(t, item.OfMessage.Content.OfInputItemContentList[0].OfInputText)
+	require.False(t, openaiparam.IsOmitted(
+		item.OfMessage.Content.OfInputItemContentList[0].OfInputText.PromptCacheBreakpoint))
+}

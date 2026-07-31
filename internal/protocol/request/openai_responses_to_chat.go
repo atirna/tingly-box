@@ -59,6 +59,13 @@ func ConvertOpenAIResponsesToChat(params *responses.ResponseNewParams, defaultMa
 		result.ToolChoice = ConvertResponsesToolChoiceToChat(params.ToolChoice)
 	}
 
+	result.PromptCacheKey = params.PromptCacheKey
+	result.PromptCacheOptions = openai.ChatCompletionNewParamsPromptCacheOptions{
+		Mode: params.PromptCacheOptions.Mode,
+		Ttl:  params.PromptCacheOptions.Ttl,
+	}
+	result.PromptCacheRetention = openai.ChatCompletionNewParamsPromptCacheRetention(params.PromptCacheRetention)
+
 	return result
 }
 
@@ -121,64 +128,14 @@ func ConvertResponsesInputToMessages(items responses.ResponseInputParam) []opena
 				content := msg.Content.OfString.Value
 				messages = append(messages, createMessage(role, content))
 			} else if !param.IsOmitted(msg.Content.OfInputItemContentList) {
-				// Array content. If any input_image is present, preserve the
-				// multipart shape for OpenAI Chat Completions so vision input
-				// survives the conversion. Otherwise concatenate text items.
-				var hasImage bool
-				for _, contentItem := range msg.Content.OfInputItemContentList {
-					if !param.IsOmitted(contentItem.OfInputImage) {
-						hasImage = true
-						break
-					}
-				}
-
-				if hasImage && strings.EqualFold(role, "user") {
-					parts := make([]map[string]interface{}, 0, len(msg.Content.OfInputItemContentList))
-					for _, contentItem := range msg.Content.OfInputItemContentList {
-						switch {
-						case !param.IsOmitted(contentItem.OfInputText):
-							parts = append(parts, map[string]interface{}{
-								"type": "text",
-								"text": contentItem.OfInputText.Text,
-							})
-						case !param.IsOmitted(contentItem.OfInputImage):
-							img := contentItem.OfInputImage
-							if !img.ImageURL.Valid() || img.ImageURL.Value == "" {
-								continue
-							}
-							parts = append(parts, map[string]interface{}{
-								"type":      "image_url",
-								"image_url": map[string]interface{}{"url": img.ImageURL.Value},
-							})
-						}
-					}
-					if len(parts) > 0 {
-						msgMap := map[string]interface{}{
-							"role":    "user",
-							"content": parts,
-						}
-						msgBytes, _ := json.Marshal(msgMap)
-						var userMsg openai.ChatCompletionMessageParamUnion
-						_ = json.Unmarshal(msgBytes, &userMsg)
-						messages = append(messages, userMsg)
-					}
-					continue
-				}
-
-				var contentStr string
-				for _, contentItem := range msg.Content.OfInputItemContentList {
-					if !param.IsOmitted(contentItem.OfInputText) {
-						contentStr += contentItem.OfInputText.Text
-					}
-				}
-				if contentStr != "" {
-					messages = append(messages, createMessage(role, contentStr))
+				if converted, ok := createMessageFromResponsesContent(role, msg.Content.OfInputItemContentList); ok {
+					messages = append(messages, converted)
 				}
 			}
 			continue
 		}
 
-			// Accumulate consecutive function_call items into a single assistant message.
+		// Accumulate consecutive function_call items into a single assistant message.
 		// Flushed on the next message boundary or first function_call_output.
 		if !param.IsOmitted(item.OfFunctionCall) {
 			fnCall := item.OfFunctionCall
@@ -199,22 +156,34 @@ func ConvertResponsesInputToMessages(items responses.ResponseInputParam) []opena
 			output := item.OfFunctionCallOutput
 
 			// Extract output content
-			var content string
 			if !param.IsOmitted(output.Output.OfString) {
-				content = output.Output.OfString.Value
+				messages = append(messages, openai.ToolMessage(output.Output.OfString.Value, output.CallID))
+				continue
 			}
-
-			// Create tool message
-			toolMsg := map[string]interface{}{
-				"role":         "tool",
-				"tool_call_id": output.CallID,
-				"content":      content,
+			parts := make([]openai.ChatCompletionContentPartTextParam, 0,
+				len(output.Output.OfResponseFunctionCallOutputItemArray))
+			for _, item := range output.Output.OfResponseFunctionCallOutputItemArray {
+				if item.OfInputText == nil || item.OfInputText.Text == "" {
+					continue
+				}
+				part := openai.ChatCompletionContentPartTextParam{Text: item.OfInputText.Text}
+				if !param.IsOmitted(item.OfInputText.PromptCacheBreakpoint) {
+					part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+				}
+				parts = append(parts, part)
 			}
-
-			msgBytes, _ := json.Marshal(toolMsg)
-			var result openai.ChatCompletionMessageParamUnion
-			_ = json.Unmarshal(msgBytes, &result)
-			messages = append(messages, result)
+			if len(parts) > 0 {
+				messages = append(messages, openai.ChatCompletionMessageParamUnion{
+					OfTool: &openai.ChatCompletionToolMessageParam{
+						ToolCallID: output.CallID,
+						Content: openai.ChatCompletionToolMessageParamContentUnion{
+							OfArrayOfContentParts: parts,
+						},
+					},
+				})
+			} else {
+				messages = append(messages, openai.ToolMessage("", output.CallID))
+			}
 		}
 	}
 
@@ -222,6 +191,96 @@ func ConvertResponsesInputToMessages(items responses.ResponseInputParam) []opena
 	flushCalls(pendingCalls)
 
 	return messages
+}
+
+func createMessageFromResponsesContent(role string, content responses.ResponseInputMessageContentListParam) (openai.ChatCompletionMessageParamUnion, bool) {
+	var text string
+	var hasImage, hasCacheBreakpoint bool
+	for _, item := range content {
+		switch {
+		case item.OfInputText != nil:
+			text += item.OfInputText.Text
+			hasCacheBreakpoint = hasCacheBreakpoint || !param.IsOmitted(item.OfInputText.PromptCacheBreakpoint)
+		case item.OfInputImage != nil:
+			hasImage = true
+			hasCacheBreakpoint = hasCacheBreakpoint || !param.IsOmitted(item.OfInputImage.PromptCacheBreakpoint)
+		}
+	}
+
+	if !hasImage && !hasCacheBreakpoint {
+		if text == "" {
+			return openai.ChatCompletionMessageParamUnion{}, false
+		}
+		return createMessage(role, text), true
+	}
+
+	switch strings.ToLower(role) {
+	case "user":
+		parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(content))
+		for _, item := range content {
+			switch {
+			case item.OfInputText != nil:
+				part := openai.ChatCompletionContentPartTextParam{Text: item.OfInputText.Text}
+				if !param.IsOmitted(item.OfInputText.PromptCacheBreakpoint) {
+					part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+				}
+				parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfText: &part})
+			case item.OfInputImage != nil && item.OfInputImage.ImageURL.Valid():
+				part := openai.ChatCompletionContentPartImageParam{
+					ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: item.OfInputImage.ImageURL.Value},
+				}
+				if !param.IsOmitted(item.OfInputImage.PromptCacheBreakpoint) {
+					part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartImagePromptCacheBreakpointParam()
+				}
+				parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfImageURL: &part})
+			}
+		}
+		if len(parts) == 0 {
+			return openai.ChatCompletionMessageParamUnion{}, false
+		}
+		return openai.UserMessage(parts), true
+
+	case "system":
+		parts := responseTextContentToChatTextParts(content)
+		if len(parts) == 0 {
+			return openai.ChatCompletionMessageParamUnion{}, false
+		}
+		return openai.SystemMessage(parts), true
+
+	case "assistant":
+		textParts := responseTextContentToChatTextParts(content)
+		if len(textParts) == 0 {
+			return openai.ChatCompletionMessageParamUnion{}, false
+		}
+		parts := make([]openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion, 0, len(textParts))
+		for i := range textParts {
+			part := textParts[i]
+			parts = append(parts, openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{OfText: &part})
+		}
+		return openai.ChatCompletionMessageParamUnion{
+			OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+				Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+					OfArrayOfContentParts: parts,
+				},
+			},
+		}, true
+	}
+	return openai.ChatCompletionMessageParamUnion{}, false
+}
+
+func responseTextContentToChatTextParts(content responses.ResponseInputMessageContentListParam) []openai.ChatCompletionContentPartTextParam {
+	parts := make([]openai.ChatCompletionContentPartTextParam, 0, len(content))
+	for _, item := range content {
+		if item.OfInputText == nil || item.OfInputText.Text == "" {
+			continue
+		}
+		part := openai.ChatCompletionContentPartTextParam{Text: item.OfInputText.Text}
+		if !param.IsOmitted(item.OfInputText.PromptCacheBreakpoint) {
+			part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+		}
+		parts = append(parts, part)
+	}
+	return parts
 }
 
 // createMessage creates a ChatCompletionMessageParamUnion based on role and content.
