@@ -302,9 +302,7 @@ export const ProviderListContent: React.FC<ProviderListContentProps> = ({
         ? oauthProviders.filter((p) => `${p.name} ${p.displayName} ${p.id}`.toLowerCase().includes(needle.toLowerCase()))
         : oauthProviders;
     const showCustom = !needle || CUSTOM_SEARCH_TERMS.some(s => s.toLowerCase().includes(needle.toLowerCase()));
-    const filteredCloud = needle
-        ? cloudProviders.filter((p) => `${p.name} ${p.alias || ''} ${p.description || ''} ${p.authType || ''}`.toLowerCase().includes(needle.toLowerCase()))
-        : cloudProviders;
+    const filteredCloud = needle ? searchProviders(cloudProviders, needle) : cloudProviders;
 
     // Group key providers by region (CN vs Global vs Self-hosted)
     const {cnKeyProviders, globalKeyProviders, selfHostedProviders} = useMemo(() => {

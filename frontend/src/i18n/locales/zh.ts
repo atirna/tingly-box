@@ -245,7 +245,6 @@ export default {
   },
   "cloudDialog": {
     "name": "名称",
-    "nameRequired": "请填写提供商名称",
     "connect": "连接",
     "connected": "提供商连接成功！",
     "connectFailed": "连接提供商失败",
@@ -253,7 +252,6 @@ export default {
     "hideAdvanced": "收起高级选项",
     "awsAuthHint": "使用 Access Key ID + Secret 密钥对认证，或仅使用 Bedrock API Key。",
     "validation": {
-      "missing": "缺少必填字段：{{fields}}",
       "awsEitherOr": "请提供 Access Key ID + Secret Access Key，或提供 Bedrock API Key",
       "badRegion": "Region 格式应形如 \"us-east-1\"（小写字母、数字、连字符）",
       "badLocation": "Location 格式应形如 \"us-east5\" 或 \"global\"（小写字母、数字、连字符）",

@@ -21,14 +21,6 @@ const fakeSAJSON = `{
   "token_uri": "https://oauth2.googleapis.com/token"
 }`
 
-func gcpProvider(fields map[string]string) *typ.Provider {
-	return &typ.Provider{
-		Name:       "vertex",
-		AuthType:   typ.AuthTypeGCPVertex,
-		Credential: &typ.CredentialBundle{Fields: fields},
-	}
-}
-
 func TestValidateCloudBundle_MissingBundle(t *testing.T) {
 	err := validateCloudBundle(&typ.Provider{Name: "v", AuthType: typ.AuthTypeGCPVertex})
 	if err == nil {
@@ -38,7 +30,7 @@ func TestValidateCloudBundle_MissingBundle(t *testing.T) {
 
 func TestVertexAnthropicOption_Validation(t *testing.T) {
 	// missing required fields → schema validation error
-	if _, err := vertexAnthropicOption(context.Background(), gcpProvider(map[string]string{
+	if _, err := vertexAnthropicOption(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPProjectID: "proj",
 	})); err == nil {
 		t.Error("expected error for incomplete GCP bundle")
@@ -46,7 +38,7 @@ func TestVertexAnthropicOption_Validation(t *testing.T) {
 
 	// complete bundle but malformed SA JSON → error (caught by schema
 	// validation), not a panic
-	_, err := vertexAnthropicOption(context.Background(), gcpProvider(map[string]string{
+	_, err := vertexAnthropicOption(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPServiceAccountJSON: "{not json",
 		ai.CredFieldGCPProjectID:          "proj",
 		ai.CredFieldGCPLocation:           "us-east5",
@@ -56,7 +48,7 @@ func TestVertexAnthropicOption_Validation(t *testing.T) {
 	}
 
 	// valid bundle → option resolves
-	if _, err := vertexAnthropicOption(context.Background(), gcpProvider(map[string]string{
+	if _, err := vertexAnthropicOption(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPServiceAccountJSON: fakeSAJSON,
 		ai.CredFieldGCPProjectID:          "proj",
 		ai.CredFieldGCPLocation:           "us-east5",

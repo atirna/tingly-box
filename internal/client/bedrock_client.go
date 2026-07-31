@@ -26,6 +26,16 @@ func NewBedrockClient(provider *typ.Provider, model string, sessionID typ.Sessio
 	return NewAnthropicClient(provider, model, sessionID, opt)
 }
 
+// SupportsAnthropicCountTokens reports whether the provider's anthropic-style
+// backend exposes /v1/messages/count_tokens. The bedrock adapter rewrites only
+// /v1/complete and /v1/messages — count_tokens would be signed and sent
+// verbatim to bedrock-runtime, which 404s — so Bedrock providers need a local
+// estimate instead. Lives in the client package because it is SDK-adapter
+// knowledge, not protocol-handler knowledge.
+func SupportsAnthropicCountTokens(provider *typ.Provider) bool {
+	return provider.AuthType != typ.AuthTypeAWSSigV4
+}
+
 // bedrockOption resolves the Bedrock adapter RequestOption from a provider's
 // AWS credential bundle.
 func bedrockOption(provider *typ.Provider) (anthropicOption.RequestOption, error) {

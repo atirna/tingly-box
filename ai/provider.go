@@ -33,6 +33,17 @@ func (a AuthType) IsMultiFieldCredential() bool {
 	return false
 }
 
+// IsValid reports whether a is one of the defined auth types. Lives next to
+// the constant block so adding a type can't miss the validity check.
+func (a AuthType) IsValid() bool {
+	switch a {
+	case AuthTypeAPIKey, AuthTypeOAuth, AuthTypeVirtual,
+		AuthTypeAWSSigV4, AuthTypeAzureKey, AuthTypeGCPVertex:
+		return true
+	}
+	return false
+}
+
 // ProviderSource indicates whether a provider was created by a user or seeded
 // by the system at startup. Builtin providers cannot be deleted or have their
 // configuration mutated (only Enabled may be toggled).

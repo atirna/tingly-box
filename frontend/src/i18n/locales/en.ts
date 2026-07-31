@@ -243,7 +243,6 @@ export default {
   },
   "cloudDialog": {
     "name": "Name",
-    "nameRequired": "Provider name is required",
     "connect": "Connect",
     "connected": "Provider connected successfully!",
     "connectFailed": "Failed to connect provider",
@@ -251,7 +250,6 @@ export default {
     "hideAdvanced": "Hide advanced",
     "awsAuthHint": "Authenticate with an Access Key ID + Secret pair, or a Bedrock API Key alone.",
     "validation": {
-      "missing": "Missing required field(s): {{fields}}",
       "awsEitherOr": "Provide either Access Key ID + Secret Access Key, or a Bedrock API Key",
       "badRegion": "Region must look like \"us-east-1\" (lowercase letters, digits, hyphens)",
       "badLocation": "Location must look like \"us-east5\" or \"global\" (lowercase letters, digits, hyphens)",

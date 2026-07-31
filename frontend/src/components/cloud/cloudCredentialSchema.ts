@@ -61,16 +61,12 @@ export function getCloudFields(authType?: string | null): CloudField[] {
 }
 
 /**
- * Minimal translator seam so validation messages and field labels go through
- * i18next when available. Matches the `t(key, {defaultValue, ...})` call shape;
- * the fallback interpolates {{var}} into the defaultValue.
+ * Translator seam matching i18next's `t(key, {defaultValue, ...})` call shape,
+ * so this schema module doesn't import i18next directly.
  */
 export type CloudTranslate = (key: string, options: {defaultValue: string; [k: string]: unknown}) => string;
 
-const passthrough: CloudTranslate = (_key, o) =>
-    o.defaultValue.replace(/\{\{(\w+)\}\}/g, (_, k) => String(o[k] ?? ''));
-
-export function cloudFieldLabel(f: CloudField, t: CloudTranslate = passthrough): string {
+export function cloudFieldLabel(f: CloudField, t: CloudTranslate): string {
     return t(`cloudDialog.fields.${f.key}.label`, {defaultValue: f.label});
 }
 
@@ -78,26 +74,23 @@ export function cloudFieldLabel(f: CloudField, t: CloudTranslate = passthrough):
 // (us-east-1, us-east5, global, us, eu).
 const REGION_RE = /^[a-z0-9][a-z0-9-]*$/;
 
+/** Whether every required field of the auth type has a non-empty value. */
+export function requiredCloudFieldsFilled(authType: string, v: Record<string, string>): boolean {
+    return getCloudFields(authType).every((f) => !f.required || (v[f.key] || '').trim().length > 0);
+}
+
 /**
- * Validate trimmed credential values against the auth type's rules, mirroring
- * ai.ValidateCredential (including AWS's keys-OR-bearer alternative and the
- * backend's cheap format checks). Returns a human-readable error, or null when
- * the values are submittable.
+ * Validate the cross-field and format rules, mirroring ai.ValidateCredential
+ * (AWS keys-OR-bearer, SA-JSON/endpoint/region format). Plain required-ness is
+ * requiredCloudFieldsFilled — the form communicates it via asterisks, so it
+ * produces no message here. Returns a human-readable error or null.
  */
 export function validateCloudFields(
     authType: string,
     v: Record<string, string>,
-    t: CloudTranslate = passthrough,
+    t: CloudTranslate,
 ): string | null {
-    const fields = getCloudFields(authType);
     const get = (k: string) => (v[k] || '').trim();
-    const missing = fields.filter((f) => f.required && !get(f.key)).map((f) => cloudFieldLabel(f, t));
-    if (missing.length > 0) {
-        return t('cloudDialog.validation.missing', {
-            defaultValue: 'Missing required field(s): {{fields}}',
-            fields: missing.join(', '),
-        });
-    }
     switch (authType) {
         case 'aws_sigv4': {
             const hasKeys = !!get('access_key_id') && !!get('secret_access_key');

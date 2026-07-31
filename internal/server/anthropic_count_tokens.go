@@ -117,10 +117,9 @@ func (ph *ProtocolHandler) anthropicCountTokens(c *gin.Context, provider *typ.Pr
 		})
 		return
 	case protocol.APIStyleAnthropic:
-		// Bedrock has no count_tokens endpoint (the adapter only maps
-		// /v1/complete and /v1/messages), so estimate locally like the
-		// openai/google styles do.
-		if provider.AuthType == typ.AuthTypeAWSSigV4 {
+		// Backends without a count_tokens endpoint (Bedrock) get the local
+		// estimate, same as the openai/google styles.
+		if !client.SupportsAnthropicCountTokens(provider) {
 			ph.anthropicCountTokensViaTiktoken(c, req)
 			return
 		}

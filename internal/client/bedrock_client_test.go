@@ -7,14 +7,6 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
-func awsProvider(fields map[string]string) *typ.Provider {
-	return &typ.Provider{
-		Name:       "bedrock",
-		AuthType:   typ.AuthTypeAWSSigV4,
-		Credential: &typ.CredentialBundle{Fields: fields},
-	}
-}
-
 func TestAWSConfigFromBundle_StaticKeys(t *testing.T) {
 	cfg := awsConfigFromBundle(&typ.CredentialBundle{Fields: map[string]string{
 		ai.CredFieldAWSRegion:          "eu-west-1",
@@ -54,13 +46,13 @@ func TestBedrockOption_ValidationErrors(t *testing.T) {
 		t.Error("expected error for missing credential bundle")
 	}
 	// missing region
-	if _, err := bedrockOption(awsProvider(map[string]string{
+	if _, err := bedrockOption(cloudProvider("bedrock", typ.AuthTypeAWSSigV4, map[string]string{
 		ai.CredFieldAWSAccessKeyID: "AKIA", ai.CredFieldAWSSecretAccessKey: "s",
 	})); err == nil {
 		t.Error("expected error for missing region")
 	}
 	// valid
-	if _, err := bedrockOption(awsProvider(map[string]string{
+	if _, err := bedrockOption(cloudProvider("bedrock", typ.AuthTypeAWSSigV4, map[string]string{
 		ai.CredFieldAWSRegion:          "us-east-1",
 		ai.CredFieldAWSAccessKeyID:     "AKIA",
 		ai.CredFieldAWSSecretAccessKey: "s",

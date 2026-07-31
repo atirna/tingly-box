@@ -21,7 +21,7 @@ import {api} from '../../services/api';
 import {getServiceProvider} from '@/services/serviceProviders';
 import ProviderIcon from '@/components/ProviderIcon';
 import ProxyUrlField from '@/components/provider-form-dialog/ProxyUrlField';
-import {getCloudFields, buildCloudApiBase, validateCloudFields, cloudFieldLabel, type CloudField} from './cloudCredentialSchema';
+import {getCloudFields, buildCloudApiBase, validateCloudFields, requiredCloudFieldsFilled, cloudFieldLabel, type CloudField} from './cloudCredentialSchema';
 
 interface CloudProviderDialogProps {
     open: boolean;
@@ -71,13 +71,16 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
 
     const displayName = template?.alias || template?.name || '';
 
-    // Fetch the global quick-proxy once so the proxy field offers it, same as
-    // the API-key form.
+    // Fetch the global quick-proxy when first opened so the proxy field offers
+    // it, same as the API-key form. Gated on open: this dialog is mounted
+    // (closed) on every picker surface, and fetching there would be wasted.
     useEffect(() => {
-        api.getConfig().then((result: any) => {
-            setGlobalProxyUrl(result?.data?.http_transport?.global_proxy_url ?? '');
-        });
-    }, []);
+        if (open && !globalProxyUrl) {
+            api.getConfig().then((result: any) => {
+                setGlobalProxyUrl(result?.data?.http_transport?.global_proxy_url ?? '');
+            });
+        }
+    }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Reset form whenever a new template is opened.
     useEffect(() => {
@@ -100,11 +103,10 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
     };
 
     const validationError = validateCloudFields(authType, values, t);
-    // Surface the non-obvious rules (AWS either/or, format checks) live once the
-    // required fields are filled; plain missing-required is already communicated
-    // by the asterisks.
-    const requiredFilled = fields.filter((f) => f.required).every((f) => (values[f.key] || '').trim().length > 0);
-    const canSubmit = name.trim().length > 0 && !validationError && !submitting;
+    // Required-ness is communicated by the asterisks; the caption below the
+    // fields surfaces the non-obvious rules (AWS either/or, format checks).
+    const requiredFilled = requiredCloudFieldsFilled(authType, values);
+    const canSubmit = name.trim().length > 0 && requiredFilled && !validationError && !submitting;
 
     const handleUseGlobalProxyChange = (checked: boolean) => {
         setUseGlobalProxy(checked);
@@ -116,16 +118,8 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
     };
 
     const handleSubmit = async () => {
-        if (!name.trim()) {
-            setError(t('cloudDialog.nameRequired', {defaultValue: 'Provider name is required'}));
-            return;
-        }
-        if (validationError) {
-            setError(validationError);
-            return;
-        }
-
-        // Only send non-empty, trimmed credential fields.
+        // Only send non-empty, trimmed credential fields. (Submit is gated on
+        // canSubmit, so name/validation are already satisfied here.)
         const credential: Record<string, string> = {};
         fields.forEach((f) => {
             const v = (values[f.key] || '').trim();

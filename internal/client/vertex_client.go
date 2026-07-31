@@ -12,6 +12,7 @@ import (
 	gauth "cloud.google.com/go/auth"
 	gcreds "cloud.google.com/go/auth/credentials"
 	"cloud.google.com/go/auth/httptransport"
+	"cloud.google.com/go/auth/oauth2adapt"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/genai"
 
@@ -23,17 +24,23 @@ import (
 // account, shared by the Anthropic-on-Vertex and Gemini-on-Vertex paths.
 const vertexScope = "https://www.googleapis.com/auth/cloud-platform"
 
-// Credential caches, keyed by sha256 of the service-account JSON. Clients are
+// Credential cache, keyed by sha256 of the service-account JSON. Clients are
 // rebuilt per request (see pool.go), but the parsed credentials — whose token
 // source caches the minted OAuth access token until expiry — must be reused
 // across requests. Without this every request re-parses the SA key (RSA
 // decode) and mints a fresh token via a blocking round-trip to Google's token
 // endpoint. A changed SA JSON hashes to a new key, so updates take effect
 // immediately; stale entries are bounded by the number of distinct SA keys.
-var (
-	vertexGoogleCredsCache sync.Map // [32]byte -> *google.Credentials
-	vertexGenaiCredsCache  sync.Map // [32]byte -> *auth.Credentials
-)
+//
+// One entry serves both Vertex paths: the genai credentials are parsed once
+// and the oauth2 form (for the anthropic vertex adapter) is derived from them
+// via oauth2adapt, so both share a single cached token per SA key.
+var vertexCredsCache sync.Map // [32]byte -> vertexCreds
+
+type vertexCreds struct {
+	genai  *gauth.Credentials
+	oauth2 *google.Credentials
+}
 
 // validateCloudBundle checks that a multi-field provider carries a credential
 // bundle satisfying its auth type's schema. Shared prologue for every cloud
@@ -94,6 +101,13 @@ func applyVertexToGenaiConfig(ctx context.Context, provider *typ.Provider, cfg *
 	// APIKey must be empty on the Vertex backend; clear whatever the generic
 	// path set from GetAccessToken() (which is "" for gcp_sa anyway).
 	cfg.APIKey = ""
+	// Leave BaseURL empty: genai derives the correct Vertex host from
+	// Backend/Location — including the special "global"
+	// (aiplatform.googleapis.com) and multi-regional "us"/"eu"
+	// (aiplatform.<loc>.rep.googleapis.com) hosts — but only when
+	// HTTPOptions.BaseURL is unset; a stored APIBase would override it with a
+	// possibly wrong host.
+	cfg.HTTPOptions.BaseURL = ""
 	cfg.Backend = genai.BackendVertexAI
 	cfg.Project = provider.Credential.Field(ai.CredFieldGCPProjectID)
 	cfg.Location = provider.Credential.Field(ai.CredFieldGCPLocation)
@@ -113,36 +127,38 @@ func applyVertexToGenaiConfig(ctx context.Context, provider *typ.Provider, cfg *
 	return nil
 }
 
-// cachedGoogleCredentials parses (once) and caches golang.org/x/oauth2/google
-// credentials for a service-account JSON. The credential's ReuseTokenSource
-// then serves cached access tokens across requests.
-func cachedGoogleCredentials(ctx context.Context, saJSON string) (*google.Credentials, error) {
+// cachedVertexCreds parses (once) and caches the credentials for a
+// service-account JSON in both the genai and oauth2 forms.
+func cachedVertexCreds(saJSON string) (vertexCreds, error) {
 	key := sha256.Sum256([]byte(saJSON))
-	if v, ok := vertexGoogleCredsCache.Load(key); ok {
-		return v.(*google.Credentials), nil
-	}
-	creds, err := google.CredentialsFromJSON(ctx, []byte(saJSON), vertexScope)
-	if err != nil {
-		return nil, err
-	}
-	v, _ := vertexGoogleCredsCache.LoadOrStore(key, creds)
-	return v.(*google.Credentials), nil
-}
-
-// cachedGenaiCredentials is the cloud.google.com/go/auth counterpart used by
-// the go-genai Vertex backend.
-func cachedGenaiCredentials(saJSON string) (*gauth.Credentials, error) {
-	key := sha256.Sum256([]byte(saJSON))
-	if v, ok := vertexGenaiCredsCache.Load(key); ok {
-		return v.(*gauth.Credentials), nil
+	if v, ok := vertexCredsCache.Load(key); ok {
+		return v.(vertexCreds), nil
 	}
 	creds, err := gcreds.DetectDefault(&gcreds.DetectOptions{
 		CredentialsJSON: []byte(saJSON),
 		Scopes:          []string{vertexScope},
 	})
 	if err != nil {
-		return nil, err
+		return vertexCreds{}, err
 	}
-	v, _ := vertexGenaiCredsCache.LoadOrStore(key, creds)
-	return v.(*gauth.Credentials), nil
+	entry := vertexCreds{
+		genai:  creds,
+		oauth2: oauth2adapt.Oauth2CredentialsFromAuthCredentials(creds),
+	}
+	v, _ := vertexCredsCache.LoadOrStore(key, entry)
+	return v.(vertexCreds), nil
+}
+
+// cachedGoogleCredentials returns the oauth2 form used by the anthropic
+// vertex adapter.
+func cachedGoogleCredentials(_ context.Context, saJSON string) (*google.Credentials, error) {
+	creds, err := cachedVertexCreds(saJSON)
+	return creds.oauth2, err
+}
+
+// cachedGenaiCredentials returns the cloud.google.com/go/auth form used by
+// the go-genai Vertex backend.
+func cachedGenaiCredentials(saJSON string) (*gauth.Credentials, error) {
+	creds, err := cachedVertexCreds(saJSON)
+	return creds.genai, err
 }

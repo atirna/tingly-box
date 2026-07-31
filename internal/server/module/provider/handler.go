@@ -37,14 +37,9 @@ func NewHandler(cfg *config.Config, qm providerquota.Manager) *Handler {
 	return &Handler{config: cfg, quotaManager: qm}
 }
 
-// isKnownAuthType reports whether s is an auth type the provider API accepts.
-func isKnownAuthType(a typ.AuthType) bool {
-	switch a {
-	case typ.AuthTypeAPIKey, typ.AuthTypeOAuth, typ.AuthTypeVirtual,
-		typ.AuthTypeAWSSigV4, typ.AuthTypeAzureKey, typ.AuthTypeGCPVertex:
-		return true
-	}
-	return false
+// badRequest writes the module's standard 400 error envelope.
+func badRequest(c *gin.Context, format string, args ...any) {
+	c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": fmt.Sprintf(format, args...)})
 }
 
 // maskForResponse masks sensitive data and returns a safe ProviderResponse.
@@ -150,8 +145,8 @@ func (h *Handler) CreateProvider(c *gin.Context) {
 	// Reject unknown auth types up front so a typo can't create an inert
 	// provider that copies an arbitrary auth_type through verbatim.
 	authType := typ.AuthType(req.AuthType)
-	if !isKnownAuthType(authType) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": fmt.Sprintf("Unsupported auth_type %q", req.AuthType)})
+	if !authType.IsValid() {
+		badRequest(c, "Unsupported auth_type %q", req.AuthType)
 		return
 	}
 
@@ -167,7 +162,7 @@ func (h *Handler) CreateProvider(c *gin.Context) {
 	// Reject pairs the client layer can't dispatch (e.g. aws_sigv4 + openai):
 	// they would route to a generic client that sends unauthenticated requests.
 	if err := ai.ValidateCredentialAPIStyle(authType, req.APIStyle); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		badRequest(c, "%s", err)
 		return
 	}
 
@@ -177,11 +172,11 @@ func (h *Handler) CreateProvider(c *gin.Context) {
 	if authType.IsMultiFieldCredential() {
 		req.Credential = ai.NormalizeCredential(req.Credential)
 		if err := ai.ValidateCredential(authType, req.Credential); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			badRequest(c, "%s", err)
 			return
 		}
 	} else if !req.NoKeyRequired && req.Token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Token is required when No Key Required is false"})
+		badRequest(c, "Token is required when No Key Required is false")
 		return
 	}
 
@@ -355,7 +350,7 @@ func (h *Handler) UpdateProvider(c *gin.Context) {
 	if p.AuthType.IsMultiFieldCredential() && len(req.Credential) > 0 {
 		normalized := ai.NormalizeCredential(req.Credential)
 		if err := ai.ValidateCredential(p.AuthType, normalized); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			badRequest(c, "%s", err)
 			return
 		}
 		p.Credential = &typ.CredentialBundle{Fields: normalized}
@@ -363,7 +358,7 @@ func (h *Handler) UpdateProvider(c *gin.Context) {
 	// Reject auth_type × api_style pairs the client layer can't dispatch,
 	// post-merge so a PATCH can't flip a cloud provider onto an unroutable style.
 	if err := ai.ValidateCredentialAPIStyle(p.AuthType, string(p.APIStyle)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		badRequest(c, "%s", err)
 		return
 	}
 	if req.NoKeyRequired != nil {
