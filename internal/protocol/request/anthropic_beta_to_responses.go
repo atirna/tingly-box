@@ -81,10 +81,11 @@ func ConvertAnthropicBetaToResponsesRequest(anthropicReq *anthropic.BetaMessageN
 	}
 
 	hasRepresentableCacheControl := hasSystemCacheControl || anthropicBetaMessagesHaveRepresentableCacheControl(anthropicReq.Messages)
-	hasToolCacheControl := anthropicBetaToolsHaveCacheControl(anthropicReq.Tools)
-	if hasRepresentableCacheControl || hasToolCacheControl {
+	hasFallbackCacheControl := anthropicBetaToolsHaveCacheControl(anthropicReq.Tools) ||
+		anthropicBetaMessagesHaveToolUseCacheControl(anthropicReq.Messages)
+	if hasRepresentableCacheControl || hasFallbackCacheControl {
 		params.PromptCacheOptions.Mode = "explicit"
-		if !hasRepresentableCacheControl && hasToolCacheControl {
+		if !hasRepresentableCacheControl && hasFallbackCacheControl {
 			applyFirstResponsesCacheBreakpoint(params)
 		}
 	}
@@ -294,6 +295,17 @@ func anthropicBetaMessagesHaveRepresentableCacheControl(messages []anthropic.Bet
 				continue
 			}
 			if block.OfText != nil || block.OfImage != nil || block.OfToolResult != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func anthropicBetaMessagesHaveToolUseCacheControl(messages []anthropic.BetaMessageParam) bool {
+	for _, message := range messages {
+		for _, block := range message.Content {
+			if block.OfToolUse != nil && !param.IsOmitted(block.OfToolUse.CacheControl) {
 				return true
 			}
 		}

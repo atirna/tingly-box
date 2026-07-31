@@ -247,6 +247,13 @@ func createMessageFromResponsesContent(role string, content responses.ResponseIn
 		}
 		return openai.SystemMessage(parts), true
 
+	case "developer":
+		parts := responseTextContentToChatTextParts(content)
+		if len(parts) == 0 {
+			return openai.ChatCompletionMessageParamUnion{}, false
+		}
+		return openai.DeveloperMessage(parts), true
+
 	case "assistant":
 		textParts := responseTextContentToChatTextParts(content)
 		if len(textParts) == 0 {

@@ -5,10 +5,9 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-// applyFirstResponsesCacheBreakpoint carries an Anthropic tool-definition
-// cache boundary into Responses. Responses cannot attach a breakpoint directly
-// to a tool definition, so the boundary advances to the first content block;
-// the cached prefix still includes all tool definitions.
+// applyFirstResponsesCacheBreakpoint carries an Anthropic cache boundary that
+// Responses cannot attach directly (for example, on a tool definition or tool
+// call). The boundary advances to the first cacheable content block.
 func applyFirstResponsesCacheBreakpoint(req *responses.ResponseNewParams) {
 	if req.Instructions.Valid() && req.Instructions.Value != "" {
 		text := &responses.ResponseInputTextParam{

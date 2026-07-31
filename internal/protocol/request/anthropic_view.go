@@ -367,14 +367,13 @@ func convertAnthropicViewToOpenAIRequest(view anthropicRequestView, isStreaming 
 	}
 
 	hasRepresentableCacheControl := viewHasRepresentableCacheControl(view)
-	hasToolDefinitionCacheControl := viewHasToolDefinitionCacheControl(view)
-	if hasRepresentableCacheControl || hasToolDefinitionCacheControl {
+	hasFallbackCacheControl := viewHasToolDefinitionCacheControl(view) || viewHasToolUseCacheControl(view)
+	if hasRepresentableCacheControl || hasFallbackCacheControl {
 		openaiReq.PromptCacheOptions.Mode = "explicit"
-		if !hasRepresentableCacheControl && hasToolDefinitionCacheControl {
-			// OpenAI cannot put a breakpoint on a tool definition.
+		if !hasRepresentableCacheControl && hasFallbackCacheControl {
+			// OpenAI cannot put a breakpoint on a tool definition or tool call.
 			// Advance that boundary to the first cacheable content block, which
-			// still includes the tools prefix and avoids dropping caching
-			// entirely when gateways are chained.
+			// avoids dropping caching entirely when gateways are chained.
 			applyFirstOpenAICacheBreakpoint(openaiReq)
 		}
 	}
@@ -590,6 +589,17 @@ func viewHasToolDefinitionCacheControl(view anthropicRequestView) bool {
 	for _, tool := range view.Tools {
 		if tool.CacheControl {
 			return true
+		}
+	}
+	return false
+}
+
+func viewHasToolUseCacheControl(view anthropicRequestView) bool {
+	for _, message := range view.Messages {
+		for _, block := range message.Blocks {
+			if block.Kind == blockViewToolUse && block.CacheControl {
+				return true
+			}
 		}
 	}
 	return false

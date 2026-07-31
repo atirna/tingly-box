@@ -154,6 +154,53 @@ func TestCacheControlProtocolFamilyToolFallbackPrefersSystemPrefix(t *testing.T)
 	require.True(t, responsesReq.Input.OfInputItemList[1].OfMessage.Content.OfString.Valid())
 }
 
+func TestCacheControlProtocolFamilyToolUseFallbackPrefersSystemPrefix(t *testing.T) {
+	toolUse := anthropic.NewToolUseBlock("call_1", map[string]any{"query": "weather"}, "lookup")
+	toolUse.OfToolUse.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	in := &anthropic.MessageNewParams{
+		Model:     "claude-test",
+		MaxTokens: 128,
+		System:    []anthropic.TextBlockParam{{Text: "stable system"}},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewAssistantMessage(toolUse),
+		},
+	}
+
+	chat, _ := ConvertAnthropicToOpenAIRequest(in, true, false, false)
+	require.Equal(t, "explicit", chat.PromptCacheOptions.Mode)
+	require.Len(t, chat.Messages[0].OfSystem.Content.OfArrayOfContentParts, 1)
+	require.False(t, openaiparam.IsOmitted(
+		chat.Messages[0].OfSystem.Content.OfArrayOfContentParts[0].PromptCacheBreakpoint))
+
+	responsesReq := ConvertAnthropicV1ToResponsesRequest(in)
+	require.Equal(t, "explicit", responsesReq.PromptCacheOptions.Mode)
+	require.False(t, responsesReq.Instructions.Valid())
+	require.Len(t, responsesReq.Input.OfInputItemList, 2)
+	requireResponsesTextBreakpoint(t, responsesReq.Input.OfInputItemList[0], "system")
+	require.NotNil(t, responsesReq.Input.OfInputItemList[1].OfFunctionCall)
+
+	betaToolUse := anthropic.NewBetaToolUseBlock("call_1", map[string]any{"query": "weather"}, "lookup")
+	betaToolUse.OfToolUse.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
+	betaIn := &anthropic.BetaMessageNewParams{
+		Model:     "claude-test",
+		MaxTokens: 128,
+		System:    []anthropic.BetaTextBlockParam{{Text: "stable system"}},
+		Messages: []anthropic.BetaMessageParam{
+			{
+				Role:    anthropic.BetaMessageParamRoleAssistant,
+				Content: []anthropic.BetaContentBlockParamUnion{betaToolUse},
+			},
+		},
+	}
+
+	betaResponsesReq := ConvertAnthropicBetaToResponsesRequest(betaIn)
+	require.Equal(t, "explicit", betaResponsesReq.PromptCacheOptions.Mode)
+	require.False(t, betaResponsesReq.Instructions.Valid())
+	require.Len(t, betaResponsesReq.Input.OfInputItemList, 2)
+	requireResponsesTextBreakpoint(t, betaResponsesReq.Input.OfInputItemList[0], "system")
+	require.NotNil(t, betaResponsesReq.Input.OfInputItemList[1].OfFunctionCall)
+}
+
 func requireAnthropicFamilyBoundaries(t *testing.T, out *anthropic.BetaMessageNewParams) {
 	t.Helper()
 	require.Len(t, out.System, 2)

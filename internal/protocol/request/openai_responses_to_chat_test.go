@@ -406,6 +406,36 @@ func TestConvertResponsesInputToMessages(t *testing.T) {
 		assert.Equal(t, "user", getMessageRole(t, messages[0]))
 		assert.Equal(t, "Hello, world!", getMessageContent(t, messages[0]))
 	})
+
+	t.Run("cached developer content preserves role", func(t *testing.T) {
+		input := responses.ResponseInputParam{
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Type: responses.EasyInputMessageTypeMessage,
+					Role: responses.EasyInputMessageRole("developer"),
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfInputItemContentList: responses.ResponseInputMessageContentListParam{
+							{
+								OfInputText: &responses.ResponseInputTextParam{
+									Text:                  "developer instruction",
+									PromptCacheBreakpoint: responses.NewResponseInputTextPromptCacheBreakpointParam(),
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		messages := ConvertResponsesInputToMessages(input)
+
+		require.Len(t, messages, 1)
+		require.NotNil(t, messages[0].OfDeveloper)
+		require.Len(t, messages[0].OfDeveloper.Content.OfArrayOfContentParts, 1)
+		part := messages[0].OfDeveloper.Content.OfArrayOfContentParts[0]
+		require.Equal(t, "developer instruction", part.Text)
+		require.False(t, param.IsOmitted(part.PromptCacheBreakpoint))
+	})
 }
 
 func TestConvertResponsesToolsToChatTools(t *testing.T) {

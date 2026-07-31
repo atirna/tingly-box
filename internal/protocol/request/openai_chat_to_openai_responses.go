@@ -36,15 +36,23 @@ func ConvertChatToOpenAIResponses(params *openai.ChatCompletionNewParams, defaul
 
 	var systemParts []string
 	var otherMessages []openai.ChatCompletionMessageParamUnion
+	preserveSystemMessages := false
+	for _, msg := range params.Messages {
+		if msg.OfSystem != nil &&
+			chatTextPartsHaveCacheBreakpoint(msg.OfSystem.Content.OfArrayOfContentParts) {
+			preserveSystemMessages = true
+			break
+		}
+	}
 
 	// Separate system messages from other messages
 	for _, msg := range params.Messages {
 		switch {
 		case !param.IsOmitted(msg.OfSystem):
-			if chatTextPartsHaveCacheBreakpoint(msg.OfSystem.Content.OfArrayOfContentParts) {
+			if preserveSystemMessages {
 				// Responses' instructions field is a plain string and cannot
-				// carry an explicit cache boundary. Keep this as a system input
-				// item so the breakpoint remains attached to its content.
+				// carry explicit cache boundaries. Keep every system message
+				// in input so their order and breakpoints remain intact.
 				otherMessages = append(otherMessages, msg)
 				continue
 			}
@@ -130,6 +138,7 @@ func ConvertChatMessagesToResponsesInput(messages []openai.ChatCompletionMessage
 
 		case !param.IsOmitted(msg.OfAssistant):
 			assistantMsg := msg.OfAssistant
+			result = append(result, convertChatAssistantMessageToResponses(assistantMsg)...)
 			// Check if assistant has tool calls
 			if len(assistantMsg.ToolCalls) > 0 {
 				// Convert each tool call to function_call item
@@ -145,8 +154,6 @@ func ConvertChatMessagesToResponsesInput(messages []openai.ChatCompletionMessage
 						})
 					}
 				}
-			} else {
-				result = append(result, convertChatAssistantMessageToResponses(assistantMsg)...)
 			}
 
 		case !param.IsOmitted(msg.OfTool):

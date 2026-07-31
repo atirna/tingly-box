@@ -55,6 +55,32 @@ func TestConvertChatToOpenAIResponses(t *testing.T) {
 		assert.Len(t, result.Input.OfInputItemList, 1)
 	})
 
+	t.Run("mixed cached system messages preserve order", func(t *testing.T) {
+		cached := openai.ChatCompletionContentPartTextParam{
+			Text:                  "cached first",
+			PromptCacheBreakpoint: openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam(),
+		}
+		params := &openai.ChatCompletionNewParams{
+			Model: openai.ChatModel("gpt-4"),
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.SystemMessage([]openai.ChatCompletionContentPartTextParam{cached}),
+				openai.SystemMessage("uncached second"),
+				openai.UserMessage("question"),
+			},
+		}
+
+		result := ConvertChatToOpenAIResponses(params, 4096)
+
+		require.False(t, result.Instructions.Valid())
+		require.Len(t, result.Input.OfInputItemList, 3)
+		require.Equal(t, "system", string(result.Input.OfInputItemList[0].OfMessage.Role))
+		require.Equal(t, "cached first",
+			result.Input.OfInputItemList[0].OfMessage.Content.OfInputItemContentList[0].OfInputText.Text)
+		require.Equal(t, "system", string(result.Input.OfInputItemList[1].OfMessage.Role))
+		require.Equal(t, "uncached second", result.Input.OfInputItemList[1].OfMessage.Content.OfString.Value)
+		require.Equal(t, "user", string(result.Input.OfInputItemList[2].OfMessage.Role))
+	})
+
 	t.Run("assistant message with text", func(t *testing.T) {
 		params := &openai.ChatCompletionNewParams{
 			Model:    openai.ChatModel("gpt-4"),
@@ -125,6 +151,34 @@ func TestConvertChatToOpenAIResponses(t *testing.T) {
 		assert.Equal(t, "call_123", fnCall.CallID)
 		assert.Equal(t, "get_weather", fnCall.Name)
 		assert.Equal(t, `{"location":"NYC"}`, fnCall.Arguments)
+	})
+
+	t.Run("assistant text and cache breakpoint survive beside tool call", func(t *testing.T) {
+		text := openai.ChatCompletionContentPartTextParam{
+			Text:                  "Calling the weather tool.",
+			PromptCacheBreakpoint: openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam(),
+		}
+		assistant := createAssistantWithToolCallsMessage()
+		assistant.OfAssistant.Content.OfString = param.Opt[string]{}
+		assistant.OfAssistant.Content.OfArrayOfContentParts = []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
+			{OfText: &text},
+		}
+		params := &openai.ChatCompletionNewParams{
+			Model:    openai.ChatModel("gpt-4"),
+			Messages: []openai.ChatCompletionMessageParamUnion{assistant},
+		}
+
+		result := ConvertChatToOpenAIResponses(params, 4096)
+
+		require.Len(t, result.Input.OfInputItemList, 2)
+		message := result.Input.OfInputItemList[0].OfMessage
+		require.NotNil(t, message)
+		require.Equal(t, "assistant", string(message.Role))
+		require.Len(t, message.Content.OfInputItemContentList, 1)
+		require.Equal(t, "Calling the weather tool.", message.Content.OfInputItemContentList[0].OfInputText.Text)
+		require.False(t, param.IsOmitted(
+			message.Content.OfInputItemContentList[0].OfInputText.PromptCacheBreakpoint))
+		require.NotNil(t, result.Input.OfInputItemList[1].OfFunctionCall)
 	})
 
 	t.Run("tool result conversion", func(t *testing.T) {
