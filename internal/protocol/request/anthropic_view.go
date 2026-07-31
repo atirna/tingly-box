@@ -403,6 +403,7 @@ func convertAnthropicViewToOpenAIRequest(view anthropicRequestView, isStreaming 
 // blocks to a single OpenAI assistant message. Thinking content is preserved
 // in the "x_thinking" extra field for provider-specific transforms.
 func convertAnthropicViewAssistantToOpenAI(blocks []anthropicBlockView) openai.ChatCompletionMessageParamUnion {
+	preserveTextParts := blocksHaveCacheControl(blocks)
 	var textContent strings.Builder
 	var textParts []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion
 	var toolCalls []openai.ChatCompletionMessageToolCallUnionParam
@@ -411,11 +412,14 @@ func convertAnthropicViewAssistantToOpenAI(blocks []anthropicBlockView) openai.C
 	for _, block := range blocks {
 		switch block.Kind {
 		case blockViewText:
-			textContent.WriteString(block.Text)
-			part := openAITextPart(block.Text, block.CacheControl)
-			textParts = append(textParts, openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
-				OfText: &part,
-			})
+			if preserveTextParts {
+				part := openAITextPart(block.Text, block.CacheControl)
+				textParts = append(textParts, openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
+					OfText: &part,
+				})
+			} else {
+				textContent.WriteString(block.Text)
+			}
 		case blockViewToolUse:
 			// Convert tool_use block to OpenAI tool_call format;
 			// marshal input to a JSON string for OpenAI
@@ -441,7 +445,7 @@ func convertAnthropicViewAssistantToOpenAI(blocks []anthropicBlockView) openai.C
 	assistant := &openai.ChatCompletionAssistantMessageParam{
 		ToolCalls: toolCalls,
 	}
-	if blocksHaveCacheControl(blocks) {
+	if preserveTextParts {
 		assistant.Content.OfArrayOfContentParts = textParts
 	} else {
 		assistant.Content.OfString = openai.Opt(textContent.String())

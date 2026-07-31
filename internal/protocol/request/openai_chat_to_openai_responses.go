@@ -27,18 +27,6 @@ func joinTextContentParts(parts []openai.ChatCompletionContentPartTextParam) str
 	return strings.Join(texts, "\n")
 }
 
-// joinAssistantTextContentParts concatenates the text fields of assistant array
-// content parts into a single newline-separated string, ignoring refusal parts.
-func joinAssistantTextContentParts(parts []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion) string {
-	textParts := make([]openai.ChatCompletionContentPartTextParam, 0, len(parts))
-	for _, part := range parts {
-		if part.OfText != nil {
-			textParts = append(textParts, *part.OfText)
-		}
-	}
-	return joinTextContentParts(textParts)
-}
-
 // ConvertChatToOpenAIResponses converts OpenAI Chat Completions params to Responses API format.
 // This enables using Chat Completions format with Responses API providers.
 func ConvertChatToOpenAIResponses(params *openai.ChatCompletionNewParams, defaultMaxTokens int64) *responses.ResponseNewParams {
