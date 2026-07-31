@@ -167,18 +167,20 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
                 multiline={f.type === 'multiline'}
                 minRows={f.type === 'multiline' ? 4 : undefined}
                 type={isSecret && !shown ? 'password' : 'text'}
-                InputProps={isSecret ? {
-                    endAdornment: (
-                        <InputAdornment position="end">
-                            <IconButton
-                                size="small"
-                                onClick={() => setReveal((prev) => ({...prev, [f.key]: !prev[f.key]}))}
-                                edge="end"
-                            >
-                                {shown ? <VisibilityOff fontSize="small"/> : <Visibility fontSize="small"/>}
-                            </IconButton>
-                        </InputAdornment>
-                    ),
+                slotProps={isSecret ? {
+                    input: {
+                        endAdornment: (
+                            <InputAdornment position="end">
+                                <IconButton
+                                    size="small"
+                                    onClick={() => setReveal((prev) => ({...prev, [f.key]: !prev[f.key]}))}
+                                    edge="end"
+                                >
+                                    {shown ? <VisibilityOff fontSize="small"/> : <Visibility fontSize="small"/>}
+                                </IconButton>
+                            </InputAdornment>
+                        ),
+                    },
                 } : undefined}
             />
         );
@@ -189,7 +191,7 @@ const CloudProviderDialog: React.FC<CloudProviderDialogProps> = ({
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth
-            PaperProps={{sx: {maxHeight: '88vh', display: 'flex', flexDirection: 'column'}}}>
+            slotProps={{paper: {sx: {maxHeight: '88vh', display: 'flex', flexDirection: 'column'}}}}>
             <DialogTitle sx={{flexShrink: 0}}>
                 <Box sx={{display: 'flex', alignItems: 'center', gap: 1.25}}>
                     <Box sx={{width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0}}>

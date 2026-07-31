@@ -22,7 +22,6 @@ export interface ServiceProvider {
     api_style?: string; // Explicit protocol ("openai" | "anthropic" | "google"); cloud templates set this
     auth_type?: string;
     oauth_provider?: string;
-    type?: string;
     icon?: string; // Icon identifier for Lobe Icons (e.g., "openai", "anthropic")
     type?: string;  // Provider type: "official" | "reseller" | "self-hosted" | "cloud" | ...
 }
