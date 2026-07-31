@@ -102,7 +102,7 @@
     "azure-openai": {
       "id": "azure-openai",
       "name": "Azure OpenAI",
-      "alias": "Azure OpenAI",
+      "alias": "Azure (OpenAI)",
       "status": "active",
       "valid": true,
       "canonical_domain": "openai.azure.com",
