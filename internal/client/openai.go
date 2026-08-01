@@ -60,7 +60,7 @@ func NewOpenAIClient(provider *typ.Provider, model string, sessionID typ.Session
 	}
 	// Azure providers authenticate via the azure adapter's api-key header
 	// (appended last), not a bearer token; skip the empty base WithAPIKey.
-	if !provider.AuthType.IsMultiFieldCredential() {
+	if !provider.IsMultiFieldCredential() {
 		options = append(options, option.WithAPIKey(provider.GetAccessToken()))
 	}
 
@@ -216,7 +216,7 @@ func (c *OpenAIClient) ListModels(ctx context.Context) ([]string, error) {
 	// Cloud-credential providers (Azure OpenAI) don't expose the plain /models
 	// endpoint at the manual URL/auth shape below; fall back to the template
 	// model list instead of issuing an unsigned request.
-	if c.provider.AuthType.IsMultiFieldCredential() {
+	if c.provider.IsMultiFieldCredential() {
 		return nil, &ErrModelsEndpointNotSupported{
 			Provider: c.provider.Name,
 			Reason:   "cloud-credential providers use template model lists",

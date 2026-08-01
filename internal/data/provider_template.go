@@ -591,7 +591,7 @@ func (tm *TemplateManager) findTemplateByProvider(provider *typ.Provider) *Provi
 // search parameter selects the template set (active vs embedded-only).
 func matchProviderTemplate(provider *typ.Provider, search func(func(*ProviderTemplate) bool) *ProviderTemplate) *ProviderTemplate {
 	// OAuth providers: match by OAuthProvider only, no fallback
-	if provider.AuthType == typ.AuthTypeOAuth && provider.OAuthDetail != nil {
+	if provider.IsOAuth() && provider.OAuthDetail != nil {
 		issuer := provider.OAuthDetail.Issuer
 		return search(func(tmpl *ProviderTemplate) bool {
 			return tmpl.OAuthProvider == string(issuer)
@@ -602,7 +602,7 @@ func matchProviderTemplate(provider *typ.Provider, search func(func(*ProviderTem
 	// auth_type plus api_style — not by URL. The credential-derived host varies
 	// by region, and Vertex multi-regional hosts (aiplatform.us.rep.googleapis.com)
 	// don't even contain the canonical domain.
-	if provider.AuthType.IsMultiFieldCredential() {
+	if provider.IsMultiFieldCredential() {
 		return search(cloudTemplateMatcher(provider))
 	}
 

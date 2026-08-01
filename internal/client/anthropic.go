@@ -66,7 +66,7 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 	// Multi-field credential providers (Bedrock / Vertex) carry no bearer token;
 	// their cloud adapter option (appended last) installs its own auth. Setting
 	// an empty WithAPIKey would only plant a stray x-api-key header.
-	if !provider.AuthType.IsMultiFieldCredential() {
+	if !provider.IsMultiFieldCredential() {
 		options = append(options, anthropicOption.WithAPIKey(provider.GetAccessToken()))
 	}
 
@@ -238,7 +238,7 @@ func (c *AnthropicClient) GetProvider() *typ.Provider {
 func (c *AnthropicClient) ListModels(ctx context.Context) ([]string, error) {
 	// Bedrock / Vertex expose only the messages endpoint, not the Anthropic
 	// /v1/models list; use the template model list instead.
-	if c.provider.AuthType.IsMultiFieldCredential() {
+	if c.provider.IsMultiFieldCredential() {
 		return nil, &ErrModelsEndpointNotSupported{
 			Provider: c.provider.Name,
 			Reason:   "cloud-credential providers use template model lists",

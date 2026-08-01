@@ -64,7 +64,7 @@ func maskForResponse(p *typ.Provider) ProviderResponse {
 	}
 
 	switch {
-	case p.AuthType == typ.AuthTypeOAuth:
+	case p.IsOAuth():
 		if p.OAuthDetail != nil {
 			resp.OAuthDetail = &typ.OAuthDetail{
 				AccessToken:  p.OAuthDetail.AccessToken,
@@ -74,7 +74,7 @@ func maskForResponse(p *typ.Provider) ProviderResponse {
 				ExpiresAt:    p.OAuthDetail.ExpiresAt,
 			}
 		}
-	case p.AuthType.IsMultiFieldCredential():
+	case p.IsMultiFieldCredential():
 		// Surface the credential fields so the edit form can round-trip them.
 		// Consistent with Token above, config and secret values are returned to
 		// the local admin UI in full (masking both is a future hardening).
@@ -341,13 +341,13 @@ func (h *Handler) UpdateProvider(c *gin.Context) {
 	}
 	// Multi-field providers authenticate via the credential bundle only; ignore
 	// a stray token so the two credential shapes never coexist on one row.
-	if req.Token != nil && *req.Token != "" && !p.AuthType.IsMultiFieldCredential() {
+	if req.Token != nil && *req.Token != "" && !p.IsMultiFieldCredential() {
 		p.Token = *req.Token
 	}
 	// Replace the whole credential bundle when provided. The edit UI resends the
 	// complete map (the read path returns it in full), so a non-empty map is a
 	// full replacement; a nil map leaves the stored credentials untouched.
-	if p.AuthType.IsMultiFieldCredential() && len(req.Credential) > 0 {
+	if p.IsMultiFieldCredential() && len(req.Credential) > 0 {
 		normalized := ai.NormalizeCredential(req.Credential)
 		if err := ai.ValidateCredential(p.AuthType, normalized); err != nil {
 			badRequest(c, "%s", err)

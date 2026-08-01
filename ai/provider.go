@@ -364,6 +364,18 @@ func (p *Provider) GetAccessToken() string {
 	return ""
 }
 
+// IsOAuth reports whether the provider authenticates via OAuth.
+func (p *Provider) IsOAuth() bool {
+	return p.AuthType == AuthTypeOAuth
+}
+
+// IsMultiFieldCredential reports whether the provider stores its credentials
+// in Credential (a CredentialBundle) rather than the Token / OAuthDetail
+// fields.
+func (p *Provider) IsMultiFieldCredential() bool {
+	return p.AuthType.IsMultiFieldCredential()
+}
+
 // IsOAuthExpired checks if the OAuth token is expired (only valid for oauth auth type)
 func (p *Provider) IsOAuthExpired() bool {
 	if p.AuthType == AuthTypeOAuth && p.OAuthDetail != nil {
