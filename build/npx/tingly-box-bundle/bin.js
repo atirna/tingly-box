@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "child_process";
-import { chmodSync, existsSync, readdirSync, statSync } from "fs";
+import { chmodSync, existsSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { createReadStream } from "fs";
 import { mkdir } from "fs/promises";
-import { pipeline } from "stream/promises";
 import unzipper from "unzipper";
 import { homedir } from "os";
 
@@ -40,27 +38,6 @@ function getCacheDir() {
 	return cacheDir;
 }
 
-// Recursively find binary in directory (handles nested directory structures in zip)
-function findBinary(dir, binaryName) {
-	const entries = readdirSync(dir);
-	for (const entry of entries) {
-		const fullPath = join(dir, entry);
-		try {
-			const stat = statSync(fullPath);
-			if (stat.isFile() && entry === binaryName) {
-				return fullPath;
-			}
-			if (stat.isDirectory()) {
-				const found = findBinary(fullPath, binaryName);
-				if (found) return found;
-			}
-		} catch {
-			continue;
-		}
-	}
-	return null;
-}
-
 // Extract binary from zip to cache directory
 async function extractBinary(platformDir) {
 	const zipFileName = `tingly-box-${platformDir}.zip`;
@@ -72,9 +49,31 @@ async function extractBinary(platformDir) {
 	const binaryName = "tingly-box" + (process.platform === "win32" ? ".exe" : "");
 	const cachedBinary = join(targetPath, binaryName);
 
-	// Check if binary already exists in cache and has executable permission
+	// Read the zip central directory to locate the binary entry and learn its
+	// real uncompressed size — used both to validate the cache and the extraction.
+	const directory = await unzipper.Open.file(zipPath);
+	const entry = directory.files.find(
+		(f) =>
+			f.type !== "Directory" &&
+			(f.path === binaryName || f.path.endsWith(`/${binaryName}`))
+	);
+	if (!entry) {
+		throw new Error(`Binary "${binaryName}" not found inside ${zipFileName}`);
+	}
+
+	// Reuse the cache only when the size matches the zip entry. A bare
+	// existence check would happily reuse a truncated file left behind by an
+	// interrupted extraction (on Windows that surfaces as "This app can't run
+	// on your PC"); a size mismatch triggers a clean re-extraction instead.
 	if (existsSync(cachedBinary)) {
-		return cachedBinary;
+		try {
+			if (statSync(cachedBinary).size === entry.uncompressedSize) {
+				return cachedBinary;
+			}
+		} catch {
+			// fall through to re-extract
+		}
+		console.warn(`⚠️  Cached binary is corrupted, re-extracting...`);
 	}
 
 	// Create cache directory
@@ -82,34 +81,36 @@ async function extractBinary(platformDir) {
 
 	console.log(`📦 Extracting ${zipFileName}...`);
 
-	// Extract zip file - the zip contains the binary at root level
-	await pipeline(
-		createReadStream(zipPath),
-		unzipper.Extract({ path: targetPath })
-	);
-
-	// Find the actual binary (handles cases where zip has nested structure)
-	let actualBinaryPath = cachedBinary;
-	if (!existsSync(cachedBinary)) {
-		const found = findBinary(targetPath, binaryName);
-		if (found) {
-			actualBinaryPath = found;
-		} else {
-			throw new Error(`Binary "${binaryName}" not found after extraction`);
-		}
+	const content = await entry.buffer();
+	if (content.length !== entry.uncompressedSize) {
+		throw new Error(
+			`Extraction produced ${content.length} bytes, expected ${entry.uncompressedSize}`
+		);
 	}
 
-	// Set executable permission on Unix systems
-	if (process.platform !== "win32") {
+	// Write to a temp file, then rename into place. The final path only ever
+	// holds a complete binary — a crash mid-write can no longer poison the cache.
+	const tmpPath = join(targetPath, `.${binaryName}.tmp-${process.pid}`);
+	try {
+		writeFileSync(tmpPath, content);
+		if (process.platform !== "win32") {
+			chmodSync(tmpPath, 0o755);
+		}
 		try {
-			chmodSync(actualBinaryPath, 0o755);
-		} catch (e) {
-			console.warn(`⚠️  Failed to set executable permission: ${e.message}`);
+			renameSync(tmpPath, cachedBinary);
+		} catch {
+			// Windows can refuse to replace an existing (e.g. locked) file —
+			// remove the stale one and retry once.
+			rmSync(cachedBinary, { force: true });
+			renameSync(tmpPath, cachedBinary);
 		}
+	} catch (e) {
+		rmSync(tmpPath, { force: true });
+		throw e;
 	}
 
-	console.log(`✅ Extracted to: ${actualBinaryPath}`);
-	return actualBinaryPath;
+	console.log(`✅ Extracted to: ${cachedBinary}`);
+	return cachedBinary;
 }
 
 // Default parameters to use when no arguments are provided
