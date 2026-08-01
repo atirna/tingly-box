@@ -43,7 +43,7 @@ Tingly Box **serves agents, coordinates AI models, optimizes context, and routes
 
 ### Install
 
-**From npm (recommended)**
+**From npm / npx (recommended)**
 
 ```bash
 # Install and run (auto restart, migrate and open webui while run without any args)
@@ -62,7 +62,38 @@ npx --registry=https://mirrors.huaweicloud.com/repository/npm/ -y tingly-box-bun
 npx --registry=http://mirrors.tencent.com/npm/ -y tingly-box-bundle@latest
 ```
 
-> if any trouble, please check tingly-box output, or call for an issue to help. 
+> if any trouble, please check tingly-box output, or call for an issue to help.
+
+**Install Node & NPX**
+
+```
+# MacOS & Linux
+## Install Node.js LTS via nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+
+## Restart terminal or load nvm
+source ~/.nvm/nvm.sh
+
+## Install Node.js LTS
+nvm install --lts
+
+## Verify installation
+node -v
+npx -v
+```
+
+```
+# Windows
+## Powershell with Winget
+winget install OpenJS.NodeJS.LTS
+
+## Restart terminal, then verify installation
+node -v
+npx -v
+
+## Or download and install Node.js LTS manually:
+https://nodejs.org/en/download
+```
 
 **From Docker (GitHub Host)**
 
