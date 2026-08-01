@@ -333,8 +333,9 @@ jobs:
           du -sh "${{ matrix.pkg_dir }}/zip/"*.zip
 
           # Validate package size is within acceptable limits
-          # Expected size: ~70MB (3 platforms ~16-17MB each)
-          MAX_SIZE_MB=70
+          # Expected size: ~80MB — linux-amd64 ~20MB (UPX), macos-arm64 ~29MB,
+          # windows-amd64 ~29MB (not UPX-compressed: AV false positives)
+          MAX_SIZE_MB=90
           ACTUAL_SIZE_MB=$(du -sm "${{ matrix.pkg_dir }}" | cut -f1)
           echo "📊 Package size: ${ACTUAL_SIZE_MB}MB (max: ${MAX_SIZE_MB}MB)"
 
