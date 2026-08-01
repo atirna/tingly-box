@@ -1,7 +1,7 @@
-name: Build Verify
+name: Verify Build
 
 run-name: >-
-  🔍 Build verify ${{ inputs.tag || github.event.release.tag_name }}
+  🔍 Verify build ${{ inputs.tag || github.event.release.tag_name }}
 
 # Standalone verification of already-built release assets — no rebuild.
 # Runs automatically when a release is published (non-blocking, in parallel
@@ -72,7 +72,7 @@ jobs:
 
       - name: Verify binary formats
         run: |
-          .github/scripts/verify-binaries.sh assets \
+          .github/scripts/verify-binary.sh assets \
             linux-amd64 linux-arm64 \
             macos-amd64 macos-arm64 \
             windows-amd64 windows-arm64
@@ -81,7 +81,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## 🔍 Build Verify — ${{ steps.tag.outputs.tag }}"
+            echo "## 🔍 Verify Build — ${{ steps.tag.outputs.tag }}"
             echo ""
             echo "Checked release assets: zip integrity, sha256 checksums, and"
             echo "binary format/architecture per platform."

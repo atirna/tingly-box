@@ -8,7 +8,7 @@
 # can't run on your PC").
 #
 # Usage:
-#   verify-binaries.sh <dir> [platform ...]
+#   verify-binary.sh <dir> [platform ...]
 #
 #   <dir>       directory containing tingly-box-<platform>.zip files
 #   [platform]  platforms that MUST be present and valid (e.g. windows-amd64);
@@ -16,7 +16,7 @@
 #               is verified (GUI zips are skipped — different layout).
 set -euo pipefail
 
-DIR="${1:?usage: verify-binaries.sh <dir> [platform ...]}"
+DIR="${1:?usage: verify-binary.sh <dir> [platform ...]}"
 shift || true
 
 expected_pattern() {
