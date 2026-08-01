@@ -1,0 +1,88 @@
+name: Build Verify
+
+run-name: >-
+  🔍 Build verify ${{ inputs.tag || github.event.release.tag_name }}
+
+# Standalone verification of already-built release assets — no rebuild.
+# Runs automatically when a release is published (non-blocking, in parallel
+# with the NPX publish workflow), can be triggered manually against any tag,
+# and is reusable from other workflows via workflow_call.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to verify (e.g., v1.0.0)'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to verify'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-release-assets:
+    name: Verify Release Binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="${{ inputs.tag }}"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "Error: no release tag provided"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Verifying release: $TAG"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p assets
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern 'tingly-box-*.zip' \
+            --pattern 'checksums.txt' \
+            --dir assets
+          ls -lh assets/
+
+      - name: Verify checksums
+        working-directory: assets
+        run: |
+          if [ -f checksums.txt ]; then
+            sha256sum -c checksums.txt --ignore-missing
+          else
+            echo "⚠️ checksums.txt not present in release, skipping"
+          fi
+
+      - name: Verify binary formats
+        run: |
+          .github/scripts/verify-binaries.sh assets \
+            linux-amd64 linux-arm64 \
+            macos-amd64 macos-arm64 \
+            windows-amd64 windows-arm64
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## 🔍 Build Verify — ${{ steps.tag.outputs.tag }}"
+            echo ""
+            echo "Checked release assets: zip integrity, sha256 checksums, and"
+            echo "binary format/architecture per platform."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -293,36 +293,6 @@ jobs:
             echo "✅ Found: $zip"
           done
 
-          # Verify each zip contains a binary of the correct format/architecture,
-          # so a mis-packaged release fails here instead of on user machines
-          # (a wrong-arch tingly-box.exe surfaces on Windows as
-          # "This app can't run on your PC").
-          echo "🔍 Verifying binary architectures inside zips..."
-          VERIFY_DIR=$(mktemp -d)
-          unzip -o -q "$PKG_DIR/zip/tingly-box-windows-amd64.zip" -d "$VERIFY_DIR/windows-amd64"
-          unzip -o -q "$PKG_DIR/zip/tingly-box-linux-amd64.zip" -d "$VERIFY_DIR/linux-amd64"
-          unzip -o -q "$PKG_DIR/zip/tingly-box-macos-arm64.zip" -d "$VERIFY_DIR/macos-arm64"
-
-          check_binary() {
-            local label="$1" path="$2" pattern="$3"
-            if [ ! -f "$path" ]; then
-              echo "❌ $label: binary not found at $path"
-              exit 1
-            fi
-            local info
-            info="$(file -b "$path")"
-            echo "  $label: $info"
-            if ! echo "$info" | grep -q "$pattern"; then
-              echo "❌ $label: binary does not match expected format ($pattern)"
-              exit 1
-            fi
-          }
-
-          check_binary "windows-amd64" "$VERIFY_DIR/windows-amd64/tingly-box.exe" "PE32+ executable.*x86-64"
-          check_binary "linux-amd64" "$VERIFY_DIR/linux-amd64/tingly-box" "ELF 64-bit.*x86-64"
-          check_binary "macos-arm64" "$VERIFY_DIR/macos-arm64/tingly-box" "Mach-O 64-bit arm64"
-          rm -rf "$VERIFY_DIR"
-
           echo "✅ Bundle structure verified"
 
       - name: Calculate package size
