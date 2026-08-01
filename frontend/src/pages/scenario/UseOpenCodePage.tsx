@@ -8,6 +8,7 @@ import OpenCodeConfigModal from './components/OpenCodeConfigModal';
 import { Box, Button, IconButton, Tooltip } from '@mui/material';
 import { Info as InfoIcon } from '@/components/icons';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import PageLayout from '@/components/PageLayout';
 import ScenarioPageSkeleton from './components/ScenarioPageSkeleton';
 import TemplatePage from './components/TemplatePage.tsx';
@@ -16,6 +17,7 @@ import { api } from '@/services/api';
 import { ScenarioPageModalProvider } from '@/pages/scenario/context/ScenarioPageContext';
 const scenario = "opencode";
 const UseOpenCodePageContent: React.FC = () => {
+    const { t } = useTranslation();
     const {
         isLoading,
         notification,
@@ -90,7 +92,7 @@ const UseOpenCodePageContent: React.FC = () => {
                     title={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <span>OpenCode</span>
-                            <Tooltip title="OpenCode AI development environment with BYOK support">
+                            <Tooltip title={t('scenarioPage.tooltip.opencode')}>
                                 <IconButton size="small" sx={{ ml: 0.5 }}>
                                     <InfoIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                                 </IconButton>
@@ -104,7 +106,7 @@ const UseOpenCodePageContent: React.FC = () => {
                             variant="contained"
                             size="small"
                         >
-                            Auto Config
+                            {t('scenarioPage.autoConfig')}
                         </Button>
                     }
                 >

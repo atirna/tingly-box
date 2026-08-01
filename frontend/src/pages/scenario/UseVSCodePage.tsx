@@ -7,6 +7,7 @@ import {useProviderDialog} from '@/hooks/useProviderDialog';
 import { Box, Button, Tooltip, IconButton } from '@mui/material';
 import { Info as InfoIcon } from '@/components/icons';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import PageLayout from '@/components/PageLayout';
 import ScenarioPageSkeleton from './components/ScenarioPageSkeleton';
 import TemplatePage from './components/TemplatePage.tsx';
@@ -17,6 +18,7 @@ const scenario = "vscode";
 const MARKETPLACE_URL = 'https://marketplace.visualstudio.com/items?itemName=Tingly-Dev.vscode-tingly-box';
 const VSCODE_INSTALL_URL = 'vscode:extension/Tingly-Dev.vscode-tingly-box';
 const UseVSCodePageContent: React.FC = () => {
+    const { t } = useTranslation();
     const {
         isLoading,
         notification,
@@ -41,7 +43,7 @@ const UseVSCodePageContent: React.FC = () => {
                     title={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <span>VS Code</span>
-                            <Tooltip title="Bring Your Own Key: Use your own API keys with VS Code Copilot through Tingly Box proxy">
+                            <Tooltip title={t('scenarioPage.tooltip.vscode')}>
                                 <IconButton size="small" sx={{ ml: 0.5 }}>
                                     <InfoIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                                 </IconButton>
@@ -55,7 +57,7 @@ const UseVSCodePageContent: React.FC = () => {
                             variant="contained"
                             size="small"
                         >
-                            Config
+                            {t('scenarioPage.config')}
                         </Button>
                     }
                 >
@@ -74,15 +76,17 @@ const UseVSCodePageContent: React.FC = () => {
                     agentKey={scenario}
                     agentName="VS Code"
                     installCommand=""
-                    installStepDescription="Install the Tingly Box extension from VS Code or the Marketplace."
+                    installStepDescription={t('scenarioPage.vscode.installDescription')}
+                    // Outlined, not contained: the step row's "I've installed it"
+                    // is the one contained button in this step.
                     installActions={[
-                        { label: 'Install in VS Code', href: VSCODE_INSTALL_URL, variant: 'contained' },
-                        { label: 'View Marketplace', href: MARKETPLACE_URL, variant: 'outlined', external: true },
+                        { label: t('scenarioPage.vscode.installInVSCode'), href: VSCODE_INSTALL_URL, variant: 'outlined' },
+                        { label: t('scenarioPage.vscode.viewMarketplace'), href: MARKETPLACE_URL, variant: 'outlined', external: true },
                     ]}
                     onViewConfig={handleOpenConfigModal}
-                    applyStepLabel="Follow VS Code Guide"
-                    applyStepDescription="Open the Tingly Box extension in VS Code and follow its built-in setup guide."
-                    viewConfigButtonLabel="Open Guide"
+                    applyStepLabel={t('scenarioPage.vscode.applyStepLabel')}
+                    applyStepDescription={t('scenarioPage.vscode.applyStepDescription')}
+                    viewConfigButtonLabel={t('scenarioPage.vscode.openGuide')}
                     hasModelSelected={hasModelOnAnyRule(rules)}
                     onSelectModel={scrollToModelsCard}
                     onConnectProvider={connectAI.handleConnectAIClick}
