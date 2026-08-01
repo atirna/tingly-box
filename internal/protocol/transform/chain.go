@@ -50,7 +50,7 @@ func WithProvider(provider *typ.Provider) TransformOption {
 		if provider == nil {
 			return
 		}
-		if provider.AuthType == typ.AuthTypeOAuth && provider.OAuthDetail != nil {
+		if provider.IsOAuth() && provider.OAuthDetail != nil {
 			ctx.Config.UserID = provider.OAuthDetail.UserID
 		}
 	}

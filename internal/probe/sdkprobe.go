@@ -128,8 +128,7 @@ func probeAnthropicMessages(ctx context.Context, ac client.AnthropicClientInterf
 	provider := ac.GetProvider()
 
 	system := []anthropic.TextBlockParam{{Text: probeEchoInstruction}}
-	if provider.AuthType == typ.AuthTypeOAuth && provider.OAuthDetail != nil &&
-		provider.OAuthDetail.GetIssuer() == ai.IssuerClaudeCode {
+	if provider.IsClaudeCodeProvider() {
 		system = append([]anthropic.TextBlockParam{{Text: client.ClaudeCodeSystemHeader}}, system...)
 	}
 
@@ -250,7 +249,5 @@ func probeOptions(ctx context.Context, provider *typ.Provider) ProbeResult {
 // isCodexOAuth reports whether the provider is a Codex OAuth provider, which
 // only speaks the Responses API.
 func isCodexOAuth(provider *typ.Provider) bool {
-	return provider.AuthType == typ.AuthTypeOAuth &&
-		provider.OAuthDetail != nil &&
-		provider.OAuthDetail.GetIssuer() == ai.IssuerCodex
+	return provider.OAuthIssuer() == ai.IssuerCodex
 }

@@ -59,7 +59,7 @@ func maskForResponse(p *typ.Provider) ProviderResponse {
 	}
 	// Only surface vmodel_detail on vmodel providers so a stale blob on a
 	// flipped-auth row can never leak via the masked response.
-	if p.AuthType == typ.AuthTypeVirtual {
+	if p.IsVirtual() {
 		resp.VModelDetail = p.VModelDetail
 	}
 
@@ -83,7 +83,7 @@ func maskForResponse(p *typ.Provider) ProviderResponse {
 		if p.Credential != nil {
 			resp.Credential = maps.Clone(p.Credential.Fields)
 		}
-	case p.AuthType == typ.AuthTypeAPIKey, p.AuthType == "":
+	case p.IsAPIKey():
 		resp.Token = p.Token
 	}
 

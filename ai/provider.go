@@ -369,6 +369,24 @@ func (p *Provider) IsOAuth() bool {
 	return p.AuthType == AuthTypeOAuth
 }
 
+// IsAPIKey reports whether the provider authenticates with a plain token.
+// An empty auth type means api_key for backward compatibility (see
+// GetAccessToken).
+func (p *Provider) IsAPIKey() bool {
+	return p != nil && (p.AuthType == AuthTypeAPIKey || p.AuthType == "")
+}
+
+// OAuthIssuer returns the issuer of an OAuth provider, or "" for non-OAuth
+// providers and OAuth rows without detail. Collapses the ubiquitous
+// `AuthType == oauth && OAuthDetail != nil && GetIssuer() == X` compound into
+// `OAuthIssuer() == X`.
+func (p *Provider) OAuthIssuer() Issuer {
+	if p != nil && p.AuthType == AuthTypeOAuth && p.OAuthDetail != nil {
+		return p.OAuthDetail.GetIssuer()
+	}
+	return ""
+}
+
 // IsMultiFieldCredential reports whether the provider stores its credentials
 // in Credential (a CredentialBundle) rather than the Token / OAuthDetail
 // fields.

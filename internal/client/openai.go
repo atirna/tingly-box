@@ -253,7 +253,7 @@ func (c *OpenAIClient) ListModels(ctx context.Context) ([]string, error) {
 	accessToken := c.provider.GetAccessToken()
 	if c.provider.APIStyle == protocol.APIStyleAnthropic {
 		// Add OAuth custom headers if applicable
-		if c.provider.AuthType == typ.AuthTypeOAuth && c.provider.OAuthDetail != nil {
+		if c.provider.IsOAuth() && c.provider.OAuthDetail != nil {
 			req.Header.Set("Authorization", "Bearer "+accessToken)
 			req.Header.Set("anthropic-version", "2023-06-01")
 		} else {

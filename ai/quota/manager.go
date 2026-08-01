@@ -296,26 +296,21 @@ func (m *Manager) unreadable(provider *typ.Provider, providerType ProviderType, 
 // inferProviderType infers the provider type from OAuth metadata or the API base URL.
 func inferProviderType(provider *typ.Provider) ProviderType {
 	// OAuth providers: use OAuthDetail.GetIssuer() which handles backward compatibility
-	if provider.AuthType == typ.AuthTypeOAuth && provider.OAuthDetail != nil {
-		issuer := provider.OAuthDetail.GetIssuer()
-		if issuer != "" {
-			switch issuer {
-			case typ.IssuerAnthropic, typ.IssuerClaudeCode:
-				return ProviderTypeAnthropic
-			case typ.IssuerGoogle:
-				return ProviderTypeGemini
-			case typ.IssuerOpenAI:
-				return ProviderTypeOpenAI
-			case typ.IssuerCopilot:
-				return ProviderTypeCopilot
-			case typ.IssuerCursor:
-				return ProviderTypeCursor
-			case typ.IssuerCodex:
-				return ProviderTypeCodex
-			case typ.IssuerKimiCode:
-				return ProviderTypeKimiCode
-			}
-		}
+	switch provider.OAuthIssuer() {
+	case typ.IssuerAnthropic, typ.IssuerClaudeCode:
+		return ProviderTypeAnthropic
+	case typ.IssuerGoogle:
+		return ProviderTypeGemini
+	case typ.IssuerOpenAI:
+		return ProviderTypeOpenAI
+	case typ.IssuerCopilot:
+		return ProviderTypeCopilot
+	case typ.IssuerCursor:
+		return ProviderTypeCursor
+	case typ.IssuerCodex:
+		return ProviderTypeCodex
+	case typ.IssuerKimiCode:
+		return ProviderTypeKimiCode
 	}
 
 	// Fallback: infer from APIBase domain

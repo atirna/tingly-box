@@ -40,8 +40,7 @@ func DetectVendor(provider *typ.Provider) Vendor {
 	}
 
 	// Codex / ChatGPT OAuth: image generation rides the Responses API.
-	if provider.AuthType == typ.AuthTypeOAuth && provider.OAuthDetail != nil &&
-		provider.OAuthDetail.GetIssuer() == ai.IssuerCodex {
+	if provider.OAuthIssuer() == ai.IssuerCodex {
 		return VendorCodex
 	}
 	if provider.APIBase == protocol.CodexAPIBase {
