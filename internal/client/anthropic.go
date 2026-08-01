@@ -10,7 +10,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicOption "github.com/anthropics/anthropic-sdk-go/option"
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
-	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/constant"
 
 	"github.com/tingly-dev/tingly-box/ai"
@@ -72,21 +71,17 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 	// applied per-call in the Beta/Messages methods (withContext1MBeta /
 	// context1MHeaderOpts) from the typ.WithContext1M hint, so it reaches both
 	// this generic client and ClaudeClient without a dedicated transport.
+	//
+	// Note: Claude Code OAuth providers never reach this constructor —
+	// ClientPool.GetAnthropicClient routes them to NewClaudeClient. So the
+	// transport here only ever serves generic Anthropic providers.
 	var transport http.RoundTripper
 	if provider.AuthType == typ.AuthTypeOAuth {
-		if provider.OAuthDetail != nil && provider.OAuthDetail.Issuer == ai.IssuerClaudeCode {
-			transport = &claudeRoundTripper{
-				RoundTripper:   createSessionBoundTransport(provider, sessionID),
-				organizationID: provider.OAuthDetail.GetExtraFieldString("organization_id"),
-			}
-			logrus.Infof("Using session-bound transport for OAuth issuer: %s, session: %s",
-				provider.OAuthDetail.GetIssuer(), sessionID.Value)
-		} else {
-			// OAuth provider with an issuer other than ClaudeCode (or missing OAuthDetail).
-			// Use a session-bound transport so proxy_url is respected and env proxy is
-			// not inherited — same guarantee as the non-OAuth path below.
-			transport = createSessionBoundTransport(provider, sessionID)
-		}
+		// OAuth provider that is not Claude Code (the Claude Code issuer is
+		// dispatched to NewClaudeClient upstream). Use a session-bound
+		// transport so proxy_url is respected and env proxy is not inherited —
+		// same guarantee as the non-OAuth path below.
+		transport = createSessionBoundTransport(provider, sessionID)
 	} else {
 		// Generic non-OAuth Anthropic provider. A single userAgentTransport
 		// resolves the same fixed precedence as the generic OpenAI client

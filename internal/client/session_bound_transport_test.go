@@ -504,8 +504,10 @@ func TestCreateSessionBoundTransport(t *testing.T) {
 		t.Fatal("Expected non-nil transport")
 	}
 
-	// The transport should be a claudeRoundTripper wrapping SessionBoundTransport
-	// We can verify this by checking the type
+	// createSessionBoundTransport returns a generic SessionBoundTransport for
+	// every OAuth provider — Claude Code OAuth transformations (headers, tool
+	// rename, thinking) live in ClaudeClient via SDK options/middleware, not
+	// in the transport.
 	if _, ok := transport.(*SessionBoundTransport); !ok {
 		t.Errorf("Expected SessionBoundTransport for Claude Code OAuth provider (SDK middleware handles transformations), got %T", transport)
 	}
