@@ -74,18 +74,10 @@ const Onboarding: React.FC = () => {
                 </UnifiedCard>
             </Box>
 
-            {/* Shared Connect AI dialog stack (form / OAuth / paste / import).
-                inline: the provider list above is the picker, so no picker
-                dialog and no "← Back to picker" in the form. */}
+            {/* Shared Connect AI dialog stack (form / OAuth / paste / import /
+                cloud). inline: the provider list above is the picker, so no
+                picker dialog and no "← Back to picker" in the form. */}
             <ConnectAIDialogs flow={connectAI} inline isFirstProvider/>
-
-            <CloudProviderDialog
-                open={cloudPresetId !== null}
-                presetId={cloudPresetId}
-                onClose={() => setCloudPresetId(null)}
-                onSuccess={() => setSuccessDialogOpen(true)}
-                onNotification={showMessage}
-            />
 
             <Dialog
                 open={successDialogOpen}
