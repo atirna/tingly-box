@@ -601,12 +601,12 @@ func TestProviderOpenAIEndpointsRoundTrip(t *testing.T) {
 	defer store.Close()
 
 	provider := &typ.Provider{
-		UUID:               "test-endpoint-mode-uuid",
-		Name:               "codex-oauth",
-		APIBase:            "https://chatgpt.com/backend-api/codex",
-		APIStyle:           protocol.APIStyleOpenAI,
-		AuthType:           typ.AuthTypeOAuth,
-		OpenAIEndpoints:    []ai.OpenAIEndpoint{ai.OpenAIEndpointResponses},
+		UUID:            "test-endpoint-mode-uuid",
+		Name:            "codex-oauth",
+		APIBase:         "https://chatgpt.com/backend-api/codex",
+		APIStyle:        protocol.APIStyleOpenAI,
+		AuthType:        typ.AuthTypeOAuth,
+		OpenAIEndpoints: []ai.OpenAIEndpoint{ai.OpenAIEndpointResponses},
 		OAuthDetail: &typ.OAuthDetail{
 			AccessToken: "tok",
 			Issuer:      ai.IssuerCodex,

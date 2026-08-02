@@ -256,13 +256,13 @@ OpenAIEndpoints []string `json:"openai_endpoints,omitempty" description:"Declare
 - [ ] DeepSeek 不返回 `reasoning.encrypted_content` 时 codex 客户端行为(预期:stateless 模式不依赖);
 - [ ] function_call arguments 非法 JSON 时 passthrough 链路不崩(gateway 不解析 arguments 即可)。
 
-### 5.2 Anthropic→Responses 转换缺 thinking 映射(需修,独立于 DeepSeek 的既有缺口)
+### 5.2 Anthropic→Responses 转换缺 thinking 映射(已修)
 
-`ConvertAnthropicV1ToResponsesRequest` / Beta 版当前**完全丢弃** `thinking` 配置与 assistant thinking blocks。openai-com 双端点路径同样受此缺口影响,DeepSeek 接入使其影响面扩大。修复:
+`ConvertAnthropicV1ToResponsesRequest` / Beta 版原先**完全丢弃** `thinking` 配置与 assistant thinking blocks。openai-com 双端点路径同样受此缺口影响,DeepSeek 接入使其影响面扩大。修复已落地(`internal/protocol/request/anthropic_to_responses_thinking.go` + 两个 converter 的接线):
 
-1. 请求参数:`thinking.type=="enabled"` → `reasoning.effort`,按 `budget_tokens` 分档映射(建议:<4k→`low`,<16k→`medium`,否则→`high`;`disabled`→ 不设 reasoning)。DeepSeek 对 effort 全档支持,OpenAI 同形,一份映射两家通用;
-2. 历史消息:assistant 消息中的 thinking block → Responses `reasoning` input item(DeepSeek stateless 依赖客户端回传推理上下文);
-3. 响应侧:确认 `streamResponsesToAnthropic*` 将 reasoning output item 映射回 anthropic thinking block(含流式增量),对 DeepSeek 实际输出(reasoning item 在 message 之前)验证顺序假设。
+1. **请求参数**(已修):`thinking.OfEnabled` → `reasoning.effort`,按 `budget_tokens` 分档(<4096→`low`,<16384→`medium`,否则→`high`;disabled/omitted → 不设 reasoning)。DeepSeek 对 effort 全档支持,OpenAI 同形,一份映射两家通用;单测覆盖边界值(`TestAnthropicV1ThinkingToReasoning_EffortTiers`)。
+2. **历史消息**(已修):assistant 消息中的 thinking block → Responses `reasoning` input item(`summary[0].text` 承载文本;`id` 是本地生成的合成值,因为 Anthropic thinking block 没有携带上游 reasoning item id,`signature` 是不透明的续传令牌而非 id——DeepSeek stateless,合成 id 只需在本次请求内唯一)。**顺序**:reasoning item 排在同一轮 message/tool_use 之前,匹配 DeepSeek 官方文档"reasoning appears as separate items before messages"的描述,也匹配 stateless 回放要求模型先看到自己先前的推理再看到自己先前的输出。空 thinking 文本不产生条目。单测覆盖 v1 与 beta 两个变体、多条目排序、空文本跳过。
+3. **响应侧**(核对确认,无需改动):`internal/protocol/stream/openai_responses_to_anthropic_converter.go` 已经处理 `response.reasoning_text.delta`/`response.reasoning_summary_text.delta` 等事件,映射为 anthropic thinking block(含流式增量与 signature_delta)——这条链路是为 openai-com 现有 `both` 流量而建的,DeepSeek 接入白嫖复用,不需要新代码。DeepSeek 实际输出顺序(reasoning item 在 message 之前)与该转换器的假设一致。
 
 ### 5.3 Chat→Responses 方向
 
@@ -291,9 +291,9 @@ OpenAIEndpoints []string `json:"openai_endpoints,omitempty" description:"Declare
 4. 前端:独立 checkbox × 2、模板预填、编辑可见可改;连通性探测按端点分别测(§6 风险二);
 5. 文档:重写 `.design/openai-endpoint-routing.md` 受影响章节(§1 表格、§2.3 枚举史加一笔 `both` 的教训、§3 Layer 1 "不可编辑"表述、§6 模板表);`_naming_rules` 增补。
 
-**Phase 2 — 转换保真(与 Phase 1 并行开工,合入顺序在 backfill 之前或同批)**
-7. §5.2 Anthropic→Responses thinking 映射(请求 + 历史回传 + 响应侧验证)+ e2e 测试;
-8. §5.1 / §8 smoke 验证,按需补 `applyResponses` deepseek 分支。
+**Phase 2 — 转换保真**
+7. ~~§5.2 Anthropic→Responses thinking 映射~~ **已完成**(请求 effort 映射 + 历史 reasoning item 回传,响应侧核对后确认无需改动);
+8. §5.1 / §8 smoke 验证(需真实 key,未执行),按需补 `applyResponses` deepseek 分支——留待用户或后续会话手动跑。
 
 **Phase 3 — 不再规划**
 ~~9. 模型级 endpoints 路由 guard~~——已随 v3 修正撤销:模型粒度约束的正确落点是 rule flag,不是 provider 数据层,不存在"以后要不要做"的问题。
