@@ -36,6 +36,12 @@ type ModelInfo struct {
 	Description string `json:"description,omitempty"`
 	Context     int    `json:"context,omitempty"`
 	MaxOutput   int    `json:"max_output,omitempty"`
+
+	// Endpoints lists the OpenAI endpoints this model is verified to work
+	// with (same vocabulary as ProviderTemplate.OpenAIEndpoints). Purely
+	// informational metadata for UI display and default-model guidance —
+	// routing stays provider-level. Empty = no restriction.
+	Endpoints []string `json:"endpoints,omitempty"`
 }
 
 // NamingRules defines the naming conventions for provider IDs
