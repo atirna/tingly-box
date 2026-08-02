@@ -596,7 +596,7 @@ func TestProviderCount(t *testing.T) {
 	}
 }
 
-func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
+func TestProviderOpenAIEndpointsRoundTrip(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
 	defer store.Close()
 
@@ -606,7 +606,7 @@ func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
 		APIBase:            "https://chatgpt.com/backend-api/codex",
 		APIStyle:           protocol.APIStyleOpenAI,
 		AuthType:           typ.AuthTypeOAuth,
-		OpenAIEndpointMode: ai.EndpointModeResponses,
+		OpenAIEndpoints:    []ai.OpenAIEndpoint{ai.OpenAIEndpointResponses},
 		OAuthDetail: &typ.OAuthDetail{
 			AccessToken: "tok",
 			Issuer:      ai.IssuerCodex,
@@ -623,12 +623,12 @@ func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByUUID: %v", err)
 	}
-	if got.OpenAIEndpointMode != ai.EndpointModeResponses {
-		t.Errorf("OpenAIEndpointMode after create: got %q, want %q", got.OpenAIEndpointMode, ai.EndpointModeResponses)
+	if len(got.OpenAIEndpoints) != 1 || got.OpenAIEndpoints[0] != ai.OpenAIEndpointResponses {
+		t.Errorf("OpenAIEndpoints after create: got %v, want [responses]", got.OpenAIEndpoints)
 	}
 
 	// Update path must also persist the field.
-	got.OpenAIEndpointMode = ai.EndpointModeBoth
+	got.OpenAIEndpoints = []ai.OpenAIEndpoint{ai.OpenAIEndpointChat, ai.OpenAIEndpointResponses}
 	if err := store.Save(got); err != nil {
 		t.Fatalf("Save update: %v", err)
 	}
@@ -636,8 +636,8 @@ func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByUUID after update: %v", err)
 	}
-	if got2.OpenAIEndpointMode != ai.EndpointModeBoth {
-		t.Errorf("OpenAIEndpointMode after update: got %q, want %q", got2.OpenAIEndpointMode, ai.EndpointModeBoth)
+	if len(got2.OpenAIEndpoints) != 2 || got2.OpenAIEndpoints[0] != ai.OpenAIEndpointChat || got2.OpenAIEndpoints[1] != ai.OpenAIEndpointResponses {
+		t.Errorf("OpenAIEndpoints after update: got %v, want [chat_completions responses]", got2.OpenAIEndpoints)
 	}
 }
 
@@ -697,5 +697,55 @@ func TestProviderCredentialBundleRoundTrip(t *testing.T) {
 	}
 	if got2.Credential.Field("region") != "eu-west-1" {
 		t.Errorf("region after update: got %q, want %q", got2.Credential.Field("region"), "eu-west-1")
+	}
+}
+
+// TestProviderLegacyEndpointModeRowConversion pins the read-side conversion:
+// rows written before the split-declaration change carry only the legacy
+// openai_endpoint_mode column, and reads must surface them as the equivalent
+// OpenAIEndpoints declaration.
+func TestProviderLegacyEndpointModeRowConversion(t *testing.T) {
+	store, _ := setupTestProviderStore(t)
+	defer store.Close()
+
+	seed := &typ.Provider{
+		UUID:     "legacy-mode-uuid",
+		Name:     "legacy",
+		APIBase:  "https://api.example.com/v1",
+		APIStyle: protocol.APIStyleOpenAI,
+		AuthType: typ.AuthTypeAPIKey,
+		Token:    "tok",
+		Enabled:  true,
+	}
+	if err := store.Save(seed); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// Simulate a pre-migration row: legacy enum set, new column empty.
+	if err := store.GetDB().Model(&ProviderRecord{}).Where("uuid = ?", seed.UUID).
+		Updates(map[string]any{"openai_endpoint_mode": "both", "openai_endpoints": ""}).Error; err != nil {
+		t.Fatalf("raw update: %v", err)
+	}
+
+	got, err := store.GetByUUID(seed.UUID)
+	if err != nil {
+		t.Fatalf("GetByUUID: %v", err)
+	}
+	if len(got.OpenAIEndpoints) != 2 || got.OpenAIEndpoints[0] != ai.OpenAIEndpointChat || got.OpenAIEndpoints[1] != ai.OpenAIEndpointResponses {
+		t.Fatalf("legacy 'both' row: got %v, want [chat_completions responses]", got.OpenAIEndpoints)
+	}
+
+	// Saving converges the row: new column written, legacy column cleared.
+	if err := store.Save(got); err != nil {
+		t.Fatalf("Save converge: %v", err)
+	}
+	var rec ProviderRecord
+	if err := store.GetDB().Where("uuid = ?", seed.UUID).First(&rec).Error; err != nil {
+		t.Fatalf("read record: %v", err)
+	}
+	if rec.OpenAIEndpoints != "chat_completions,responses" {
+		t.Errorf("converged openai_endpoints column = %q", rec.OpenAIEndpoints)
+	}
+	if rec.OpenAIEndpointMode != "" {
+		t.Errorf("legacy column not cleared after save: %q", rec.OpenAIEndpointMode)
 	}
 }

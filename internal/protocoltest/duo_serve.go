@@ -131,14 +131,14 @@ func seedDuoGateway(appCfg *config.AppConfig, tb1URL, tb1Token string) error {
 			Name:               DuoProviderChat,
 			APIBase:            tb1URL + "/virtual/openai/v1",
 			APIStyle:           protocol.APIStyleOpenAI,
-			OpenAIEndpointMode: ai.EndpointModeChat,
+			OpenAIEndpoints: []ai.OpenAIEndpoint{ai.OpenAIEndpointChat},
 		},
 		"responses": {
 			UUID:               DuoProviderResponses,
 			Name:               DuoProviderResponses,
 			APIBase:            tb1URL + "/virtual/openai/v1",
 			APIStyle:           protocol.APIStyleOpenAI,
-			OpenAIEndpointMode: ai.EndpointModeResponses,
+			OpenAIEndpoints: []ai.OpenAIEndpoint{ai.OpenAIEndpointResponses},
 		},
 		"anthropic": {
 			UUID:     DuoProviderAnthropic,

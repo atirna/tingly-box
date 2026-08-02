@@ -386,8 +386,8 @@ func createProviderFromToken(appConfig *config.AppConfig, config *ProviderOAuthC
 		OAuthDetail: oauthDetail,
 		Token:       "", // No token for OAuth
 		Enabled:     true,
-		// Issuer-specific endpoint mode (e.g. Codex → responses).
-		OpenAIEndpointMode: ai.OpenAIEndpointModeForIssuer(ai.Issuer(config.Type)),
+		// Issuer-specific endpoint declaration (e.g. Codex → [responses]).
+		OpenAIEndpoints: ai.OpenAIEndpointsForIssuer(ai.Issuer(config.Type)),
 	}
 
 	// Add to global config

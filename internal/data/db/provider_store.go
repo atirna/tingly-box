@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,8 +43,13 @@ type ProviderRecord struct {
 	APIBaseOpenAI    string `gorm:"column:api_base_openai"`
 	APIBaseAnthropic string `gorm:"column:api_base_anthropic"`
 
-	// OpenAIEndpointMode declares which OpenAI endpoints this provider exposes
-	// ("", "chat", "responses", "both"). See ai.OpenAIEndpointMode.
+	// OpenAIEndpoints declares which OpenAI endpoints the upstream implements,
+	// CSV-encoded (e.g. "chat_completions,responses"). See ai.OpenAIEndpoint.
+	OpenAIEndpoints string `gorm:"column:openai_endpoints"`
+
+	// Deprecated: legacy single-enum declaration ("", "chat", "responses",
+	// "both"). Read for conversion when openai_endpoints is empty; every
+	// write clears it so rows converge on the split declaration.
 	OpenAIEndpointMode string `gorm:"column:openai_endpoint_mode"`
 
 	// Credential fields - stored with provider as a unit
@@ -74,6 +80,35 @@ func (ProviderRecord) TableName() string {
 	return "providers"
 }
 
+// encodeOpenAIEndpoints CSV-encodes a declaration for column storage.
+func encodeOpenAIEndpoints(eps []ai.OpenAIEndpoint) string {
+	if len(eps) == 0 {
+		return ""
+	}
+	parts := make([]string, len(eps))
+	for i, e := range eps {
+		parts[i] = string(e)
+	}
+	return strings.Join(parts, ",")
+}
+
+// decodeOpenAIEndpoints decodes the CSV column, falling back to the legacy
+// single-enum column when the new one is empty (rows written before the
+// split-declaration migration).
+func decodeOpenAIEndpoints(csv, legacyMode string) []ai.OpenAIEndpoint {
+	if csv == "" {
+		return ai.OpenAIEndpointsFromLegacyMode(legacyMode)
+	}
+	parts := strings.Split(csv, ",")
+	out := make([]ai.OpenAIEndpoint, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, ai.OpenAIEndpoint(p))
+		}
+	}
+	return out
+}
+
 // toProvider converts a ProviderRecord to typ.Provider
 func (r *ProviderRecord) toProvider() *typ.Provider {
 	provider := &typ.Provider{
@@ -89,8 +124,8 @@ func (r *ProviderRecord) toProvider() *typ.Provider {
 		Enabled:            r.Enabled,
 		ProxyURL:           r.ProxyURL,
 		Timeout:            r.Timeout,
-		LastUpdated:        r.LastUpdated,
-		OpenAIEndpointMode: ai.OpenAIEndpointMode(r.OpenAIEndpointMode),
+		LastUpdated:      r.LastUpdated,
+		OpenAIEndpoints:  decodeOpenAIEndpoints(r.OpenAIEndpoints, r.OpenAIEndpointMode),
 	}
 
 	// Parse tags JSON
@@ -150,10 +185,10 @@ func toRecord(p *typ.Provider) *ProviderRecord {
 		Enabled:            p.Enabled,
 		ProxyURL:           p.ProxyURL,
 		Timeout:            p.Timeout,
-		LastUpdated:        p.LastUpdated,
-		OpenAIEndpointMode: string(p.OpenAIEndpointMode),
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		LastUpdated:      p.LastUpdated,
+		OpenAIEndpoints:  encodeOpenAIEndpoints(p.OpenAIEndpoints),
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	// Initialize OAuth fields if OAuthDetail exists
@@ -211,7 +246,8 @@ func updateRecordFromProvider(record *ProviderRecord, p *typ.Provider) {
 	record.ProxyURL = p.ProxyURL
 	record.Timeout = p.Timeout
 	record.LastUpdated = p.LastUpdated
-	record.OpenAIEndpointMode = string(p.OpenAIEndpointMode)
+	record.OpenAIEndpoints = encodeOpenAIEndpoints(p.OpenAIEndpoints)
+	record.OpenAIEndpointMode = "" // legacy column: cleared on every write
 	record.UpdatedAt = time.Now()
 
 	// Marshal tags to JSON
@@ -619,6 +655,19 @@ func (ps *ProviderStore) ListEnabled() ([]*typ.Provider, error) {
 // GetDB returns the underlying GORM DB instance (for testing/advanced usage)
 func (ps *ProviderStore) GetDB() *gorm.DB {
 	return ps.db
+}
+
+// HasLegacyEndpointMode reports whether the provider's row still carries a
+// value in the legacy openai_endpoint_mode column. Consumed by the format
+// convergence migration; goes away with the column once fleets converge.
+func (ps *ProviderStore) HasLegacyEndpointMode(uuid string) (bool, error) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	var rec ProviderRecord
+	if err := ps.db.Select("openai_endpoint_mode").Where("uuid = ?", uuid).First(&rec).Error; err != nil {
+		return false, err
+	}
+	return rec.OpenAIEndpointMode != "", nil
 }
 
 // Close closes the database connection

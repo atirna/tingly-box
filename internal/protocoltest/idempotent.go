@@ -33,7 +33,7 @@ type IdempotentCase struct {
 // DefaultIdempotentCases returns the canonical round-trip idempotency cases:
 // every pair among the three first-class protocols (Anthropic, OpenAI Chat,
 // OpenAI Responses), in both directions. Chat and Responses are treated as
-// distinct protocols — the chain head sets OpenAIEndpointMode so a Responses
+// distinct protocols — the chain head declares OpenAIEndpoints so a Responses
 // intermediate genuinely re-enters /responses, not /chat/completions.
 //
 // Baseline is the source's same-style passthrough target:
@@ -118,7 +118,7 @@ func (env *TestEnv) setupChainHopRoute(source, target protocol.APIType, s Scenar
 		Name:               providerName,
 		APIBase:            env.gatewayEntryBase(target),
 		APIStyle:           targetToAPIStyle(target),
-		OpenAIEndpointMode: targetToOpenAIEndpointMode(target), // re-enter the right OpenAI endpoint
+		OpenAIEndpoints: targetToOpenAIEndpoints(target), // re-enter the right OpenAI endpoint
 		Token:              env.modelToken,                     // re-entry into the gateway must authenticate
 		Enabled:            true,
 		Timeout:            int64(constant.DefaultRequestTimeout),

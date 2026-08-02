@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -723,4 +724,88 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestProviderUnmarshalJSON_LegacyEndpointMode(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []OpenAIEndpoint
+	}{
+		{"legacy chat", `{"uuid":"u","openai_endpoint_mode":"chat"}`, []OpenAIEndpoint{OpenAIEndpointChat}},
+		{"legacy responses", `{"uuid":"u","openai_endpoint_mode":"responses"}`, []OpenAIEndpoint{OpenAIEndpointResponses}},
+		{"legacy both", `{"uuid":"u","openai_endpoint_mode":"both"}`, []OpenAIEndpoint{OpenAIEndpointChat, OpenAIEndpointResponses}},
+		{"legacy empty", `{"uuid":"u","openai_endpoint_mode":""}`, nil},
+		{"legacy unknown degrades", `{"uuid":"u","openai_endpoint_mode":"bogus"}`, nil},
+		{"new field wins over legacy", `{"uuid":"u","openai_endpoint_mode":"chat","openai_endpoints":["responses"]}`, []OpenAIEndpoint{OpenAIEndpointResponses}},
+		{"new field only", `{"uuid":"u","openai_endpoints":["chat_completions","responses"]}`, []OpenAIEndpoint{OpenAIEndpointChat, OpenAIEndpointResponses}},
+		{"absent", `{"uuid":"u"}`, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var p Provider
+			if err := json.Unmarshal([]byte(tc.in), &p); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if len(p.OpenAIEndpoints) != len(tc.want) {
+				t.Fatalf("OpenAIEndpoints = %v, want %v", p.OpenAIEndpoints, tc.want)
+			}
+			for i := range tc.want {
+				if p.OpenAIEndpoints[i] != tc.want[i] {
+					t.Fatalf("OpenAIEndpoints = %v, want %v", p.OpenAIEndpoints, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestProviderMarshalJSON_NoLegacyKey(t *testing.T) {
+	p := Provider{UUID: "u", OpenAIEndpoints: []OpenAIEndpoint{OpenAIEndpointResponses}}
+	out, err := json.Marshal(&p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "openai_endpoint_mode") {
+		t.Errorf("marshal output must not contain the legacy key: %s", out)
+	}
+	if !strings.Contains(string(out), `"openai_endpoints":["responses"]`) {
+		t.Errorf("marshal output missing openai_endpoints: %s", out)
+	}
+}
+
+func TestSupportsOpenAIEndpoint(t *testing.T) {
+	var nilP *Provider
+	if nilP.SupportsOpenAIEndpoint(OpenAIEndpointChat) {
+		t.Error("nil provider must support nothing")
+	}
+	empty := &Provider{}
+	if empty.SupportsOpenAIEndpoint(OpenAIEndpointChat) {
+		t.Error("undeclared provider must support nothing (caller applies the chat default)")
+	}
+	dual := &Provider{OpenAIEndpoints: []OpenAIEndpoint{OpenAIEndpointChat, OpenAIEndpointResponses}}
+	if !dual.SupportsOpenAIEndpoint(OpenAIEndpointChat) || !dual.SupportsOpenAIEndpoint(OpenAIEndpointResponses) {
+		t.Error("dual declaration must support both endpoints")
+	}
+}
+
+func TestParseOpenAIEndpoints(t *testing.T) {
+	got, err := ParseOpenAIEndpoints([]string{"chat_completions", "responses"})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("valid parse failed: %v %v", got, err)
+	}
+	if _, err := ParseOpenAIEndpoints([]string{"chat"}); err == nil {
+		t.Error("legacy enum word must be rejected by the API vocabulary")
+	}
+	if got, err := ParseOpenAIEndpoints(nil); err != nil || got != nil {
+		t.Errorf("nil input: got %v %v", got, err)
+	}
+}
+
+func TestOpenAIEndpointsForIssuer(t *testing.T) {
+	if got := OpenAIEndpointsForIssuer(IssuerCodex); len(got) != 1 || got[0] != OpenAIEndpointResponses {
+		t.Errorf("codex issuer = %v, want [responses]", got)
+	}
+	if got := OpenAIEndpointsForIssuer(IssuerClaudeCode); len(got) != 1 || got[0] != OpenAIEndpointChat {
+		t.Errorf("non-codex issuer = %v, want [chat_completions]", got)
+	}
 }

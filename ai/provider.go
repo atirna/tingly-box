@@ -4,6 +4,7 @@ package ai
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -202,49 +203,116 @@ type Provider struct {
 	Credential   *CredentialBundle `json:"credential,omitempty"`    // Multi-field credentials (only for multi-field auth types)
 	Source       ProviderSource    `json:"source,omitempty"`        // "user" (default) or "builtin"
 
-	// OpenAIEndpointMode declares which OpenAI endpoints this provider exposes.
-	// Snapshotted from the provider's template at instantiation, or set on
-	// Codex OAuth completion. Routing reads this; users do not edit it
-	// directly. See the OpenAIEndpointMode constants for semantics.
-	OpenAIEndpointMode OpenAIEndpointMode `json:"openai_endpoint_mode,omitempty"`
+	// OpenAIEndpoints declares which OpenAI endpoints the upstream implements.
+	// Each entry is an independent, user-editable fact ("this provider
+	// implements /chat/completions", "... /responses"). Prefilled from the
+	// provider's template on instantiation or from the OAuth issuer, and
+	// editable in the provider UI as independent checkboxes. Empty means
+	// undeclared: routing falls back to the conservative Chat-only default.
+	// Endpoint selection policy (native-first, convert otherwise) lives in
+	// ResolveOpenAIEndpoint — declarations here carry no routing policy.
+	OpenAIEndpoints []OpenAIEndpoint `json:"openai_endpoints,omitempty"`
 }
 
-// OpenAIEndpointMode declares this provider's support for the OpenAI Chat
-// Completions and Responses APIs. The zero value defaults to Chat-only,
-// which is the conservative assumption for the typical OpenAI-compatible
-// vendor (most do not implement /responses).
-type OpenAIEndpointMode string
+// providerJSON mirrors Provider for JSON decoding, plus the legacy
+// single-enum declaration field so old data keeps loading.
+type providerJSON Provider
+
+// UnmarshalJSON decodes a Provider, converting the legacy
+// "openai_endpoint_mode" enum ("", "chat", "responses", "both") into
+// OpenAIEndpoints when the new field is absent. Marshal never emits the
+// legacy key — the conversion is one-way at every JSON boundary (user
+// config.json, dataio import, template snapshots).
+func (p *Provider) UnmarshalJSON(data []byte) error {
+	aux := struct {
+		*providerJSON
+		LegacyOpenAIEndpointMode string `json:"openai_endpoint_mode"`
+	}{providerJSON: (*providerJSON)(p)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(p.OpenAIEndpoints) == 0 {
+		p.OpenAIEndpoints = OpenAIEndpointsFromLegacyMode(aux.LegacyOpenAIEndpointMode)
+	}
+	return nil
+}
+
+// OpenAIEndpoint is a factual declaration that an upstream implements a
+// specific OpenAI endpoint. Values map 1:1 to upstream URL paths — no
+// composite mode words (the retired "both" enum value conflated the
+// capability facts with a mirror routing policy; see
+// .design/provider-responses-native-endpoint.spec.md).
+type OpenAIEndpoint string
 
 const (
-	EndpointModeUnknown OpenAIEndpointMode = ""
+	// OpenAIEndpointChat: the upstream implements /chat/completions.
+	OpenAIEndpointChat OpenAIEndpoint = "chat_completions"
 
-	// EndpointModeChat (the default) means the provider only exposes
-	// /chat/completions. An incoming Responses request will be downgraded
-	// to Chat if its features allow; otherwise the request is rejected.
-	EndpointModeChat OpenAIEndpointMode = "chat"
-
-	// EndpointModeResponses means the provider only exposes /responses
-	// (e.g. Codex). All requests, including incoming Chat, route to
-	// /responses; the response is converted back to the client's protocol.
-	EndpointModeResponses OpenAIEndpointMode = "responses"
-
-	// EndpointModeBoth means the provider implements both endpoints
-	// (e.g. OpenAI proper for gpt-5 / o-series). The gateway mirrors the
-	// client's incoming API so native semantics (reasoning blocks,
-	// previous_response_id continuity, etc.) survive the round trip.
-	EndpointModeBoth OpenAIEndpointMode = "both"
+	// OpenAIEndpointResponses: the upstream implements /responses.
+	OpenAIEndpointResponses OpenAIEndpoint = "responses"
 )
 
-// OpenAIEndpointModeForIssuer returns the OpenAIEndpointMode that an OAuth
-// provider should carry given its issuer. Currently only Codex needs a
-// non-default mode; other issuers fall through to EndpointModeChat (zero
-// value). Centralized so the OAuth web handler and the CLI flow agree on
-// the same mapping and future issuer-specific defaults land in one place.
-func OpenAIEndpointModeForIssuer(issuer Issuer) OpenAIEndpointMode {
-	if issuer == IssuerCodex {
-		return EndpointModeResponses
+// SupportsOpenAIEndpoint reports whether the provider declares support for
+// the given OpenAI endpoint. An empty declaration supports nothing —
+// callers apply the Chat-only ecosystem default themselves (see
+// ResolveOpenAIEndpoint).
+func (p *Provider) SupportsOpenAIEndpoint(e OpenAIEndpoint) bool {
+	if p == nil {
+		return false
 	}
-	return EndpointModeChat
+	for _, d := range p.OpenAIEndpoints {
+		if d == e {
+			return true
+		}
+	}
+	return false
+}
+
+// OpenAIEndpointsFromLegacyMode converts a legacy openai_endpoint_mode enum
+// value to the split per-endpoint declaration. Unknown values map to nil
+// (undeclared) so malformed old data degrades to the safe Chat default.
+func OpenAIEndpointsFromLegacyMode(mode string) []OpenAIEndpoint {
+	switch mode {
+	case "chat":
+		return []OpenAIEndpoint{OpenAIEndpointChat}
+	case "responses":
+		return []OpenAIEndpoint{OpenAIEndpointResponses}
+	case "both":
+		return []OpenAIEndpoint{OpenAIEndpointChat, OpenAIEndpointResponses}
+	default:
+		return nil
+	}
+}
+
+// ParseOpenAIEndpoints validates raw endpoint declarations (e.g. from the
+// provider create/update API) against the known vocabulary. Returns the
+// typed slice, or an error naming the first invalid value.
+func ParseOpenAIEndpoints(raw []string) ([]OpenAIEndpoint, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]OpenAIEndpoint, 0, len(raw))
+	for _, r := range raw {
+		e := OpenAIEndpoint(r)
+		switch e {
+		case OpenAIEndpointChat, OpenAIEndpointResponses:
+			out = append(out, e)
+		default:
+			return nil, fmt.Errorf("unknown openai endpoint %q (valid: %s, %s)", r, OpenAIEndpointChat, OpenAIEndpointResponses)
+		}
+	}
+	return out, nil
+}
+
+// OpenAIEndpointsForIssuer returns the endpoint declaration an OAuth
+// provider should carry given its issuer. Codex only exposes /responses;
+// other issuers expose the standard /chat/completions. Centralized so the
+// OAuth web handler and the CLI flow agree on the same mapping.
+func OpenAIEndpointsForIssuer(issuer Issuer) []OpenAIEndpoint {
+	if issuer == IssuerCodex {
+		return []OpenAIEndpoint{OpenAIEndpointResponses}
+	}
+	return []OpenAIEndpoint{OpenAIEndpointChat}
 }
 
 // IsVirtual reports whether this provider routes to the in-process vmodel

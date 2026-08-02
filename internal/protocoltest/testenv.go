@@ -323,7 +323,7 @@ func (env *TestEnv) setupRouteCore(source, target protocol.APIType, s Scenario, 
 		Name:               providerName,
 		APIBase:            providerAPIBase,
 		APIStyle:           apiStyle,
-		OpenAIEndpointMode: targetToOpenAIEndpointMode(target),
+		OpenAIEndpoints: targetToOpenAIEndpoints(target),
 		Token:              "virtual-token",
 		Enabled:            true,
 		Timeout:            int64(constant.DefaultRequestTimeout),
@@ -368,7 +368,7 @@ func (env *TestEnv) SetupCodexAssemblyRoute(source protocol.APIType, s Scenario)
 	target := protocol.TypeOpenAIResponses
 	env.setupRouteCore(source, target, s, nil, func(p *typ.Provider) {
 		// Only the auth shape needs to change from setupRouteCore's plain
-		// token to an OAuth/Codex identity — APIBase/APIStyle/EndpointMode
+		// token to an OAuth/Codex identity — APIBase/APIStyle/OpenAIEndpoints
 		// are already right for an OpenAIResponses target.
 		p.UUID = fmt.Sprintf("virtual-codex-%s-%s", source, s.Name)
 		p.Name = p.UUID
@@ -562,20 +562,20 @@ func targetToAPIStyle(target protocol.APIType) protocol.APIStyle {
 	}
 }
 
-// targetToOpenAIEndpointMode tells the gateway which OpenAI endpoint a provider
-// exposes. Without this, ResolveOpenAIEndpoint falls back to chat for every
+// targetToOpenAIEndpoints tells the gateway which OpenAI endpoint a provider
+// declares. Without this, ResolveOpenAIEndpoint falls back to chat for every
 // OpenAI-style provider, so a target=openai_responses route would silently
 // forward to /chat/completions instead of /responses. chat and responses are
 // two distinct protocols; this makes the harness route to the right one.
-// Non-OpenAI targets return the zero value (ignored for Anthropic/Google).
-func targetToOpenAIEndpointMode(target protocol.APIType) ai.OpenAIEndpointMode {
+// Non-OpenAI targets return nil (ignored for Anthropic/Google).
+func targetToOpenAIEndpoints(target protocol.APIType) []ai.OpenAIEndpoint {
 	switch target {
 	case protocol.TypeOpenAIResponses:
-		return ai.EndpointModeResponses
+		return []ai.OpenAIEndpoint{ai.OpenAIEndpointResponses}
 	case protocol.TypeOpenAIChat:
-		return ai.EndpointModeChat
+		return []ai.OpenAIEndpoint{ai.OpenAIEndpointChat}
 	default:
-		return ai.EndpointModeUnknown
+		return nil
 	}
 }
 

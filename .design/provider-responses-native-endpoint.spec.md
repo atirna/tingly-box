@@ -1,7 +1,8 @@
 # Spec: Provider 定义按端点显式声明 OpenAI 支持(DeepSeek first)
 
-> Status: Draft v2 for review
+> Status: Accepted(2026-08-02 评审定稿)
 > Date: 2026-08-02
+> 定稿决议:开放问题 1 → **不做域名 backfill**。存量 provider 只做旧枚举 → 新字段的等价格式转换(行为不变);responses 能力仅对新建实例生效(模板预填 / 用户勾选)。存量用户想启用,在 provider 编辑页勾选即可。
 > Related: `.design/openai-endpoint-routing.md`, `.design/rule-flags.md`, `.design/ux-principles.md`, PR #976
 > v2 变更:① 废弃 `openai_endpoint_mode` 枚举(`both` 语义混浊),改为按端点显式声明 `openai_endpoints`;② 声明升级为一等可编辑字段,前端独立勾选,模板实例化自动预填。
 
@@ -211,12 +212,10 @@ OpenAIEndpoints []string `json:"openai_endpoints,omitempty" description:"Declare
 
 两个都不勾 = 未声明,行为等同今天(Chat 保守默认),不阻塞保存。
 
-**(3) 存量 backfill migration。** 新增 `migrate2026XXXX`,两步、均幂等、每条写 log:
+**(3) 存量 migration(定稿:仅格式转换,不做域名 backfill)。** 新增 `migrate2026XXXX`,幂等、每条写 log:
 
-- **旧枚举转换**:存量 provider 的 `openai_endpoint_mode` 按 §4.0 表转换为 `openai_endpoints`(覆盖 Codex OAuth 存量;`migrate20260518` 保留不动,新迁移在其后运行);
-- **域名 backfill**:`openai_endpoints` 为空 **且** `APIBase` host 精确匹配模板 `canonical_domain` **且**模板声明非空 → 预填。当前命中:`api.openai.com`、`api.deepseek.com`。用户随后可在 UI 改(可编辑字段,backfill 只是预填不是锁定)。
-
-Backfill 是行为变更(见 §6 风险),需要 release note;逃生舱有两层:UI 直接取消勾选 responses,或 rule flag `openai_endpoint_override: "chat"`(逐条 rule 粒度)。
+- **旧枚举转换**:存量 provider 的 `openai_endpoint_mode` 按 §4.0 表转换为 `openai_endpoints`(覆盖 Codex OAuth 存量;`migrate20260518` 保留不动,新迁移在其后运行)。这是等价格式转换,**行为零变化**;
+- ~~域名 backfill~~ **不做**(评审决议):存量 deepseek/openai provider 不自动获得 responses 声明,避免任何存量路径翻转(§4.3 第三行的 claude-code 风险随之消除)。存量用户在 provider 编辑页勾选 Responses 即可启用——可编辑字段本身就是启用入口。
 
 **替代方案(已否)**:`template_id` 传后端、由后端解析模板快照。否因:声明既已是可编辑字段,前端预填具体值更直接(用户看得见),后端不需要模板解析逻辑;非 UI 客户端(脚本/CLI)也能直接声明。
 
@@ -286,7 +285,7 @@ Backfill 是行为变更(见 §6 风险),需要 release note;逃生舱有两层:
 |---|---|---|
 | 声明模型换字段,波及 ~12 个文件 + DB 列 + 三个外部数据边界(config.json / dataio / GitHub 注册表旧版) | 中 | §4.0 兼容读取表;migration 幂等;resolver 与 store 已有测试全部改写跟随;一次 PR 内完成硬切,不留双字段长期共存 |
 | 用户误勾 responses(上游实际不支持)→ 上游 404 | 中 | 诊断走真实路径(UX 原则):provider 连通性探测按已勾选端点分别测并展示每端点结果;404 错误透传清晰;取消勾选即恢复 |
-| backfill 后 claude-code + openai-style deepseek 从 Chat 翻转到 Responses(§4.3 第三行) | 中 | §5.2 修复先行合入(同 PR 或先行 PR);release note;UI 取消勾选或 rule flag 逃生;若评审认为过险,降级方案:backfill 只处理 `api.openai.com`,DeepSeek 仅新实例预填 |
+| claude-code + openai-style deepseek 声明后从 Chat 翻转到 Responses(§4.3 第三行) | 低(定稿后仅新实例/用户主动勾选触发,存量零影响) | §5.2 修复先行合入;UI 取消勾选或 rule flag 逃生 |
 | codex 场景 rule 配了 `deepseek-v4-pro` 等暂不支持 responses 的模型 → 上游报错 | 中 | 模型级 `endpoints` 元数据引导 UI/agent 默认选 v4-flash;DeepSeek 报错信息清晰;v4-pro 官宣本月支持,窗口极短 |
 | `/v1/responses` 路径仅经 401 探测验证,未 keyed 实测 | 低 | §8 smoke test 项;若意外 404,fallback 方案为 client 层对 deepseek 剥 `/v1` 前缀(不新增数据字段) |
 | 模板注册表从 GitHub 同步,新旧版本 app × 新旧注册表交叉 | 低 | 新字段增量可选,旧 app 反序列化忽略;新 app 对旧注册表走 §4.0 兼容转换 |
@@ -301,8 +300,7 @@ Backfill 是行为变更(见 §6 风险),需要 release note;逃生舱有两层:
 2. `internal/data/providers.json`:§4.1 变更;
 3. Create/Update API 增加 `openai_endpoints` + 校验 + `task codegen`;
 4. 前端:独立 checkbox × 2、模板预填、编辑可见可改;连通性探测按端点分别测(§6 风险二);
-5. 域名 backfill migration + 单测;
-6. 文档:重写 `.design/openai-endpoint-routing.md` 受影响章节(§1 表格、§2.3 枚举史加一笔 `both` 的教训、§3 Layer 1 "不可编辑"表述、§6 模板表);`_naming_rules` 增补。
+5. 文档:重写 `.design/openai-endpoint-routing.md` 受影响章节(§1 表格、§2.3 枚举史加一笔 `both` 的教训、§3 Layer 1 "不可编辑"表述、§6 模板表);`_naming_rules` 增补。
 
 **Phase 2 — 转换保真(与 Phase 1 并行开工,合入顺序在 backfill 之前或同批)**
 7. §5.2 Anthropic→Responses thinking 映射(请求 + 历史回传 + 响应侧验证)+ e2e 测试;
@@ -321,7 +319,7 @@ Backfill 是行为变更(见 §6 风险),需要 release note;逃生舱有两层:
 
 ## 9. 开放问题
 
-1. backfill 是否包含 `api.deepseek.com`(§6 风险三的两案),还是首发仅 `api.openai.com` + DeepSeek 新实例预填?→ 评审定;
+1. ~~backfill 范围~~ **已决议(2026-08-02)**:不做域名 backfill,仅新实例(见文首定稿决议);
 2. `deepseek-v4-pro` responses 支持正式落地后,`endpoints` 数据更新的节奏(注册表热更 vs 随版本);
 3. `service_providers.json`(前端旧数据集)是否已死代码,可否清理(独立小任务);
 4. anthropic-style 的 deepseek provider(`/anthropic` base)是否某天也该优先 Responses?——目前判断:不。anthropic-style 走原生 anthropic 端点,DeepSeek 官方自己维护协议映射,gateway 不应二次聪明;

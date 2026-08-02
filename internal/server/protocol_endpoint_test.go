@@ -9,9 +9,10 @@ import (
 )
 
 func TestResolveOpenAIEndpoint(t *testing.T) {
-	chatOnly := &typ.Provider{UUID: "p-chat"} // default mode = chat
-	responsesOnly := &typ.Provider{UUID: "p-resp", OpenAIEndpointMode: ai.EndpointModeResponses}
-	both := &typ.Provider{UUID: "p-both", OpenAIEndpointMode: ai.EndpointModeBoth}
+	undeclared := &typ.Provider{UUID: "p-undeclared"} // empty declaration → chat default
+	chatOnly := &typ.Provider{UUID: "p-chat", OpenAIEndpoints: []ai.OpenAIEndpoint{ai.OpenAIEndpointChat}}
+	responsesOnly := &typ.Provider{UUID: "p-resp", OpenAIEndpoints: []ai.OpenAIEndpoint{ai.OpenAIEndpointResponses}}
+	dual := &typ.Provider{UUID: "p-dual", OpenAIEndpoints: []ai.OpenAIEndpoint{ai.OpenAIEndpointChat, ai.OpenAIEndpointResponses}}
 
 	tests := []struct {
 		name     string
@@ -20,15 +21,29 @@ func TestResolveOpenAIEndpoint(t *testing.T) {
 		incoming IncomingAPIType
 		want     protocol.APIType
 	}{
-		// Default mode (chat) — provider ignores client's incoming API
+		// Undeclared — conservative chat default
 		{
-			name:     "default mode forces chat (chat incoming)",
+			name:     "undeclared defaults to chat (chat incoming)",
+			provider: undeclared,
+			incoming: IncomingAPIChat,
+			want:     protocol.TypeOpenAIChat,
+		},
+		{
+			name:     "undeclared defaults to chat (responses incoming, downgrade)",
+			provider: undeclared,
+			incoming: IncomingAPIResponses,
+			want:     protocol.TypeOpenAIChat,
+		},
+
+		// Explicit chat-only — responses incoming downgrades
+		{
+			name:     "chat-only serves chat natively",
 			provider: chatOnly,
 			incoming: IncomingAPIChat,
 			want:     protocol.TypeOpenAIChat,
 		},
 		{
-			name:     "default mode forces chat (responses incoming, downgrade)",
+			name:     "chat-only converts responses incoming down to chat",
 			provider: chatOnly,
 			incoming: IncomingAPIResponses,
 			want:     protocol.TypeOpenAIChat,
@@ -36,35 +51,35 @@ func TestResolveOpenAIEndpoint(t *testing.T) {
 
 		// Responses-only (Codex)
 		{
-			name:     "responses mode forces responses (chat incoming)",
+			name:     "responses-only converts chat incoming up to responses",
 			provider: responsesOnly,
 			incoming: IncomingAPIChat,
 			want:     protocol.TypeOpenAIResponses,
 		},
 		{
-			name:     "responses mode forces responses (responses incoming)",
+			name:     "responses-only serves responses natively",
 			provider: responsesOnly,
 			incoming: IncomingAPIResponses,
 			want:     protocol.TypeOpenAIResponses,
 		},
 
-		// Both (OpenAI proper) — mirror
+		// Dual declaration (OpenAI proper, DeepSeek) — native-first
 		{
-			name:     "both mode mirrors chat",
-			provider: both,
+			name:     "dual declaration serves chat natively",
+			provider: dual,
 			incoming: IncomingAPIChat,
 			want:     protocol.TypeOpenAIChat,
 		},
 		{
-			name:     "both mode mirrors responses",
-			provider: both,
+			name:     "dual declaration serves responses natively",
+			provider: dual,
 			incoming: IncomingAPIResponses,
 			want:     protocol.TypeOpenAIResponses,
 		},
 
 		// Rule overrides (override takes priority over provider mode)
 		{
-			name:     "override=responses on default chat-mode provider forces responses",
+			name:     "override=responses on chat-only provider forces responses",
 			provider: chatOnly,
 			flags:    typ.RuleFlags{OpenAIEndpointOverride: "responses"},
 			incoming: IncomingAPIChat,
@@ -78,15 +93,15 @@ func TestResolveOpenAIEndpoint(t *testing.T) {
 			want:     protocol.TypeOpenAIChat,
 		},
 		{
-			name:     "override=chat on both-mode provider forces chat",
-			provider: both,
+			name:     "override=chat on dual provider forces chat",
+			provider: dual,
 			flags:    typ.RuleFlags{OpenAIEndpointOverride: "chat"},
 			incoming: IncomingAPIResponses,
 			want:     protocol.TypeOpenAIChat,
 		},
 		{
-			name:     "override=responses on both-mode provider forces responses",
-			provider: both,
+			name:     "override=responses on dual provider forces responses",
+			provider: dual,
 			flags:    typ.RuleFlags{OpenAIEndpointOverride: "responses"},
 			incoming: IncomingAPIChat,
 			want:     protocol.TypeOpenAIResponses,
@@ -102,7 +117,7 @@ func TestResolveOpenAIEndpoint(t *testing.T) {
 		},
 		{
 			name:     "unknown flag value treated as no override",
-			provider: both,
+			provider: dual,
 			flags:    typ.RuleFlags{OpenAIEndpointOverride: "bogus"},
 			incoming: IncomingAPIResponses,
 			want:     protocol.TypeOpenAIResponses,
@@ -129,21 +144,21 @@ func TestResolveOpenAIEndpointNilProviderErrors(t *testing.T) {
 }
 
 // TestResolveOpenAIEndpointCodexOAuthSnapshot documents the design assumption
-// that Codex providers carry OpenAIEndpointMode=responses by the time they
+// that Codex providers declare OpenAIEndpoints=[responses] by the time they
 // reach routing. The OAuth handler is responsible for setting this on
 // instantiation; this test pins the resolver behavior against such providers.
 func TestResolveOpenAIEndpointCodexOAuthSnapshot(t *testing.T) {
 	codex := &typ.Provider{
-		UUID:               "codex-1",
-		OAuthDetail:        &typ.OAuthDetail{Issuer: ai.IssuerCodex},
-		OpenAIEndpointMode: ai.EndpointModeResponses,
+		UUID:            "codex-1",
+		OAuthDetail:     &typ.OAuthDetail{Issuer: ai.IssuerCodex},
+		OpenAIEndpoints: ai.OpenAIEndpointsForIssuer(ai.IssuerCodex),
 	}
 	got, err := ResolveOpenAIEndpoint(codex, typ.RuleFlags{}, IncomingAPIChat)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != protocol.TypeOpenAIResponses {
-		t.Errorf("Codex with EndpointModeResponses should route to Responses, got %v", got)
+		t.Errorf("Codex declaring [responses] should route to Responses, got %v", got)
 	}
 }
 

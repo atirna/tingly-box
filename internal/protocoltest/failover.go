@@ -82,20 +82,20 @@ func (env *TestEnv) SetupFailoverRoute(
 	primaryUUID := fmt.Sprintf("virtual-primary-%s-%s", successScenario.Name, primaryFailModel)
 	fallbackUUID := fmt.Sprintf("virtual-fallback-%s-%s", successScenario.Name, primaryFailModel)
 
-	// OpenAIEndpointMode must be set explicitly: without it ResolveOpenAIEndpoint
+	// OpenAIEndpoints must be set explicitly: without it ResolveOpenAIEndpoint
 	// falls back to chat for every OpenAI-style provider, so a target=openai_responses
 	// route would silently forward to /chat/completions instead of /responses (see
-	// targetToOpenAIEndpointMode's doc comment). Zero value for non-OpenAI targets
+	// targetToOpenAIEndpoints's doc comment). Nil for non-OpenAI targets
 	// is ignored, so this is a no-op for Anthropic/Google-target callers.
 	_ = env.appConfig.AddProvider(&typ.Provider{
 		UUID: primaryUUID, Name: primaryUUID, APIBase: primaryAPIBase, APIStyle: apiStyle,
 		Token: "primary-token", Enabled: true, Timeout: int64(constant.DefaultRequestTimeout),
-		OpenAIEndpointMode: targetToOpenAIEndpointMode(target),
+		OpenAIEndpoints: targetToOpenAIEndpoints(target),
 	})
 	_ = env.appConfig.AddProvider(&typ.Provider{
 		UUID: fallbackUUID, Name: fallbackUUID, APIBase: fallbackAPIBase, APIStyle: apiStyle,
 		Token: "fallback-token", Enabled: true, Timeout: int64(constant.DefaultRequestTimeout),
-		OpenAIEndpointMode: targetToOpenAIEndpointMode(target),
+		OpenAIEndpoints: targetToOpenAIEndpoints(target),
 	})
 
 	rule := newHarnessRule(requestModel, sourceToRuleScenario(source), requestModel, fallbackProviderModel,
@@ -176,7 +176,7 @@ func (env *TestEnv) SetupCrossStyleFailoverRoute(
 	})
 	_ = env.appConfig.AddProvider(&typ.Provider{
 		UUID: fallbackUUID, Name: fallbackUUID, APIBase: fallbackAPIBase, APIStyle: fallbackStyle,
-		OpenAIEndpointMode: targetToOpenAIEndpointMode(fallbackTarget),
+		OpenAIEndpoints: targetToOpenAIEndpoints(fallbackTarget),
 		Token:              "fallback-token", Enabled: true, Timeout: int64(constant.DefaultRequestTimeout),
 	})
 

@@ -121,8 +121,9 @@ func Migrate(c *Config) error {
 	migrate20260416(c) // Enable multi-tenant by default
 	migrate20260421(c) // Migrate profile unified model from "*" to "cc"
 	migrate20260502(c) // Remove wildcard (*) rules for smart_guide scenario
-	migrate20260518(c) // Set OpenAIEndpointMode=responses on existing Codex OAuth providers
+	migrate20260518(c) // Backfill responses endpoint declaration on existing Codex OAuth providers
 	migrate20260712(c) // Drop smart-routing partitions using removed positions (tool_use)
+	migrate20260802(c) // Converge legacy openai_endpoint_mode rows onto openai_endpoints
 	normalizeRuleDefaultsOnce(c)
 	return nil
 }

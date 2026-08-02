@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -116,11 +117,36 @@ type ProviderTemplate struct {
 	// ModelCapacities allows per-model capacity overrides
 	ModelCapacities map[string]int `json:"model_capacities,omitempty"` // model name -> capacity
 
-	// OpenAIEndpointMode declares which OpenAI endpoints providers instantiated
-	// from this template expose. Plain string at this layer; cast to the typed
-	// ai.OpenAIEndpointMode when assigned to a Provider. Values: "" (Chat,
-	// default), "responses" (Codex-style), "both" (OpenAI proper).
-	OpenAIEndpointMode string `json:"openai_endpoint_mode,omitempty"`
+	// OpenAIEndpoints declares which OpenAI endpoints providers instantiated
+	// from this template implement. Plain strings at this layer; validated /
+	// typed as ai.OpenAIEndpoint when assigned to a Provider. Values:
+	// "chat_completions", "responses". Empty = undeclared (routes as
+	// chat-only). The frontend prefills the per-endpoint checkboxes from
+	// this field when a provider is created from the template.
+	OpenAIEndpoints []string `json:"openai_endpoints,omitempty"`
+}
+
+// providerTemplateJSON mirrors ProviderTemplate for JSON decoding, plus the
+// legacy single-enum field so old registry snapshots keep loading.
+type providerTemplateJSON ProviderTemplate
+
+// UnmarshalJSON decodes a ProviderTemplate, converting the legacy
+// "openai_endpoint_mode" enum into OpenAIEndpoints when the new field is
+// absent (old GitHub registry versions may still serve the enum).
+func (t *ProviderTemplate) UnmarshalJSON(data []byte) error {
+	aux := struct {
+		*providerTemplateJSON
+		LegacyOpenAIEndpointMode string `json:"openai_endpoint_mode"`
+	}{providerTemplateJSON: (*providerTemplateJSON)(t)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(t.OpenAIEndpoints) == 0 {
+		for _, e := range ai.OpenAIEndpointsFromLegacyMode(aux.LegacyOpenAIEndpointMode) {
+			t.OpenAIEndpoints = append(t.OpenAIEndpoints, string(e))
+		}
+	}
+	return nil
 }
 
 // ProviderTemplateRegistry represents the provider template registry structure from GitHub

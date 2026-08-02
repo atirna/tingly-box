@@ -167,13 +167,13 @@ func messageRoles(body map[string]any) []string {
 	return roles
 }
 
-// setupBothModeRoute wires a route whose provider advertises EndpointModeBoth,
+// setupBothModeRoute wires a route whose provider declares both OpenAI endpoints,
 // so the openai_endpoint_override flag has a real choice to make (a chat- or
 // responses-only provider would ignore the override).
 func setupBothModeRoute(env *TestEnv, s Scenario, flags typ.RuleFlags) string {
 	env.virtual.RegisterScenario(s)
 	providerName := "flag-both-" + s.Name
-	registerProvider(env, providerName, env.virtual.URL(), ai.EndpointModeBoth)
+	registerProvider(env, providerName, env.virtual.URL(), []ai.OpenAIEndpoint{ai.OpenAIEndpointChat, ai.OpenAIEndpointResponses})
 
 	reqModel := "pv-flag-both-" + s.Name
 	providerModel := "virtual-model-" + s.Name
@@ -238,13 +238,13 @@ func newDescriberServer(t flagTB, description string) (baseURL string, hits *int
 
 // registerProvider registers an OpenAI-style provider pointing at the /v1 root of
 // base, with the given endpoint mode.
-func registerProvider(env *TestEnv, uuid, base string, mode ai.OpenAIEndpointMode) {
+func registerProvider(env *TestEnv, uuid, base string, endpoints []ai.OpenAIEndpoint) {
 	_ = env.appConfig.AddProvider(&typ.Provider{
 		UUID:               uuid,
 		Name:               uuid,
 		APIBase:            base + "/v1",
 		APIStyle:           protocol.APIStyleOpenAI,
-		OpenAIEndpointMode: mode,
+		OpenAIEndpoints: endpoints,
 		Token:              "virtual-token",
 		Enabled:            true,
 		Timeout:            int64(constant.DefaultRequestTimeout),
@@ -253,7 +253,7 @@ func registerProvider(env *TestEnv, uuid, base string, mode ai.OpenAIEndpointMod
 
 // registerOpenAIProvider registers a default (chat) OpenAI provider.
 func registerOpenAIProvider(env *TestEnv, uuid, base string) {
-	registerProvider(env, uuid, base, ai.EndpointModeUnknown)
+	registerProvider(env, uuid, base, nil)
 }
 
 // assertFlattenedContent verifies cursor compatibility flattened every message's

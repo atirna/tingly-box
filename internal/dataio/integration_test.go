@@ -203,7 +203,7 @@ func TestProviderRoundTripByAuthType(t *testing.T) {
 				Timeout:            45,
 				Tags:               []string{"prod", "fast"},
 				Models:             []string{"gpt-4", "gpt-4o"},
-				OpenAIEndpointMode: ai.EndpointModeBoth,
+				OpenAIEndpoints:    []ai.OpenAIEndpoint{ai.OpenAIEndpointChat, ai.OpenAIEndpointResponses},
 			},
 		},
 		{
@@ -514,8 +514,14 @@ func assertProviderFieldsEqual(t *testing.T, want, got *typ.Provider) {
 	if want.Source != got.Source {
 		t.Errorf("Source = %q, want %q", got.Source, want.Source)
 	}
-	if want.OpenAIEndpointMode != got.OpenAIEndpointMode {
-		t.Errorf("OpenAIEndpointMode = %q, want %q", got.OpenAIEndpointMode, want.OpenAIEndpointMode)
+	if len(want.OpenAIEndpoints) != len(got.OpenAIEndpoints) {
+		t.Errorf("OpenAIEndpoints = %v, want %v", got.OpenAIEndpoints, want.OpenAIEndpoints)
+	} else {
+		for i := range want.OpenAIEndpoints {
+			if want.OpenAIEndpoints[i] != got.OpenAIEndpoints[i] {
+				t.Errorf("OpenAIEndpoints = %v, want %v", got.OpenAIEndpoints, want.OpenAIEndpoints)
+			}
+		}
 	}
 	if !stringSlicesEqual(want.Tags, got.Tags) {
 		t.Errorf("Tags = %v, want %v", got.Tags, want.Tags)
