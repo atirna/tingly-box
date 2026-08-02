@@ -6,6 +6,7 @@ import {
     Alert,
     Box,
     Button,
+    Checkbox,
     Chip,
     CircularProgress,
     Dialog,
@@ -51,6 +52,10 @@ export interface EnhancedProviderFormData {
     /** If set, prefer this exact provider ID when resolving the template.
      *  Avoids mismatches when multiple providers share the same base URL. */
     selectedProviderId?: string;
+    /** Declared upstream OpenAI endpoints: 'chat_completions' and/or 'responses'.
+     *  Independent facts, not a mode — each is its own checkbox in the form.
+     *  Only meaningful when the OpenAI protocol slot is enabled. */
+    openaiEndpoints?: string[];
 }
 
 interface PresetProviderFormDialogProps {
@@ -112,6 +117,13 @@ const ProviderFormDialog = ({
     const [slotOpenAI, setSlotOpenAI] = useState<ProtocolSlotData>({url: '', enabled: true});
     const [slotAnthropic, setSlotAnthropic] = useState<ProtocolSlotData>({url: '', enabled: false});
 
+    // ── OpenAI endpoint declaration (independent checkboxes, not a mode) ──
+    // Chat Completions is the ecosystem default (on); Responses is opt-in.
+    // Selecting a preset prefills both from its declared openai_endpoints so
+    // the user sees exactly what was checked instead of it happening silently.
+    const [supportsChat, setSupportsChat] = useState(true);
+    const [supportsResponses, setSupportsResponses] = useState(false);
+
     const allProviders = useProviderTemplates();
 
     // Stable onChange ref so effects/handlers don't depend on it.
@@ -165,6 +177,10 @@ const ProviderFormDialog = ({
             anthropic: provider.baseUrlAnthropic,
         });
         onChangeRef.current('selectedProviderId', provider.id);
+        // Prefill the endpoint checkboxes from the template's declaration —
+        // visible, editable, not a silent backend snapshot.
+        setSupportsChat(provider.openaiEndpoints ? provider.openaiEndpoints.includes('chat_completions') : true);
+        setSupportsResponses(provider.openaiEndpoints ? provider.openaiEndpoints.includes('responses') : false);
         // In edit mode the provider name already belongs to the user — selecting a
         // preset must never overwrite it. Auto-fill only applies in add mode.
         if (mode === 'add' && (nameIsAutoFilled || !data.name)) {
@@ -206,6 +222,17 @@ const ProviderFormDialog = ({
         };
         setSlotOpenAI(initOpenAI);
         setSlotAnthropic(initAnthropic);
+
+        // Endpoint checkboxes: edit mode carries the provider's own persisted
+        // declaration (already fetched into `data`); the preset-matching
+        // branches below only prefill when there's nothing persisted yet.
+        if (data.openaiEndpoints) {
+            setSupportsChat(data.openaiEndpoints.includes('chat_completions'));
+            setSupportsResponses(data.openaiEndpoints.includes('responses'));
+        } else if (mode === 'add') {
+            setSupportsChat(true);
+            setSupportsResponses(false);
+        }
 
         if (mode === 'edit') {
             // Find ALL presets matching the configured URL(s). When multiple
@@ -267,6 +294,10 @@ const ProviderFormDialog = ({
                 setSlotOpenAI(nextOpenAI);
                 setSlotAnthropic(nextAnthropic);
                 commitProtocolState(nextOpenAI, nextAnthropic);
+                if (!data.openaiEndpoints) {
+                    setSupportsChat(provider.openaiEndpoints ? provider.openaiEndpoints.includes('chat_completions') : true);
+                    setSupportsResponses(provider.openaiEndpoints ? provider.openaiEndpoints.includes('responses') : false);
+                }
             }
         } else {
             // Add mode without a preselected provider — try URL matching.
@@ -279,6 +310,10 @@ const ProviderFormDialog = ({
                 ? `found ${matchingProvider.id} / ${matchingProvider.name}`
                 : 'no match');
             setSelectedProvider(matchingProvider);
+            if (matchingProvider && !data.openaiEndpoints) {
+                setSupportsChat(matchingProvider.openaiEndpoints ? matchingProvider.openaiEndpoints.includes('chat_completions') : true);
+                setSupportsResponses(matchingProvider.openaiEndpoints ? matchingProvider.openaiEndpoints.includes('responses') : false);
+            }
             if (matchingProvider) {
                 // Fill slots from template
                 if (matchingProvider.baseUrlOpenAI) {
@@ -472,6 +507,11 @@ const ProviderFormDialog = ({
                 if (slotAnthropic.enabled) p.push('anthropic');
                 return p;
             })(),
+            // Endpoint declaration only means anything on the OpenAI slot;
+            // an empty array (both unchecked) clears the declaration.
+            openaiEndpoints: slotOpenAI.enabled
+                ? [...(supportsChat ? ['chat_completions'] : []), ...(supportsResponses ? ['responses'] : [])]
+                : [],
         };
 
         setSubmitting(true);
@@ -603,6 +643,30 @@ const ProviderFormDialog = ({
                                             : undefined)
                                         : undefined}
                                 />
+                                {slotOpenAI.enabled && (
+                                    <Box sx={{pl: 1.5, display: 'flex', flexDirection: 'column'}}>
+                                        <FormControlLabel
+                                            control={
+                                                <Checkbox
+                                                    size="small"
+                                                    checked={supportsChat}
+                                                    onChange={(e) => setSupportsChat(e.target.checked)}
+                                                />
+                                            }
+                                            label={t('providerDialog.protocol.endpointChat', {defaultValue: 'Chat Completions (/chat/completions)'})}
+                                        />
+                                        <FormControlLabel
+                                            control={
+                                                <Checkbox
+                                                    size="small"
+                                                    checked={supportsResponses}
+                                                    onChange={(e) => setSupportsResponses(e.target.checked)}
+                                                />
+                                            }
+                                            label={t('providerDialog.protocol.endpointResponses', {defaultValue: 'Responses (/responses)'})}
+                                        />
+                                    </Box>
+                                )}
                                 <ProtocolSlot
                                     kind="anthropic"
                                     slot={slotAnthropic}

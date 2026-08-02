@@ -5,6 +5,7 @@
 > 定稿决议:开放问题 1 → **不做域名 backfill**。存量 provider 只做旧枚举 → 新字段的等价格式转换(行为不变);responses 能力仅对新建实例生效(模板预填 / 用户勾选)。存量用户想启用,在 provider 编辑页勾选即可。
 > Related: `.design/openai-endpoint-routing.md`, `.design/rule-flags.md`, `.design/ux-principles.md`, PR #976
 > v2 变更:① 废弃 `openai_endpoint_mode` 枚举(`both` 语义混浊),改为按端点显式声明 `openai_endpoints`;② 声明升级为一等可编辑字段,前端独立勾选,模板实例化自动预填。
+> v3 修正:撤销模型级 `endpoints` 元数据(原 Gap C / §4.1)。理由:它标注为"不参与路由、仅 informational",却从未被任何代码消费,是与真实控制机制(per-rule `openai_endpoint_override`,已能精确到具体 request_model→provider_model 绑定)重复且未对齐的死数据——重犯了本 spec 批判 `both` 时用的同一条错误(声明里混入了本该属于策略/控制层的东西)。模型粒度的端点约束,统一交给已有的 rule flag 逃生舱,不新增 schema。
 
 ---
 
@@ -60,7 +61,7 @@ DeepSeek 官方已上线 OpenAI Responses API([create-response](https://api-docs
 
 并且旧设计把声明定义为"用户不可编辑",导致自定义/自建 provider(vLLM、代理网关、模板未及更新的新厂商)即使上游支持 responses 也**没有任何入口声明它**,只能手改 config.json。这与 UX 原则冲突("done ≠ locked"、"smart defaults over toggles" 的前提是 toggle 存在)。
 
-**Gap C — 模型级差异无表达。** DeepSeek `/responses` 当前仅支持 `deepseek-v4-flash`(`deepseek-v4-pro` 官方宣布 2026-08 支持);provider 级声明无法表达这一粒度。
+**Gap C(撤销,见文首 v3 修正)—— ~~模型级差异无表达~~。** DeepSeek `/responses` 当前仅支持 `deepseek-v4-flash`(`deepseek-v4-pro` 官方宣布 2026-08 支持),但这不是"provider 声明无法表达的 gap":模型粒度的端点约束本就不该由 provider 模板数据来预判——已有的 per-rule `openai_endpoint_override` flag 精确覆盖这个粒度(一条 rule 就绑定了具体的 request_model→provider_model),诊断走真实路径(上游报错)即可,不需要新的 informational 元数据字段。
 
 **Gap D — 转换链路未确认。** 见 §5:
 - `VendorTransform.applyResponses`(`internal/protocol/transform/vendor.go:58`)对所有厂商 no-op;
@@ -74,7 +75,7 @@ DeepSeek 官方已上线 OpenAI Responses API([create-response](https://api-docs
 | 事实 | 影响 |
 |---|---|
 | `POST https://api.deepseek.com/responses` 与 `/v1/responses` 均返回 401(路径存在、需鉴权;404 才是不存在) | 现有 `base_url_openai: https://api.deepseek.com/v1` 可直接复用,openai-go SDK 拼 `{base}/responses` 即可,**无需新增 base URL 字段** |
-| 仅 `deepseek-v4-flash` 支持;`deepseek-v4-pro` 2026-08 到来 | Gap C;模型级元数据 |
+| 仅 `deepseek-v4-flash` 支持;`deepseek-v4-pro` 2026-08 到来 | 不建模型级元数据(Gap C 撤销);由 rule flag 逃生舱兜底,见 §9.2 |
 | Stateless:`previous_response_id`、`store`、`conversation` 不支持,客户端自维护历史 | codex 默认 `store:false` + 全量历史重发,天然兼容 |
 | 不支持的参数**静默忽略,不报错**(含 `metadata`、`prompt_cache_key`) | vendor transform 无需强制剥离字段(§5.1) |
 | 流式为语义化 SSE(`response.completed/incomplete/failed` 结束,无 `[DONE]`) | 与 OpenAI Responses SSE 一致,openai-go 解析无需改动 |
@@ -91,7 +92,6 @@ DeepSeek 官方已上线 OpenAI Responses API([create-response](https://api-docs
 ├────────────────────────────────────────────────────────────┤
 │ D1 数据:providers.json                                     │
 │    deepseek-com 声明 ["chat_completions","responses"]      │
-│    模型级 endpoints 元数据(informational)                  │
 ├────────────────────────────────────────────────────────────┤
 │ D2 接线 + UI:一等可编辑字段                                 │
 │    Create/Update API 承载;前端独立勾选;模板预填免手动;     │
@@ -160,15 +160,8 @@ func OpenAIEndpointsForIssuer(issuer Issuer) []OpenAIEndpoint  // Codex → [res
 ```jsonc
 {
   "deepseek-com": {
-    // ... 现有字段不变 ...
+    // ... 现有字段不变(models 数组不加任何端点相关字段,见文首 v3 修正)...
     "openai_endpoints": ["chat_completions", "responses"],   // 新增:两条独立事实
-    "models": [
-      // deepseek-chat / deepseek-reasoner 已标 deprecated,不加 endpoints
-      { "id": "deepseek-v4-flash", "context": 1000000, "max_output": 384000,
-        "endpoints": ["chat_completions", "responses"] },     // 新增
-      { "id": "deepseek-v4-pro",   "context": 1000000, "max_output": 384000,
-        "endpoints": ["chat_completions"] }  // v4-pro responses 官宣 2026-08;上线后实测通过再补
-    ],
     "last_updated": "2026-08-02",
     "sources": [
       "https://api-docs.deepseek.com/api/create-response",
@@ -180,13 +173,9 @@ func OpenAIEndpointsForIssuer(issuer Issuer) []OpenAIEndpoint  // Codex → [res
 
 存量条目同步换词:`openai-com` → `["chat_completions","responses"]`,`codex` → `["responses"]`(删除两处 `openai_endpoint_mode`)。
 
-模型级 `endpoints`(与 provider 级同词汇表,写入 `_naming_rules.models_schema` 说明):
+模型粒度(`deepseek-v4-pro` 暂不支持 responses)**不建模型级字段**——理由见文首 v3 修正与 Gap C:该数据不参与路由就不是能力声明,真正的控制点是已有的 per-rule `openai_endpoint_override`。`ModelInfo` 结构不变。
 
-- **缺省 = 不限制**(跟随 provider 级声明)。存量所有模型不受影响;
-- 显式声明 = 该模型经验证的端点集合,**Phase 1 仅作 informational 元数据**:供 UI 展示、smart-guide/agent 规则创建时选默认模型(codex 场景优先挑带 `responses` 的模型)。**不参与路由**——resolver 保持 provider 级纯函数(遵守 `.design/openai-endpoint-routing.md` §3 的分层纪律);
-- 若真实用户反馈出现"路由到 responses 但模型不支持"的错误,再评估 Phase 3 的模型级降级 guard(§7)。
-
-同时:注册表 `version` bump 至 `3.0.0`(schema 换字段,major);`_schema_version` bump 并在 `_naming_rules` 增补 `openai_endpoints`/`endpoints` 字段说明。
+同时:注册表 `version` bump 至 `3.0.0`(schema 换字段,major);`_schema_version` bump 并在 `_naming_rules` 增补 `openai_endpoints` 字段说明。
 
 **其他厂商**:本次只改 DeepSeek。后续厂商官宣 responses 支持时,复用同一模式:实测(401/404 探测 + keyed smoke)→ json 加一个值 → 走 D2 已建好的链路,不需要再改代码。
 
@@ -286,7 +275,7 @@ OpenAIEndpoints []string `json:"openai_endpoints,omitempty" description:"Declare
 | 声明模型换字段,波及 ~12 个文件 + DB 列 + 三个外部数据边界(config.json / dataio / GitHub 注册表旧版) | 中 | §4.0 兼容读取表;migration 幂等;resolver 与 store 已有测试全部改写跟随;一次 PR 内完成硬切,不留双字段长期共存 |
 | 用户误勾 responses(上游实际不支持)→ 上游 404 | 中 | 诊断走真实路径(UX 原则):provider 连通性探测按已勾选端点分别测并展示每端点结果;404 错误透传清晰;取消勾选即恢复 |
 | claude-code + openai-style deepseek 声明后从 Chat 翻转到 Responses(§4.3 第三行) | 低(定稿后仅新实例/用户主动勾选触发,存量零影响) | §5.2 修复先行合入;UI 取消勾选或 rule flag 逃生 |
-| codex 场景 rule 配了 `deepseek-v4-pro` 等暂不支持 responses 的模型 → 上游报错 | 中 | 模型级 `endpoints` 元数据引导 UI/agent 默认选 v4-flash;DeepSeek 报错信息清晰;v4-pro 官宣本月支持,窗口极短 |
+| codex 场景 rule 配了 `deepseek-v4-pro` 等暂不支持 responses 的模型 → 上游报错 | 中 | 不新增数据字段(见 v3 修正);该 rule 上设 `openai_endpoint_override=chat` 即可绕开;DeepSeek 报错信息清晰;v4-pro 官宣本月支持,窗口极短 |
 | `/v1/responses` 路径仅经 401 探测验证,未 keyed 实测 | 低 | §8 smoke test 项;若意外 404,fallback 方案为 client 层对 deepseek 剥 `/v1` 前缀(不新增数据字段) |
 | 模板注册表从 GitHub 同步,新旧版本 app × 新旧注册表交叉 | 低 | 新字段增量可选,旧 app 反序列化忽略;新 app 对旧注册表走 §4.0 兼容转换 |
 | `frontend/src/services/service_providers.json`(独立的旧前端数据集,含 `deepseek` 键)与注册表漂移 | 低 | 本 spec 不动它;开放问题 §9 |
@@ -306,8 +295,8 @@ OpenAIEndpoints []string `json:"openai_endpoints,omitempty" description:"Declare
 7. §5.2 Anthropic→Responses thinking 映射(请求 + 历史回传 + 响应侧验证)+ e2e 测试;
 8. §5.1 / §8 smoke 验证,按需补 `applyResponses` deepseek 分支。
 
-**Phase 3 — 观察后决定(默认不做)**
-9. 模型级 endpoints 路由 guard(入站命中 responses 但模型显式不含时降级 Chat)。仅在真实错误反馈出现后立项,且需重新评审是否违反路由分层纪律。
+**Phase 3 — 不再规划**
+~~9. 模型级 endpoints 路由 guard~~——已随 v3 修正撤销:模型粒度约束的正确落点是 rule flag,不是 provider 数据层,不存在"以后要不要做"的问题。
 
 ## 8. 测试策略
 
@@ -320,7 +309,7 @@ OpenAIEndpoints []string `json:"openai_endpoints,omitempty" description:"Declare
 ## 9. 开放问题
 
 1. ~~backfill 范围~~ **已决议(2026-08-02)**:不做域名 backfill,仅新实例(见文首定稿决议);
-2. `deepseek-v4-pro` responses 支持正式落地后,`endpoints` 数据更新的节奏(注册表热更 vs 随版本);
+2. ~~`endpoints` 数据更新节奏~~ 不适用(v3 修正已撤销该字段)。`deepseek-v4-pro` responses 支持正式落地后,若用户此前对相关 rule 设了 `openai_endpoint_override=chat` 需自行摘除——无自动化必要,影响面小;
 3. `service_providers.json`(前端旧数据集)是否已死代码,可否清理(独立小任务);
 4. anthropic-style 的 deepseek provider(`/anthropic` base)是否某天也该优先 Responses?——目前判断:不。anthropic-style 走原生 anthropic 端点,DeepSeek 官方自己维护协议映射,gateway 不应二次聪明;
 5. "Anthropic 入站在 resolver 中视为 Responses 入站"(`anthropic_message.go:258/382`)是隐藏在调用点的策略,本次不动;重写路由设计文档时显式记档,未来若要改(如按 thinking 开关选择)另立 spec。

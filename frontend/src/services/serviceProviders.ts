@@ -22,6 +22,7 @@ export interface ServiceProvider {
     oauth_provider?: string;
     type?: string;
     icon?: string; // Icon identifier for Lobe Icons (e.g., "openai", "anthropic")
+    openai_endpoints?: string[]; // Declared upstream OpenAI endpoints: chat_completions, responses
 }
 
 export interface ServiceProviderOption {
@@ -161,6 +162,8 @@ export interface UniqueProvider {
     icon?: string; // Icon identifier for Lobe Icons
     region?: 'cn' | 'global' | 'self-hosted'; // Derived region grouping for UI
     type?: string; // Provider type: "official" | "reseller" | "self-hosted" | etc.
+    /** Declared upstream OpenAI endpoints (chat_completions, responses), used to prefill the provider form's checkboxes. */
+    openaiEndpoints?: string[];
 }
 
 // Heuristic classification of a provider into "cn" (China) or "global".
@@ -213,6 +216,7 @@ export function getAllUniqueProviders(): UniqueProvider[] {
             icon: sp.icon,
             region: classifyRegion(sp),
             type: sp.type,
+            openaiEndpoints: sp.openai_endpoints,
         });
     });
 

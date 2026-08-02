@@ -23,6 +23,7 @@ type ProviderResponse struct {
 	OAuthDetail      *typ.OAuthDetail  `json:"oauth_detail,omitempty"`                // OAuth credentials (only for oauth auth type)
 	VModelDetail     *typ.VModelDetail `json:"vmodel_detail,omitempty"`               // Virtual-model config (only for vmodel auth type)
 	Source           string            `json:"source,omitempty" example:"user"`       // "user" (default) or "builtin"
+	OpenAIEndpoints  []string          `json:"openai_endpoints,omitempty"`            // Declared upstream OpenAI endpoints (chat_completions, responses)
 }
 
 // ProvidersResponse represents the response for listing providers.
@@ -43,6 +44,12 @@ type CreateProviderRequest struct {
 	Enabled          bool   `json:"enabled" description:"Whether provider is enabled" example:"true"`
 	ProxyURL         string `json:"proxy_url,omitempty" description:"HTTP or SOCKS proxy URL (e.g., http://localhost:7890 or socks5://localhost:1080)" example:"http://localhost:7890"`
 	AuthType         string `json:"auth_type,omitempty" description:"Auth type: api_key or oauth (default: api_key)" example:"api_key"`
+
+	// OpenAIEndpoints declares which OpenAI endpoints the upstream implements
+	// (independent facts, prefilled from the template on the frontend, each an
+	// independent checkbox). Empty = undeclared: routing uses the conservative
+	// chat-only default. openai api_style only.
+	OpenAIEndpoints []string `json:"openai_endpoints,omitempty" description:"Declared upstream OpenAI endpoints: chat_completions, responses. Empty = undeclared (routes as chat-only)" example:"chat_completions,responses"`
 }
 
 // CreateProviderResponse represents the response for adding a provider.
@@ -63,6 +70,10 @@ type UpdateProviderRequest struct {
 	NoKeyRequired    *bool   `json:"no_key_required,omitempty" description:"Whether provider requires no API key"`
 	Enabled          *bool   `json:"enabled,omitempty" description:"New enabled status"`
 	ProxyURL         *string `json:"proxy_url,omitempty" description:"HTTP or SOCKS proxy URL"`
+
+	// Pointer semantics match the other fields: nil = leave unchanged,
+	// empty slice = clear the declaration (back to chat-only default).
+	OpenAIEndpoints *[]string `json:"openai_endpoints,omitempty" description:"Declared upstream OpenAI endpoints: chat_completions, responses. Empty array clears the declaration"`
 }
 
 // UpdateProviderResponse represents the response for updating a provider.

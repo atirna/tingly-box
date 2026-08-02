@@ -343,3 +343,125 @@ func TestImportProviders_MissingData(t *testing.T) {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
 }
+
+// TestCreateProvider_OpenAIEndpoints exercises the declared-endpoint field
+// end to end: valid values persist, invalid values are rejected with 400,
+// and an absent field leaves the provider undeclared (nil).
+func TestCreateProvider_OpenAIEndpoints(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// CreateProviderResponse.Data is interface{}; round-trip the raw body
+	// through typ.Provider rather than asserting the in-process type, since
+	// the handler serializes to JSON either way.
+	post := func(t *testing.T, cfg *config.Config, req CreateProviderRequest) (*httptest.ResponseRecorder, struct {
+		Success bool         `json:"success"`
+		Data    typ.Provider `json:"data"`
+	}) {
+		t.Helper()
+		router := gin.New()
+		handler := NewHandler(cfg, nil)
+		router.POST("/providers", handler.CreateProvider)
+
+		body, _ := json.Marshal(req)
+		httpReq, _ := http.NewRequest("POST", "/providers", bytes.NewBuffer(body))
+		httpReq.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httpReq)
+
+		var resp struct {
+			Success bool         `json:"success"`
+			Data    typ.Provider `json:"data"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		return w, resp
+	}
+
+	t.Run("dual declaration persists", func(t *testing.T) {
+		cfg, _ := config.NewConfig(config.WithConfigDir(t.TempDir()))
+		w, resp := post(t, cfg, CreateProviderRequest{
+			Name: "deepseek-test", APIBase: "https://api.deepseek.com/v1", Token: "sk-test",
+			OpenAIEndpoints: []string{"chat_completions", "responses"},
+		})
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.True(t, resp.Success)
+		require.Len(t, resp.Data.OpenAIEndpoints, 2)
+	})
+
+	t.Run("invalid endpoint value rejected", func(t *testing.T) {
+		cfg, _ := config.NewConfig(config.WithConfigDir(t.TempDir()))
+		router := gin.New()
+		handler := NewHandler(cfg, nil)
+		router.POST("/providers", handler.CreateProvider)
+
+		body, _ := json.Marshal(CreateProviderRequest{
+			Name: "bad", APIBase: "https://api.example.com/v1", Token: "sk-test",
+			OpenAIEndpoints: []string{"both"}, // legacy enum word, not a valid endpoint
+		})
+		httpReq, _ := http.NewRequest("POST", "/providers", bytes.NewBuffer(body))
+		httpReq.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httpReq)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("absent field leaves provider undeclared", func(t *testing.T) {
+		cfg, _ := config.NewConfig(config.WithConfigDir(t.TempDir()))
+		w, resp := post(t, cfg, CreateProviderRequest{
+			Name: "plain", APIBase: "https://api.example.com/v1", Token: "sk-test",
+		})
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.Empty(t, resp.Data.OpenAIEndpoints)
+	})
+}
+
+// TestUpdateProvider_OpenAIEndpoints exercises the PATCH-semantics of the
+// pointer-to-slice field: nil leaves the declaration untouched, a non-nil
+// empty slice clears it, and a non-nil populated slice replaces it.
+func TestUpdateProvider_OpenAIEndpoints(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg, _ := config.NewConfig(config.WithConfigDir(t.TempDir()))
+	handler := NewHandler(cfg, nil)
+
+	created := &typ.Provider{
+		UUID: "prov-endpoints", Name: "test", APIBase: "https://api.example.com/v1",
+		APIStyle: protocol.APIStyleOpenAI, AuthType: typ.AuthTypeAPIKey, Token: "sk-test", Enabled: true,
+	}
+	require.NoError(t, cfg.AddProvider(created))
+
+	patch := func(t *testing.T, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		router := gin.New()
+		router.PATCH("/providers/:uuid", handler.UpdateProvider)
+		req, _ := http.NewRequest("PATCH", "/providers/"+created.UUID, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	// Set a declaration.
+	w := patch(t, `{"openai_endpoints":["responses"]}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	got, err := cfg.GetProviderByUUID(created.UUID)
+	require.NoError(t, err)
+	require.Len(t, got.OpenAIEndpoints, 1)
+	assert.Equal(t, "responses", string(got.OpenAIEndpoints[0]))
+
+	// Omitting the field entirely must leave it untouched.
+	w = patch(t, `{"name":"renamed"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	got, err = cfg.GetProviderByUUID(created.UUID)
+	require.NoError(t, err)
+	require.Len(t, got.OpenAIEndpoints, 1, "declaration must survive an update that doesn't mention it")
+
+	// An explicit empty array clears the declaration.
+	w = patch(t, `{"openai_endpoints":[]}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	got, err = cfg.GetProviderByUUID(created.UUID)
+	require.NoError(t, err)
+	assert.Empty(t, got.OpenAIEndpoints)
+
+	// Invalid value in an update is rejected.
+	w = patch(t, `{"openai_endpoints":["not-a-real-endpoint"]}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
+	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/dataio"
 	"github.com/tingly-dev/tingly-box/internal/obs"
@@ -49,6 +50,9 @@ func maskForResponse(p *typ.Provider) ProviderResponse {
 		ProxyURL:         p.ProxyURL,
 		AuthType:         string(p.AuthType),
 		Source:           string(p.Source),
+	}
+	for _, e := range p.OpenAIEndpoints {
+		resp.OpenAIEndpoints = append(resp.OpenAIEndpoints, string(e))
 	}
 	// Only surface vmodel_detail on vmodel providers so a stale blob on a
 	// flipped-auth row can never leak via the masked response.
@@ -154,6 +158,15 @@ func (h *Handler) CreateProvider(c *gin.Context) {
 		}
 	}
 
+	// Endpoint declarations are independent facts about the upstream; the
+	// vocabulary is validated here, the routing default (chat-only when
+	// undeclared) is applied by the resolver.
+	openaiEndpoints, err := ai.ParseOpenAIEndpoints(req.OpenAIEndpoints)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
 	uid, err := uuid.NewUUID()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, CreateProviderResponse{
@@ -176,6 +189,7 @@ func (h *Handler) CreateProvider(c *gin.Context) {
 		ProxyURL:         req.ProxyURL,
 		AuthType:         typ.AuthType(req.AuthType),
 		Timeout:          constant.DefaultRequestTimeout,
+		OpenAIEndpoints:  openaiEndpoints,
 	}
 
 	if err = h.config.AddProvider(p); err != nil {
@@ -298,6 +312,14 @@ func (h *Handler) UpdateProvider(c *gin.Context) {
 	}
 	if req.ProxyURL != nil {
 		p.ProxyURL = *req.ProxyURL
+	}
+	if req.OpenAIEndpoints != nil {
+		eps, err := ai.ParseOpenAIEndpoints(*req.OpenAIEndpoints)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+		p.OpenAIEndpoints = eps
 	}
 
 	// Dual-mode constraints: validate post-merge so we catch combinations

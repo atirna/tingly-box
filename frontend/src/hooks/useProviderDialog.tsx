@@ -218,6 +218,7 @@ export const useProviderDialog = (
             token: fd.token,
             no_key_required: fd.noKeyRequired,
             proxy_url: fd.proxyUrl,
+            openai_endpoints: fd.openaiEndpoints,
         };
 
         const result = await api.addProvider(providerData);
@@ -242,6 +243,7 @@ export const useProviderDialog = (
             token: providerFormData.token,
             no_key_required: providerFormData.noKeyRequired,
             proxy_url: providerFormData.proxyUrl,
+            openai_endpoints: providerFormData.openaiEndpoints,
         };
 
         const result = await api.addProvider(providerData, true);

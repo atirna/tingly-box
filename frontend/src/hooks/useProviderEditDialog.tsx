@@ -50,6 +50,7 @@ export function useProviderEditDialog({ onUpdated, showNotification }: UseProvid
             proxy_url: fd.proxyUrl ?? '',
             api_base_openai: fd.apiBaseOpenAI ?? '',
             api_base_anthropic: fd.apiBaseAnthropic ?? '',
+            openai_endpoints: fd.openaiEndpoints,
         };
     }, [providerFormData]);
 
@@ -83,6 +84,7 @@ export function useProviderEditDialog({ onUpdated, showNotification }: UseProvid
                     noKeyRequired: provider.no_key_required || false,
                     proxyUrl: provider.proxy_url || '',
                     authType: provider.auth_type || 'api_key',
+                    openaiEndpoints: (provider as any).openai_endpoints || [],
                 } as any);
                 setApiKeyDialogOpen(true);
             }

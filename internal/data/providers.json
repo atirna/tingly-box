@@ -12,7 +12,7 @@
       "region": "cn | intl | global",
       "plan": "standard | coding | oauth"
     },
-    "models_schema": "每条模型 { id, context?, max_output? }，仅填写已验证的数值，不确定的省略字段或整个数组留空。可选 endpoints（string[]，同 openai_endpoints 词汇表）：该模型经验证支持的端点集合，仅作信息元数据（UI 展示 / 默认模型引导），不参与路由；缺省 = 不限制。",
+    "models_schema": "每条模型 { id, context?, max_output? }，仅填写已验证的数值，不确定的省略字段或整个数组留空。",
     "provider_meta_fields": "可选字段：last_updated（YYYY-MM-DD，该 provider 数据最近一次校验/更新的日期）与 sources（string[]，支撑本次更新的官方参考链接）——仅在确实有验证依据时添加，只需覆盖发生变更的字段，不需要为未改动的 provider 补齐历史。",
     "openai_endpoints": "按端点显式声明上游实现的 OpenAI 端点，词汇表：chat_completions、responses。每个值是一条可独立验证的事实；缺省 = 未声明，网关按 Chat-only 保守处理。不使用合成模式词（旧 openai_endpoint_mode 的 both 已废弃）。"
   },
@@ -738,19 +738,12 @@
         {
           "id": "deepseek-v4-flash",
           "context": 1000000,
-          "max_output": 384000,
-          "endpoints": [
-            "chat_completions",
-            "responses"
-          ]
+          "max_output": 384000
         },
         {
           "id": "deepseek-v4-pro",
           "context": 1000000,
-          "max_output": 384000,
-          "endpoints": [
-            "chat_completions"
-          ]
+          "max_output": 384000
         }
       ],
       "supports_models_endpoint": true,
