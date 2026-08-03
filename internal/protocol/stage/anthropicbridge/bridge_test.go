@@ -163,7 +163,7 @@ func TestAnthropicToOpenAIChatComplete(t *testing.T) {
 			if response.Model != tt.sourceModel || !response.SideEffectsCommitted {
 				t.Fatalf("response facts = %+v", response)
 			}
-			if response.Usage == nil || response.Usage.InputTokens != 8 || response.Usage.OutputTokens != 4 || response.Usage.CacheInputTokens != 2 || response.Usage.ReasoningTokens != 1 {
+			if response.Usage == nil || response.Usage.InputTokens != 8 || response.Usage.OutputTokens != 4 || response.Usage.CacheReadTokens != 2 || response.Usage.ReasoningTokens != 1 {
 				t.Fatalf("normalized usage = %+v", response.Usage)
 			}
 			var wire map[string]any
@@ -346,7 +346,7 @@ func TestAnthropicToOpenAIChatStream(t *testing.T) {
 				t.Fatalf("message_start = %s, err=%v", firstJSON, err)
 			}
 			result := stream.Result()
-			if result.Usage == nil || result.Usage.InputTokens != 6 || result.Usage.CacheInputTokens != 1 || result.Usage.OutputTokens != 2 {
+			if result.Usage == nil || result.Usage.InputTokens != 6 || result.Usage.CacheReadTokens != 1 || result.Usage.OutputTokens != 2 {
 				t.Fatalf("stream usage = %+v", result.Usage)
 			}
 			if result.Model != tt.sourceModel || !result.SideEffectsCommitted {

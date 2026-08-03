@@ -178,7 +178,7 @@ func (m *MatrixCmd) Run() error {
 	if m.Mode == "bridges" && m.RecordDir != "" {
 		return fmt.Errorf("--mode=bridges does not support --record-dir (the Bridge matrix runs in-process without HTTP recording)")
 	}
-	if contains(m.Scenarios, protocoltest.MCPStageOwnedToolScenarioName) && (!m.MCPEnabled || !m.StageEnabled) {
+	if slices.Contains(m.Scenarios, protocoltest.MCPStageOwnedToolScenarioName) && (!m.MCPEnabled || !m.StageEnabled) {
 		return fmt.Errorf("--scenario=%s requires both --stage and --mcp", protocoltest.MCPStageOwnedToolScenarioName)
 	}
 
@@ -283,7 +283,7 @@ func (m *MatrixCmd) Run() error {
 		}
 	} else {
 		printTable(results, verbose)
-		if m.RecordDir != "" && m.StageEnabled && m.MCPEnabled && contains(m.Scenarios, protocoltest.MCPStageOwnedToolScenarioName) {
+		if m.RecordDir != "" && m.StageEnabled && m.MCPEnabled && slices.Contains(m.Scenarios, protocoltest.MCPStageOwnedToolScenarioName) {
 			fmt.Printf("\n📼 RequestRecord artifacts verified: %d case(s) in %s\n", executed, m.RecordDir)
 		}
 	}

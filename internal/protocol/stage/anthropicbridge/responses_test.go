@@ -55,7 +55,7 @@ func TestAnthropicBetaToOpenAIResponsesComplete(t *testing.T) {
 	if message.Model != "public-model" || len(message.Content) != 1 || !strings.Contains(message.Content[0].Text, "hello from responses") {
 		t.Fatalf("message = %#v", message)
 	}
-	if result.Usage == nil || result.Usage.InputTokens != 7 || result.Usage.CacheInputTokens != 2 || result.Usage.OutputTokens != 4 {
+	if result.Usage == nil || result.Usage.InputTokens != 7 || result.Usage.CacheReadTokens != 2 || result.Usage.OutputTokens != 4 {
 		t.Fatalf("usage = %#v", result.Usage)
 	}
 	if !result.SideEffectsCommitted {
@@ -105,7 +105,7 @@ func TestAnthropicV1ToOpenAIResponsesComplete(t *testing.T) {
 	if message.Model != "public-v1-model" || len(message.Content) != 1 || !strings.Contains(message.Content[0].Text, "hello v1 from responses") {
 		t.Fatalf("message = %#v", message)
 	}
-	if result.Usage == nil || result.Usage.InputTokens != 6 || result.Usage.CacheInputTokens != 1 || result.Usage.OutputTokens != 3 {
+	if result.Usage == nil || result.Usage.InputTokens != 6 || result.Usage.CacheReadTokens != 1 || result.Usage.OutputTokens != 3 {
 		t.Fatalf("usage = %#v", result.Usage)
 	}
 	if !result.SideEffectsCommitted {

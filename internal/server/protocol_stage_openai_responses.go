@@ -590,10 +590,11 @@ func protocolStageOpenAIResponsesUsage(raw []byte) *protocol.TokenUsage {
 	usage := response.Get("usage")
 	input := usage.Get("input_tokens").Int()
 	output := usage.Get("output_tokens").Int()
-	cache := usage.Get("input_tokens_details.cached_tokens").Int()
+	cacheRead := usage.Get("input_tokens_details.cached_tokens").Int()
+	cacheWrite := usage.Get("input_tokens_details.cache_write_tokens").Int()
 	reasoning := usage.Get("output_tokens_details.reasoning_tokens").Int()
-	if input == 0 && output == 0 && cache == 0 && reasoning == 0 {
+	if input == 0 && output == 0 && cacheRead == 0 && cacheWrite == 0 && reasoning == 0 {
 		return nil
 	}
-	return protocol.NewTokenUsageFull(int(input-cache), int(output), int(cache), int(reasoning))
+	return protocol.NewTokenUsageFull(int(input-cacheRead), int(output), int(cacheRead), int(cacheWrite), int(reasoning))
 }

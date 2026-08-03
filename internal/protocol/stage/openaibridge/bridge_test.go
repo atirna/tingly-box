@@ -80,7 +80,7 @@ func TestOpenAIChatToAnthropicBetaComplete(t *testing.T) {
 	if tool.ID != "tool_reverse" || tool.Function.Name != "lookup" || !strings.Contains(tool.Function.Arguments, "parallel") {
 		t.Fatalf("tool call = %+v", tool)
 	}
-	if response.Usage == nil || response.Usage.InputTokens != 9 || response.Usage.CacheInputTokens != 2 || response.Usage.OutputTokens != 4 {
+	if response.Usage == nil || response.Usage.InputTokens != 9 || response.Usage.CacheReadTokens != 2 || response.Usage.OutputTokens != 4 {
 		t.Fatalf("normalized usage = %+v", response.Usage)
 	}
 }

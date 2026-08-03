@@ -63,7 +63,7 @@ func TestResponsesToAnthropicBetaComplete(t *testing.T) {
 	if response.Model != "public-model" || !strings.Contains(string(encoded), "hello from beta") {
 		t.Fatalf("response = %#v json=%s", response, encoded)
 	}
-	if result.Usage == nil || result.Usage.InputTokens != 7 || result.Usage.CacheInputTokens != 2 || result.Usage.OutputTokens != 3 {
+	if result.Usage == nil || result.Usage.InputTokens != 7 || result.Usage.CacheReadTokens != 2 || result.Usage.OutputTokens != 3 {
 		t.Fatalf("usage = %#v", result.Usage)
 	}
 	if !result.SideEffectsCommitted {

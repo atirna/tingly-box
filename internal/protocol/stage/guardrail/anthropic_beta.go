@@ -10,6 +10,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
+	"github.com/tingly-dev/tingly-box/internal/constant"
 	guardrailsruntime "github.com/tingly-dev/tingly-box/internal/guardrails"
 	guardrailsadapter "github.com/tingly-dev/tingly-box/internal/guardrails/adapter"
 	guardrailscore "github.com/tingly-dev/tingly-box/internal/guardrails/core"
@@ -138,9 +139,7 @@ func (e *anthropicBetaEndpoint) prepare(ctx context.Context, call protocolstage.
 	base.State.CredentialMask = mask
 	base.Payload.Protocol = "anthropic_beta"
 	base.Payload.Request = request
-	if base.Runtime.Context != nil {
-		base.Runtime.Context.Set(guardrailscore.CredentialMaskStateContextKey, mask)
-	}
+	base.SetContextValue(constant.CtxKeyCredentialMaskState, mask)
 
 	evaluationErr := guardrailspipeline.ProcessAnthropicBetaRequest(ctx, e.stage.runtime, base)
 	if evaluationErr != nil {

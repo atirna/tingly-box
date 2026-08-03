@@ -305,7 +305,6 @@ func mergeTokenUsage(total, current *protocol.TokenUsage) *protocol.TokenUsage {
 	}
 	total.InputTokens += current.InputTokens
 	total.OutputTokens += current.OutputTokens
-	total.CacheInputTokens += current.CacheInputTokens
 	total.CacheReadTokens += current.CacheReadTokens
 	total.CacheWriteTokens += current.CacheWriteTokens
 	total.ReasoningTokens += current.ReasoningTokens

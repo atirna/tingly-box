@@ -326,7 +326,6 @@ func mergeBetaStageUsage(total, current *protocol.TokenUsage) *protocol.TokenUsa
 	}
 	total.InputTokens += current.InputTokens
 	total.OutputTokens += current.OutputTokens
-	total.CacheInputTokens += current.CacheInputTokens
 	total.CacheReadTokens += current.CacheReadTokens
 	total.CacheWriteTokens += current.CacheWriteTokens
 	total.ReasoningTokens += current.ReasoningTokens

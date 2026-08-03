@@ -62,7 +62,7 @@ func TestProtocolStageOpenAIResponsesValueJSONAcceptsTypedWireResponse(t *testin
 func TestProtocolStageOpenAIResponsesEventJSONPreservesWireShape(t *testing.T) {
 	t.Parallel()
 
-	raw := `{"type":"response.completed","sequence_number":4,"response":{"id":"resp_1","object":"response","model":"upstream-model","output":[],"usage":{"input_tokens":9,"output_tokens":4,"input_tokens_details":{},"output_tokens_details":{}},"provider_extension":"kept"}}`
+	raw := `{"type":"response.completed","sequence_number":4,"response":{"id":"resp_1","object":"response","model":"upstream-model","output":[],"usage":{"input_tokens":9,"output_tokens":4,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":1},"output_tokens_details":{"reasoning_tokens":1}},"provider_extension":"kept"}}`
 	var event responses.ResponseStreamEventUnion
 	if err := json.Unmarshal([]byte(raw), &event); err != nil {
 		t.Fatalf("unmarshal event: %v", err)
@@ -89,7 +89,7 @@ func TestProtocolStageOpenAIResponsesEventJSONPreservesWireShape(t *testing.T) {
 	}
 
 	usage := protocolStageOpenAIResponsesUsage(body)
-	if usage == nil || usage.InputTokens != 9 || usage.OutputTokens != 4 {
+	if usage == nil || usage.InputTokens != 7 || usage.OutputTokens != 4 || usage.CacheReadTokens != 2 || usage.CacheWriteTokens != 1 || usage.ReasoningTokens != 1 {
 		t.Fatalf("usage = %#v", usage)
 	}
 }

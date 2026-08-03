@@ -60,7 +60,7 @@ func TestOpenAIChatToOpenAIResponsesComplete(t *testing.T) {
 	if len(chat.Choices) != 1 || !strings.Contains(chat.Choices[0].Message.Content, "hello from responses") {
 		t.Fatalf("choices = %+v", chat.Choices)
 	}
-	if result.Usage == nil || result.Usage.InputTokens != 7 || result.Usage.CacheInputTokens != 2 || result.Usage.OutputTokens != 4 {
+	if result.Usage == nil || result.Usage.InputTokens != 7 || result.Usage.CacheReadTokens != 2 || result.Usage.OutputTokens != 4 {
 		t.Fatalf("usage = %+v", result.Usage)
 	}
 }
