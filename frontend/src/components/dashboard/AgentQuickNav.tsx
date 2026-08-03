@@ -1,7 +1,7 @@
 import { Box, Card, CardContent, Typography, Tooltip, Divider } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { SCENARIOS, useHiddenScenarios } from '@/pages/scenario/AgentOverviewPage';
+import { SCENARIOS, useHiddenScenarios } from '@/pages/scenario/scenarioRegistry';
 
 const QUICK_NAV_ICON_SIZE = 20;
 

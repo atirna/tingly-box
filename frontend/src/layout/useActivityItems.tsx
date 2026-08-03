@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getHiddenScenarios } from '@/pages/scenario/AgentOverviewPage';
+import { getHiddenScenarios } from '@/pages/scenario/scenarioRegistry';
 import { OpenAI, Anthropic, Claude, OpenCode, Xcode, VSCode, Codex, OpenClaw, ClaudeDesktop } from '../components/BrandIcons';
 import {
     SettingsApplications,

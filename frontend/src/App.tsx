@@ -17,16 +17,17 @@ import { ProfileProvider } from './contexts/ProfileContext';
 import Layout from './layout/Layout';
 import createAppTheme from './theme';
 
-// Login/Onboarding are on the pre-auth path, needed before we even know which
-// route the user wants — keep these eager so there's no extra round-trip
-// before the app can render anything at all.
+// Login is the only pre-auth screen — it's reachable before ProtectedRoute
+// can even evaluate, so it stays eager. Onboarding is a normal
+// post-auth route (OnboardingGate decides at runtime whether a fresh
+// install lands there), so it's lazy-loaded with everything else below.
 import Login from './pages/Login';
-import Onboarding from './pages/Onboarding';
 import { api } from './services/api';
 
 // Every route below this point is reached only after auth + navigation, so it
 // is lazy-loaded: each becomes its own chunk that downloads on first visit
 // instead of being bundled into the initial page load.
+const Onboarding = lazy(() => import('./pages/Onboarding'));
 const SharingKeysPage = lazy(() => import('./pages/SharingKeysPage.tsx'));
 const VirtualModelsPage = lazy(() => import('./pages/VirtualModelsPage'));
 const UseOpenAIPage = lazy(() => import('./pages/scenario/UseOpenAIPage'));
