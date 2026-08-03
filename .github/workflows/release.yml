@@ -86,9 +86,19 @@ jobs:
           pnpm install --frozen-lockfile
         working-directory: ./frontend
 
-      - name: Run codegen and build frontend
+      - name: Run codegen
+        run: pnpm gen:api
+        working-directory: ./frontend
+
+      - name: Type check (non-blocking)
+        # Legacy type errors exist; report but don't fail the release build.
+        continue-on-error: true
         run: |
-          pnpm gen:api
+          pnpm typecheck || echo "::warning::TypeScript errors found (non-blocking, see step log)"
+        working-directory: ./frontend
+
+      - name: Build frontend
+        run: |
           pnpm build && mkdir -p ../internal/web/dist && cp -R dist/* ../internal/web/dist/
         working-directory: ./frontend
 

@@ -3,7 +3,7 @@ import { Error as ErrorIcon, Refresh } from '@/components/icons';
 import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography } from '@mui/material';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -17,61 +17,76 @@ import { ProfileProvider } from './contexts/ProfileContext';
 import Layout from './layout/Layout';
 import createAppTheme from './theme';
 
+// Login/Onboarding are on the pre-auth path, needed before we even know which
+// route the user wants — keep these eager so there's no extra round-trip
+// before the app can render anything at all.
 import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import { api } from './services/api';
-import SharingKeysPage from './pages/SharingKeysPage.tsx';
-import VirtualModelsPage from './pages/VirtualModelsPage';
-import UseOpenAIPage from './pages/scenario/UseOpenAIPage';
-import UseAnthropicPage from './pages/scenario/UseAnthropicPage';
-import UseCodexPage from './pages/scenario/UseCodexPage';
-import UseClaudeCodePage from './pages/scenario/UseClaudeCodePage';
-import ClaudeCodeProfilePage from './pages/scenario/ClaudeCodeProfilePage';
-import UseClaudeDesktopPage from './pages/scenario/UseClaudeDesktopPage';
-import UseAgentPage from './pages/scenario/UseAgentPage';
-import UseTeamPage from './pages/scenario/UseTeamPage';
-import AgentOverviewPage from './pages/scenario/AgentOverviewPage';
-import UseOpenCodePage from './pages/scenario/UseOpenCodePage';
-import UseXcodePage from './pages/scenario/UseXcodePage';
-import UseVSCodePage from './pages/scenario/UseVSCodePage';
-import UseEmbedPage from './pages/scenario/UseEmbedPage';
-import UseImageGenPage from './pages/scenario/UseImageGenPage';
-import CredentialPage from './pages/CredentialPage';
-import ProviderListPage from './pages/ProviderListPage';
-import System from './pages/system/System.tsx';
-import AccessControl from './pages/system/AccessControl.tsx';
-import LogsPage from './pages/system/LogsPage';
-import ExperimentalPage from './pages/system/ExperimentalPage';
-import GuardrailsPage from './pages/GuardrailsPage';
-import GuardrailsRulesPage from './pages/guardrails/RulesPage';
-import GuardrailsCredentialsPage from './pages/guardrails/CredentialsPage';
-import GuardrailsGroupsPage from './pages/guardrails/GroupsPage';
-import GuardrailsHistoryPage from './pages/guardrails/HistoryPage';
-import DashboardPage from './pages/DashboardPage';
-import UserUsagePage from './pages/UserUsagePage';
-import ModelTestPage from './pages/ModelTestPage';
-import UserPage from './pages/prompt/UserPage';
-import SkillPage from './pages/prompt/SkillPage';
-import CommandPage from './pages/prompt/CommandPage';
-import RemoteCoderPage from './pages/remote-coder/RemoteCoderPage';
-import RemoteCoderSessionsPage from './pages/remote-coder/RemoteCoderSessionsPage';
-import TelegramPage from './pages/bots/TelegramPage';
-import FeishuPage from './pages/bots/FeishuPage';
-import LarkPage from './pages/bots/LarkPage';
-import DingTalkPage from './pages/bots/DingTalkPage';
-import WeixinPage from './pages/bots/WeixinPage';
-import WeComPage from './pages/bots/WeComPage';
-import QQPage from './pages/bots/QQPage';
-import DiscordPage from './pages/bots/DiscordPage';
-import SlackPage from './pages/bots/SlackPage';
-import BotOverviewPage from './pages/bots/BotOverviewPage';
-import RemoteAgentPage, { RemoteAgentEntryRedirect } from './pages/remote-agent/RemoteAgentPage';
-import NotifyPage from './pages/notify/NotifyPage';
-import MCPLocalMode from './pages/mcp/MCPLocalMode';
-import MCPRegisteredServers from './pages/mcp/MCPRegisteredServers';
-import ServerToolPage from './pages/servertool/ServerToolPage';
 
-// Loading fallback component - kept for potential future use with async data
+// Every route below this point is reached only after auth + navigation, so it
+// is lazy-loaded: each becomes its own chunk that downloads on first visit
+// instead of being bundled into the initial page load.
+const SharingKeysPage = lazy(() => import('./pages/SharingKeysPage.tsx'));
+const VirtualModelsPage = lazy(() => import('./pages/VirtualModelsPage'));
+const UseOpenAIPage = lazy(() => import('./pages/scenario/UseOpenAIPage'));
+const UseAnthropicPage = lazy(() => import('./pages/scenario/UseAnthropicPage'));
+const UseCodexPage = lazy(() => import('./pages/scenario/UseCodexPage'));
+const UseClaudeCodePage = lazy(() => import('./pages/scenario/UseClaudeCodePage'));
+const ClaudeCodeProfilePage = lazy(() => import('./pages/scenario/ClaudeCodeProfilePage'));
+const UseClaudeDesktopPage = lazy(() => import('./pages/scenario/UseClaudeDesktopPage'));
+const UseAgentPage = lazy(() => import('./pages/scenario/UseAgentPage'));
+const UseTeamPage = lazy(() => import('./pages/scenario/UseTeamPage'));
+const AgentOverviewPage = lazy(() => import('./pages/scenario/AgentOverviewPage'));
+const UseOpenCodePage = lazy(() => import('./pages/scenario/UseOpenCodePage'));
+const UseXcodePage = lazy(() => import('./pages/scenario/UseXcodePage'));
+const UseVSCodePage = lazy(() => import('./pages/scenario/UseVSCodePage'));
+const UseEmbedPage = lazy(() => import('./pages/scenario/UseEmbedPage'));
+const UseImageGenPage = lazy(() => import('./pages/scenario/UseImageGenPage'));
+const CredentialPage = lazy(() => import('./pages/CredentialPage'));
+const ProviderListPage = lazy(() => import('./pages/ProviderListPage'));
+const System = lazy(() => import('./pages/system/System.tsx'));
+const AccessControl = lazy(() => import('./pages/system/AccessControl.tsx'));
+const LogsPage = lazy(() => import('./pages/system/LogsPage'));
+const ExperimentalPage = lazy(() => import('./pages/system/ExperimentalPage'));
+const GuardrailsPage = lazy(() => import('./pages/GuardrailsPage'));
+const GuardrailsRulesPage = lazy(() => import('./pages/guardrails/RulesPage'));
+const GuardrailsCredentialsPage = lazy(() => import('./pages/guardrails/CredentialsPage'));
+const GuardrailsGroupsPage = lazy(() => import('./pages/guardrails/GroupsPage'));
+const GuardrailsHistoryPage = lazy(() => import('./pages/guardrails/HistoryPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const UserUsagePage = lazy(() => import('./pages/UserUsagePage'));
+const ModelTestPage = lazy(() => import('./pages/ModelTestPage'));
+const UserPage = lazy(() => import('./pages/prompt/UserPage'));
+const SkillPage = lazy(() => import('./pages/prompt/SkillPage'));
+const CommandPage = lazy(() => import('./pages/prompt/CommandPage'));
+const RemoteCoderPage = lazy(() => import('./pages/remote-coder/RemoteCoderPage'));
+const RemoteCoderSessionsPage = lazy(() => import('./pages/remote-coder/RemoteCoderSessionsPage'));
+const TelegramPage = lazy(() => import('./pages/bots/TelegramPage'));
+const FeishuPage = lazy(() => import('./pages/bots/FeishuPage'));
+const LarkPage = lazy(() => import('./pages/bots/LarkPage'));
+const DingTalkPage = lazy(() => import('./pages/bots/DingTalkPage'));
+const WeixinPage = lazy(() => import('./pages/bots/WeixinPage'));
+const WeComPage = lazy(() => import('./pages/bots/WeComPage'));
+const QQPage = lazy(() => import('./pages/bots/QQPage'));
+const DiscordPage = lazy(() => import('./pages/bots/DiscordPage'));
+const SlackPage = lazy(() => import('./pages/bots/SlackPage'));
+const BotOverviewPage = lazy(() => import('./pages/bots/BotOverviewPage'));
+const RemoteAgentPage = lazy(() => import('./pages/remote-agent/RemoteAgentPage'));
+const RemoteAgentEntryRedirect = lazy(() => import('./pages/remote-agent/RemoteAgentPage').then(m => ({ default: m.RemoteAgentEntryRedirect })));
+const NotifyPage = lazy(() => import('./pages/notify/NotifyPage'));
+const MCPLocalMode = lazy(() => import('./pages/mcp/MCPLocalMode'));
+const MCPRegisteredServers = lazy(() => import('./pages/mcp/MCPRegisteredServers'));
+const ServerToolPage = lazy(() => import('./pages/servertool/ServerToolPage'));
+
+// Route-switch fallback: Layout/nav chrome is already on screen (it renders
+// outside this Suspense boundary), so this only covers the content area
+// while a page chunk downloads — a brief spinner, not a full-page blank.
+const RouteFallback = () => (
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
+        <CircularProgress />
+    </Box>
+);
 
 // Dialogs component that uses the health context
 const AppDialogs = () => {
@@ -185,6 +200,7 @@ function AppContent() {
     }, [navigate]);
 
     return (
+        <Suspense fallback={<RouteFallback />}>
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/login/:token" element={<Login />} />
@@ -288,6 +304,7 @@ function AppContent() {
                     <Route path="*" element={<Navigate to="/agent" replace />} />
                 </Route>
             </Routes>
+        </Suspense>
     )
 }
 

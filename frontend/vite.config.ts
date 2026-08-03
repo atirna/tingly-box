@@ -61,6 +61,11 @@ export default defineConfig(({ mode }) => {
         build: {
             rollupOptions: {
                 output: {
+                    // Routes are lazy-loaded (see App.tsx), so Rollup already splits each
+                    // page into its own chunk at the import() boundary, and shares code
+                    // between pages automatically where they overlap. Only shared vendor
+                    // libraries are grouped by hand here, so they get one stable,
+                    // cacheable chunk instead of being duplicated across page chunks.
                     manualChunks: (id) => {
                         if (id.includes('node_modules')) {
                             // MUI packages
@@ -74,22 +79,6 @@ export default defineConfig(({ mode }) => {
                             if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-')) {
                                 return 'recharts-vendor';
                             }
-                        }
-                        // App pages chunked by feature area
-                        if (id.includes('/pages/remote-control/') || id.includes('/pages/remote-coder/')) {
-                            return 'pages-remote';
-                        }
-                        if (id.includes('/pages/scenario/')) {
-                            return 'pages-scenario';
-                        }
-                        if (id.includes('/pages/prompt/')) {
-                            return 'pages-prompt';
-                        }
-                        if (id.includes('/pages/guardrails/')) {
-                            return 'pages-guardrails';
-                        }
-                        if (id.includes('/pages/system/')) {
-                            return 'pages-system';
                         }
                         return undefined;
                     },
