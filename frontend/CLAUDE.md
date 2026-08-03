@@ -1,0 +1,20 @@
+# Frontend
+
+Supplements the root `CLAUDE.md`. Covers frontend-specific build/bundle conventions.
+
+## Code-splitting
+
+Every route element in `App.tsx` must be `React.lazy(() => import('./pages/...'))`, not a static import — except `Login`, the only screen reachable before auth. Even `Onboarding` is a normal post-auth route (picked at runtime by `OnboardingGate`), so it's lazy too. Adding a new page means adding a new `lazy()` entry, not a static `import`.
+
+**Never export nav-level shared state from a page file.** If something outside `pages/**` (layout, sidebar, contexts, a widget used on another page) needs a constant/hook that happens to live in a page component's file, importing that one named export still pulls in the *whole module* — including the page component and everything it imports — because ES modules are the code-splitting unit. This silently defeats `lazy()` for that page.
+
+- Example fixed in this codebase: `layout/useActivityItems.tsx` (nav) needed `SCENARIOS`/`useHiddenScenarios`, which used to live in `pages/scenario/AgentOverviewPage.tsx`. That single import kept the whole page (`PageLayout`/`PageHeader` chain included) in the eager bundle. Fix: moved the shared metadata into `pages/scenario/scenarioRegistry.tsx`, a page-free module both the page and the nav import from.
+- If a page needs to expose something to eager/shared code, put that thing in its own small module next to the page, not in the page's own file.
+
+**`vite.config.ts`'s `manualChunks` should only group code that's genuinely needed eagerly** (currently: MUI, since `Layout`/`App` use it directly). Do not add a manual grouping for a library that's only ever reached through a lazy page (e.g. `recharts`, only used by `DashboardPage`/`UserUsagePage`) — forcing it into a named vendor chunk makes the bundler treat that chunk as always-needed and preload it from `index.html` on every page load, even for users who never visit that page. Let Rollup fold route-only dependencies into automatic shared chunks instead; those are only fetched when a page that needs them is actually visited.
+
+**How to verify a page (or a dependency) is actually lazy:** `pnpm build`, then check `dist/index.html`'s `<link rel="modulepreload">` list. Anything in that list downloads on every single page load, regardless of whether the code that uses it is wrapped in `lazy()` — that list is the real "what ships on first paint" answer, not the presence of `lazy()` in the source.
+
+## Type checking
+
+`pnpm typecheck` runs in CI (`release.yml`) as a non-blocking, `continue-on-error` step — the repo has pre-existing legacy type errors that aren't being fixed as part of unrelated changes, so this only warns instead of failing the build. Still run `pnpm typecheck` locally before opening a PR and fix anything your change introduces; don't rely on CI to catch it.
