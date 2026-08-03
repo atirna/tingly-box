@@ -12243,6 +12243,10 @@
             "type": "string",
             "description": "Field api_doc"
           },
+          "api_style": {
+            "type": "string",
+            "description": "Field api_style"
+          },
           "auth_type": {
             "type": "string",
             "description": "Field auth_type"

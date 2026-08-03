@@ -112,9 +112,13 @@ Wiring / gotchas:
   rebuilt per request, so without the cache every request re-parses the SA key
   and mints a fresh OAuth token (blocking round-trip to Google).
 - `ListModels` returns `ErrModelsEndpointNotSupported` for cloud → template fallback.
-- Known limit: `vertex.WithCredentials` installs its own HTTP client, so
-  `provider.ProxyURL` is not honored on the Vertex-Anthropic path. Bedrock/Azure
-  keep our transport (proxy works).
+- `vertex.WithCredentials` replaces the whole HTTP client with a google-built
+  one (its way of installing the token-refreshing auth transport), which would
+  drop `provider.ProxyURL` and inherit env proxies. Auth and rewriting are
+  orthogonal there, so `vertexAnthropicOptions` re-applies our own client
+  **after** the adapter option: the standard provider transport chain wrapped
+  in `oauth2.Transport` with the shared SA token source. Proxy semantics now
+  match Bedrock/Azure (which never replace the client).
 
 ## 7. Backend API (`provider/`)
 

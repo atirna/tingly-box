@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/oauth2"
+
 	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -28,32 +30,64 @@ func TestValidateCloudBundle_MissingBundle(t *testing.T) {
 	}
 }
 
-func TestVertexAnthropicOption_Validation(t *testing.T) {
+func TestVertexAnthropicOptions_Validation(t *testing.T) {
 	// missing required fields → schema validation error
-	if _, err := vertexAnthropicOption(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
+	if _, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPProjectID: "proj",
-	})); err == nil {
+	}), "m", typ.SessionID{}); err == nil {
 		t.Error("expected error for incomplete GCP bundle")
 	}
 
 	// complete bundle but malformed SA JSON → error (caught by schema
 	// validation), not a panic
-	_, err := vertexAnthropicOption(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
+	_, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPServiceAccountJSON: "{not json",
 		ai.CredFieldGCPProjectID:          "proj",
 		ai.CredFieldGCPLocation:           "us-east5",
-	}))
+	}), "m", typ.SessionID{})
 	if err == nil || !strings.Contains(err.Error(), "JSON") {
 		t.Errorf("expected invalid-SA-JSON error, got %v", err)
 	}
 
-	// valid bundle → option resolves
-	if _, err := vertexAnthropicOption(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
+	// valid bundle → adapter option plus our HTTP-client override, in that
+	// order (the override must come after so it wins over the adapter's
+	// google-built client and provider proxy semantics are preserved)
+	opts, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPServiceAccountJSON: fakeSAJSON,
 		ai.CredFieldGCPProjectID:          "proj",
 		ai.CredFieldGCPLocation:           "us-east5",
-	})); err != nil {
-		t.Errorf("unexpected error for valid bundle: %v", err)
+	}), "m", typ.SessionID{})
+	if err != nil {
+		t.Fatalf("unexpected error for valid bundle: %v", err)
+	}
+	if len(opts) != 2 {
+		t.Errorf("len(opts) = %d, want 2 (adapter + HTTP-client override)", len(opts))
+	}
+}
+
+// TestVertexAuthedHTTPClient pins the proxy fix: the client that overrides the
+// vertex adapter's google-built one must chain the SA OAuth transport over our
+// standard provider transport (proxy_url / UA / logging), not replace it.
+func TestVertexAuthedHTTPClient(t *testing.T) {
+	provider := cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
+		ai.CredFieldGCPServiceAccountJSON: fakeSAJSON,
+		ai.CredFieldGCPProjectID:          "proj",
+		ai.CredFieldGCPLocation:           "us-east5",
+	})
+	creds, err := cachedGoogleCredentials(context.Background(), fakeSAJSON)
+	if err != nil {
+		t.Fatalf("credentials: %v", err)
+	}
+	c := vertexAuthedHTTPClient(provider, "m", typ.SessionID{}, creds)
+	tr, ok := c.Transport.(*oauth2.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *oauth2.Transport", c.Transport)
+	}
+	if tr.Source == nil {
+		t.Error("oauth2.Transport.Source must carry the SA token source")
+	}
+	if tr.Base == nil {
+		t.Error("oauth2.Transport.Base must be the provider transport chain, not nil (nil would fall back to http.DefaultTransport and drop proxy_url)")
 	}
 }
 

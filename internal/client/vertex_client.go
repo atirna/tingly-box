@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net/http"
 	"sync"
 
 	anthropicOption "github.com/anthropics/anthropic-sdk-go/option"
@@ -13,6 +14,7 @@ import (
 	gcreds "cloud.google.com/go/auth/credentials"
 	"cloud.google.com/go/auth/httptransport"
 	"cloud.google.com/go/auth/oauth2adapt"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/genai"
 
@@ -56,21 +58,26 @@ func validateCloudBundle(provider *typ.Provider) error {
 // Vertex AI. The anthropic-sdk-go/vertex adapter loads a service-account OAuth2
 // token source and rewrites /v1/messages to the Vertex publisher endpoint; this
 // constructor supplies the credentials from the stored bundle.
-//
-// Note: the vertex adapter installs its own HTTP client (google's auth
-// transport), so provider.ProxyURL is not honored on this path today — a
-// documented v1 limitation.
 func NewVertexAnthropicClient(provider *typ.Provider, model string, sessionID typ.SessionID) (*AnthropicClient, error) {
-	opt, err := vertexAnthropicOption(context.Background(), provider)
+	opts, err := vertexAnthropicOptions(context.Background(), provider, model, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	return NewAnthropicClient(provider, model, sessionID, opt)
+	return NewAnthropicClient(provider, model, sessionID, opts...)
 }
 
-// vertexAnthropicOption resolves the Vertex adapter RequestOption from a
+// vertexAnthropicOptions resolves the Vertex adapter RequestOptions from a
 // provider's GCP service-account bundle.
-func vertexAnthropicOption(ctx context.Context, provider *typ.Provider) (anthropicOption.RequestOption, error) {
+//
+// vertex.WithCredentials replaces the whole HTTP client with one built by
+// google.golang.org/api/transport — its way of installing the token-refreshing
+// auth transport — which would discard our transport chain: provider.ProxyURL
+// would be ignored and env proxies inherited, both against this project's
+// proxy semantics. Auth and rewriting are orthogonal there (URL/body rewriting
+// is middleware, auth is just a bearer from the token source), so we re-apply
+// an HTTP client of our own AFTER the adapter option: the same transport chain
+// generic Anthropic providers get, wrapped in oauth2.Transport for the token.
+func vertexAnthropicOptions(ctx context.Context, provider *typ.Provider, model string, sessionID typ.SessionID) ([]anthropicOption.RequestOption, error) {
 	if err := validateCloudBundle(provider); err != nil {
 		return nil, err
 	}
@@ -81,7 +88,21 @@ func vertexAnthropicOption(ctx context.Context, provider *typ.Provider) (anthrop
 	}
 	location := provider.Credential.Field(ai.CredFieldGCPLocation)
 	project := provider.Credential.Field(ai.CredFieldGCPProjectID)
-	return anthropicVertex.WithCredentials(ctx, location, project, creds), nil
+	return []anthropicOption.RequestOption{
+		anthropicVertex.WithCredentials(ctx, location, project, creds),
+		anthropicOption.WithHTTPClient(vertexAuthedHTTPClient(provider, model, sessionID, creds)),
+	}, nil
+}
+
+// vertexAuthedHTTPClient layers the shared SA OAuth token source over the
+// standard provider transport chain (proxy_url, UA, logging).
+func vertexAuthedHTTPClient(provider *typ.Provider, model string, sessionID typ.SessionID, creds *google.Credentials) *http.Client {
+	return &http.Client{
+		Transport: &oauth2.Transport{
+			Source: creds.TokenSource,
+			Base:   anthropicTransport(provider, model, sessionID),
+		},
+	}
 }
 
 // applyVertexToGenaiConfig mutates cfg so the go-genai client targets Gemini on

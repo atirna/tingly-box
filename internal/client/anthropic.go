@@ -100,9 +100,7 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 		// Use the transport pool instead of http.DefaultTransport so that env
 		// proxy variables (HTTP_PROXY / HTTPS_PROXY) are not inherited when no
 		// proxy is explicitly configured for the provider.
-		base := GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID)
-		transport = &userAgentTransport{base: base}
-		transport = wrapWithLogging(transport, provider)
+		transport = anthropicTransport(provider, model, sessionID)
 	}
 
 	httpClient := &http.Client{
@@ -127,6 +125,16 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 		provider:   provider,
 		httpClient: httpClient,
 	}, nil
+}
+
+// anthropicTransport builds the transport chain generic Anthropic providers
+// use: pooled session-bound base (provider proxy_url honored, env proxy not
+// inherited), UA resolution, logging. Shared with the Vertex path, which must
+// rebuild this chain under its OAuth transport (see vertexAnthropicOptions).
+func anthropicTransport(provider *typ.Provider, model string, sessionID typ.SessionID) http.RoundTripper {
+	base := GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID)
+	var transport http.RoundTripper = &userAgentTransport{base: base}
+	return wrapWithLogging(transport, provider)
 }
 
 // ProviderType returns the provider type
