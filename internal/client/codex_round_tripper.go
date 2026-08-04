@@ -141,6 +141,14 @@ func (t *codexRoundTripper) filterField(body []byte) ([]byte, error) {
 	bodyStr, _ = sjson.Delete(bodyStr, "temperature")
 	bodyStr, _ = sjson.Delete(bodyStr, "top_p")
 
+	// ChatGPT backend rejects system/developer messages in input with
+	// 400 "System messages are not allowed" — carry them via instructions.
+	bodyStr = hoistCodexSystemMessagesJSON(bodyStr)
+
+	// Strip tingly's prompt-cache extension fields; the ChatGPT backend does
+	// its own caching and knows nothing about them.
+	bodyStr = stripCodexPromptCacheFieldsJSON(bodyStr)
+
 	// Final gate: ChatGPT backend rejects items with empty or non-conforming id.
 	// The SDK-level sanitizer only covers a subset of input item variants, so
 	// scrub the marshaled JSON to catch every variant the SDK may emit.
@@ -151,6 +159,124 @@ func (t *codexRoundTripper) filterField(body []byte) ([]byte, error) {
 	bodyStr = sanitizeCodexEmptyContentJSON(bodyStr)
 
 	return []byte(bodyStr), nil
+}
+
+// hoistCodexSystemMessagesJSON removes input items that are system/developer
+// role messages and merges their text into the top-level instructions field.
+// The ChatGPT Codex backend rejects such items with
+// 400 "System messages are not allowed".
+func hoistCodexSystemMessagesJSON(bodyStr string) string {
+	input := gjson.Get(bodyStr, "input")
+	if !input.IsArray() {
+		return bodyStr
+	}
+
+	var parts []string
+	items := input.Array()
+	// Iterate in reverse so deletions don't shift earlier indices;
+	// prepend collected text to preserve original message order.
+	for i := len(items) - 1; i >= 0; i-- {
+		item := items[i]
+		role := item.Get("role").String()
+		if role != "system" && role != "developer" {
+			continue
+		}
+		if itemType := item.Get("type").String(); itemType != "" && itemType != "message" {
+			continue
+		}
+		if text := codexMessageContentText(item.Get("content")); text != "" {
+			parts = append([]string{text}, parts...)
+		}
+		logrus.Warnf("[Codex] Hoisting input[%d] %s message into instructions", i, role)
+		if updated, err := sjson.Delete(bodyStr, fmt.Sprintf("input.%d", i)); err == nil {
+			bodyStr = updated
+		}
+	}
+	if len(parts) == 0 {
+		return bodyStr
+	}
+
+	merged := strings.Join(parts, "\n\n")
+	existing := gjson.Get(bodyStr, "instructions").String()
+	// Keep real instructions, but replace the default placeholder.
+	if strings.TrimSpace(existing) != "" && existing != defaultInstructions {
+		merged = existing + "\n\n" + merged
+	}
+	if updated, err := sjson.Set(bodyStr, "instructions", merged); err == nil {
+		bodyStr = updated
+	}
+	return bodyStr
+}
+
+// stripCodexPromptCacheFieldsJSON removes the prompt-cache extension fields
+// introduced for cache-aware providers: the top-level prompt_cache_options
+// object and every nested prompt_cache_breakpoint marker. Before these fields
+// existed, Codex requests never carried them, and the ChatGPT backend does not
+// understand them.
+func stripCodexPromptCacheFieldsJSON(bodyStr string) string {
+	if updated, err := sjson.Delete(bodyStr, "prompt_cache_options"); err == nil {
+		bodyStr = updated
+	}
+	for _, path := range collectJSONKeyPaths(gjson.Parse(bodyStr), "", "prompt_cache_breakpoint") {
+		if updated, err := sjson.Delete(bodyStr, path); err == nil {
+			bodyStr = updated
+		}
+	}
+	return bodyStr
+}
+
+// collectJSONKeyPaths walks a gjson value and returns the sjson paths of every
+// object key named key, at any depth.
+func collectJSONKeyPaths(value gjson.Result, prefix, key string) []string {
+	var paths []string
+	join := func(part string) string {
+		if prefix == "" {
+			return part
+		}
+		return prefix + "." + part
+	}
+	if value.IsObject() {
+		value.ForEach(func(k, v gjson.Result) bool {
+			p := join(k.String())
+			if k.String() == key {
+				paths = append(paths, p)
+			} else {
+				paths = append(paths, collectJSONKeyPaths(v, p, key)...)
+			}
+			return true
+		})
+	} else if value.IsArray() {
+		i := 0
+		value.ForEach(func(_, v gjson.Result) bool {
+			paths = append(paths, collectJSONKeyPaths(v, join(fmt.Sprintf("%d", i)), key)...)
+			i++
+			return true
+		})
+	}
+	return paths
+}
+
+// codexMessageContentText extracts the text of a message content field that is
+// either a plain string or an array of parts with a "text" property.
+func codexMessageContentText(content gjson.Result) string {
+	if content.Type == gjson.String {
+		return content.String()
+	}
+	if !content.IsArray() {
+		return ""
+	}
+	var b strings.Builder
+	for _, part := range content.Array() {
+		text := part.Get("text")
+		if !text.Exists() {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(text.String())
+	}
+	return b.String()
 }
 
 // sanitizeCodexInputIDsJSON walks the input array and removes invalid ids.

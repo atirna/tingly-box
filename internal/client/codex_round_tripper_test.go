@@ -11,6 +11,89 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func TestHoistCodexSystemMessagesJSON_MovesSystemToInstructions(t *testing.T) {
+	body := `{
+		"model": "gpt-5-codex",
+		"instructions": "You are a helpful AI assistant.",
+		"input": [
+			{"type": "message", "role": "system", "content": [{"type": "input_text", "text": "You are Claude Code.", "prompt_cache_breakpoint": {"type": "persistent"}}]},
+			{"type": "message", "role": "user", "content": "hello"}
+		]
+	}`
+
+	out := hoistCodexSystemMessagesJSON(body)
+
+	assert.Equal(t, "You are Claude Code.", gjson.Get(out, "instructions").String(),
+		"system text must replace the default instructions placeholder")
+	input := gjson.Get(out, "input").Array()
+	require.Len(t, input, 1)
+	assert.Equal(t, "user", input[0].Get("role").String())
+}
+
+func TestHoistCodexSystemMessagesJSON_AppendsToRealInstructions(t *testing.T) {
+	body := `{
+		"instructions": "Base instructions.",
+		"input": [
+			{"type": "message", "role": "system", "content": "First."},
+			{"type": "message", "role": "developer", "content": "Second."},
+			{"type": "message", "role": "user", "content": "hi"}
+		]
+	}`
+
+	out := hoistCodexSystemMessagesJSON(body)
+
+	assert.Equal(t, "Base instructions.\n\nFirst.\n\nSecond.", gjson.Get(out, "instructions").String(),
+		"hoisted text must preserve original message order")
+	input := gjson.Get(out, "input").Array()
+	require.Len(t, input, 1)
+	assert.Equal(t, "user", input[0].Get("role").String())
+}
+
+func TestHoistCodexSystemMessagesJSON_NoOpWithoutSystemMessages(t *testing.T) {
+	body := `{"instructions":"Base.","input":[{"type":"message","role":"user","content":"hi"}]}`
+
+	out := hoistCodexSystemMessagesJSON(body)
+
+	assert.Equal(t, body, out)
+}
+
+func TestHoistCodexSystemMessagesJSON_NonArrayInput(t *testing.T) {
+	body := `{"model":"gpt-5-codex","input":"hello"}`
+
+	out := hoistCodexSystemMessagesJSON(body)
+
+	assert.Equal(t, body, out)
+}
+
+func TestStripCodexPromptCacheFieldsJSON(t *testing.T) {
+	body := `{
+		"prompt_cache_options": {"mode": "explicit"},
+		"input": [
+			{"type": "message", "role": "user", "content": [
+				{"type": "input_text", "text": "hi", "prompt_cache_breakpoint": {"type": "persistent"}}
+			]},
+			{"type": "function_call_output", "call_id": "c1", "output": [
+				{"type": "input_text", "text": "result", "prompt_cache_breakpoint": {"type": "persistent"}}
+			]}
+		]
+	}`
+
+	out := stripCodexPromptCacheFieldsJSON(body)
+
+	assert.False(t, gjson.Get(out, "prompt_cache_options").Exists())
+	assert.NotContains(t, out, "prompt_cache_breakpoint")
+	assert.Equal(t, "hi", gjson.Get(out, "input.0.content.0.text").String(), "content itself must be preserved")
+	assert.Equal(t, "result", gjson.Get(out, "input.1.output.0.text").String())
+}
+
+func TestStripCodexPromptCacheFieldsJSON_NoOpWithoutCacheFields(t *testing.T) {
+	body := `{"model":"gpt-5-codex","input":[{"type":"message","role":"user","content":"hi"}]}`
+
+	out := stripCodexPromptCacheFieldsJSON(body)
+
+	assert.Equal(t, body, out)
+}
+
 func TestSanitizeCodexInputIDsJSON_DropsRequiredEmptyID(t *testing.T) {
 	body := `{
 		"model": "gpt-5-codex",
