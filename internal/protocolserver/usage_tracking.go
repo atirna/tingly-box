@@ -138,14 +138,18 @@ func (ph *ProtocolHandler) trackUsageFromContext(c *gin.Context, inputTokens, ou
 		})
 	}
 
-	// 3. Persist service stats and detailed usage together in one transaction
+	// 3. Mirror token usage onto the request span (write-only projection;
+	// the span never feeds data back — see .design/otel.md §7.1)
+	ph.setTokenUsageOnSpan(c, inputTokens, outputTokens)
+
+	// 4. Persist service stats and detailed usage together in one transaction
 	usageRecord := ph.recordDetailedUsage(c, rule, provider, model, requestModel, scenario, inputTokens, outputTokens, streamed, status, errorCode, latencyMs)
 	ph.persistRequestOutcome(service, usageRecord)
 
-	// 4. Report to health monitor for service health tracking
+	// 5. Report to health monitor for service health tracking
 	ph.ReportHealthStatus(provider, model, err, errorCode)
 
-	// 5. Enterprise key-level 429 alerting hook (best-effort).
+	// 6. Enterprise key-level 429 alerting hook (best-effort).
 	if err != nil && isRateLimitError(err) && strings.TrimSpace(c.GetString(constant.CtxKeyEnterpriseUserID)) != "" {
 		_ = reportEnterpriseRateLimitEvent(
 			c.Request.Context(),
@@ -254,14 +258,18 @@ func (ph *ProtocolHandler) trackUsageWithTokenUsage(c *gin.Context, usage *proto
 		})
 	}
 
-	// 3. Persist service stats and detailed usage together in one transaction
+	// 3. Mirror token usage onto the request span (write-only projection;
+	// the span never feeds data back — see .design/otel.md §7.1)
+	ph.setTokenUsageOnSpan(c, usage.InputTokens, usage.OutputTokens)
+
+	// 4. Persist service stats and detailed usage together in one transaction
 	usageRecord := ph.recordDetailedUsageWithTokenUsage(c, rule, provider, model, requestModel, scenario, usage, streamed, status, errorCode, latencyMs)
 	ph.persistRequestOutcome(service, usageRecord)
 
-	// 4. Report to health monitor for service health tracking
+	// 5. Report to health monitor for service health tracking
 	ph.ReportHealthStatus(provider, model, err, errorCode)
 
-	// 5. Enterprise key-level 429 alerting hook (best-effort).
+	// 6. Enterprise key-level 429 alerting hook (best-effort).
 	if err != nil && isRateLimitError(err) && strings.TrimSpace(c.GetString(constant.CtxKeyEnterpriseUserID)) != "" {
 		_ = reportEnterpriseRateLimitEvent(
 			c.Request.Context(),
@@ -360,6 +368,7 @@ func (ph *ProtocolHandler) recordDetailedUsage(c *gin.Context, rule *typ.Rule, p
 		LatencyMs:    latencyMs,
 		TTFTMs:       int(ttftMs),
 		Streamed:     streamed,
+		TraceID:      c.GetString(constant.CtxKeyTraceID),
 	}
 
 	if rule != nil {
@@ -397,6 +406,7 @@ func (ph *ProtocolHandler) recordDetailedUsageWithTokenUsage(c *gin.Context, rul
 		LatencyMs:        latencyMs,
 		TTFTMs:           int(ttftMs),
 		Streamed:         streamed,
+		TraceID:          c.GetString(constant.CtxKeyTraceID),
 	}
 
 	if rule != nil {
