@@ -141,6 +141,12 @@ func (t *codexRoundTripper) filterField(body []byte) ([]byte, error) {
 	bodyStr, _ = sjson.Delete(bodyStr, "temperature")
 	bodyStr, _ = sjson.Delete(bodyStr, "top_p")
 
+	// The standard Responses API exposes explicit prompt-cache controls, but
+	// ChatGPT's Codex endpoint rejects them. Keep prompt_cache_key (supported by
+	// Codex for affinity) while removing the unsupported policy and per-content
+	// breakpoint fields at this provider boundary.
+	bodyStr = sanitizeCodexPromptCacheJSON(bodyStr)
+
 	// Final gate: ChatGPT backend rejects items with empty or non-conforming id.
 	// The SDK-level sanitizer only covers a subset of input item variants, so
 	// scrub the marshaled JSON to catch every variant the SDK may emit.
@@ -149,6 +155,14 @@ func (t *codexRoundTripper) filterField(body []byte) ([]byte, error) {
 	// Drop message items whose content serialized as "" — Codex treats empty
 	// string content as a missing required parameter.
 	bodyStr = sanitizeCodexEmptyContentJSON(bodyStr)
+
+	// ChatGPT's Codex backend rejects role="system" input messages. Responses
+	// requests normally carry system text in `instructions`, but protocol
+	// conversion must use an input message when the source system block has an
+	// explicit cache breakpoint. Lift that text back into `instructions` at this
+	// provider boundary; standard Responses providers keep the richer cache
+	// representation unchanged.
+	bodyStr = normalizeCodexSystemMessagesJSON(bodyStr)
 
 	return []byte(bodyStr), nil
 }
@@ -214,6 +228,87 @@ func sanitizeCodexEmptyContentJSON(bodyStr string) string {
 		if updated, err := sjson.Delete(bodyStr, path); err == nil {
 			bodyStr = updated
 		}
+	}
+	return bodyStr
+}
+
+// sanitizeCodexPromptCacheJSON removes standard Responses cache-control fields
+// that the ChatGPT Codex backend does not accept. Content breakpoints can occur
+// on message content and function-call output content.
+func sanitizeCodexPromptCacheJSON(bodyStr string) string {
+	bodyStr, _ = sjson.Delete(bodyStr, "prompt_cache_options")
+	bodyStr, _ = sjson.Delete(bodyStr, "prompt_cache_retention")
+
+	input := gjson.Get(bodyStr, "input")
+	if !input.IsArray() {
+		return bodyStr
+	}
+	for i, item := range input.Array() {
+		for _, field := range []string{"content", "output"} {
+			parts := item.Get(field)
+			if !parts.IsArray() {
+				continue
+			}
+			for j, part := range parts.Array() {
+				if !part.Get("prompt_cache_breakpoint").Exists() {
+					continue
+				}
+				path := fmt.Sprintf("input.%d.%s.%d.prompt_cache_breakpoint", i, field, j)
+				bodyStr, _ = sjson.Delete(bodyStr, path)
+			}
+		}
+	}
+	return bodyStr
+}
+
+// normalizeCodexSystemMessagesJSON moves system-role input messages into the
+// top-level instructions field. The ChatGPT Codex endpoint does not accept
+// system messages in `input`, while the standard Responses API uses that shape
+// to attach prompt-cache breakpoints to system content.
+func normalizeCodexSystemMessagesJSON(bodyStr string) string {
+	input := gjson.Get(bodyStr, "input")
+	if !input.IsArray() {
+		return bodyStr
+	}
+
+	var systemTexts []string
+	var systemIndexes []int
+	for i, item := range input.Array() {
+		if item.Get("type").String() != "message" || item.Get("role").String() != "system" {
+			continue
+		}
+		systemIndexes = append(systemIndexes, i)
+		content := item.Get("content")
+		if content.Type == gjson.String {
+			if text := strings.TrimSpace(content.String()); text != "" {
+				systemTexts = append(systemTexts, text)
+			}
+			continue
+		}
+		if !content.IsArray() {
+			continue
+		}
+		for _, part := range content.Array() {
+			if text := strings.TrimSpace(part.Get("text").String()); text != "" {
+				systemTexts = append(systemTexts, text)
+			}
+		}
+	}
+
+	if len(systemIndexes) == 0 {
+		return bodyStr
+	}
+
+	if existing := strings.TrimSpace(gjson.Get(bodyStr, "instructions").String()); existing != "" {
+		systemTexts = append([]string{existing}, systemTexts...)
+	}
+	if len(systemTexts) > 0 {
+		bodyStr, _ = sjson.Set(bodyStr, "instructions", strings.Join(systemTexts, "\n\n"))
+	}
+
+	// Delete in reverse so earlier indexes remain stable.
+	for i := len(systemIndexes) - 1; i >= 0; i-- {
+		bodyStr, _ = sjson.Delete(bodyStr, fmt.Sprintf("input.%d", systemIndexes[i]))
 	}
 	return bodyStr
 }
