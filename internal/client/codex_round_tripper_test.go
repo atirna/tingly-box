@@ -155,6 +155,69 @@ func TestSanitizeCodexEmptyContentJSON_HighIndex(t *testing.T) {
 	assert.Len(t, input, 1012, "empty-content message at high index must be dropped")
 }
 
+func TestNormalizeCodexSystemMessagesJSON(t *testing.T) {
+	t.Run("lifts cached system input into instructions", func(t *testing.T) {
+		body := `{
+			"model":"gpt-5.6-sol",
+			"input":[
+				{"type":"message","role":"system","content":[{"type":"input_text","text":"You are Claude Code.","prompt_cache_breakpoint":{"type":"ephemeral"}}]},
+				{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}
+			]
+		}`
+
+		out := normalizeCodexSystemMessagesJSON(body)
+		assert.Equal(t, "You are Claude Code.", gjson.Get(out, "instructions").String())
+		input := gjson.Get(out, "input").Array()
+		require.Len(t, input, 1)
+		assert.Equal(t, "user", input[0].Get("role").String())
+	})
+
+	t.Run("preserves existing instructions and system order", func(t *testing.T) {
+		body := `{
+			"instructions":"existing",
+			"input":[
+				{"type":"message","role":"system","content":"first"},
+				{"type":"message","role":"user","content":"hello"},
+				{"type":"message","role":"system","content":[{"type":"input_text","text":"second"}]}
+			]
+		}`
+
+		out := normalizeCodexSystemMessagesJSON(body)
+		assert.Equal(t, "existing\n\nfirst\n\nsecond", gjson.Get(out, "instructions").String())
+		assert.Len(t, gjson.Get(out, "input").Array(), 1)
+	})
+
+	t.Run("leaves requests without system input untouched", func(t *testing.T) {
+		body := `{"instructions":"existing","input":[{"type":"message","role":"user","content":"hello"}]}`
+		assert.Equal(t, body, normalizeCodexSystemMessagesJSON(body))
+	})
+}
+
+func TestCodexFilterFieldLiftsSystemMessages(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-5.6-sol",
+		"prompt_cache_key":"session-1",
+		"prompt_cache_options":{"mode":"explicit"},
+		"prompt_cache_retention":"24h",
+		"input":[
+			{"type":"message","role":"system","content":[{"type":"input_text","text":"system prompt","prompt_cache_breakpoint":{"type":"ephemeral"}}]},
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"hello","prompt_cache_breakpoint":{"type":"ephemeral"}}]},
+			{"type":"function_call_output","call_id":"call-1","output":[{"type":"input_text","text":"result","prompt_cache_breakpoint":{"type":"ephemeral"}}]}
+		]
+	}`)
+
+	out, err := (&codexRoundTripper{}).filterField(body)
+	require.NoError(t, err)
+	assert.Equal(t, "system prompt", gjson.GetBytes(out, "instructions").String())
+	assert.False(t, gjson.GetBytes(out, `input.#(role=="system")`).Exists())
+	assert.Equal(t, "user", gjson.GetBytes(out, "input.0.role").String())
+	assert.False(t, gjson.GetBytes(out, "prompt_cache_options").Exists())
+	assert.False(t, gjson.GetBytes(out, "prompt_cache_retention").Exists())
+	assert.Equal(t, "session-1", gjson.GetBytes(out, "prompt_cache_key").String())
+	assert.False(t, gjson.GetBytes(out, "input.0.content.0.prompt_cache_breakpoint").Exists())
+	assert.False(t, gjson.GetBytes(out, "input.1.output.0.prompt_cache_breakpoint").Exists())
+}
+
 func TestCodexInputItemIDRequired(t *testing.T) {
 	required := []string{
 		"reasoning", "code_interpreter_call", "computer_call", "file_search_call",
