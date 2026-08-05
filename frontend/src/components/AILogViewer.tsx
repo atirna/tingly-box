@@ -65,8 +65,7 @@ interface RequestsViewerProps {
     getRequests: (params?: RequestFilters) => Promise<{ total: number; requests: ModelRequestSummary[] }>;
     getRequestDetail: (id: string) => Promise<ModelRequestDetail | null>;
     // Fetches one trace from the in-memory span buffer; null when evicted.
-    // Optional so embedders without the trace API keep working unchanged.
-    getTrace?: (traceId: string) => Promise<TraceDetail | null>;
+    getTrace: (traceId: string) => Promise<TraceDetail | null>;
     // When set, the scenario filter is initialized to this value but can be changed/cleared.
     // Used by the per-scenario quick-open dialog to provide context without locking the view.
     initialScenario?: string;
