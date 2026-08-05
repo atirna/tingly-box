@@ -57,6 +57,17 @@ func newResponsesToAnthropicConverter(ctx context.Context, stream ResponsesStrea
 	}
 }
 
+// NewOpenAIResponsesToAnthropicConverter creates a transport-neutral
+// Responses-to-Anthropic converter. The caller owns stream closure and wire
+// framing; emitted values can be normalized with AsAnthropicEvent.
+func NewOpenAIResponsesToAnthropicConverter(
+	ctx context.Context,
+	stream ResponsesStreamIter,
+	responseModel string,
+) StreamConverter {
+	return newResponsesToAnthropicConverter(ctx, stream, responseModel)
+}
+
 func (r *responsesToAnthropicConverter) Next() (interface{}, bool, error) {
 	if !r.messageStartSent {
 		r.emitMessageStart()
@@ -323,7 +334,11 @@ func (r *responsesToAnthropicConverter) processEvent(currentEvent responses.Resp
 			r.emitContentBlockDelta(r.state.textBlockIndex, anthropicTextDelta(textDelta.Delta))
 		case "function_call", "custom_tool_call", "mcp_call":
 			itemID := itemAdded.Item.ID
-			truncatedID := truncateToolCallID(itemID)
+			callID := itemAdded.Item.CallID
+			if callID == "" {
+				callID = itemID
+			}
+			truncatedID := truncateToolCallID(callID)
 			blockIndex := r.state.nextBlockIndex
 			r.state.nextBlockIndex++
 
@@ -537,7 +552,11 @@ func (r *responsesToAnthropicConverter) finalize(resp *responses.Response, stopR
 			continue
 		}
 
-		truncatedID := truncateToolCallID(itemID)
+		callID := outputItem.CallID
+		if callID == "" {
+			callID = itemID
+		}
+		truncatedID := truncateToolCallID(callID)
 		blockIndex := r.state.nextBlockIndex
 		r.state.nextBlockIndex++
 

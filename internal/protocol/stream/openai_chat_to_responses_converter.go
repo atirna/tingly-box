@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3"
-	openaistream "github.com/openai/openai-go/v3/packages/ssestream"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	protocolusage "github.com/tingly-dev/tingly-box/internal/protocol/usage"
@@ -17,7 +16,7 @@ import (
 // chatToResponsesConverter converts an OpenAI Chat Completions stream into
 // a sequence of Responses API events. It implements StreamConverter.
 type chatToResponsesConverter struct {
-	stream        *openaistream.Stream[openai.ChatCompletionChunk]
+	stream        OpenAIChatStream
 	responseModel string
 
 	// internal state
@@ -26,6 +25,7 @@ type chatToResponsesConverter struct {
 	sequenceNumber    int64
 	outputIndex       int
 	textItemID        string
+	textOutputIndex   int
 	hasTextItem       bool
 	pendingToolCalls  map[int]*pendingToolCallResponse
 	accumulatedText   strings.Builder
@@ -51,13 +51,14 @@ type pendingToolCallResponse struct {
 
 // NewChatToResponsesConverter creates a converter that reads from an OpenAI
 // Chat Completions stream and yields Responses API wire events.
-func NewChatToResponsesConverter(stream *openaistream.Stream[openai.ChatCompletionChunk], responseModel string) *chatToResponsesConverter {
+func NewChatToResponsesConverter(stream OpenAIChatStream, responseModel string) *chatToResponsesConverter {
 	return &chatToResponsesConverter{
 		stream:           stream,
 		responseModel:    responseModel,
 		responseID:       fmt.Sprintf("resp_%d", time.Now().Unix()),
 		createdAt:        time.Now().Unix(),
 		textItemID:       fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+		textOutputIndex:  -1,
 		usage:            protocol.ZeroTokenUsage(),
 		pendingToolCalls: make(map[int]*pendingToolCallResponse),
 	}
@@ -127,6 +128,8 @@ func (c *chatToResponsesConverter) processChunk(chunk *openai.ChatCompletionChun
 	// Handle content delta
 	if choice.Delta.Content != "" {
 		if !c.hasTextItem {
+			c.textOutputIndex = c.outputIndex
+			c.outputIndex++
 			c.emitTextItemAdded()
 			c.hasTextItem = true
 		}
@@ -135,7 +138,7 @@ func (c *chatToResponsesConverter) processChunk(chunk *openai.ChatCompletionChun
 			Type:           "response.output_text.delta",
 			SequenceNumber: c.nextSeq(),
 			ItemID:         c.textItemID,
-			OutputIndex:    0,
+			OutputIndex:    c.textOutputIndex,
 			ContentIndex:   0,
 			Delta:          choice.Delta.Content,
 			Logprobs:       []interface{}{},
@@ -152,10 +155,6 @@ func (c *chatToResponsesConverter) processChunk(chunk *openai.ChatCompletionChun
 				itemID = truncateToolCallID(toolCall.ID)
 			}
 
-			// Reserve OutputIndex 0 for the text message item; tool calls start at 1.
-			if c.outputIndex == 0 {
-				c.outputIndex = 1
-			}
 			toolOutputIndex := c.outputIndex
 			c.outputIndex++
 
@@ -235,15 +234,27 @@ func (c *chatToResponsesConverter) emitCompletionEvents() {
 			Type:           "response.output_text.done",
 			SequenceNumber: c.nextSeq(),
 			ItemID:         c.textItemID,
-			OutputIndex:    0,
+			OutputIndex:    c.textOutputIndex,
 			ContentIndex:   0,
 			Text:           text,
 			Logprobs:       []interface{}{},
 		})
+		c.pending = append(c.pending, wire.ResponsesContentPartDoneEvent{
+			Type:           "response.content_part.done",
+			SequenceNumber: c.nextSeq(),
+			OutputIndex:    c.textOutputIndex,
+			ItemID:         c.textItemID,
+			ContentIndex:   0,
+			Part: wire.ResponsesContentPartWire{
+				Type:        "output_text",
+				Text:        text,
+				Annotations: []interface{}{},
+			},
+		})
 		c.pending = append(c.pending, wire.ResponsesOutputItemDoneEvent{
 			Type:           "response.output_item.done",
 			SequenceNumber: c.nextSeq(),
-			OutputIndex:    0,
+			OutputIndex:    c.textOutputIndex,
 			Item:           newResponsesMessageItem(c.textItemID, "completed", text),
 		})
 	}
@@ -283,9 +294,9 @@ func (c *chatToResponsesConverter) emitCompletionEvents() {
 		itemStatus = "incomplete"
 	}
 
-	var output []wire.ResponsesOutputItemWire
+	output := make([]wire.ResponsesOutputItemWire, c.outputIndex)
 	if c.accumulatedText.Len() > 0 {
-		output = append(output, newResponsesMessageItem(c.textItemID, itemStatus, c.accumulatedText.String()))
+		output[c.textOutputIndex] = newResponsesMessageItem(c.textItemID, itemStatus, c.accumulatedText.String())
 	}
 	for _, idx := range sortedIndexes {
 		ptc := c.pendingToolCalls[idx]
@@ -293,7 +304,7 @@ func (c *chatToResponsesConverter) emitCompletionEvents() {
 		if callID == "" {
 			callID = ptc.itemID
 		}
-		output = append(output, newResponsesFunctionCallItem(ptc.itemID, callID, ptc.name, ptc.arguments.String(), itemStatus))
+		output[ptc.outputIdx] = newResponsesFunctionCallItem(ptc.itemID, callID, ptc.name, ptc.arguments.String(), itemStatus)
 	}
 
 	if isIncomplete {
@@ -328,14 +339,22 @@ func chatFinishReasonToIncomplete(finishReason string) (bool, string) {
 }
 
 func (c *chatToResponsesConverter) emitTextItemAdded() {
-	if c.outputIndex == 0 {
-		c.outputIndex = 1
-	}
 	c.pending = append(c.pending, wire.ResponsesOutputItemAddedEvent{
 		Type:           "response.output_item.added",
 		SequenceNumber: c.nextSeq(),
-		OutputIndex:    0,
+		OutputIndex:    c.textOutputIndex,
 		Item:           newResponsesMessageItem(c.textItemID, "in_progress", ""),
+	})
+	c.pending = append(c.pending, wire.ResponsesContentPartAddedEvent{
+		Type:           "response.content_part.added",
+		SequenceNumber: c.nextSeq(),
+		ItemID:         c.textItemID,
+		OutputIndex:    c.textOutputIndex,
+		ContentIndex:   0,
+		Part: wire.ResponsesContentPartWire{
+			Type:        "output_text",
+			Annotations: []interface{}{},
+		},
 	})
 }
 

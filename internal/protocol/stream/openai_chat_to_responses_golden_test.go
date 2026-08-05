@@ -110,16 +110,18 @@ func TestChatToResponsesConverter_GoldenSequence(t *testing.T) {
 	// 1. Exact ordered event sequence — the heart of the oracle.
 	want := []string{
 		"response.created",
-		"response.output_item.added",             // text item (index 0)
+		"response.output_item.added", // text item (index 0)
+		"response.content_part.added",
 		"response.output_text.delta",             // "Hello"
 		"response.output_text.delta",             // ", World!"
 		"response.output_item.added",             // function call (index 1)
 		"response.function_call_arguments.delta", // {"city":
 		"response.function_call_arguments.delta", // "Paris"}
 		"response.output_text.done",              // text done before tool done
-		"response.output_item.done",              // text message item
-		"response.function_call_arguments.done",  // full arguments
-		"response.output_item.done",              // function call item
+		"response.content_part.done",
+		"response.output_item.done",             // text message item
+		"response.function_call_arguments.done", // full arguments
+		"response.output_item.done",             // function call item
 		"response.completed",
 	}
 	gotTypes := make([]string, len(got))
@@ -134,17 +136,17 @@ func TestChatToResponsesConverter_GoldenSequence(t *testing.T) {
 	}
 
 	// 3. Spot-check key payloads.
-	assert.Equal(t, "Hello", got[2].(wire.ResponsesOutputTextDeltaEvent).Delta)
-	assert.Equal(t, ", World!", got[3].(wire.ResponsesOutputTextDeltaEvent).Delta)
+	assert.Equal(t, "Hello", got[3].(wire.ResponsesOutputTextDeltaEvent).Delta)
+	assert.Equal(t, ", World!", got[4].(wire.ResponsesOutputTextDeltaEvent).Delta)
 
-	textDone := got[7].(wire.ResponsesOutputTextDoneEvent)
+	textDone := got[8].(wire.ResponsesOutputTextDoneEvent)
 	assert.Equal(t, "Hello, World!", textDone.Text)
 
-	argsDone := got[9].(wire.ResponsesFunctionCallArgumentsDoneEvent)
+	argsDone := got[11].(wire.ResponsesFunctionCallArgumentsDoneEvent)
 	assert.Equal(t, "get_weather", argsDone.Name)
 	assert.Equal(t, `{"city":"Paris"}`, argsDone.Arguments)
 
-	completed := got[11].(wire.ResponsesCompletedEvent)
+	completed := got[13].(wire.ResponsesCompletedEvent)
 	assert.Equal(t, "completed", completed.Response.Status)
 	require.Len(t, completed.Response.Output, 2, "final output carries text + tool-call items")
 
@@ -161,7 +163,11 @@ func seqOf(t *testing.T, e wire.ResponsesEvent) int64 {
 	switch v := e.(type) {
 	case wire.ResponsesCreatedEvent:
 		return v.SequenceNumber
+	case wire.ResponsesInProgressEvent:
+		return v.SequenceNumber
 	case wire.ResponsesOutputItemAddedEvent:
+		return v.SequenceNumber
+	case wire.ResponsesContentPartAddedEvent:
 		return v.SequenceNumber
 	case wire.ResponsesOutputTextDeltaEvent:
 		return v.SequenceNumber
@@ -169,11 +175,15 @@ func seqOf(t *testing.T, e wire.ResponsesEvent) int64 {
 		return v.SequenceNumber
 	case wire.ResponsesOutputTextDoneEvent:
 		return v.SequenceNumber
+	case wire.ResponsesContentPartDoneEvent:
+		return v.SequenceNumber
 	case wire.ResponsesOutputItemDoneEvent:
 		return v.SequenceNumber
 	case wire.ResponsesFunctionCallArgumentsDoneEvent:
 		return v.SequenceNumber
 	case wire.ResponsesCompletedEvent:
+		return v.SequenceNumber
+	case wire.ResponsesIncompleteEvent:
 		return v.SequenceNumber
 	default:
 		t.Fatalf("unexpected event type %T", e)

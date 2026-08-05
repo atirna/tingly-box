@@ -120,6 +120,7 @@ func TestResponsesToAnthropicConverter_GoldenSequence(t *testing.T) {
 	toolBlockStart := eventDataAsMap(t, got[5].data)
 	toolBlock := toolBlockStart["content_block"].(map[string]interface{})
 	assert.Equal(t, "tool_use", toolBlock["type"])
+	assert.Equal(t, "call_1", toolBlock["id"], "Anthropic tool_result must reference the Responses call_id")
 	assert.Equal(t, "get_weather", toolBlock["name"])
 
 	// args delta

@@ -12,40 +12,6 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol/wire"
 )
 
-// seqOfFull extracts the SequenceNumber from any Responses API event type emitted
-// by the anthropicBetaToResponsesConverter, including ContentPart events that
-// seqOf in the ChatToResponses golden test does not cover.
-func seqOfFull(t *testing.T, e wire.ResponsesEvent) int64 {
-	t.Helper()
-	switch v := e.(type) {
-	case wire.ResponsesCreatedEvent:
-		return v.SequenceNumber
-	case wire.ResponsesInProgressEvent:
-		return v.SequenceNumber
-	case wire.ResponsesOutputItemAddedEvent:
-		return v.SequenceNumber
-	case wire.ResponsesContentPartAddedEvent:
-		return v.SequenceNumber
-	case wire.ResponsesOutputTextDeltaEvent:
-		return v.SequenceNumber
-	case wire.ResponsesFunctionCallArgumentsDeltaEvent:
-		return v.SequenceNumber
-	case wire.ResponsesOutputTextDoneEvent:
-		return v.SequenceNumber
-	case wire.ResponsesContentPartDoneEvent:
-		return v.SequenceNumber
-	case wire.ResponsesOutputItemDoneEvent:
-		return v.SequenceNumber
-	case wire.ResponsesFunctionCallArgumentsDoneEvent:
-		return v.SequenceNumber
-	case wire.ResponsesCompletedEvent:
-		return v.SequenceNumber
-	default:
-		t.Fatalf("unexpected event type %T", e)
-		return 0
-	}
-}
-
 // TestAnthropicBetaToResponsesConverter_GoldenSequence is a hermetic regression
 // oracle for the anthropicBetaToResponsesConverter. It feeds a realistic Anthropic
 // Beta stream (text block + tool call assembled across two delta chunks, then
@@ -158,7 +124,7 @@ func TestAnthropicBetaToResponsesConverter_GoldenSequence(t *testing.T) {
 
 	// 2. Sequence numbers start at 0 and increment by 1 (no gaps/dupes).
 	for i, e := range got {
-		assert.Equal(t, int64(i), seqOfFull(t, e), "sequence number at position %d", i)
+		assert.Equal(t, int64(i), seqOf(t, e), "sequence number at position %d", i)
 	}
 
 	// 3. Spot-check key payloads.
@@ -167,15 +133,125 @@ func TestAnthropicBetaToResponsesConverter_GoldenSequence(t *testing.T) {
 
 	textDone := got[6].(wire.ResponsesOutputTextDoneEvent)
 	assert.Equal(t, "Hello, World!", textDone.Text)
+	assert.Equal(t, 0, textDone.OutputIndex)
+	assert.Equal(t, 0, got[2].(wire.ResponsesOutputItemAddedEvent).OutputIndex)
+	assert.Equal(t, 0, got[3].(wire.ResponsesContentPartAddedEvent).OutputIndex)
 
 	argsDone := got[12].(wire.ResponsesFunctionCallArgumentsDoneEvent)
 	assert.Equal(t, `{"city":"Paris"}`, argsDone.Arguments)
+	assert.Equal(t, 1, got[9].(wire.ResponsesOutputItemAddedEvent).OutputIndex)
+	assert.Equal(t, 1, got[10].(wire.ResponsesFunctionCallArgumentsDeltaEvent).OutputIndex)
+	assert.Equal(t, 1, got[11].(wire.ResponsesFunctionCallArgumentsDeltaEvent).OutputIndex)
+	assert.Equal(t, 1, argsDone.OutputIndex)
+	assert.Equal(t, 1, got[13].(wire.ResponsesOutputItemDoneEvent).OutputIndex)
 
 	completed := got[14].(wire.ResponsesCompletedEvent)
 	assert.Equal(t, "completed", completed.Response.Status)
+	assert.Equal(t, "claude-3-5-sonnet-20241022", completed.Response.Model)
+	require.Len(t, completed.Response.Output, 2)
+	assert.Equal(t, "message", completed.Response.Output[0].Type)
+	assert.Equal(t, "function_call", completed.Response.Output[1].Type)
 
 	// 4. Usage reflects upstream message_start (input) + message_delta (output).
 	usage := conv.Usage()
 	assert.Equal(t, 10, usage.InputTokens)
 	assert.Equal(t, 5, usage.OutputTokens)
+}
+
+func TestAnthropicBetaToResponsesConverter_PreservesInterleavedTextBlocks(t *testing.T) {
+	marshal := func(v map[string]any) string {
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		return string(b)
+	}
+
+	events := []string{
+		marshal(map[string]any{
+			"type": "message_start",
+			"message": map[string]any{
+				"id": "msg_interleaved", "type": "message", "role": "assistant",
+				"content": []any{}, "model": "claude-test",
+				"stop_reason": nil, "stop_sequence": nil,
+				"usage": map[string]any{"input_tokens": 3, "output_tokens": 0},
+			},
+		}),
+		marshal(map[string]any{
+			"type": "content_block_start", "index": 0,
+			"content_block": map[string]any{"type": "text", "text": ""},
+		}),
+		marshal(map[string]any{
+			"type": "content_block_delta", "index": 0,
+			"delta": map[string]any{"type": "text_delta", "text": "before"},
+		}),
+		marshal(map[string]any{"type": "content_block_stop", "index": 0}),
+		marshal(map[string]any{
+			"type": "content_block_start", "index": 1,
+			"content_block": map[string]any{
+				"type": "tool_use", "id": "tool_interleaved", "name": "lookup",
+				"input": map[string]any{},
+			},
+		}),
+		marshal(map[string]any{
+			"type": "content_block_delta", "index": 1,
+			"delta": map[string]any{"type": "input_json_delta", "partial_json": `{}`},
+		}),
+		marshal(map[string]any{"type": "content_block_stop", "index": 1}),
+		marshal(map[string]any{
+			"type": "content_block_start", "index": 2,
+			"content_block": map[string]any{"type": "text", "text": ""},
+		}),
+		marshal(map[string]any{
+			"type": "content_block_delta", "index": 2,
+			"delta": map[string]any{"type": "text_delta", "text": "after"},
+		}),
+		marshal(map[string]any{"type": "content_block_stop", "index": 2}),
+		marshal(map[string]any{
+			"type":  "message_delta",
+			"delta": map[string]any{"stop_reason": "tool_use", "stop_sequence": nil},
+			"usage": map[string]any{"output_tokens": 4},
+		}),
+		marshal(map[string]any{"type": "message_stop"}),
+	}
+
+	stream := anthropicstream.NewStream[anthropic.BetaRawMessageStreamEventUnion](
+		newFakeAnthropicDecoder(events), nil,
+	)
+	conv := newAnthropicBetaToResponsesConverter(stream, "claude-test")
+
+	var added []wire.ResponsesOutputItemAddedEvent
+	var done []wire.ResponsesOutputItemDoneEvent
+	var completed wire.ResponsesCompletedEvent
+	for {
+		event, finished, err := conv.Next()
+		require.NoError(t, err)
+		if finished {
+			break
+		}
+		switch typed := event.(type) {
+		case wire.ResponsesOutputItemAddedEvent:
+			added = append(added, typed)
+		case wire.ResponsesOutputItemDoneEvent:
+			done = append(done, typed)
+		case wire.ResponsesCompletedEvent:
+			completed = typed
+		}
+	}
+
+	require.Len(t, added, 3)
+	require.Len(t, done, 3)
+	for index := range added {
+		assert.Equal(t, index, added[index].OutputIndex)
+		assert.Equal(t, index, done[index].OutputIndex)
+		assert.Equal(t, added[index].Item.ID, done[index].Item.ID)
+	}
+	assert.NotEqual(t, added[0].Item.ID, added[2].Item.ID)
+
+	require.Len(t, completed.Response.Output, 3)
+	assert.Equal(t, "message", completed.Response.Output[0].Type)
+	assert.Equal(t, "before", completed.Response.Output[0].Content[0].Text)
+	assert.Equal(t, "function_call", completed.Response.Output[1].Type)
+	assert.Equal(t, "message", completed.Response.Output[2].Type)
+	assert.Equal(t, "after", completed.Response.Output[2].Content[0].Text)
+	assert.Equal(t, added[0].Item.ID, completed.Response.Output[0].ID)
+	assert.Equal(t, added[2].Item.ID, completed.Response.Output[2].ID)
 }

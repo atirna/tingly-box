@@ -201,13 +201,14 @@ func TestChatToResponsesConverter_TextDelta(t *testing.T) {
 		},
 	})
 
-	// Should emit: response.created, output_item.added, output_text.delta
-	require.Len(t, conv.pending, 3)
+	// Should emit the complete Responses text lifecycle before the delta.
+	require.Len(t, conv.pending, 4)
 	assert.Equal(t, "response.created", conv.pending[0].(wire.ResponsesCreatedEvent).Type)
 	assert.Equal(t, "response.output_item.added", conv.pending[1].(wire.ResponsesOutputItemAddedEvent).Type)
-	assert.Equal(t, "response.output_text.delta", conv.pending[2].(wire.ResponsesOutputTextDeltaEvent).Type)
+	assert.Equal(t, "response.content_part.added", conv.pending[2].(wire.ResponsesContentPartAddedEvent).Type)
+	assert.Equal(t, "response.output_text.delta", conv.pending[3].(wire.ResponsesOutputTextDeltaEvent).Type)
 
-	delta := conv.pending[2].(wire.ResponsesOutputTextDeltaEvent)
+	delta := conv.pending[3].(wire.ResponsesOutputTextDeltaEvent)
 	assert.Equal(t, "Hello, World!", delta.Delta)
 }
 
@@ -239,6 +240,42 @@ func TestChatToResponsesConverter_ToolCall(t *testing.T) {
 	argsDelta := conv.pending[1].(wire.ResponsesFunctionCallArgumentsDeltaEvent)
 	assert.Equal(t, "response.function_call_arguments.delta", argsDelta.Type)
 	assert.Equal(t, `{"loc`, argsDelta.Delta)
+}
+
+func TestChatToResponsesConverter_ToolOnlyUsesFirstOutputIndex(t *testing.T) {
+	conv := NewChatToResponsesConverter(nil, "gpt-4o-mini")
+	conv.hasSentCreated = true
+
+	conv.processChunk(&openai.ChatCompletionChunk{Choices: []openai.ChatCompletionChunkChoice{{
+		Delta: openai.ChatCompletionChunkChoiceDelta{ToolCalls: []openai.ChatCompletionChunkChoiceDeltaToolCall{{
+			Index: 0,
+			ID:    "call_123",
+			Function: openai.ChatCompletionChunkChoiceDeltaToolCallFunction{
+				Name: "get_weather", Arguments: `{"city":"Paris"}`,
+			},
+		}}},
+	}}})
+	conv.processChunk(&openai.ChatCompletionChunk{Choices: []openai.ChatCompletionChunkChoice{{
+		FinishReason: "tool_calls",
+	}}})
+
+	added := conv.pending[0].(wire.ResponsesOutputItemAddedEvent)
+	assert.Equal(t, 0, added.OutputIndex)
+
+	var done wire.ResponsesOutputItemDoneEvent
+	var completed wire.ResponsesCompletedEvent
+	for _, event := range conv.pending {
+		switch event := event.(type) {
+		case wire.ResponsesOutputItemDoneEvent:
+			done = event
+		case wire.ResponsesCompletedEvent:
+			completed = event
+		}
+	}
+	assert.Equal(t, 0, done.OutputIndex)
+	require.Len(t, completed.Response.Output, 1)
+	assert.Equal(t, "function_call", completed.Response.Output[0].Type)
+	assert.Equal(t, "call_123", completed.Response.Output[0].CallID)
 }
 
 // TestChatToResponsesConverter_CompletedEvent tests usage propagation

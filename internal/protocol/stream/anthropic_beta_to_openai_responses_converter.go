@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	usagepkg "github.com/tingly-dev/tingly-box/internal/protocol/usage"
 	"github.com/tingly-dev/tingly-box/internal/protocol/wire"
@@ -15,50 +14,68 @@ import (
 // anthropicBetaToResponsesConverter converts an Anthropic Beta stream into
 // a sequence of Responses API wire events. It implements StreamConverter.
 type anthropicBetaToResponsesConverter struct {
-	stream        *anthropicstream.Stream[anthropic.BetaRawMessageStreamEventUnion]
+	stream        AnthropicBetaStream
 	responseModel string
 	acc           *usagepkg.AnthropicAccumulator
 
 	// state (formerly responsesConverterState)
-	responseID       string
-	itemID           string
-	outputIndex      int
-	accumulatedText  string
-	finished         bool
-	pendingToolCalls map[int]*pendingResponseToolCall
-	hasSentCreated   bool
-	sequenceNumber   int
-	createdAt        int64
-	currentBlockType string
-	stopReason       string
+	responseID        string
+	outputIndex       int
+	finished          bool
+	pendingTextBlocks map[int]*pendingResponseTextBlock
+	pendingToolCalls  map[int]*pendingResponseToolCall
+	hasSentCreated    bool
+	sequenceNumber    int
+	createdAt         int64
+	stopReason        string
 
 	// internal event queue
 	pending []wire.ResponsesEvent
 }
 
+// pendingResponseTextBlock tracks one Anthropic text content block as one
+// Responses message output item. Anthropic may interleave multiple text and
+// tool-use blocks, so text state cannot be shared across the whole response.
+type pendingResponseTextBlock struct {
+	itemID      string
+	outputIndex int
+	text        strings.Builder
+}
+
 // pendingResponseToolCall tracks a tool call being assembled from Anthropic stream chunks
 type pendingResponseToolCall struct {
-	itemID    string
-	name      string
-	arguments strings.Builder
+	itemID      string
+	name        string
+	outputIndex int
+	arguments   strings.Builder
 }
 
 // newAnthropicBetaToResponsesConverter creates a converter that reads from an
 // Anthropic Beta stream and yields Responses API wire events.
 func newAnthropicBetaToResponsesConverter(
-	stream *anthropicstream.Stream[anthropic.BetaRawMessageStreamEventUnion],
+	stream AnthropicBetaStream,
 	responseModel string,
 ) *anthropicBetaToResponsesConverter {
 	ts := time.Now().Unix()
 	return &anthropicBetaToResponsesConverter{
-		stream:           stream,
-		responseModel:    responseModel,
-		acc:              usagepkg.NewAnthropicAccumulator(),
-		responseID:       fmt.Sprintf("resp_%d", ts),
-		itemID:           fmt.Sprintf("item_%d", ts),
-		pendingToolCalls: make(map[int]*pendingResponseToolCall),
-		createdAt:        ts,
+		stream:            stream,
+		responseModel:     responseModel,
+		acc:               usagepkg.NewAnthropicAccumulator(),
+		responseID:        fmt.Sprintf("resp_%d", ts),
+		pendingTextBlocks: make(map[int]*pendingResponseTextBlock),
+		pendingToolCalls:  make(map[int]*pendingResponseToolCall),
+		createdAt:         ts,
 	}
+}
+
+// NewAnthropicBetaToOpenAIResponsesConverter creates a transport-neutral
+// converter. HTTP/SSE framing and stream close ownership remain with the
+// caller, so the same converter can serve legacy handlers and Stage Bridges.
+func NewAnthropicBetaToOpenAIResponsesConverter(
+	stream AnthropicBetaStream,
+	responseModel string,
+) StreamConverter {
+	return newAnthropicBetaToResponsesConverter(stream, responseModel)
 }
 
 func (c *anthropicBetaToResponsesConverter) Next() (interface{}, bool, error) {
@@ -144,17 +161,22 @@ func (c *anthropicBetaToResponsesConverter) emitMessageStart() {
 }
 
 func (c *anthropicBetaToResponsesConverter) emitContentBlockStart(event *anthropic.BetaRawMessageStreamEventUnion) {
-	index := event.Index
+	index := int(event.Index)
 	blockType := event.ContentBlock.Type
-	c.currentBlockType = blockType
+	currentOutputIndex := c.outputIndex
 
 	if blockType == "text" {
+		itemID := fmt.Sprintf("item_%d_%d", c.createdAt, index)
+		c.pendingTextBlocks[index] = &pendingResponseTextBlock{
+			itemID:      itemID,
+			outputIndex: currentOutputIndex,
+		}
 		c.pending = append(c.pending, wire.ResponsesOutputItemAddedEvent{
 			Type:           "response.output_item.added",
 			SequenceNumber: int64(c.nextSeq()),
-			OutputIndex:    c.outputIndex,
+			OutputIndex:    currentOutputIndex,
 			Item: wire.ResponsesOutputItemWire{
-				ID:      c.itemID,
+				ID:      itemID,
 				Type:    "message",
 				Status:  "in_progress",
 				Role:    "assistant",
@@ -164,21 +186,22 @@ func (c *anthropicBetaToResponsesConverter) emitContentBlockStart(event *anthrop
 		c.pending = append(c.pending, wire.ResponsesContentPartAddedEvent{
 			Type:           "response.content_part.added",
 			SequenceNumber: int64(c.nextSeq()),
-			ItemID:         c.itemID,
-			OutputIndex:    c.outputIndex,
+			ItemID:         itemID,
+			OutputIndex:    currentOutputIndex,
 			ContentIndex:   0,
 			Part:           wire.ResponsesContentPartWire{Type: "output_text", Text: ""},
 		})
+		c.outputIndex++
 	} else if blockType == "tool_use" {
 		toolID := event.ContentBlock.ID
 		toolName := event.ContentBlock.Name
-		c.pendingToolCalls[int(index)] = &pendingResponseToolCall{itemID: toolID, name: toolName}
+		c.pendingToolCalls[index] = &pendingResponseToolCall{itemID: toolID, name: toolName, outputIndex: currentOutputIndex}
 
 		arguments := ""
 		c.pending = append(c.pending, wire.ResponsesOutputItemAddedEvent{
 			Type:           "response.output_item.added",
 			SequenceNumber: int64(c.nextSeq()),
-			OutputIndex:    c.outputIndex,
+			OutputIndex:    currentOutputIndex,
 			Item: wire.ResponsesOutputItemWire{
 				Type:      "function_call",
 				ID:        toolID,
@@ -194,28 +217,32 @@ func (c *anthropicBetaToResponsesConverter) emitContentBlockStart(event *anthrop
 
 func (c *anthropicBetaToResponsesConverter) emitContentBlockDelta(event *anthropic.BetaRawMessageStreamEventUnion) {
 	deltaType := event.Delta.Type
-	index := event.Index
+	index := int(event.Index)
 
 	if deltaType == "text_delta" {
-		text := event.Delta.Text
-		c.accumulatedText += text
+		block, exists := c.pendingTextBlocks[index]
+		if !exists {
+			return
+		}
+		delta := event.Delta.Text
+		block.text.WriteString(delta)
 		c.pending = append(c.pending, wire.ResponsesOutputTextDeltaEvent{
 			Type:           "response.output_text.delta",
-			Delta:          text,
-			ItemID:         c.itemID,
-			OutputIndex:    c.outputIndex,
+			Delta:          delta,
+			ItemID:         block.itemID,
+			OutputIndex:    block.outputIndex,
 			ContentIndex:   0,
 			SequenceNumber: int64(c.nextSeq()),
 		})
 	} else if deltaType == "input_json_delta" {
-		if pending, exists := c.pendingToolCalls[int(index)]; exists {
+		if pending, exists := c.pendingToolCalls[index]; exists {
 			argsDelta := event.Delta.PartialJSON
 			pending.arguments.WriteString(argsDelta)
 			c.pending = append(c.pending, wire.ResponsesFunctionCallArgumentsDeltaEvent{
 				Type:           "response.function_call_arguments.delta",
 				Delta:          argsDelta,
 				ItemID:         pending.itemID,
-				OutputIndex:    c.outputIndex,
+				OutputIndex:    pending.outputIndex,
 				SequenceNumber: int64(c.nextSeq()),
 			})
 		}
@@ -223,68 +250,66 @@ func (c *anthropicBetaToResponsesConverter) emitContentBlockDelta(event *anthrop
 }
 
 func (c *anthropicBetaToResponsesConverter) emitContentBlockStop(event *anthropic.BetaRawMessageStreamEventUnion) {
-	index := event.Index
-	blockType := c.currentBlockType
+	index := int(event.Index)
 
-	if blockType == "text" {
+	if block, exists := c.pendingTextBlocks[index]; exists {
+		text := block.text.String()
 		c.pending = append(c.pending,
 			wire.ResponsesOutputTextDoneEvent{
 				Type:           "response.output_text.done",
-				ItemID:         c.itemID,
-				OutputIndex:    c.outputIndex,
+				ItemID:         block.itemID,
+				OutputIndex:    block.outputIndex,
 				ContentIndex:   0,
-				Text:           c.accumulatedText,
+				Text:           text,
 				SequenceNumber: int64(c.nextSeq()),
 			},
 			wire.ResponsesContentPartDoneEvent{
 				Type:           "response.content_part.done",
 				SequenceNumber: int64(c.nextSeq()),
-				ItemID:         c.itemID,
-				OutputIndex:    c.outputIndex,
+				ItemID:         block.itemID,
+				OutputIndex:    block.outputIndex,
 				ContentIndex:   0,
-				Part:           wire.ResponsesContentPartWire{Type: "output_text", Text: c.accumulatedText},
+				Part:           wire.ResponsesContentPartWire{Type: "output_text", Text: text},
 			},
 			wire.ResponsesOutputItemDoneEvent{
 				Type:           "response.output_item.done",
 				SequenceNumber: int64(c.nextSeq()),
-				OutputIndex:    c.outputIndex,
+				OutputIndex:    block.outputIndex,
 				Item: wire.ResponsesOutputItemWire{
-					ID:     c.itemID,
+					ID:     block.itemID,
 					Type:   "message",
 					Status: "completed",
 					Role:   "assistant",
 					Content: []wire.ResponsesContentPartWire{
-						{Type: "output_text", Text: c.accumulatedText},
+						{Type: "output_text", Text: text},
 					},
 				},
 			},
 		)
-	} else if blockType == "tool_use" {
-		if pending, exists := c.pendingToolCalls[int(index)]; exists {
-			argumentsStr := pending.arguments.String()
-			c.pending = append(c.pending,
-				wire.ResponsesFunctionCallArgumentsDoneEvent{
-					Type:           "response.function_call_arguments.done",
-					ItemID:         pending.itemID,
-					OutputIndex:    c.outputIndex,
-					Arguments:      argumentsStr,
-					SequenceNumber: int64(c.nextSeq()),
+	} else if pending, exists := c.pendingToolCalls[index]; exists {
+		argumentsStr := pending.arguments.String()
+		c.pending = append(c.pending,
+			wire.ResponsesFunctionCallArgumentsDoneEvent{
+				Type:           "response.function_call_arguments.done",
+				ItemID:         pending.itemID,
+				OutputIndex:    pending.outputIndex,
+				Arguments:      argumentsStr,
+				SequenceNumber: int64(c.nextSeq()),
+			},
+			wire.ResponsesOutputItemDoneEvent{
+				Type:           "response.output_item.done",
+				SequenceNumber: int64(c.nextSeq()),
+				OutputIndex:    pending.outputIndex,
+				Item: wire.ResponsesOutputItemWire{
+					Type:      "function_call",
+					ID:        pending.itemID,
+					CallID:    pending.itemID,
+					Name:      pending.name,
+					Arguments: &argumentsStr,
+					Status:    "completed",
 				},
-				wire.ResponsesOutputItemDoneEvent{
-					Type:           "response.output_item.done",
-					SequenceNumber: int64(c.nextSeq()),
-					OutputIndex:    c.outputIndex,
-					Item: wire.ResponsesOutputItemWire{
-						Type:      "function_call",
-						ID:        pending.itemID,
-						CallID:    pending.itemID,
-						Name:      pending.name,
-						Arguments: &argumentsStr,
-						Status:    "completed",
-					},
-				},
-			)
-		}
+			},
+		)
 	}
 }
 
@@ -305,28 +330,28 @@ func (c *anthropicBetaToResponsesConverter) emitCompletionEvents() {
 		itemStatus = "incomplete"
 	}
 
-	var output []wire.ResponsesOutputItemWire
-	if c.accumulatedText != "" {
-		output = append(output, wire.ResponsesOutputItemWire{
-			ID:     c.itemID,
+	output := make([]wire.ResponsesOutputItemWire, c.outputIndex)
+	for _, block := range c.pendingTextBlocks {
+		output[block.outputIndex] = wire.ResponsesOutputItemWire{
+			ID:     block.itemID,
 			Type:   "message",
 			Status: itemStatus,
 			Role:   "assistant",
 			Content: []wire.ResponsesContentPartWire{
-				{Type: "output_text", Text: c.accumulatedText},
+				{Type: "output_text", Text: block.text.String()},
 			},
-		})
+		}
 	}
 	for _, pending := range c.pendingToolCalls {
 		argumentsStr := pending.arguments.String()
-		output = append(output, wire.ResponsesOutputItemWire{
+		output[pending.outputIndex] = wire.ResponsesOutputItemWire{
 			Type:      "function_call",
 			ID:        pending.itemID,
 			CallID:    pending.itemID,
 			Name:      pending.name,
 			Arguments: &argumentsStr,
-			Status:    "completed",
-		})
+			Status:    itemStatus,
+		}
 	}
 
 	u := c.acc.Result()

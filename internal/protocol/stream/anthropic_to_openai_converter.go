@@ -6,12 +6,20 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	usagepkg "github.com/tingly-dev/tingly-box/internal/protocol/usage"
 	"github.com/tingly-dev/tingly-box/internal/protocol/wire"
 )
+
+// AnthropicBetaStream is the transport-neutral iterator surface consumed by
+// the Anthropic Beta to OpenAI Chat stream converter. The Anthropic SDK stream
+// and dormant Stage adapters both implement this contract.
+type AnthropicBetaStream interface {
+	Next() bool
+	Current() anthropic.BetaRawMessageStreamEventUnion
+	Err() error
+}
 
 // anthropicToOpenAIConverter is a stateful iterator that reads Anthropic Beta stream
 // events and emits OpenAI Chat Completion wire chunks.
@@ -21,7 +29,7 @@ import (
 // values ("role":"", "finish_reason":"", zero usage on every chunk), which
 // strict clients reject.
 type anthropicToOpenAIConverter struct {
-	stream             *anthropicstream.Stream[anthropic.BetaRawMessageStreamEventUnion]
+	stream             AnthropicBetaStream
 	responseModel      string
 	disableStreamUsage bool
 	hooks              *AnthropicToOpenAIMCPHooks
@@ -46,7 +54,7 @@ type anthropicToOpenAIConverter struct {
 }
 
 func newAnthropicToOpenAIConverter(
-	stream *anthropicstream.Stream[anthropic.BetaRawMessageStreamEventUnion],
+	stream AnthropicBetaStream,
 	responseModel string,
 	disableStreamUsage bool,
 	hooks *AnthropicToOpenAIMCPHooks,
@@ -60,6 +68,17 @@ func newAnthropicToOpenAIConverter(
 		created:            time.Now().Unix(),
 		acc:                usagepkg.NewAnthropicAccumulator(),
 	}
+}
+
+// NewAnthropicBetaToOpenAIChatConverter creates a hook-free, transport-neutral
+// converter. HTTP/SSE framing, MCP hooks, and stream close ownership remain
+// with the caller.
+func NewAnthropicBetaToOpenAIChatConverter(
+	stream AnthropicBetaStream,
+	responseModel string,
+	disableStreamUsage bool,
+) StreamConverter {
+	return newAnthropicToOpenAIConverter(stream, responseModel, disableStreamUsage, nil)
 }
 
 func (c *anthropicToOpenAIConverter) Next() (interface{}, bool, error) {

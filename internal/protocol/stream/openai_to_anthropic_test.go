@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,6 +27,37 @@ func (f *fakeOpenAIDecoder) Event() openaistream.Event { return openaistream.Eve
 func (f *fakeOpenAIDecoder) Next() bool                { return false }
 func (f *fakeOpenAIDecoder) Close() error              { return nil }
 func (f *fakeOpenAIDecoder) Err() error                { return nil }
+
+type failingOpenAIChatStream struct {
+	err error
+}
+
+func (s *failingOpenAIChatStream) Next() bool { return false }
+func (s *failingOpenAIChatStream) Current() openai.ChatCompletionChunk {
+	return openai.ChatCompletionChunk{}
+}
+func (s *failingOpenAIChatStream) Err() error { return s.err }
+
+func TestOpenAIChatToAnthropicConvertersPropagateIteratorError(t *testing.T) {
+	want := errors.New("upstream iterator failed")
+	constructors := map[string]func(OpenAIChatStream) StreamConverter{
+		"v1": func(stream OpenAIChatStream) StreamConverter {
+			return NewOpenAIChatToAnthropicV1Converter(stream, "model", nil)
+		},
+		"beta": func(stream OpenAIChatStream) StreamConverter {
+			return NewOpenAIChatToAnthropicBetaConverter(stream, "model", nil)
+		},
+	}
+
+	for name, newConverter := range constructors {
+		t.Run(name, func(t *testing.T) {
+			event, done, err := newConverter(&failingOpenAIChatStream{err: want}).Next()
+			assert.Nil(t, event)
+			assert.False(t, done)
+			assert.ErrorIs(t, err, want)
+		})
+	}
+}
 
 type closeNotifyRecorder struct {
 	*httptest.ResponseRecorder
