@@ -8,6 +8,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol/transform"
 	servertransform "github.com/tingly-dev/tingly-box/internal/protocolserver/transform"
 	"github.com/tingly-dev/tingly-box/internal/typ"
+	"github.com/tingly-dev/tingly-box/internal/webproxy"
 )
 
 // RulePreBaseTransforms builds the per-rule list of pre-Base transforms for the
@@ -72,6 +73,13 @@ func RulePreVendorTransforms(flags typ.RuleFlags) []transform.Transform {
 	}
 	if flags.ThinkingEffort != typ.ThinkingEffortDefault {
 		preVendor = append(preVendor, transform.NewRuleThinkingTransform(flags.ThinkingEffort))
+	}
+	// Web proxy: swap the provider-executed native web tools the downstream
+	// cannot run for two function tools the server answers itself. preVendor
+	// (not preBase) because the swap must happen on the upstream-bound shape —
+	// which tools are injectable depends on the target protocol.
+	if flags.WebProxyService.IsActive() {
+		preVendor = append(preVendor, webproxy.NewToolTransform(true))
 	}
 	return preVendor
 }
@@ -141,6 +149,17 @@ func ResolveRuleFlagsWithScenario(
 			flags.CustomUserAgent = scenarioConfig.Flags.CustomUserAgent
 		}
 
+		// Inject the scenario-level web proxy service when the rule did not
+		// name one. This is the same rule-wins-over-scenario resolution
+		// webproxy.Resolve performs; doing it here folds both scopes into a
+		// single field so everything downstream — the tool transform, the
+		// context stash, the applied-flags log line — reads one source.
+		if !flags.WebProxyService.IsActive() {
+			if svc := webproxy.ParseScenarioService(scenarioConfig.Extensions); svc != nil {
+				flags.WebProxyService = svc
+			}
+		}
+
 		// SessionAffinity is rule-only — no scenario-level inheritance. The
 		// built-in Claude Code / Desktop / Codex rules seed it directly (init +
 		// migrate20260610), so there is nothing to inject here.
@@ -177,7 +196,24 @@ func ResolveRuleFlagsWithScenario(
 	// request and decides whether/what anthropic-organization-id to send.
 	applyClaudeOrgID(c, flags)
 
+	// Attach the resolved web proxy service the same way. The tool loop reads
+	// it back at tool-execution time, deep inside dispatch where the rule is
+	// no longer in hand — and the dispatch gates read it to decide whether to
+	// open that loop at all.
+	applyWebProxyService(c, flags)
+
 	return flags
+}
+
+// applyWebProxyService attaches the effective web proxy service (already
+// merged across rule + scenario) to the request context. No-op when the web
+// proxy is not configured, so requests that don't use it carry nothing extra
+// and the dispatch gates see it as inactive.
+func applyWebProxyService(c *gin.Context, flags typ.RuleFlags) {
+	if !flags.WebProxyService.IsActive() || c == nil || c.Request == nil {
+		return
+	}
+	c.Request = c.Request.WithContext(webproxy.WithService(c.Request.Context(), flags.WebProxyService))
 }
 
 // applyClaudeOrgID attaches the claude_org_id flag to the request context so

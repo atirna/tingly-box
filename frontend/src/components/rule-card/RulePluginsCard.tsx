@@ -9,7 +9,7 @@ import {
     graphNodeHoverStyles,
     MODEL_NODE_STYLES,
 } from '@/components/nodes/styles';
-import type { FlagSpec, RuleFlags, VisionProxyServiceRef } from '@/components/RoutingGraphTypes';
+import type { FlagSpec, RuleFlags, ServiceRef } from '@/components/RoutingGraphTypes';
 import { getFlagValue, isFlagActive } from './flagHelpers';
 
 const CARD_STYLES = {
@@ -65,7 +65,7 @@ const flagStringValue = (flags: RuleFlags | undefined, key: string): string =>
     (getFlagValue(flags, key) as string) ?? '';
 
 const flagServiceRefDisplay = (flags: RuleFlags | undefined, key: string): string =>
-    (getFlagValue(flags, key) as VisionProxyServiceRef | undefined)?.model ?? '';
+    (getFlagValue(flags, key) as ServiceRef | undefined)?.model ?? '';
 
 /**
  * RulePluginsCard renders a compact card displaying the rule's enabled

@@ -1,4 +1,4 @@
-import type { FlagSpec, RuleFlags, RuleFlagsApi, VisionProxyServiceRef } from '@/components/RoutingGraphTypes';
+import type { FlagSpec, RuleFlags, RuleFlagsApi, ServiceRef } from '@/components/RoutingGraphTypes';
 
 export function snakeToCamel(s: string): string {
     return s.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
@@ -46,7 +46,7 @@ export function isFlagActive(spec: FlagSpec, flags: RuleFlags): boolean {
             return value !== '' && value !== undefined && value !== inactive;
         }
         case 'service_ref': {
-            const ref = value as VisionProxyServiceRef | undefined;
+            const ref = value as ServiceRef | undefined;
             return !!(ref && ref.provider && ref.model);
         }
         default: return false;

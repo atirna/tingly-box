@@ -51,7 +51,9 @@ export interface ConfigRecord {
     lbTactic?: string;
 }
 
-export interface VisionProxyServiceRef {
+/** A `{provider, model}` pair — the system's standard two-element service
+ *  identity, and the value shape of every `service_ref` flag. */
+export interface ServiceRef {
     provider: string;
     model: string;
 }
@@ -67,7 +69,8 @@ export interface RuleFlags {
     blockTools?: string;
     thinkingEffort?: string;
     sessionAffinity?: number;
-    visionProxyService?: VisionProxyServiceRef;
+    visionProxyService?: ServiceRef;
+    webProxyService?: ServiceRef;
     claudeCodeCompat?: boolean;
     cleanHeader?: boolean;
     context1m?: boolean;
@@ -85,7 +88,8 @@ export interface RuleFlagsApi {
     block_tools?: string;
     thinking_effort?: string;
     session_affinity?: number;
-    vision_proxy_service?: VisionProxyServiceRef;
+    vision_proxy_service?: ServiceRef;
+    web_proxy_service?: ServiceRef;
     claude_code_compat?: boolean;
     clean_header?: boolean;
     context_1m?: boolean;

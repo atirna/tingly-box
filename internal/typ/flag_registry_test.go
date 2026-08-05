@@ -250,3 +250,83 @@ func TestRuleFlags_VisionProxyService_JSONRoundTrip(t *testing.T) {
 		t.Fatalf("unset VisionProxyService should be omitted, got: %s", empty)
 	}
 }
+
+// TestRuleFlagRegistry_WebProxyServiceRef pins the web_proxy_service flag to
+// the service_ref type so the frontend keeps rendering it as a model picker
+// (not a text field).
+func TestRuleFlagRegistry_WebProxyServiceRef(t *testing.T) {
+	var found *FlagSpec
+	for i, s := range RuleFlagRegistry() {
+		if s.Key == "web_proxy_service" {
+			found = &RuleFlagRegistry()[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("web_proxy_service missing from registry")
+	}
+	if found.Type != FlagTypeServiceRef {
+		t.Fatalf("web_proxy_service type = %q, want %q", found.Type, FlagTypeServiceRef)
+	}
+	if found.Category != FlagCategoryWeb {
+		t.Fatalf("web_proxy_service category = %q, want %q", found.Category, FlagCategoryWeb)
+	}
+}
+
+// TestRuleFlags_WebProxyService_JSONRoundTrip guards the wire shape of the
+// web proxy service reference: the frontend and the stored config both depend
+// on the snake_case key and on the field vanishing when unset.
+func TestRuleFlags_WebProxyService_JSONRoundTrip(t *testing.T) {
+	flags := RuleFlags{WebProxyService: &WebProxyService{Provider: "p-uuid", Model: "claude-sonnet-4-6"}}
+	raw, err := json.Marshal(flags)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"web_proxy_service"`) ||
+		!strings.Contains(string(raw), `"p-uuid"`) ||
+		!strings.Contains(string(raw), `"claude-sonnet-4-6"`) {
+		t.Fatalf("marshaled flags missing fields: %s", raw)
+	}
+
+	var back RuleFlags
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if back.WebProxyService == nil {
+		t.Fatal("WebProxyService lost on round-trip")
+	}
+	if back.WebProxyService.Provider != "p-uuid" || back.WebProxyService.Model != "claude-sonnet-4-6" {
+		t.Fatalf("round-trip mismatch: %+v", back.WebProxyService)
+	}
+
+	empty, err := json.Marshal(RuleFlags{})
+	if err != nil {
+		t.Fatalf("marshal empty: %v", err)
+	}
+	if strings.Contains(string(empty), "web_proxy_service") {
+		t.Fatalf("unset WebProxyService should be omitted, got: %s", empty)
+	}
+}
+
+// IsActive is the single "is this configured" predicate every scope shares;
+// a half-filled pair must read as unconfigured.
+func TestWebProxyService_IsActive(t *testing.T) {
+	cases := []struct {
+		name string
+		svc  *WebProxyService
+		want bool
+	}{
+		{name: "nil"},
+		{name: "empty", svc: &WebProxyService{}},
+		{name: "provider only", svc: &WebProxyService{Provider: "p"}},
+		{name: "model only", svc: &WebProxyService{Model: "m"}},
+		{name: "complete", svc: &WebProxyService{Provider: "p", Model: "m"}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.svc.IsActive(); got != tc.want {
+				t.Fatalf("IsActive() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

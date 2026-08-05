@@ -22,11 +22,12 @@ import {
     Link as LinkIcon,
     Output as OutputIcon,
     Psychology as PsychologyIcon,
+    Public as PublicIcon,
     Terminal as TerminalIcon,
     Visibility as VisibilityIcon,
 } from '@/components/icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { FlagSpec, RuleFlags, VisionProxyServiceRef } from '@/components/RoutingGraphTypes';
+import type { FlagSpec, RuleFlags, ServiceRef } from '@/components/RoutingGraphTypes';
 import type { Provider } from '@/types/provider';
 import type { ProviderSelectTabOption } from '@/components/ModelSelectDialog';
 import ModelSelectDialog from '@/components/ModelSelectDialog';
@@ -37,7 +38,7 @@ export interface FlagCatalogDialogProps {
     flags?: RuleFlags;
     registry?: FlagSpec[];
     loading?: boolean;
-    /** Providers for service_ref flags (e.g. vision_proxy_service model picker). */
+    /** Providers for service_ref flags (vision / web proxy model pickers). */
     providers?: Provider[];
     onClose: () => void;
     onSave: (next: RuleFlags) => void;
@@ -52,8 +53,8 @@ const flagToInt = (flags: RuleFlags | undefined, key: string): number =>
 const flagToString = (flags: RuleFlags | undefined, key: string): string =>
     (getFlagValue(flags, key) as string) ?? '';
 
-const flagToServiceRef = (flags: RuleFlags | undefined, key: string): VisionProxyServiceRef | undefined =>
-    getFlagValue(flags, key) as VisionProxyServiceRef | undefined;
+const flagToServiceRef = (flags: RuleFlags | undefined, key: string): ServiceRef | undefined =>
+    getFlagValue(flags, key) as ServiceRef | undefined;
 
 interface CategoryMeta {
     label: string;
@@ -61,7 +62,7 @@ interface CategoryMeta {
 }
 
 // Display order for the category sidebar. Unknown categories are appended.
-const CATEGORY_ORDER = ['app', 'request_openai', 'request_anthropic', 'response', 'reasoning', 'vision', 'routing'];
+const CATEGORY_ORDER = ['app', 'request_openai', 'request_anthropic', 'response', 'reasoning', 'vision', 'web', 'routing'];
 
 const CATEGORY_META: Record<string, CategoryMeta> = {
     app:               { label: 'App',         icon: <TerminalIcon   fontSize="small" /> },
@@ -70,6 +71,7 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
     response:          { label: 'Response',    icon: <OutputIcon     fontSize="small" /> },
     reasoning:         { label: 'Reasoning',   icon: <PsychologyIcon fontSize="small" /> },
     vision:            { label: 'Vision',      icon: <VisibilityIcon fontSize="small" /> },
+    web:               { label: 'Web',         icon: <PublicIcon     fontSize="small" /> },
     routing:           { label: 'Routing',     icon: <LinkIcon       fontSize="small" /> },
 };
 
@@ -433,7 +435,7 @@ export const FlagCatalogDialog: React.FC<FlagCatalogDialogProps> = ({
                                                     const ref = flagToServiceRef(draft, spec.key);
                                                     const label = ref && ref.provider && ref.model
                                                         ? `${providerName(providers, ref.provider)} / ${ref.model}`
-                                                        : 'Select vision model…';
+                                                        : 'Select a model…';
                                                     return (
                                                         <Button
                                                             variant="outlined"
@@ -462,7 +464,10 @@ export const FlagCatalogDialog: React.FC<FlagCatalogDialogProps> = ({
                     Save
                 </Button>
             </DialogActions>
-            {/* Service picker for service_ref flags (e.g. vision_proxy_service). */}
+            {/* Service picker, shared by every service_ref flag. The title is
+                derived from the flag being edited — there is more than one
+                service_ref flag (Vision Proxy, Web Proxy), so a fixed title
+                would name the wrong one. */}
             <Dialog
                 open={pickerKey !== null}
                 onClose={() => setPickerKey(null)}
@@ -473,7 +478,11 @@ export const FlagCatalogDialog: React.FC<FlagCatalogDialogProps> = ({
                 }}
             >
                 <DialogTitle sx={{ textAlign: 'center' }}>
-                    <Typography variant="h6">Pick Vision Proxy Model</Typography>
+                    <Typography variant="h6">
+                        {pickerKey !== null
+                            ? `Pick ${(registry || []).find((s) => s.key === pickerKey)?.label ?? 'Service'} Model`
+                            : 'Pick Model'}
+                    </Typography>
                 </DialogTitle>
                 <DialogContent>
                     {pickerKey !== null && (

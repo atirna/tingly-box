@@ -254,6 +254,9 @@ func formatAppliedFlags(f typ.RuleFlags) string {
 	if f.VisionProxyService != nil {
 		parts = append(parts, "vision_proxy")
 	}
+	if f.WebProxyService != nil {
+		parts = append(parts, "web_proxy")
+	}
 	return strings.Join(parts, ", ")
 }
 
@@ -279,7 +282,7 @@ func (ph *ProtocolHandler) dispatchAnthropicBetaToOpenAIChat(
 			disableStreamUsage = disableStreamUsage || reqCtx.ScenarioFlags.SkipUsage
 		}
 
-		if HasDeclaredMCPAnthropicBetaTools(req) && ph.mcpEnabled() {
+		if HasDeclaredMCPAnthropicBetaTools(req) && ph.serverToolLoopEnabled(c) {
 			ph.StreamAnthropicBetaToOpenAIChatWithMCP(c, provider, req, actualModel, responseModel, disableStreamUsage, recorder)
 			return
 		}
@@ -319,7 +322,7 @@ func (ph *ProtocolHandler) dispatchAnthropicBetaToOpenAIChat(
 		var usage *protocol.TokenUsage
 		var err error
 
-		if HasDeclaredMCPAnthropicBetaTools(req) && ph.mcpEnabled() {
+		if HasDeclaredMCPAnthropicBetaTools(req) && ph.serverToolLoopEnabled(c) {
 			var genericUsage *mcp.TokenUsage
 			anthropicResp, genericUsage, err = ph.RunGenericAnthropicBetaNonStream(ctx, provider, req, recorder)
 			if err != nil {
@@ -387,7 +390,7 @@ func (ph *ProtocolHandler) passthroughAnthropicBeta(
 	ctx := c.Request.Context()
 
 	if isStreaming {
-		if ph.mcpEnabled() {
+		if ph.serverToolLoopEnabled(c) {
 			declaredMCP := HasDeclaredMCPAnthropicBetaTools(req)
 			if declaredMCP {
 				ph.DispatchGenericAnthropicBetaStream(c, reqCtx, rule, provider, recorder)
@@ -413,7 +416,7 @@ func (ph *ProtocolHandler) passthroughAnthropicBeta(
 		var anthropicResp *anthropic.BetaMessage
 		var err error
 		declaredMCP := false
-		if ph.mcpEnabled() {
+		if ph.serverToolLoopEnabled(c) {
 			declaredMCP = HasDeclaredMCPAnthropicBetaTools(req)
 		}
 		if declaredMCP {
@@ -580,7 +583,7 @@ func (ph *ProtocolHandler) dispatchOpenAIChat(
 				disableStreamUsage = disableStreamUsage || reqCtx.ScenarioFlags.SkipUsage
 			}
 
-			if HasDeclaredMCPTools(req) && ph.mcpEnabled() {
+			if HasDeclaredMCPTools(req) && ph.serverToolLoopEnabled(c) {
 				ph.DispatchGenericOpenAIChatStream(c, reqCtx, rule, provider, recorder)
 				return
 			}
@@ -595,7 +598,7 @@ func (ph *ProtocolHandler) dispatchOpenAIChat(
 			// OpenAI passthrough: delegate to handleNonStreamingRequest for tool interceptor support
 			stripUsage := ShouldStripUsage(reqCtx.Extra)
 
-			if HasDeclaredMCPTools(req) && ph.mcpEnabled() {
+			if HasDeclaredMCPTools(req) && ph.serverToolLoopEnabled(c) {
 				ph.DispatchGenericOpenAIChatNonStream(c, reqCtx, rule, provider, recorder)
 				return
 			}
@@ -612,7 +615,7 @@ func (ph *ProtocolHandler) dispatchOpenAIChat(
 		var resp *openai.ChatCompletion
 		var err error
 		var usage *protocol.TokenUsage
-		if HasDeclaredMCPTools(req) && ph.mcpEnabled() {
+		if HasDeclaredMCPTools(req) && ph.serverToolLoopEnabled(c) {
 			var genericUsage *mcp.TokenUsage
 			resp, genericUsage, err = ph.RunGenericOpenAIChatNonStream(c.Request.Context(), provider, req, recorder)
 			if err != nil {

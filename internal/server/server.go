@@ -38,6 +38,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/server/module/tokenrefresh"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/internal/visionproxy"
+	"github.com/tingly-dev/tingly-box/internal/webproxy"
 	"github.com/tingly-dev/tingly-box/pkg/auth"
 	pkgobs "github.com/tingly-dev/tingly-box/pkg/obs"
 	pkgotel "github.com/tingly-dev/tingly-box/pkg/otel"
@@ -137,6 +138,7 @@ type Server struct {
 	// vision proxy service, reused by the scenario-level vision proxy plugin
 	// (also registered into the smart-routing registry for the proxy_vision op)
 	visionProxyService *visionproxy.Service
+	webProxyService    *webproxy.Service
 
 	// OTel meter setup for unified token tracking
 	otelSetup    *pkgotel.Setup
@@ -378,6 +380,9 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	// Wire the vision proxy service. Idempotent — safe across config reloads.
 	server.visionProxyService = visionproxy.NewServiceFromPool(server.clientPool, server.config)
 
+	// Wire the web proxy service, on the same terms.
+	server.webProxyService = webproxy.NewServiceFromPool(server.clientPool, server.config)
+
 	// Start affinity store background GC
 	affinityStore.StartGC()
 
@@ -496,6 +501,7 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 		TemplateManager:         server.templateManager,
 		RoutingSelector:         server.routingSelector,
 		VisionProxyService:      server.visionProxyService,
+		WebProxyService:         server.webProxyService,
 		GetServertoolPipeline:   func() *servertool.Pipeline { return server.servertoolPipeline },
 		AffinityStore:           server.affinityStore,
 		GetOrCreateScenarioSink: server.GetOrCreateScenarioSink,

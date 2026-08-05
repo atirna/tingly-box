@@ -29,6 +29,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/server/config"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/internal/visionproxy"
+	"github.com/tingly-dev/tingly-box/internal/webproxy"
 	"github.com/tingly-dev/tingly-box/pkg/otel/tracker"
 )
 
@@ -71,6 +72,12 @@ type ProtocolHandlerDeps struct {
 	// not a callback: internal/visionproxy.Service takes *config.Config
 	// directly and has no *server.Server dependency.
 	VisionProxyService *visionproxy.Service
+
+	// WebProxyService answers the web_search / web_fetch tool calls the web
+	// proxy's injected function tools produce, by borrowing the web access of
+	// the {provider, model} configured on the rule or scenario. Same concrete
+	// -type, no-*server.Server rationale as VisionProxyService above.
+	WebProxyService *webproxy.Service
 
 	// MCPRuntime holds the virtual tool registry and advisor state for
 	// external MCP tools invoked during a live model request.
@@ -137,6 +144,24 @@ func (ph *ProtocolHandler) guardrailsEnabledForScenario(scenario string) bool {
 
 func (ph *ProtocolHandler) mcpEnabled() bool {
 	return MCPEnabled(ph.deps.Config)
+}
+
+// serverToolLoopEnabled reports whether this request may enter the
+// server-side tool loop — the path that executes a tool call in-process and
+// continues the conversation without ever showing the call to the client.
+//
+// Two independent features need that loop: MCP (config-gated, global) and the
+// web proxy (per rule / scenario, resolved into the request context by
+// ResolveRuleFlagsWithScenario). Either one being active is enough; the loop
+// itself decides per tool name which subsystem executes the call.
+func (ph *ProtocolHandler) serverToolLoopEnabled(c *gin.Context) bool {
+	if ph.mcpEnabled() {
+		return true
+	}
+	if c == nil || c.Request == nil {
+		return false
+	}
+	return webproxy.ActiveInContext(c.Request.Context())
 }
 
 // mcpStripDisabledToolsEnabled returns whether dangerous disabled MCP strip

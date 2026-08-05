@@ -15,6 +15,14 @@ func IsVirtualTool(normalizedName string, registry *coretool.VirtualToolRegistry
 	if sourceID == "advisor" || (sourceID == "builtin" && toolName == "advisor") {
 		return true
 	}
+	// So is the web proxy: its two tools are injected by internal/webproxy and
+	// executed in-process against the borrowed service. They are not MCP tools
+	// and never appear in the MCP registry, but "virtual" here means exactly
+	// "the server answers this call itself and the client never sees it",
+	// which is what the web proxy needs.
+	if sourceID == coretool.WebProxySourceID {
+		return true
+	}
 	if registry == nil {
 		return false
 	}

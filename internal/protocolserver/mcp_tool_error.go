@@ -51,6 +51,15 @@ func (ph *ProtocolHandler) newServerExecutor() *servertool.DefaultExecutor {
 // runtime call. Returns updated context (with advisor quota decremented),
 // result, and error.
 func (ph *ProtocolHandler) CallMCPToolWithHooks(ctx context.Context, toolName, arguments string, messages []map[string]any) (context.Context, coretool.ToolResult, error) {
+	// Web proxy tools are server-executed like MCP tools but are not MCP
+	// tools: they have no source config, no runtime registration and no
+	// callable-tool entry, so the MCP executor would reject them at its
+	// guard. Route them to their own service before that guard, keeping the
+	// two plugins independent (see .design/web-proxy.md).
+	if ph.deps.WebProxyService.Handles(toolName) {
+		result, err := ph.deps.WebProxyService.Execute(ctx, toolName, arguments)
+		return ctx, result, err
+	}
 	return ph.newServerExecutor().Execute(ctx, servertool.ToolCall{
 		NormalizedName: toolName,
 		Arguments:      arguments,

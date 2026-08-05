@@ -7,8 +7,9 @@ import {
     RecordingV2Control,
     ThinkingEffortControl,
     VisionProxyControl,
+    WebProxyControl,
 } from './flags';
-import type { VisionService } from './flags';
+import type { ServiceRef } from './flags';
 import type { Provider } from '@/types/provider';
 
 export interface PluginFeaturesProps {
@@ -31,15 +32,32 @@ const PLUGIN_FEATURES: PluginFeatureConfig[] = [
     { key: 'smart_compact', label: 'Smart Compact', description: 'Remove thinking blocks from conversation history to reduce context' },
 ];
 
+// Scenario-level service_ref plugins. These live in ScenarioConfig.Extensions
+// (not ScenarioFlags): a flat bool/string field cannot hold a {provider, model}
+// pair. Both are "configured ⇒ enabled" — there is no separate on/off flag, so
+// clearing the service is how you turn the feature off.
 const VISION_PROXY_SERVICE_KEY = 'vision_proxy_service';
+const WEB_PROXY_SERVICE_KEY = 'web_proxy_service';
 
 // Endpoints that don't speak the chat/completion shape. Thinking effort,
-// Smart Compact (conversation-history pruning) and Vision Proxy have no meaning
-// for an embedding or image-generation endpoint, so we hide them there instead
+// Smart Compact (conversation-history pruning) and the Vision / Web proxies
+// have no meaning for an embedding or image-generation endpoint, so we hide
+// them there instead
 // of showing dead controls. Kept as a blacklist so any new *chat* scenario
 // automatically inherits the full plugin set. See UX principle #9 (reduce
 // visual noise) / #1 (organize around the user's real question).
 const NON_CHAT_SCENARIOS = new Set(['embed', 'imagegen']);
+
+// A half-filled pair is not a configuration — same rule the backend's
+// IsActive() applies — so it reads back as "off" rather than as a broken
+// half-state the UI would have to explain.
+const readServiceRef = (
+    extensions: Record<string, any> | undefined,
+    key: string,
+): ServiceRef | null => {
+    const svc = extensions?.[key];
+    return svc?.provider && svc?.model ? { provider: svc.provider, model: svc.model } : null;
+};
 
 const PluginFeatures: React.FC<PluginFeaturesProps> = ({ scenario }) => {
     const baseScenario = scenario.includes(':') ? scenario.split(':')[0] : scenario;
@@ -51,7 +69,8 @@ const PluginFeatures: React.FC<PluginFeaturesProps> = ({ scenario }) => {
     const [loading, setLoading] = useState(true);
     const [updating, setUpdating] = useState<Record<string, boolean>>({});
 
-    const [visionService, setVisionService] = useState<VisionService | null>(null);
+    const [visionService, setVisionService] = useState<ServiceRef | null>(null);
+    const [webService, setWebService] = useState<ServiceRef | null>(null);
     const [providers, setProviders] = useState<Provider[]>([]);
 
     // Smart Compact only applies to chat-shaped endpoints; drop it (and any
@@ -81,8 +100,8 @@ const PluginFeatures: React.FC<PluginFeaturesProps> = ({ scenario }) => {
             }
 
             const ext = cfgResult?.data?.extensions || cfgResult?.data?.Extensions;
-            const svc = ext?.[VISION_PROXY_SERVICE_KEY];
-            setVisionService(svc?.provider && svc?.model ? { provider: svc.provider, model: svc.model } : null);
+            setVisionService(readServiceRef(ext, VISION_PROXY_SERVICE_KEY));
+            setWebService(readServiceRef(ext, WEB_PROXY_SERVICE_KEY));
 
             if (providersResult?.success && Array.isArray(providersResult.data)) {
                 setProviders(providersResult.data);
@@ -129,29 +148,41 @@ const PluginFeatures: React.FC<PluginFeaturesProps> = ({ scenario }) => {
     const setEffortLevel = makeStringFlagSetter('thinking_effort', effort, setEffort);
     const setRecordV2 = makeStringFlagSetter('recording_v2', recordV2Mode, setRecordV2Mode);
 
-    const handleVisionChange = async (next: VisionService | null) => {
-        setUpdating(prev => ({ ...prev, vision_proxy_service: true }));
+    // Both service_ref plugins save the same way, so they share one flow.
+    //
+    // The GET-merge is load-bearing, not defensive: the backend's
+    // SetScenarioConfig replaces the scenario wholesale, so POSTing a partial
+    // config silently wipes every other extension — including the sibling
+    // proxy's service. See .design/vision-proxy.md §6.2.
+    const makeServiceRefSetter = (
+        extensionKey: string,
+        setLocal: (value: ServiceRef | null) => void,
+    ) => async (next: ServiceRef | null) => {
+        setUpdating(prev => ({ ...prev, [extensionKey]: true }));
         try {
             const cfgResult = await api.getScenarioConfig(scenario);
             const cfg = cfgResult?.data || {};
             const extensions = { ...(cfg.extensions || cfg.Extensions || {}) };
             if (next) {
-                extensions[VISION_PROXY_SERVICE_KEY] = next;
+                extensions[extensionKey] = next;
             } else {
-                delete extensions[VISION_PROXY_SERVICE_KEY];
+                delete extensions[extensionKey];
             }
             const result = await api.setScenarioConfig(scenario, { ...cfg, scenario, extensions });
             if (result?.success) {
-                setVisionService(next);
+                setLocal(next);
             } else {
                 loadData();
             }
         } catch {
             loadData();
         } finally {
-            setUpdating(prev => ({ ...prev, vision_proxy_service: false }));
+            setUpdating(prev => ({ ...prev, [extensionKey]: false }));
         }
     };
+
+    const handleVisionChange = makeServiceRefSetter(VISION_PROXY_SERVICE_KEY, setVisionService);
+    const handleWebChange = makeServiceRefSetter(WEB_PROXY_SERVICE_KEY, setWebService);
 
     useEffect(() => {
         loadData();
@@ -200,6 +231,14 @@ const PluginFeatures: React.FC<PluginFeaturesProps> = ({ scenario }) => {
                                         providers={providers}
                                         disabled={updating.vision_proxy_service || false}
                                         onChange={handleVisionChange}
+                                    />
+                                )}
+                                {isChatShaped && (
+                                    <WebProxyControl
+                                        value={webService}
+                                        providers={providers}
+                                        disabled={updating.web_proxy_service || false}
+                                        onChange={handleWebChange}
                                     />
                                 )}
                                 <RecordingV2Control

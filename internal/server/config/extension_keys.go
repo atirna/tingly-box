@@ -5,6 +5,7 @@ package config
 // (as opposed to typed ScenarioFlags fields).
 const (
 	ExtensionVisionProxyService = "vision_proxy_service"
+	ExtensionWebProxyService    = "web_proxy_service"
 	ExtensionGuardrails         = "guardrails"
 	ExtensionMCP                = "mcp"
 	ExtensionSkillUser          = "skill_user"

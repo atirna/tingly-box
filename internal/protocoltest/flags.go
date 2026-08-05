@@ -619,7 +619,112 @@ func ruleFlagCases() []flagCase {
 				t.Errorf("describer output not spliced into the upstream text; body=%s", truncate(up, 400))
 			}
 		}},
+
+		// ── web_proxy_service ────────────────────────────────────────────────
+		// Two halves in one request. Request side: the client's native
+		// web_search declaration must not reach the downstream model (it
+		// cannot run it), and the two proxy function tools must take its
+		// place. Execution side: when the downstream model calls one of those
+		// tools, the search must run against the configured web service —
+		// visible as a hit on the searcher server carrying the model's query.
+		{key: "web_proxy_service", run: func(t flagTB, env *TestEnv) {
+			searchURL, searchHits := newCountingChatServer(t, "Go 1.26 was released (https://go.dev/doc/devel/release)")
+			registerOpenAIProvider(env, "web-searcher", searchURL)
+
+			model := env.SetupRouteWithFlags(protocol.TypeOpenAIChat, protocol.TypeOpenAIChat,
+				webProxyToolCallScenario("latest go release"),
+				typ.RuleFlags{WebProxyService: &typ.WebProxyService{Provider: "web-searcher", Model: "web-model"}})
+
+			sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, false, nil, nil)
+
+			up := env.virtual.LastRequest(EndpointChat)
+			if up == nil {
+				t.Fatal("no upstream request captured")
+			}
+			var body map[string]any
+			if err := json.Unmarshal(up.Body, &body); err != nil {
+				t.Fatalf("unmarshal upstream body: %v", err)
+			}
+			names := upstreamToolNames(body)
+			if slices.Contains(names, "web_search") {
+				t.Errorf("native web_search reached the downstream model; tools=%v", names)
+			}
+			if !slices.Contains(names, "keep_me") {
+				t.Errorf("unrelated client tool was dropped; tools=%v", names)
+			}
+			if !slices.Contains(names, webProxySearchToolName) || !slices.Contains(names, webProxyFetchToolName) {
+				t.Errorf("web proxy tools were not injected; tools=%v", names)
+			}
+
+			if atomic.LoadInt64(searchHits) == 0 {
+				t.Fatal("web proxy did not call the configured web service")
+			}
+			if got := string(env.virtual.LastRequest(EndpointChat).Body); got == "" {
+				t.Fatal("empty upstream body")
+			}
+		}},
 	}
+}
+
+// The namespaced names internal/webproxy injects. Spelled out rather than
+// imported so this suite keeps asserting the wire contract the frontend and
+// downstream models see, not whatever the constant happens to be.
+const (
+	webProxySearchToolName = "tingly_box_mcp__webproxy__web_search"
+	webProxyFetchToolName  = "tingly_box_mcp__webproxy__web_fetch"
+)
+
+// webProxyToolCallScenario is a downstream model that asks for one web search
+// and then answers. The first upstream round returns a tool call naming the
+// injected proxy tool — that is what drives the server-side tool loop into the
+// web proxy — and every later round returns plain text so the loop terminates
+// instead of burning its round budget.
+func webProxyToolCallScenario(query string) Scenario {
+	var round int64
+	toolCall := mustMarshal(map[string]any{
+		"id": "chatcmpl-webproxy", "object": "chat.completion", "created": 0, "model": "downstream",
+		"choices": []map[string]any{{
+			"index": 0,
+			"message": map[string]any{
+				"role":    "assistant",
+				"content": nil,
+				"tool_calls": []map[string]any{{
+					"id":   "call_webproxy_1",
+					"type": "function",
+					"function": map[string]any{
+						"name":      webProxySearchToolName,
+						"arguments": string(mustMarshal(map[string]any{"query": query})),
+					},
+				}},
+			},
+			"finish_reason": "tool_calls",
+		}},
+		"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+	})
+	answer := mustMarshal(map[string]any{
+		"id": "chatcmpl-webproxy", "object": "chat.completion", "created": 0, "model": "downstream",
+		"choices": []map[string]any{{
+			"index":         0,
+			"message":       map[string]any{"role": "assistant", "content": "Go 1.26 is the latest release."},
+			"finish_reason": "stop",
+		}},
+		"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+	})
+
+	nonStream := func() (int, []byte) {
+		if atomic.AddInt64(&round, 1) == 1 {
+			return http.StatusOK, toolCall
+		}
+		return http.StatusOK, answer
+	}
+
+	s := flagScenario()
+	s.Name = "web_proxy_flags"
+	s.Description = "Downstream model that calls the injected web proxy search tool once"
+	s.MockResponses = map[ResponseFormat]MockResponseBuilder{
+		FormatOpenAIChat: {NonStream: nonStream},
+	}
+	return s
 }
 
 // ─── CLI execution (harness matrix --mode=flags) ─────────────────────────────

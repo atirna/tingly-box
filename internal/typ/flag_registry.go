@@ -38,6 +38,8 @@ const (
 	FlagCategoryRouting FlagCategory = "routing"
 	// FlagCategoryVision — image/vision handling (vision proxy describer).
 	FlagCategoryVision FlagCategory = "vision"
+	// FlagCategoryWeb — web access handling (web proxy: search / fetch).
+	FlagCategoryWeb FlagCategory = "web"
 )
 
 // FlagOption is one selectable value for a FlagTypeEnum spec.
@@ -180,6 +182,14 @@ func RuleFlagRegistry() []FlagSpec {
 			Description: "Describe images via a vision-capable model so text-only downstream models can read them. Applies only to requests matched by this rule. Same effect as the scenario-level Vision Proxy but scoped to this rule; when both are configured, this rule-level service takes precedence.",
 			Type:        FlagTypeServiceRef,
 			Category:    FlagCategoryVision,
+		},
+		// ── Web ────────────────────────────────────────────────────────────
+		{
+			Key:         "web_proxy_service",
+			Label:       "Web Proxy",
+			Description: "Lend web access to a downstream model that has none. Native web_search / web_fetch tool declarations are removed from the outbound request and replaced with plain function tools; whenever the downstream model calls one, the search or fetch is executed against the configured web-capable service and only its answer is fed back. Applies only to requests matched by this rule. Same effect as the scenario-level Web Proxy but scoped to this rule; when both are configured, this rule-level service takes precedence.",
+			Type:        FlagTypeServiceRef,
+			Category:    FlagCategoryWeb,
 		},
 		// ── Routing ────────────────────────────────────────────────────────
 		{

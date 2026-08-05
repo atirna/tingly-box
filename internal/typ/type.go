@@ -250,6 +250,16 @@ type RuleFlags struct {
 	// narrower in scope; when both are set the rule-level service wins.
 	VisionProxyService *VisionProxyService `json:"vision_proxy_service,omitempty" yaml:"vision_proxy_service,omitempty"`
 
+	// WebProxyService enables the rule-scoped web proxy when set. The
+	// configured service lends its native web access to the downstream model:
+	// native web_search / web_fetch tool declarations are stripped from the
+	// outbound request and replaced with plain function tools, and every call
+	// the downstream model makes to them is executed against this service
+	// instead. Same effect as the scenario-level web proxy
+	// (ScenarioConfig.Extensions["web_proxy_service"]), only narrower in
+	// scope; when both are set the rule-level service wins.
+	WebProxyService *WebProxyService `json:"web_proxy_service,omitempty" yaml:"web_proxy_service,omitempty"`
+
 	// Context1M enables Anthropic's 1M token context window for supported models
 	// (Sonnet 4.6+, Opus 4.6+). When enabled, the gateway injects the
 	// context-1m-2025-08-07 beta flag into the upstream request's
@@ -273,6 +283,22 @@ type RuleFlags struct {
 type VisionProxyService struct {
 	Provider string `json:"provider" yaml:"provider"`
 	Model    string `json:"model" yaml:"model"`
+}
+
+// WebProxyService identifies the upstream that lends its web access to the web
+// proxy: a provider UUID plus a model name (the system's standard two-element
+// service identity). Deliberately a distinct type from VisionProxyService —
+// the two flags are independent and neither should be assignable to the other.
+type WebProxyService struct {
+	Provider string `json:"provider" yaml:"provider"`
+	Model    string `json:"model" yaml:"model"`
+}
+
+// IsActive reports whether the reference names a usable service. A half-filled
+// pair (provider without model, or vice versa) is treated as unconfigured —
+// the same "configured ⇒ enabled" rule the vision proxy uses.
+func (s *WebProxyService) IsActive() bool {
+	return s != nil && s.Provider != "" && s.Model != ""
 }
 
 // ProfileMeta stores metadata for a scenario profile.

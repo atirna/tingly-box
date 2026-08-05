@@ -38,7 +38,7 @@ func (ph *ProtocolHandler) StreamOpenAIChatToAnthropicV1WithMCP(
 		}
 
 		var hooks *stream.OpenAIToAnthropicMCPHooks
-		if HasDeclaredMCPTools(req) && ph.mcpEnabled() {
+		if HasDeclaredMCPTools(req) && ph.serverToolLoopEnabled(c) {
 			hooks = ph.buildOpenAIToAnthropicMCPHooks(c.Request.Context(), provider.UUID, req)
 		}
 		hc := protocol.NewHandleContext(c, responseModel)
@@ -94,7 +94,7 @@ func (ph *ProtocolHandler) StreamOpenAIChatToAnthropicBetaWithMCP(
 		}
 
 		var hooks *stream.OpenAIToAnthropicMCPHooks
-		if HasDeclaredMCPTools(req) && ph.mcpEnabled() {
+		if HasDeclaredMCPTools(req) && ph.serverToolLoopEnabled(c) {
 			hooks = ph.buildOpenAIToAnthropicMCPHooks(c.Request.Context(), provider.UUID, req)
 		}
 		hc := protocol.NewHandleContext(c, responseModel)

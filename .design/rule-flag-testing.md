@@ -102,8 +102,9 @@ or the chosen **endpoint**.
 | `openai_endpoint_override` | openai_chat→openai_responses *(provider mode=both)* | `"responses"` | forwarded to `/v1/responses` | endpoint hits |
 | `session_affinity` | one rule, **two** upstreams | `3600` + `X-Tingly-Session-ID` | all N requests pin to the first-chosen upstream | upstream hits |
 | `vision_proxy_service` | openai_chat→openai_chat + describer | `{describer, vision-model}` | image block described + replaced; describer called; text spliced upstream | upstream body + describer hits |
+| `web_proxy_service` | openai_chat→openai_chat + searcher | `{web-searcher, web-model}` | native `web_search` stripped, `keep_me` kept, both proxy tools injected; searcher called when the model uses one | upstream body + searcher hits |
 
-Notes on the two non-trivial fixtures:
+Notes on the three non-trivial fixtures:
 
 - **`session_affinity`** uses two distinguishable counting upstreams behind one
   rule; pinning is proven by *all* hits landing on one server, none on the other.
@@ -112,6 +113,13 @@ Notes on the two non-trivial fixtures:
   vision adapter (`describeViaOpenAI`) always uses the streaming endpoint, so a
   non-streaming mock yields an empty description and the proxy falls back to its
   fail-strip path.
+- **`web_proxy_service`** needs a downstream that actually *calls* the injected
+  tool, so it overrides the shared fixture's OpenAI-chat mock with a stateful
+  one: round 1 returns a `tool_calls` response naming
+  `tingly_box_mcp__webproxy__web_search`, every later round returns plain text
+  so the tool loop terminates instead of burning its round budget. One request
+  therefore covers both halves of the feature — the request-side tool swap and
+  the execution-side borrowed call.
 
 ---
 

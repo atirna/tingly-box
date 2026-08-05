@@ -7,6 +7,16 @@ const normalizedPrefix = "tingly_box_mcp__"
 const (
 	BuiltinAdvisorSourceID = "advisor"
 	BuiltinAdvisorToolName = "advisor"
+
+	// WebProxySourceID namespaces the web proxy's server-executed tools. The
+	// web proxy is not an MCP source — it has no MCP server, no source config
+	// and no runtime registration — but it borrows the normalized tool-name
+	// scheme so its tools travel through the same server-side tool loop that
+	// already knows how to execute a tool without ever showing it to the
+	// client. Declared here (a leaf package) so both internal/webproxy and
+	// internal/mcpserver can agree on the namespace without importing each
+	// other.
+	WebProxySourceID = "webproxy"
 )
 
 // IsNormalizedToolName checks whether a tool name is a normalized server tool name.

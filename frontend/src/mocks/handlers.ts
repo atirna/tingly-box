@@ -2105,6 +2105,7 @@ export const handlers = [
                 { key: 'skip_usage', label: 'Skip usage in response', description: 'Strip usage from responses.', type: 'bool', category: 'response', shared: true, inheritance_mode: 'or' },
                 { key: 'thinking_effort', label: 'Thinking', description: 'Extended thinking control.', type: 'enum', category: 'reasoning', options: [{ value: '', label: 'By Client' }, { value: 'off', label: 'Off' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'max', label: 'Max' }], shared: true, inheritance_mode: 'override' },
                 { key: 'vision_proxy_service', label: 'Vision Proxy', description: 'Describe images via a vision-capable model.', type: 'service_ref', category: 'vision' },
+                { key: 'web_proxy_service', label: 'Web Proxy', description: 'Run web search / fetch through a web-capable model.', type: 'service_ref', category: 'web' },
                 { key: 'session_affinity', label: 'Session affinity', description: 'TTL in seconds for session pinning.', type: 'int', category: 'routing', placeholder: 'e.g. 3600', shared: true, inheritance_mode: 'override' },
                 { key: 'cursor_compat', label: 'Cursor compatibility', description: 'Normalize rich content for Cursor clients.', type: 'bool', category: 'app' },
                 { key: 'cursor_compat_auto', label: 'Auto-detect Cursor', description: 'Auto-apply cursor compat from request headers.', type: 'bool', category: 'app' },
