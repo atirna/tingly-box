@@ -19,10 +19,12 @@ import (
 //
 // Two edits, in this order:
 //
-//  1. Strip native web tools. web_search / web_fetch are *server* tools: the
-//     provider executes them. A downstream that does not implement them either
-//     rejects the request or silently drops the capability, so the declaration
-//     is removed unconditionally when the proxy is active.
+//  1. Strip *provider-executed* web tools. Anthropic's web_search_20250305 and
+//     friends are server tools: the provider runs them. A downstream that does
+//     not implement them either rejects the request or silently drops the
+//     capability, so the declaration is removed when the proxy is active.
+//     Client-executed web tools (Claude Code's `WebSearch` / `WebFetch`) are
+//     explicitly NOT stripped — see nativeWebToolNames for why.
 //  2. Inject the two web proxy function tools, so the downstream model still
 //     has a way to ask for a search or a fetch. Service.Execute answers those
 //     calls from the borrowed service.
@@ -133,14 +135,25 @@ func stripAnthropicV1NativeWebTools(tools []anthropic.ToolUnionParam) []anthropi
 	return out
 }
 
-// nativeWebToolNames are the bare function-tool names OpenAI-style clients and
-// converted Anthropic requests use for the provider-executed web tools.
+// nativeWebToolNames are function-tool names that unambiguously denote a
+// *provider-executed* web tool — one the downstream cannot run.
+//
+// This list is deliberately short. "Web tool" is not the test; "the provider
+// has to execute it" is. A client that ships its own web tools and runs them
+// itself — Claude Code's `WebSearch` / `WebFetch` are the canonical example —
+// needs no help from us: the model emits a tool_use, the client performs the
+// search or the fetch, and the downstream model never needed web access at
+// all. Stripping those would delete a working capability and replace it with a
+// slower, costlier round-trip through a second model that has none of the
+// client's domain permissions or safety checks.
+//
+// So `WebSearch` / `WebFetch` / bare `web_search` / bare `web_fetch` are left
+// alone. Only `web_search_preview` — OpenAI's own server-tool name, which has
+// no client-executed meaning — is matched here. Provider-executed tools that
+// travel as typed union members (Anthropic's `web_search_20250305`, Responses'
+// `OfWebSearch`) are matched structurally instead, which is unambiguous.
 var nativeWebToolNames = map[string]struct{}{
-	"web_search":         {},
-	"websearch":          {},
 	"web_search_preview": {},
-	"web_fetch":          {},
-	"webfetch":           {},
 }
 
 func isNativeWebToolName(name string) bool {

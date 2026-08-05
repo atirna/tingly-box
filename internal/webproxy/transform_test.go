@@ -66,15 +66,14 @@ func TestToolTransform_OpenAIChat(t *testing.T) {
 	req := &openai.ChatCompletionNewParams{
 		Tools: []openai.ChatCompletionToolUnionParam{
 			openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "Read"}),
-			openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "web_search"}),
-			openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "WebFetch"}),
+			openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "web_search_preview"}),
 		},
 	}
 	applyTransform(t, true, req)
 
 	names := openAIToolNames(req.Tools)
-	if contains(names, "web_search") || contains(names, "WebFetch") {
-		t.Fatalf("native web tools must be stripped, got %v", names)
+	if contains(names, "web_search_preview") {
+		t.Fatalf("provider-executed web tools must be stripped, got %v", names)
 	}
 	if !contains(names, "Read") {
 		t.Fatalf("unrelated client tools must survive, got %v", names)
@@ -82,6 +81,51 @@ func TestToolTransform_OpenAIChat(t *testing.T) {
 	if !contains(names, NameWebSearch) || !contains(names, NameWebFetch) {
 		t.Fatalf("both proxy tools must be injected, got %v", names)
 	}
+}
+
+// Client-executed web tools must survive untouched. Claude Code declares
+// `WebSearch` / `WebFetch` as ordinary tools and performs the search or the
+// fetch itself — the downstream model never needs web access for them to work.
+// Stripping them would delete a working capability (with the client's domain
+// permissions and safety checks) and substitute a worse one.
+func TestToolTransform_LeavesClientExecutedWebToolsAlone(t *testing.T) {
+	clientTools := []string{"WebSearch", "WebFetch", "web_search", "web_fetch"}
+
+	t.Run("openai chat", func(t *testing.T) {
+		var tools []openai.ChatCompletionToolUnionParam
+		for _, name := range clientTools {
+			tools = append(tools, openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: name}))
+		}
+		req := &openai.ChatCompletionNewParams{Tools: tools}
+		applyTransform(t, true, req)
+
+		names := openAIToolNames(req.Tools)
+		for _, name := range clientTools {
+			if !contains(names, name) {
+				t.Errorf("client-executed tool %q was stripped; tools=%v", name, names)
+			}
+		}
+	})
+
+	t.Run("anthropic beta", func(t *testing.T) {
+		var tools []anthropic.BetaToolUnionParam
+		for _, name := range clientTools {
+			tools = append(tools, anthropic.BetaToolUnionParam{OfTool: &anthropic.BetaToolParam{Name: name}})
+		}
+		req := &anthropic.BetaMessageNewParams{Tools: tools}
+		applyTransform(t, true, req)
+
+		names := anthropicBetaToolNames(req.Tools)
+		for _, name := range clientTools {
+			if !contains(names, name) {
+				t.Errorf("client-executed tool %q was stripped; tools=%v", name, names)
+			}
+		}
+	})
+
+	// Same client tool, same fate, whatever the target protocol — the two
+	// paths above used to disagree (Anthropic kept `WebSearch`, OpenAI Chat
+	// stripped it) because one matched structurally and the other by name.
 }
 
 func TestToolTransform_AnthropicBetaStripsNativeServerTools(t *testing.T) {

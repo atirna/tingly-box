@@ -49,18 +49,32 @@ per request — execution half
 Runs in the chain's **preVendor** slot, so it sees the upstream-bound shape
 after protocol conversion. Two edits:
 
-1. **Strip native web tools.** `web_search` / `web_fetch` are *server* tools:
-   the provider executes them. A downstream that doesn't implement them either
-   rejects the request or silently drops the capability.
+1. **Strip provider-executed web tools.** Anthropic's `web_search_20250305`
+   and friends are *server* tools: the provider runs them. A downstream that
+   doesn't implement them either rejects the request or silently drops the
+   capability.
 2. **Inject two function tools** so the downstream model still has a way to ask
    for a search or a fetch.
 
 | Target shape | strip | inject |
 |---|---|---|
-| `*openai.ChatCompletionNewParams` | by name (`web_search`, `websearch`, `web_search_preview`, `web_fetch`, `webfetch`) | ✓ |
+| `*openai.ChatCompletionNewParams` | by name: `web_search_preview` only | ✓ |
 | `*anthropic.MessageNewParams` | union members (`OfWebSearchTool*`, `OfWebFetchTool*`) | ✓ |
 | `*anthropic.BetaMessageNewParams` | union members | ✓ |
-| `*responses.ResponseNewParams` | `OfWebSearch` / `OfWebSearchPreview` / by name | ✗ |
+| `*responses.ResponseNewParams` | `OfWebSearch` / `OfWebSearchPreview` | ✗ |
+
+The test for stripping is **"does the provider have to execute it"**, not "is
+it a web tool". Client-executed web tools — Claude Code's `WebSearch` /
+`WebFetch`, or any bare `web_search` / `web_fetch` function the client runs
+itself — are left alone: the client already performs the search or the fetch
+(with its own domain permissions and safety checks) and the downstream model
+never needed web access for them to work. Replacing those with a round-trip
+through a second model would remove a working capability, not add one.
+
+That is also why only `web_search_preview` is matched by name: it is OpenAI's
+own server-tool name and has no client-executed meaning. Everything else
+provider-executed travels as a typed union member, where the match is
+structural and unambiguous — and identical across target protocols.
 
 The Responses row is the important asymmetry: that target never enters the
 server-side tool loop, so nothing could answer an injected tool call — it would
@@ -137,3 +151,12 @@ MCP executor: the MCP guard would reject them as uncallable.
 - Rewriting `server_tool_use` / `web_search_tool_result` blocks already present
   in a conversation's history (only reachable when a conversation previously
   ran against a natively web-capable provider and is then re-routed).
+- Serving a client's dedicated *web sub-query*. Claude Code's `WebSearch` is a
+  client tool, but its implementation issues a separate request carrying
+  `web_search_20250305` and then parses `server_tool_use` /
+  `web_search_tool_result` blocks out of the stream. If such a request reaches
+  a downstream without native web tools, the web proxy turns it into a
+  function-tool loop whose output is plain *text* — so the client parses zero
+  results. Supporting it properly means detecting "this request exists only to
+  run a native web tool" and routing it whole to the borrowed service so the
+  native blocks come back intact. See `.design/web-proxy.md` §10.

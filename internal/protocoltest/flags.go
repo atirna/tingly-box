@@ -621,12 +621,19 @@ func ruleFlagCases() []flagCase {
 		}},
 
 		// ── web_proxy_service ────────────────────────────────────────────────
-		// Two halves in one request. Request side: the client's native
-		// web_search declaration must not reach the downstream model (it
-		// cannot run it), and the two proxy function tools must take its
-		// place. Execution side: when the downstream model calls one of those
+		// Two halves in one request.
+		//
+		// Request side: the provider-executed web tool (web_search_preview)
+		// must not reach the downstream model — it cannot run it — and the two
+		// proxy function tools must take its place. The base fixture's
+		// `web_search` and `keep_me` are ordinary CLIENT-executed tools and
+		// must both survive: the client runs those itself, so replacing them
+		// with a slower round-trip through a second model would be a
+		// regression, not a feature.
+		//
+		// Execution side: when the downstream model calls one of the injected
 		// tools, the search must run against the configured web service —
-		// visible as a hit on the searcher server carrying the model's query.
+		// visible as a hit on the searcher server.
 		{key: "web_proxy_service", run: func(t flagTB, env *TestEnv) {
 			searchURL, searchHits := newCountingChatServer(t, "Go 1.26 was released (https://go.dev/doc/devel/release)")
 			registerOpenAIProvider(env, "web-searcher", searchURL)
@@ -635,7 +642,13 @@ func ruleFlagCases() []flagCase {
 				webProxyToolCallScenario("latest go release"),
 				typ.RuleFlags{WebProxyService: &typ.WebProxyService{Provider: "web-searcher", Model: "web-model"}})
 
-			sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, false, nil, nil)
+			sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, false, func(m map[string]any) {
+				tools, _ := m["tools"].([]any)
+				m["tools"] = append(tools, map[string]any{
+					"type":     "function",
+					"function": map[string]any{"name": "web_search_preview", "parameters": map[string]any{"type": "object"}},
+				})
+			}, nil)
 
 			up := env.virtual.LastRequest(EndpointChat)
 			if up == nil {
@@ -646,11 +659,13 @@ func ruleFlagCases() []flagCase {
 				t.Fatalf("unmarshal upstream body: %v", err)
 			}
 			names := upstreamToolNames(body)
-			if slices.Contains(names, "web_search") {
-				t.Errorf("native web_search reached the downstream model; tools=%v", names)
+			if slices.Contains(names, "web_search_preview") {
+				t.Errorf("provider-executed web tool reached the downstream model; tools=%v", names)
 			}
-			if !slices.Contains(names, "keep_me") {
-				t.Errorf("unrelated client tool was dropped; tools=%v", names)
+			for _, keep := range []string{"web_search", "keep_me"} {
+				if !slices.Contains(names, keep) {
+					t.Errorf("client-executed tool %q was dropped; tools=%v", keep, names)
+				}
 			}
 			if !slices.Contains(names, webProxySearchToolName) || !slices.Contains(names, webProxyFetchToolName) {
 				t.Errorf("web proxy tools were not injected; tools=%v", names)
@@ -658,9 +673,6 @@ func ruleFlagCases() []flagCase {
 
 			if atomic.LoadInt64(searchHits) == 0 {
 				t.Fatal("web proxy did not call the configured web service")
-			}
-			if got := string(env.virtual.LastRequest(EndpointChat).Body); got == "" {
-				t.Fatal("empty upstream body")
 			}
 		}},
 	}

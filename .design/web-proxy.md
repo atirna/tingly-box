@@ -8,14 +8,15 @@
 
 ## 1. 它做什么
 
-下游模型没有联网能力，但请求里带了 `web_search` / `web_fetch`——**借一个
-有联网能力的 {provider, model} 来干这件事**。
+下游模型没有联网能力，但这次对话需要联网——**借一个有联网能力的
+{provider, model} 来干这件事**。
 
 具体两步：
 
-1. **请求侧**：把请求里的 native web 工具声明剥掉（那是 *server tool*，
-   由 provider 侧执行，下游根本跑不了），换成两个**普通 function tool**，
-   任何模型都能调。
+1. **请求侧**：把请求里 **provider 执行的** web 工具声明剥掉（那是
+   *server tool*，下游根本跑不了），换成两个**普通 function tool**，任何
+   模型都能调。客户端自己执行的 web 工具（如 Claude Code 的 `WebSearch`）
+   原样放行——见 §4.2。
 2. **执行侧**：下游模型一旦调用这两个工具，tingly-box 就拿配置的
    {provider, model} 去真正搜索 / 抓取，把结果作为 tool_result 回填，
    循环继续。**客户端全程看不到这两个工具调用**，只看到最终回答。
@@ -167,14 +168,28 @@ preVendor 看到的是**协议转换后、面向上游的形态**。"能注入�
 
 transform 做两件事，顺序固定：
 
-1. **剥掉 native web 工具**
+1. **剥掉 provider 执行的 web 工具**
    - Anthropic（v1 + beta）：`OfWebSearchTool20250305` /
-     `OfWebSearchTool20260209` / `OfWebFetchTool2025091` 等 union 成员
-   - OpenAI Chat：按名字匹配 `web_search` / `websearch` /
-     `web_search_preview` / `web_fetch` / `webfetch`
+     `OfWebSearchTool20260209` / `OfWebFetchTool20250910` 等 union 成员
    - Responses：`OfWebSearch` / `OfWebSearchPreview`
+   - 按名字：只有 `web_search_preview`
 2. **注入两个 function tool**，名字为
    `tingly_box_mcp__webproxy__web_search` / `…__web_fetch`。
+
+> **判据是"谁执行"，不是"是不是 web 工具"。** 客户端自带并**自己执行**的
+> web 工具绝不能剥——Claude Code 的 `WebSearch` / `WebFetch` 就是典型：
+> 模型发 tool_use，CLI 自己去搜/抓（还带域名权限、黑名单预检、重定向校验、
+> 出口代理检测），下游模型压根不需要联网能力。把它们剥掉换成绕第二个模型
+> 的往返，是**删掉一个能用的能力换一个更差的**。
+>
+> 所以 `WebSearch` / `WebFetch` / 裸 `web_search` / 裸 `web_fetch` 一律放行。
+> 只有 `web_search_preview`（OpenAI 自己的 server tool 名，没有客户端执行的
+> 含义）按名字匹配；其余 provider 执行的工具都走**类型结构**匹配，不存在
+> 歧义。
+>
+> 这也修掉了第一版的一处不对称：同一个 `WebSearch`，Anthropic 目标（结构
+> 匹配）会保留、OpenAI 目标（名字匹配）会被剥掉——同一个客户端工具因目标
+> 协议不同而命运不同，本身就是 bug。
 
 名字冲突时**客户端已有的声明优先**——重复声明同名工具会让请求非法。
 
@@ -356,3 +371,41 @@ web proxy 不该因为 MCP 的配置状态而行为不同。
   只有"这段对话之前直连过原生联网 provider、现在改道到不认识这些 block
   的下游"才会遇到。走 web proxy 产生的对话不会出现这些 block。
 - **不自动挑选联网模型**：用户显式配 `{provider, model}`，不做能力探测。
+- **不接管客户端自己发起的"联网子查询"**。Claude Code 的 `WebSearch` 是
+  客户端工具，但它的实现是**再发一个带 `web_search_20250305` 的子请求**给
+  配置的 base URL，然后从流里解析 `server_tool_use` /
+  `web_search_tool_result` block。这类子请求如果打到 tingly-box 且下游不
+  支持原生 web 工具：web proxy 会把它变成 function-tool 循环，回来的是
+  **纯文本**，而客户端要找的是结构化的 `web_search_tool_result` block——
+  于是客户端会解析出 0 条结果。要真正支持这条路径，需要识别"这个请求的
+  全部目的就是跑一次原生 web 工具"并**整体改道**到联网服务，让原生
+  block 原样返回。见下方 §10。
+
+---
+
+## 10. 待定：客户端联网子查询的整体改道
+
+§9 最后一条描述的场景值得单独记一笔，因为它是当前设计**唯一覆盖不到**的
+真实用例。
+
+**形态**：客户端（Claude Code 的 `WebSearchTool`）自己不联网，而是发一个
+专门的子请求给 base URL，请求里挂着 `web_search_20250305`，然后从响应流里
+读 `server_tool_use` / `web_search_tool_result` block 还原结构化结果。
+
+**为什么现在的实现处理不了**：web proxy 的产物是 tool_result 文本。文本
+喂给"下游模型继续生成"是对的，但喂给"客户端解析 block"就是空结果。协议
+形态对不上，不是配置问题。
+
+**可能的做法**：在 §4.2 的 transform 之前加一个判定——请求里声明了原生
+web 工具、且**除此之外没有别的工具**（或消息只有一轮）时，认为这是一个
+纯联网子查询，直接把整个请求改道到配置的 `{provider, model}`，让原生
+server tool 在那边真跑，`web_search_tool_result` block 原样透传回客户端。
+
+这不与"借能力而非改道"的原则冲突：那条原则是为了保护**用户选的主模型**
+不被偷换；而这类子查询压根没有"主模型的回答"要保护——它的全部内容就是一
+次工具调用。
+
+**尚未实现**，因为需要先确认：
+1. Claude Code 指向第三方 base URL 时，`WebSearchTool.isEnabled()` 到底
+   放不放行（放行才会有这个子请求到达 tingly-box）；
+2. 判定条件怎么写才不会误伤正常的多工具对话。
