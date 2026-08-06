@@ -146,6 +146,16 @@ MCP executor: the MCP guard would reject them as uncallable.
 
 ## Out of scope (today)
 
+- **Safety machinery of our own.** No domain allow/deny, no blocklist
+  preflight, no redirect validation, no egress-proxy detection. The borrowed
+  provider is what actually performs the search or the fetch, so its
+  protections are the ones that apply; this layer only relays arguments and
+  results. This is a deliberate MVP decision, not an oversight — and it takes
+  nothing away, since a fetch through the web proxy is a new path rather than
+  an existing protected one being stripped (client-executed `WebFetch` keeps
+  its own permissions precisely because we no longer strip it). The one lever
+  available today is the `block_tools` rule flag, which can remove the
+  injected `tingly_box_mcp__webproxy__web_fetch` outright.
 - Caching search / fetch results across requests.
 - Executing injected tools on the Responses target (no tool loop there yet).
 - Rewriting `server_tool_use` / `web_search_tool_result` blocks already present

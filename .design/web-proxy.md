@@ -371,6 +371,18 @@ web proxy 不该因为 MCP 的配置状态而行为不同。
   只有"这段对话之前直连过原生联网 provider、现在改道到不认识这些 block
   的下游"才会遇到。走 web proxy 产生的对话不会出现这些 block。
 - **不自动挑选联网模型**：用户显式配 `{provider, model}`，不做能力探测。
+- **不自建安全防护**（MVP 明确决定，非疏漏）。web proxy 自己不做域名
+  allow/deny、不做黑名单预检、不做重定向校验、不做出口代理检测。真正
+  执行搜索 / 抓取的是**借来的 provider**，所以适用的是那家 provider 自己
+  的防护；tingly-box 这一层只转述参数和结果。
+
+  > 这条与「不剥客户端 web 工具」是同一个判断的两面：客户端自己执行的
+  > `WebFetch` 带着它自己那套域名权限和预检，我们不碰它，它的防护就还在
+  > （§4.2）。而经由 web proxy 的抓取从来没有过那套防护——它是一条新增
+  > 的、走 provider 的路径，不是把已有防护拿掉。已有的保留，不过度补充。
+
+  要收紧的话，`block_tools` flag 可以整条禁掉注入的
+  `tingly_box_mcp__webproxy__web_fetch`，这是当前唯一的开关粒度。
 - **不接管客户端自己发起的"联网子查询"**。Claude Code 的 `WebSearch` 是
   客户端工具，但它的实现是**再发一个带 `web_search_20250305` 的子请求**给
   配置的 base URL，然后从流里解析 `server_tool_use` /
