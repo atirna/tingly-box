@@ -132,12 +132,19 @@ func (c *openAIToAnthropicConverter) Next() (interface{}, bool, error) {
 
 	for {
 		if !c.stream.Next() {
-			if err := c.stream.Err(); err != nil {
-				return nil, false, err
-			}
+			streamErr := c.stream.Err()
 			if c.finishSeen && c.hookErr == nil {
-				// Upstream finished normally.
+				// Upstream delivered finish_reason, so the turn is semantically
+				// complete. The SDK keeps reading past [DONE] to physical EOF,
+				// where a provider that tears the connection down without a
+				// clean close surfaces a scanner error; treating that as fatal
+				// would discard a fully delivered response. Salvage it.
+				if streamErr != nil {
+					logrus.WithError(streamErr).Warn("openai stream errored after finish_reason; salvaging completed response")
+				}
 				c.emitTerminalEvents()
+			} else if streamErr != nil {
+				return nil, false, streamErr
 			} else if c.messageStarted && c.hookErr == nil {
 				// Upstream cut mid-stream after content started: surface an
 				// honest error event rather than fabricating a clean end_turn.

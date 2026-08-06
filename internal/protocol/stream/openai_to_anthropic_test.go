@@ -59,6 +59,97 @@ func TestOpenAIChatToAnthropicConvertersPropagateIteratorError(t *testing.T) {
 	}
 }
 
+// openAIChatSliceStream replays fixed chunks, then reports err from Err() once
+// exhausted — simulating a provider whose connection teardown is dirty.
+type openAIChatSliceStream struct {
+	chunks []openai.ChatCompletionChunk
+	index  int
+	err    error
+}
+
+func (s *openAIChatSliceStream) Next() bool {
+	if s.index >= len(s.chunks) {
+		return false
+	}
+	s.index++
+	return true
+}
+
+func (s *openAIChatSliceStream) Current() openai.ChatCompletionChunk {
+	return s.chunks[s.index-1]
+}
+
+func (s *openAIChatSliceStream) Err() error { return s.err }
+
+func openAIChatChunks(t *testing.T, bodies ...string) []openai.ChatCompletionChunk {
+	t.Helper()
+	chunks := make([]openai.ChatCompletionChunk, 0, len(bodies))
+	for _, body := range bodies {
+		var chunk openai.ChatCompletionChunk
+		require.NoError(t, json.Unmarshal([]byte(body), &chunk))
+		chunks = append(chunks, chunk)
+	}
+	return chunks
+}
+
+// TestOpenAIChatToAnthropicSalvagesDirtyTeardownAfterFinish pins the salvage
+// semantics: once finish_reason arrived the turn is semantically complete, so a
+// scanner error surfaced while draining to physical EOF (a provider closing
+// without a clean shutdown) must not discard the response — the client still
+// gets message_delta + message_stop and no error.
+func TestOpenAIChatToAnthropicSalvagesDirtyTeardownAfterFinish(t *testing.T) {
+	stream := &openAIChatSliceStream{
+		chunks: openAIChatChunks(t,
+			`{"choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"}}]}`,
+			`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		),
+		err: errors.New("unexpected EOF"),
+	}
+	converter := NewOpenAIChatToAnthropicV1Converter(stream, "model", nil)
+
+	var types []string
+	for {
+		event, done, err := converter.Next()
+		require.NoError(t, err, "dirty teardown after finish_reason must be salvaged, not surfaced")
+		if done {
+			break
+		}
+		typed, ok := AsAnthropicEvent(event)
+		require.Truef(t, ok, "event type = %T", event)
+		types = append(types, typed.Type)
+	}
+
+	require.GreaterOrEqual(t, len(types), 2)
+	assert.Equal(t, "message_start", types[0])
+	assert.Equal(t, "message_delta", types[len(types)-2])
+	assert.Equal(t, "message_stop", types[len(types)-1])
+}
+
+// TestOpenAIChatToAnthropicPropagatesMidStreamError pins the complementary
+// case: the same teardown error before finish_reason is a genuine truncation
+// and must surface as an error instead of fabricating a clean ending.
+func TestOpenAIChatToAnthropicPropagatesMidStreamError(t *testing.T) {
+	want := errors.New("connection reset by peer")
+	stream := &openAIChatSliceStream{
+		chunks: openAIChatChunks(t,
+			`{"choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"}}]}`,
+		),
+		err: want,
+	}
+	converter := NewOpenAIChatToAnthropicV1Converter(stream, "model", nil)
+
+	for {
+		event, done, err := converter.Next()
+		if err != nil {
+			assert.ErrorIs(t, err, want)
+			return
+		}
+		require.False(t, done, "mid-stream teardown error must surface, got clean end")
+		_, ok := AsAnthropicEvent(event)
+		require.Truef(t, ok, "event type = %T", event)
+	}
+}
+
 type closeNotifyRecorder struct {
 	*httptest.ResponseRecorder
 }
