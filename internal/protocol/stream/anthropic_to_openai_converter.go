@@ -99,7 +99,7 @@ func (c *anthropicToOpenAIConverter) Next() (interface{}, bool, error) {
 				return nil, false, err
 			}
 			if c.started && !c.done {
-				return nil, false, fmt.Errorf("anthropic stream ended without message_stop")
+				return nil, false, errAnthropicStreamTruncated
 			}
 			return nil, true, nil
 		}

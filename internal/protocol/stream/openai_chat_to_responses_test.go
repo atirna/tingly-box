@@ -202,13 +202,14 @@ func TestChatToResponsesConverter_TextDelta(t *testing.T) {
 	})
 
 	// Should emit the complete Responses text lifecycle before the delta.
-	require.Len(t, conv.pending, 4)
+	require.Len(t, conv.pending, 5)
 	assert.Equal(t, "response.created", conv.pending[0].(wire.ResponsesCreatedEvent).Type)
-	assert.Equal(t, "response.output_item.added", conv.pending[1].(wire.ResponsesOutputItemAddedEvent).Type)
-	assert.Equal(t, "response.content_part.added", conv.pending[2].(wire.ResponsesContentPartAddedEvent).Type)
-	assert.Equal(t, "response.output_text.delta", conv.pending[3].(wire.ResponsesOutputTextDeltaEvent).Type)
+	assert.Equal(t, "response.in_progress", conv.pending[1].(wire.ResponsesInProgressEvent).Type)
+	assert.Equal(t, "response.output_item.added", conv.pending[2].(wire.ResponsesOutputItemAddedEvent).Type)
+	assert.Equal(t, "response.content_part.added", conv.pending[3].(wire.ResponsesContentPartAddedEvent).Type)
+	assert.Equal(t, "response.output_text.delta", conv.pending[4].(wire.ResponsesOutputTextDeltaEvent).Type)
 
-	delta := conv.pending[3].(wire.ResponsesOutputTextDeltaEvent)
+	delta := conv.pending[4].(wire.ResponsesOutputTextDeltaEvent)
 	assert.Equal(t, "Hello, World!", delta.Delta)
 }
 

@@ -102,15 +102,8 @@ func (c *chatToResponsesConverter) Usage() *protocol.TokenUsage {
 // processChunk handles a single upstream ChatCompletionChunk and appends
 // zero or more Responses API events to c.pending.
 func (c *chatToResponsesConverter) processChunk(chunk *openai.ChatCompletionChunk) {
-	// Emit response.created on first chunk
-	if !c.hasSentCreated {
-		c.pending = append(c.pending, wire.ResponsesCreatedEvent{
-			Type:           "response.created",
-			SequenceNumber: c.nextSeq(),
-			Response:       c.wireResponse("in_progress", nil),
-		})
-		c.hasSentCreated = true
-	}
+	// Emit response.created / response.in_progress on first chunk
+	c.emitCreated()
 
 	// Track usage
 	if chunkHasUsage(chunk.Usage) {
@@ -215,14 +208,7 @@ func (c *chatToResponsesConverter) emitCompletionEvents() {
 	}
 	c.completedSent = true
 
-	if !c.hasSentCreated {
-		c.pending = append(c.pending, wire.ResponsesCreatedEvent{
-			Type:           "response.created",
-			SequenceNumber: c.nextSeq(),
-			Response:       c.wireResponse("in_progress", nil),
-		})
-		c.hasSentCreated = true
-	}
+	c.emitCreated()
 
 	if c.finishReason == "" {
 		c.finishReason = "stop"
@@ -295,7 +281,7 @@ func (c *chatToResponsesConverter) emitCompletionEvents() {
 	}
 
 	output := make([]wire.ResponsesOutputItemWire, c.outputIndex)
-	if c.accumulatedText.Len() > 0 {
+	if c.hasTextItem {
 		output[c.textOutputIndex] = newResponsesMessageItem(c.textItemID, itemStatus, c.accumulatedText.String())
 	}
 	for _, idx := range sortedIndexes {
@@ -336,6 +322,26 @@ func chatFinishReasonToIncomplete(finishReason string) (bool, string) {
 	default:
 		return false, ""
 	}
+}
+
+// emitCreated appends response.created + response.in_progress once. The real
+// Responses API opens every stream with both events, and strict clients (and
+// the sibling Anthropic-to-Responses converter) expect the pair.
+func (c *chatToResponsesConverter) emitCreated() {
+	if c.hasSentCreated {
+		return
+	}
+	c.hasSentCreated = true
+	c.pending = append(c.pending, wire.ResponsesCreatedEvent{
+		Type:           "response.created",
+		SequenceNumber: c.nextSeq(),
+		Response:       c.wireResponse("in_progress", nil),
+	})
+	c.pending = append(c.pending, wire.ResponsesInProgressEvent{
+		Type:           "response.in_progress",
+		SequenceNumber: c.nextSeq(),
+		Response:       c.wireResponse("in_progress", nil),
+	})
 }
 
 func (c *chatToResponsesConverter) emitTextItemAdded() {

@@ -110,6 +110,7 @@ func TestChatToResponsesConverter_GoldenSequence(t *testing.T) {
 	// 1. Exact ordered event sequence — the heart of the oracle.
 	want := []string{
 		"response.created",
+		"response.in_progress",
 		"response.output_item.added", // text item (index 0)
 		"response.content_part.added",
 		"response.output_text.delta",             // "Hello"
@@ -136,17 +137,17 @@ func TestChatToResponsesConverter_GoldenSequence(t *testing.T) {
 	}
 
 	// 3. Spot-check key payloads.
-	assert.Equal(t, "Hello", got[3].(wire.ResponsesOutputTextDeltaEvent).Delta)
-	assert.Equal(t, ", World!", got[4].(wire.ResponsesOutputTextDeltaEvent).Delta)
+	assert.Equal(t, "Hello", got[4].(wire.ResponsesOutputTextDeltaEvent).Delta)
+	assert.Equal(t, ", World!", got[5].(wire.ResponsesOutputTextDeltaEvent).Delta)
 
-	textDone := got[8].(wire.ResponsesOutputTextDoneEvent)
+	textDone := got[9].(wire.ResponsesOutputTextDoneEvent)
 	assert.Equal(t, "Hello, World!", textDone.Text)
 
-	argsDone := got[11].(wire.ResponsesFunctionCallArgumentsDoneEvent)
+	argsDone := got[12].(wire.ResponsesFunctionCallArgumentsDoneEvent)
 	assert.Equal(t, "get_weather", argsDone.Name)
 	assert.Equal(t, `{"city":"Paris"}`, argsDone.Arguments)
 
-	completed := got[13].(wire.ResponsesCompletedEvent)
+	completed := got[14].(wire.ResponsesCompletedEvent)
 	assert.Equal(t, "completed", completed.Response.Status)
 	require.Len(t, completed.Response.Output, 2, "final output carries text + tool-call items")
 

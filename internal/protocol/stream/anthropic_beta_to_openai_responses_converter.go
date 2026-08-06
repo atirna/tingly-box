@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,11 @@ import (
 	usagepkg "github.com/tingly-dev/tingly-box/internal/protocol/usage"
 	"github.com/tingly-dev/tingly-box/internal/protocol/wire"
 )
+
+// errAnthropicStreamTruncated reports an upstream Anthropic stream that ended
+// (with no transport error) before delivering message_stop. Shared by every
+// converter that consumes an AnthropicBetaStream so callers can errors.Is it.
+var errAnthropicStreamTruncated = errors.New("anthropic stream ended without message_stop")
 
 // anthropicBetaToResponsesConverter converts an Anthropic Beta stream into
 // a sequence of Responses API wire events. It implements StreamConverter.
@@ -91,7 +97,7 @@ func (c *anthropicBetaToResponsesConverter) Next() (interface{}, bool, error) {
 				return nil, false, err
 			}
 			if !c.finished {
-				return nil, false, fmt.Errorf("anthropic stream ended without message_stop")
+				return nil, false, errAnthropicStreamTruncated
 			}
 			return nil, true, nil
 		}
@@ -166,7 +172,7 @@ func (c *anthropicBetaToResponsesConverter) emitContentBlockStart(event *anthrop
 	currentOutputIndex := c.outputIndex
 
 	if blockType == "text" {
-		itemID := fmt.Sprintf("item_%d_%d", c.createdAt, index)
+		itemID := fmt.Sprintf("msg_%d_%d", c.createdAt, index)
 		c.pendingTextBlocks[index] = &pendingResponseTextBlock{
 			itemID:      itemID,
 			outputIndex: currentOutputIndex,
