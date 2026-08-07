@@ -8,6 +8,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 
+	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/request"
 	protocoltransform "github.com/tingly-dev/tingly-box/internal/protocol/transform"
 )
@@ -29,10 +30,10 @@ import (
 //     has a way to ask for a search or a fetch. Service.Execute answers those
 //     calls from the borrowed service.
 //
-// Both edits are skipped for request shapes the server-side tool loop does not
-// cover — see the Responses case below. Stripping still happens there; only
-// injection is withheld, because an injected tool nobody can execute would
-// leak an unanswerable tool call to the client.
+// Stripping always happens. Injection happens only where the server-side tool
+// loop actually runs (loopCovers) — an injected tool nobody can execute would
+// leak an unanswerable tool call to the client, which is strictly worse than
+// the web proxy doing nothing.
 type ToolTransform struct {
 	active bool
 }
@@ -51,21 +52,69 @@ func (t *ToolTransform) Apply(ctx *protocoltransform.TransformContext) error {
 		return nil
 	}
 
+	// Stripping is unconditional; injecting is not. See loopCovers.
+	inject := loopCovers(ctx.SourceAPI, ctx.TargetAPI, ctx.IsStreaming)
+
 	switch req := ctx.Request.(type) {
 	case *openai.ChatCompletionNewParams:
-		req.Tools = mergeOpenAITools(stripOpenAINativeWebTools(req.Tools), InjectedTools())
+		req.Tools = stripOpenAINativeWebTools(req.Tools)
+		if inject {
+			req.Tools = mergeOpenAITools(req.Tools, InjectedTools())
+		}
 	case *anthropic.MessageNewParams:
-		req.Tools = mergeAnthropicV1Tools(stripAnthropicV1NativeWebTools(req.Tools), injectedAnthropicV1Tools())
+		req.Tools = stripAnthropicV1NativeWebTools(req.Tools)
+		if inject {
+			req.Tools = mergeAnthropicV1Tools(req.Tools, injectedAnthropicV1Tools())
+		}
 	case *anthropic.BetaMessageNewParams:
-		req.Tools = mergeAnthropicBetaTools(stripAnthropicBetaNativeWebTools(req.Tools), injectedAnthropicBetaTools())
+		req.Tools = stripAnthropicBetaNativeWebTools(req.Tools)
+		if inject {
+			req.Tools = mergeAnthropicBetaTools(req.Tools, injectedAnthropicBetaTools())
+		}
 	case *responses.ResponseNewParams:
-		// Responses-target requests never enter the server-side tool loop, so
-		// the proxy cannot answer a call to an injected tool. Strip the native
-		// web tools the downstream cannot run, and stop there.
 		req.Tools = stripResponsesNativeWebTools(req.Tools)
 	}
 
 	return nil
+}
+
+// loopCovers reports whether the server-side tool loop actually runs for this
+// (source, target, streaming) combination — i.e. whether anything would
+// execute an injected tool call and keep it away from the client.
+//
+// This is the injection precondition, and it is NOT the same question as "what
+// shape is the request". An injected tool that no loop answers does not
+// degrade gracefully: the downstream model calls it, nobody executes it, and
+// the call surfaces to the client as a tool it never declared and cannot
+// answer. Not injecting is always the safe direction — the web proxy simply
+// does nothing on that path.
+//
+// The matrix below mirrors the dispatch topology in
+// internal/protocolserver/protocol_dispatch.go. It must be revisited whenever
+// a dispatch path gains or loses its loop:
+//
+//	target AnthropicV1     — always looped (NonstreamAnthropicV1 / StreamAnthropicV1
+//	                         drive the generic processor unconditionally)
+//	target AnthropicBeta   — looped for Anthropic and OpenAI-Chat sources
+//	target OpenAIChat      — looped for Anthropic and OpenAI-Chat sources
+//	target OpenAIResponses — never looped
+//	target Google          — never looped
+//
+//	source OpenAIResponses — never looped, whatever the target: the
+//	                         Responses-shaped client paths (…ChatToResponses,
+//	                         …BetaToResponses) forward straight through.
+func loopCovers(source, target protocol.APIType, _ bool) bool {
+	switch target {
+	case protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, protocol.TypeOpenAIChat:
+		// Streaming and non-streaming are both covered on these targets — the
+		// gates in protocol_dispatch.go are symmetric — so the streaming flag
+		// does not enter the decision today. It stays in the signature because
+		// the two halves are separate code paths (GenericStreamInterceptor vs
+		// GenericLoopProcessor) and could diverge.
+		return source != protocol.TypeOpenAIResponses
+	default:
+		return false
+	}
 }
 
 // injectedAnthropicBetaTools derives the Anthropic beta tool shapes from the

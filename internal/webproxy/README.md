@@ -56,12 +56,32 @@ after protocol conversion. Two edits:
 2. **Inject two function tools** so the downstream model still has a way to ask
    for a search or a fetch.
 
-| Target shape | strip | inject |
-|---|---|---|
-| `*openai.ChatCompletionNewParams` | by name: `web_search_preview` only | ✓ |
-| `*anthropic.MessageNewParams` | union members (`OfWebSearchTool*`, `OfWebFetchTool*`) | ✓ |
-| `*anthropic.BetaMessageNewParams` | union members | ✓ |
-| `*responses.ResponseNewParams` | `OfWebSearch` / `OfWebSearchPreview` | ✗ |
+| Target shape | strip |
+|---|---|
+| `*openai.ChatCompletionNewParams` | by name: `web_search_preview` only |
+| `*anthropic.MessageNewParams` | union members (`OfWebSearchTool*`, `OfWebFetchTool*`) |
+| `*anthropic.BetaMessageNewParams` | union members |
+| `*responses.ResponseNewParams` | `OfWebSearch` / `OfWebSearchPreview` |
+
+Stripping is unconditional. **Injection is gated on `loopCovers(source, target,
+streaming)`** — whether a server-side tool loop actually runs for this
+dispatch path:
+
+| target ↓ / source → | Anthropic v1/beta | OpenAI Chat | OpenAI Responses |
+|---|---|---|---|
+| Anthropic v1 | ✓ | ✓ | ✗ |
+| Anthropic beta | ✓ | ✓ | ✗ |
+| OpenAI Chat | ✓ | ✓ | ✗ |
+| OpenAI Responses | ✗ | ✗ | ✗ |
+| Google | ✗ | ✗ | ✗ |
+
+The source column matters as much as the target, and that is the subtle part:
+a Responses-shaped **client** (Codex) on an OpenAI-Chat downstream produces a
+`*ChatCompletionNewParams` request, so a shape-only rule would inject — but
+that dispatch path (`…ChatToResponses`) forwards straight through with no
+loop, and the tool call would surface to the client as something it never
+declared and cannot answer. Not injecting is always the safe direction: the
+web proxy simply does nothing there.
 
 The test for stripping is **"does the provider have to execute it"**, not "is
 it a web tool". Client-executed web tools — Claude Code's `WebSearch` /
@@ -75,11 +95,6 @@ That is also why only `web_search_preview` is matched by name: it is OpenAI's
 own server-tool name and has no client-executed meaning. Everything else
 provider-executed travels as a typed union member, where the match is
 structural and unambiguous — and identical across target protocols.
-
-The Responses row is the important asymmetry: that target never enters the
-server-side tool loop, so nothing could answer an injected tool call — it would
-leak to the client as an unanswerable request. Stripping still applies (the
-downstream still can't run the native tool); injection is withheld.
 
 Existing tools always win on a name collision — re-declaring a name would make
 the request invalid.

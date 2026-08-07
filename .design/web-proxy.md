@@ -175,6 +175,7 @@ transform 做两件事，顺序固定：
    - 按名字：只有 `web_search_preview`
 2. **注入两个 function tool**，名字为
    `tingly_box_mcp__webproxy__web_search` / `…__web_fetch`。
+   —— **但只在有循环接住的路径上注入**，见 §4.2.1。
 
 > **判据是"谁执行"，不是"是不是 web 工具"。** 客户端自带并**自己执行**的
 > web 工具绝不能剥——Claude Code 的 `WebSearch` / `WebFetch` 就是典型：
@@ -192,6 +193,30 @@ transform 做两件事，顺序固定：
 > 协议不同而命运不同，本身就是 bug。
 
 名字冲突时**客户端已有的声明优先**——重复声明同名工具会让请求非法。
+
+#### 4.2.1 注入的前提：这条路径上真的有循环
+
+剥离无条件，**注入有条件**：`loopCovers(source, target, streaming)`。
+
+| target ↓ / source → | Anthropic v1/beta | OpenAI Chat | OpenAI Responses |
+|---|---|---|---|
+| Anthropic v1 | ✓ | ✓ | ✗ |
+| Anthropic beta | ✓ | ✓ | ✗ |
+| OpenAI Chat | ✓ | ✓ | ✗ |
+| OpenAI Responses | ✗ | ✗ | ✗ |
+| Google | ✗ | ✗ | ✗ |
+
+> **source 和 target 一样重要**，这是容易踩空的地方。Responses 形态的
+> **客户端**（Codex）打 OpenAI-Chat 下游时，请求体是
+> `*ChatCompletionNewParams`——只看形态的规则会注入；但那条 dispatch
+> （`…ChatToResponses`）是直通的，没有循环，工具调用会漏给客户端，变成
+> 一个它从没声明过、也无法应答的 tool call。
+>
+> 注入不了就**不注入**永远是安全方向：web proxy 在那条路径上什么都不做，
+> 而不是留下一个半截的调用。第一版按请求形态判断，正好漏掉了这一格。
+
+矩阵对应 `protocol_dispatch.go` 的实际拓扑，那边增删循环时必须同步这里
+（`loopCovers` 的注释里也写了同样的话）。
 
 ### 4.3 执行侧：复用服务端工具循环
 

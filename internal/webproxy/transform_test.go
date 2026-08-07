@@ -8,14 +8,41 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
+	"github.com/tingly-dev/tingly-box/internal/protocol"
 	protocoltransform "github.com/tingly-dev/tingly-box/internal/protocol/transform"
 )
 
+// applyTransform runs the transform on a covered (source, target) pair, so the
+// existing cases keep exercising the strip+inject behavior. Cases that care
+// about the coverage matrix itself use applyTransformFor.
 func applyTransform(t *testing.T, active bool, req any) {
 	t.Helper()
+	applyTransformFor(t, active, req, protocol.TypeOpenAIChat, targetFor(req), false)
+}
+
+func applyTransformFor(t *testing.T, active bool, req any, source, target protocol.APIType, streaming bool) {
+	t.Helper()
 	tr := NewToolTransform(active)
-	if err := tr.Apply(&protocoltransform.TransformContext{Request: req}); err != nil {
+	ctx := &protocoltransform.TransformContext{Request: req}
+	ctx.SourceAPI = source
+	ctx.TargetAPI = target
+	ctx.IsStreaming = streaming
+	if err := tr.Apply(ctx); err != nil {
 		t.Fatalf("Apply: %v", err)
+	}
+}
+
+// targetFor maps a request shape to the target API that produces it.
+func targetFor(req any) protocol.APIType {
+	switch req.(type) {
+	case *anthropic.MessageNewParams:
+		return protocol.TypeAnthropicV1
+	case *anthropic.BetaMessageNewParams:
+		return protocol.TypeAnthropicBeta
+	case *responses.ResponseNewParams:
+		return protocol.TypeOpenAIResponses
+	default:
+		return protocol.TypeOpenAIChat
 	}
 }
 
@@ -233,5 +260,78 @@ func TestToolNaming(t *testing.T) {
 	}
 	if bare, ok := BareToolName(NameWebFetch); !ok || bare != ToolWebFetch {
 		t.Fatalf("BareToolName(%s) = %q,%v", NameWebFetch, bare, ok)
+	}
+}
+
+
+// The injection precondition is "a server-side tool loop will answer the call",
+// which depends on the (source, target) pair — not on the request shape. A
+// Responses-shaped CLIENT (Codex) talking to an OpenAI-Chat downstream produces
+// a *ChatCompletionNewParams request, so a shape-only rule would inject; but
+// that dispatch path (…ChatToResponses) forwards straight through with no loop,
+// so the call would surface to the client as a tool it never declared.
+func TestToolTransform_InjectsOnlyWhereTheLoopRuns(t *testing.T) {
+	cases := []struct {
+		name       string
+		source     protocol.APIType
+		target     protocol.APIType
+		wantInject bool
+	}{
+		{"claude code → anthropic beta", protocol.TypeAnthropicBeta, protocol.TypeAnthropicBeta, true},
+		{"claude code → anthropic v1", protocol.TypeAnthropicBeta, protocol.TypeAnthropicV1, true},
+		{"claude code → openai chat", protocol.TypeAnthropicBeta, protocol.TypeOpenAIChat, true},
+		{"anthropic v1 client → openai chat", protocol.TypeAnthropicV1, protocol.TypeOpenAIChat, true},
+		{"openai chat → openai chat", protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, true},
+		{"openai chat → anthropic beta", protocol.TypeOpenAIChat, protocol.TypeAnthropicBeta, true},
+
+		// Responses-shaped client: no loop on any target.
+		{"codex → openai chat", protocol.TypeOpenAIResponses, protocol.TypeOpenAIChat, false},
+		{"codex → anthropic beta", protocol.TypeOpenAIResponses, protocol.TypeAnthropicBeta, false},
+		{"codex → openai responses", protocol.TypeOpenAIResponses, protocol.TypeOpenAIResponses, false},
+
+		// Responses / Google targets: no loop from any source.
+		{"openai chat → openai responses", protocol.TypeOpenAIChat, protocol.TypeOpenAIResponses, false},
+		{"claude code → google", protocol.TypeAnthropicBeta, protocol.TypeGoogle, false},
+	}
+
+	for _, tc := range cases {
+		for _, streaming := range []bool{false, true} {
+			name := tc.name
+			if streaming {
+				name += " (stream)"
+			}
+			t.Run(name, func(t *testing.T) {
+				if got := loopCovers(tc.source, tc.target, streaming); got != tc.wantInject {
+					t.Fatalf("loopCovers(%s, %s, %v) = %v, want %v",
+						tc.source, tc.target, streaming, got, tc.wantInject)
+				}
+			})
+		}
+	}
+}
+
+// The regression the matrix exists for, driven through the real transform:
+// a Codex client on an OpenAI-Chat downstream must come out with the native
+// tool stripped and NO proxy tools added.
+func TestToolTransform_ResponsesSourceNeverLeaksAnInjectedTool(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		req := &openai.ChatCompletionNewParams{
+			Tools: []openai.ChatCompletionToolUnionParam{
+				openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "web_search_preview"}),
+				openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "Read"}),
+			},
+		}
+		applyTransformFor(t, true, req, protocol.TypeOpenAIResponses, protocol.TypeOpenAIChat, streaming)
+
+		names := openAIToolNames(req.Tools)
+		if contains(names, NameWebSearch) || contains(names, NameWebFetch) {
+			t.Fatalf("streaming=%v: proxy tools leaked onto a path with no tool loop; tools=%v", streaming, names)
+		}
+		if contains(names, "web_search_preview") {
+			t.Errorf("streaming=%v: provider-executed tool still reached the downstream; tools=%v", streaming, names)
+		}
+		if !contains(names, "Read") {
+			t.Errorf("streaming=%v: unrelated client tool was dropped; tools=%v", streaming, names)
+		}
 	}
 }
