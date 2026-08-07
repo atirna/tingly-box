@@ -1,7 +1,8 @@
+import ApiKeyTable from '@/components/ApiKeyTable.tsx';
 import ConnectAIDialogs from '@/components/ConnectAIDialogs';
-import CredentialTable from '@/components/CredentialTable.tsx';
 import EmptyState from '@/components/EmptyState';
 import OAuthDialog from '@/components/OAuthDialog.tsx';
+import OAuthTable from '@/components/OAuthTable.tsx';
 import PageHeader from '@/components/PageHeader';
 import { PageLayout } from '@/components/PageLayout';
 import Surface from '@/components/Surface';
@@ -11,11 +12,14 @@ import { useProviderDialog } from '@/hooks/useProviderDialog';
 import { Add, ListAlt, VpnKey } from '@/components/icons';
 import {
     Alert,
+    Box,
     Button,
+    Chip,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
+    Divider,
     Stack,
     Typography,
 } from '@mui/material';
@@ -135,18 +139,10 @@ const CredentialPage = () => {
         }
     };
 
-    // credentialProviders drives the unified table: every real credential
-    // (OAuth + static keys/tokens), excluding virtual models which have no
-    // credential of their own. oauthProviders stays separate because the
-    // reauthorize handlers below only ever need to look up OAuth providers.
-    const { credentialProviders, oauthProviders, credentialCounts } = useMemo(() => {
-        const creds = providers.filter((p: any) => p.auth_type !== 'vmodel');
-        const oauth = creds.filter((p: any) => p.auth_type === 'oauth');
-        return {
-            credentialProviders: creds,
-            oauthProviders: oauth,
-            credentialCounts: { oauth: oauth.length, apiKeys: creds.length - oauth.length, total: creds.length },
-        };
+    const { apiKeyProviders, oauthProviders, credentialCounts } = useMemo(() => {
+        const apiKeys = providers.filter((p: any) => p.auth_type !== 'oauth' && p.auth_type !== 'vmodel');
+        const oauth = providers.filter((p: any) => p.auth_type === 'oauth');
+        return { apiKeyProviders: apiKeys, oauthProviders: oauth, credentialCounts: { apiKeys: apiKeys.length, oauth: oauth.length, total: apiKeys.length + oauth.length } };
     }, [providers]);
 
     return (
@@ -164,26 +160,74 @@ const CredentialPage = () => {
                                 flexWrap: "wrap",
                                 justifyContent: { xs: 'flex-start', sm: 'flex-end' }
                             }}>
-                            <Button component={Link} to="/credentials/providers" variant="outlined" startIcon={<ListAlt />} size="small" sx={{ minWidth: 130 }}>Providers</Button>
+                            {/* The provider catalog now lives on Onboarding (browse + connect
+                                in one place); the standalone read-only ProviderListPage was
+                                redundant with it and has been removed. */}
+                            <Button component={Link} to="/onboarding" variant="outlined" startIcon={<ListAlt />} size="small" sx={{ minWidth: 130 }}>Providers</Button>
                             <Button variant="contained" startIcon={<Add />} onClick={handleConnectAIClick} size="small" sx={{ minWidth: 150 }}>Connect AI</Button>
                         </Stack>
                     }
                 />
 
-                {/* Credentials — OAuth sign-ins and static API keys/tokens in one
-                    table, grouped and sorted by mechanism rather than split
-                    into separate tables/cards (auth type is an attribute of
-                    a credential, not a top-level category). */}
+                {/* Both credential kinds share one card so the page reads as a
+                    single "Credentials" surface, not two unrelated panels — but
+                    each keeps its own table, since OAuth and API key credentials
+                    show different columns (issuer/expiry vs. base URL/key) that
+                    don't collapse into shared columns without losing detail. */}
                 <Surface padding={{ xs: 2, sm: 2.5 }}>
-                    {credentialCounts.total > 0 ? (
-                        <CredentialTable providers={credentialProviders} onEdit={handleEditProvider} onToggle={handleToggleProvider} onDelete={handleDeleteProvider} onRefreshToken={handleRefreshToken} onReauthorize={handleReauthorize} onNotification={showNotification} providerQuotas={quotaData} refreshingQuotas={refreshing} onQuotaRefresh={refreshQuota}/>
-                    ) : (
-                        <EmptyState
-                            title="No Credentials Configured"
-                            description="Connect AI providers like OpenAI, Anthropic, Claude Code, Gemini CLI, etc. via API key or OAuth sign-in."
-                            primaryAction={{ label: 'Connect AI', onClick: handleConnectAIClick }}
-                        />
-                    )}
+                    <Stack spacing={3}>
+                        <Box>
+                            <Stack
+                                direction="row"
+                                spacing={1}
+                                sx={{
+                                    alignItems: "center",
+                                    mb: 1.5
+                                }}>
+                                <Typography variant="subtitle1" sx={{
+                                    fontWeight: 500
+                                }}>OAuth</Typography>
+                                <Chip label={credentialCounts.oauth} size="small" color="primary" variant="outlined" sx={{ height: 20, minWidth: 20, fontSize: '0.7rem' }}/>
+                            </Stack>
+                            {credentialCounts.oauth > 0 ? (
+                                <OAuthTable providers={oauthProviders} onEdit={handleEditProvider} onToggle={handleToggleProvider} onDelete={handleDeleteProvider} onRefreshToken={handleRefreshToken} onReauthorize={handleReauthorize} onNotification={showNotification} providerQuotas={quotaData} refreshingQuotas={refreshing} onQuotaRefresh={refreshQuota}/>
+                            ) : (
+                                <EmptyState
+                                    title="No OAuth Providers Configured"
+                                    description="Connect AI providers like Claude Code, Gemini CLI, Qwen, etc. via OAuth sign-in."
+                                    primaryAction={{ label: 'Connect AI', onClick: handleConnectAIClick }}
+                                    compact
+                                />
+                            )}
+                        </Box>
+
+                        <Divider />
+
+                        <Box>
+                            <Stack
+                                direction="row"
+                                spacing={1}
+                                sx={{
+                                    alignItems: "center",
+                                    mb: 1.5
+                                }}>
+                                <Typography variant="subtitle1" sx={{
+                                    fontWeight: 500
+                                }}>API Keys</Typography>
+                                <Chip label={credentialCounts.apiKeys} size="small" color="primary" variant="outlined" sx={{ height: 20, minWidth: 20, fontSize: '0.7rem' }}/>
+                            </Stack>
+                            {credentialCounts.apiKeys > 0 ? (
+                                <ApiKeyTable providers={apiKeyProviders} onEdit={handleEditProvider} onToggle={handleToggleProvider} onDelete={handleDeleteProvider} onNotification={showNotification} providerQuotas={quotaData} refreshingQuotas={refreshing} onQuotaRefresh={refreshQuota}/>
+                            ) : (
+                                <EmptyState
+                                    title="No API Keys Configured"
+                                    description="Connect AI providers like OpenAI, Anthropic, etc. via API key."
+                                    primaryAction={{ label: 'Connect AI', onClick: handleConnectAIClick }}
+                                    compact
+                                />
+                            )}
+                        </Box>
+                    </Stack>
                 </Surface>
             </Stack>
             {/* Unified Connect AI add flow: picker + form/OAuth/paste/import dialogs

@@ -8,8 +8,6 @@ interface ProviderQuotaDetailRowProps {
   quota: ProviderQuota | undefined;
   isRefreshing: boolean;
   onRefresh: (providerUuid: string) => void;
-  /** Number of columns in the host table. Defaults to 7 (legacy tables). */
-  colSpan?: number;
 }
 
 /**
@@ -22,7 +20,6 @@ export function ProviderQuotaDetailRow({
   quota,
   isRefreshing,
   onRefresh,
-  colSpan = 7,
 }: ProviderQuotaDetailRowProps) {
   // Don't render the row if no quota data
   if (!quota) {
@@ -32,7 +29,7 @@ export function ProviderQuotaDetailRow({
   return (
     <TableRow>
       <TableCell
-        colSpan={colSpan}
+        colSpan={7}
         sx={{
           p: 0,
           borderTop: 'none',

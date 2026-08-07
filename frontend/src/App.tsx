@@ -45,7 +45,6 @@ const UseVSCodePage = lazy(() => import('./pages/scenario/UseVSCodePage'));
 const UseEmbedPage = lazy(() => import('./pages/scenario/UseEmbedPage'));
 const UseImageGenPage = lazy(() => import('./pages/scenario/UseImageGenPage'));
 const CredentialPage = lazy(() => import('./pages/CredentialPage'));
-const ProviderListPage = lazy(() => import('./pages/ProviderListPage'));
 const System = lazy(() => import('./pages/system/System.tsx'));
 const AccessControl = lazy(() => import('./pages/system/AccessControl.tsx'));
 const LogsPage = lazy(() => import('./pages/system/LogsPage'));
@@ -236,8 +235,6 @@ function AppContent() {
                     <Route path="/agent/playground" element={<Navigate to="/agent/imagegen" replace />} />
                     {/* Credential routes - new unified page */}
                     <Route path="/credentials" element={<CredentialPage />} />
-                    {/* Provider List page - must come before :tab wildcard */}
-                    <Route path="/credentials/providers" element={<ProviderListPage />} />
                     {/* Virtual Models page - peer of Model Key and Sharing */}
                     <Route path="/credentials/virtual-models" element={<VirtualModelsPage />} />
                     {/* Other routes */}
