@@ -8,7 +8,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/gin-gonic/gin"
 
-	"github.com/tingly-dev/tingly-box/internal/mcp/runtime"
 	coretool "github.com/tingly-dev/tingly-box/internal/tool"
 )
 
@@ -47,20 +46,12 @@ func (a *AnthropicBetaAdapter) ExtractTools(response any) ([]Tool, error) {
 	return tools, nil
 }
 
+// IsVirtualTool delegates to the package-level classifier so every adapter
+// answers the same question the same way. It used to be copied per adapter,
+// which meant a new class of server-executed tool had to be remembered in
+// four places.
 func (a *AnthropicBetaAdapter) IsVirtualTool(tool Tool, registry *coretool.VirtualToolRegistry) bool {
-	sourceID, toolName, ok := runtime.ParseNormalizedToolName(tool.Name())
-	if !ok {
-		return false
-	}
-	if sourceID == "advisor" || (sourceID == "builtin" && toolName == "advisor") {
-		return true
-	}
-	if registry == nil {
-		return false
-	}
-
-	_, exists := registry.Get(toolName)
-	return exists
+	return IsVirtualTool(tool.Name(), registry)
 }
 
 func (a *AnthropicBetaAdapter) SplitVirtualExternal(

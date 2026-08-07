@@ -41,6 +41,13 @@ type GenericStreamInterceptor struct {
 	totalOutputTokens int64
 	totalCacheTokens  int64
 
+	// sentMessageStart records that the client has already been given the
+	// message envelope. The loop may run several upstream rounds, but the
+	// client asked for ONE completion — that a tool round happened inside is
+	// exactly what the loop exists to hide. Every round after the first
+	// therefore drops its own message_start.
+	sentMessageStart bool
+
 	// Mutable request for multi-round loop
 	currentReq any
 
@@ -418,6 +425,11 @@ func (i *GenericStreamInterceptor) routeEvent(event any, eventType EventType) er
 	case EventText:
 		if isAnthropicMessageStartEvent(event) {
 			i.seenMessageStart = true
+			// One envelope per client request; see sentMessageStart.
+			if i.sentMessageStart {
+				return nil
+			}
+			i.sentMessageStart = true
 		}
 		if isAnthropicContentBlockStartEvent(event) {
 			i.seenContentBlockStart = true
@@ -803,52 +815,48 @@ func extractContentBlockIndex(event any) (int, bool) {
 	}
 }
 
-func isAnthropicMessageStartEvent(event any) bool {
+// The three predicates below must recognise BOTH Anthropic stream unions.
+//
+// They used to match only the Beta union, which made every one of them return
+// false on the v1 path — so the interceptor's envelope bookkeeping
+// (seenMessageStart, seenContentBlockStart/Stop, and the duplicate-envelope
+// suppression built on them) was silently inert for v1 targets, and the
+// truncation check in consumeRound could never fire there either. Nothing
+// failed loudly; the client just received a second message_start.
+//
+// anthropicEventKind normalises an event of either union to its wire type
+// name, so a single string comparison covers both.
+func anthropicEventKind(event any) string {
 	switch e := event.(type) {
+	case anthropic.MessageStreamEventUnion:
+		return e.Type
+	case *anthropic.MessageStreamEventUnion:
+		if e == nil {
+			return ""
+		}
+		return e.Type
 	case anthropic.BetaRawMessageStreamEventUnion:
-		_, ok := e.AsAny().(anthropic.BetaRawMessageStartEvent)
-		return ok
+		return e.Type
 	case *anthropic.BetaRawMessageStreamEventUnion:
 		if e == nil {
-			return false
+			return ""
 		}
-		_, ok := e.AsAny().(anthropic.BetaRawMessageStartEvent)
-		return ok
+		return e.Type
 	default:
-		return false
+		return ""
 	}
+}
+
+func isAnthropicMessageStartEvent(event any) bool {
+	return anthropicEventKind(event) == "message_start"
 }
 
 func isAnthropicContentBlockStartEvent(event any) bool {
-	switch e := event.(type) {
-	case anthropic.BetaRawMessageStreamEventUnion:
-		_, ok := e.AsAny().(anthropic.BetaRawContentBlockStartEvent)
-		return ok
-	case *anthropic.BetaRawMessageStreamEventUnion:
-		if e == nil {
-			return false
-		}
-		_, ok := e.AsAny().(anthropic.BetaRawContentBlockStartEvent)
-		return ok
-	default:
-		return false
-	}
+	return anthropicEventKind(event) == "content_block_start"
 }
 
 func isAnthropicContentBlockStopEvent(event any) bool {
-	switch e := event.(type) {
-	case anthropic.BetaRawMessageStreamEventUnion:
-		_, ok := e.AsAny().(anthropic.BetaRawContentBlockStopEvent)
-		return ok
-	case *anthropic.BetaRawMessageStreamEventUnion:
-		if e == nil {
-			return false
-		}
-		_, ok := e.AsAny().(anthropic.BetaRawContentBlockStopEvent)
-		return ok
-	default:
-		return false
-	}
+	return anthropicEventKind(event) == "content_block_stop"
 }
 
 func extractAnthropicStopReason(event any) string {
