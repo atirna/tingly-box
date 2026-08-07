@@ -93,6 +93,43 @@ func SharedDefaultMocks() []SharedMockSpec {
 			},
 			Delay: 50 * time.Millisecond,
 		},
+		// ── Web Proxy demo pair ──────────────────────────────────────────
+		// Together these let someone exercise the whole web proxy feature
+		// with no API keys: point a rule at web-proxy-downstream and set the
+		// rule's (or scenario's) Web Proxy service to web-search-mock.
+		//
+		// They are two halves of one demo and only make sense together, which
+		// is why they sit adjacent here.
+		{
+			// The downstream: a model with no web access of its own. It calls
+			// the tool the web proxy injects, reads the result, then answers —
+			// Once is what makes that second step happen instead of the model
+			// re-requesting the search forever.
+			//
+			// The tool name is the web proxy's namespaced one and must stay in
+			// sync with internal/webproxy.NameWebSearch. Spelled literally
+			// rather than imported: vmodel is a leaf package that the gateway
+			// depends on, not the other way round.
+			ID:      "web-proxy-downstream",
+			Name:    "Web Proxy Downstream (no web access)",
+			Content: "Based on the search results: Go 1.26 is the current release (https://go.dev/doc/devel/release).",
+			ToolCall: &ToolCallConfig{
+				Name:      "tingly_box_mcp__webproxy__web_search",
+				Arguments: map[string]interface{}{"query": "latest go release"},
+				Once:      true,
+			},
+			Delay: 50 * time.Millisecond,
+		},
+		{
+			// The borrowed side: stands in for a web-capable provider. The web
+			// proxy calls it as a plain completion and hands its text back as
+			// the tool result, so a fixed, source-attributed answer is exactly
+			// the right shape.
+			ID:      "web-search-mock",
+			Name:    "Web Search Mock (stands in for a web-capable model)",
+			Content: "Search results:\n1. Go 1.26 released — https://go.dev/doc/devel/release\n2. Release notes — https://go.dev/doc/go1.26",
+			Delay:   50 * time.Millisecond,
+		},
 		// Error models - always fail for testing failover and error handling
 		{
 			ID:      "virtual-fail-429",

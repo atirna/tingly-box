@@ -84,14 +84,31 @@ func (m *MockModel) streamChunks() []string {
 }
 
 // HandleOpenAIChat returns fixed content from config in OpenAI Chat format.
-func (m *MockModel) HandleOpenAIChat(_ *protocol.OpenAIChatCompletionRequest) (VModelResponse, error) {
-	if m.cfg.ToolCall != nil {
+// A one-shot tool mock (ToolCallConfig.Once) answers with its static content
+// once the conversation carries a tool result, so a server-side tool loop
+// terminates instead of re-requesting the same call every round.
+func (m *MockModel) HandleOpenAIChat(req *protocol.OpenAIChatCompletionRequest) (VModelResponse, error) {
+	if m.cfg.ToolCall != nil && !(m.cfg.ToolCall.Once && openAIHasToolResult(req)) {
 		return m.toolResponse(), nil
 	}
 	return VModelResponse{
 		Content:      m.cfg.Content,
 		FinishReason: m.cfg.FinishReason,
 	}, nil
+}
+
+// openAIHasToolResult reports whether the conversation already carries a tool
+// message — i.e. a previous round's tool call has been answered.
+func openAIHasToolResult(req *protocol.OpenAIChatCompletionRequest) bool {
+	if req == nil || req.ChatCompletionNewParams == nil {
+		return false
+	}
+	for _, msg := range req.Messages {
+		if msg.OfTool != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *MockModel) toolResponse() VModelResponse {

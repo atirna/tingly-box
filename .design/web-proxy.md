@@ -383,7 +383,28 @@ web proxy 不该因为 MCP 的配置状态而行为不同。
 | preVendor 装配 | 已配 → 出现 `web_proxy_tools`；未配 / 半填 → 零 transform |
 | Flag registry 暴露 | `web_proxy_service` type=`service_ref`、category=`web` |
 | 类型反序列化 | JSON 圆环保持一致；未设置时字段消失 |
-| **端到端（flag 矩阵）** | `internal/protocoltest/flags.go` 的 `web_proxy_service` 用例：一次请求里同时验证请求侧（native `web_search` 未到下游、`keep_me` 保留、两个代理工具已注入）和执行侧（下游模型调用后，配置的联网服务确实被打到） |
+| **端到端（flag 矩阵）** | `internal/protocoltest/flags.go` 的 `web_proxy_service` 用例，**跑三遍**：openai_chat 非流式 / openai_chat 流式 / anthropic v1→beta 流式。每遍都验请求侧（provider 执行的 web 工具被剥、客户端工具保留、两个代理工具已注入）+ 执行侧（配置的联网服务确实被打到）|
+| **注入覆盖矩阵** | `loopCovers` 的每一格；以及「Codex（Responses 客户端）打 Chat 下游时绝不注入」这条回归 |
+| **vmodel 一次性工具** | `ToolCallConfig.Once`：首轮发工具调用、见到 tool result 后改回答；不带 Once 时保持原有无状态行为 |
+
+---
+
+## 8.1 零 key 手工验收：vmodel 演示对
+
+`vmodel.SharedDefaultMocks()` 里加了一对**成对使用**的虚拟模型：
+
+| ID | 角色 |
+|---|---|
+| `web-proxy-downstream` | 下游：没有联网能力，调一次注入的工具、读到结果后回答 |
+| `web-search-mock` | 借用方：顶替一个有联网能力的 provider，返回带 URL 的固定"搜索结果" |
+
+把 rule 指向前者、把该 rule（或 scenario）的 Web Proxy 指向后者，两个都用
+virtual provider——**零 API key 跑通整条链路**，也包括
+`harness agent claude --mock` 用真实 Claude Code CLI 驱动的那条。
+
+`web-proxy-downstream` 依赖新加的 `ToolCallConfig.Once`：不加的话工具 mock
+是无状态的，每轮都重新请求同一个调用，循环烧完 round 预算后返回空响应——
+这正是任何"工具循环"类功能（MCP、web proxy）用 mock 验证时都会踩的坑。
 
 ---
 

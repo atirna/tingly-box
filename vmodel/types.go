@@ -31,6 +31,18 @@ type Model struct {
 type ToolCallConfig struct {
 	Name      string                 `json:"name" yaml:"name"`
 	Arguments map[string]interface{} `json:"arguments" yaml:"arguments"`
+
+	// Once makes the tool call a one-shot: the model emits it only while the
+	// conversation carries no tool result yet, and answers with Content once
+	// one arrives.
+	//
+	// Without this a tool mock is stateless and re-requests the same call
+	// every round, so any server-side tool loop spins until its round budget
+	// runs out and the client gets an empty response. Once is what lets a
+	// virtual model stand in for "model asks for a tool, reads the result,
+	// then answers" — the shape every tool-loop feature (MCP, web proxy) has
+	// to be exercised against.
+	Once bool `json:"once,omitempty" yaml:"once,omitempty"`
 }
 
 // ToolCallDisplayContent extracts display text from tool call arguments.

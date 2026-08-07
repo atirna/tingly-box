@@ -621,58 +621,75 @@ func ruleFlagCases() []flagCase {
 		}},
 
 		// ── web_proxy_service ────────────────────────────────────────────────
-		// Two halves in one request.
+		// Three runs over the paths that matter in production, each with its
+		// own route + fixture so the fixture's round counter starts clean:
 		//
-		// Request side: the provider-executed web tool (web_search_preview)
-		// must not reach the downstream model — it cannot run it — and the two
-		// proxy function tools must take its place. The base fixture's
-		// `web_search` and `keep_me` are ordinary CLIENT-executed tools and
-		// must both survive: the client runs those itself, so replacing them
-		// with a slower round-trip through a second model would be a
-		// regression, not a feature.
+		//   1. OpenAI Chat, non-streaming  — the base behavioral check
+		//   2. OpenAI Chat, streaming      — a different code path
+		//                                    (GenericStreamInterceptor)
+		//   3. Anthropic v1 → beta, streaming — Claude Code's real shape
 		//
-		// Execution side: when the downstream model calls one of the injected
-		// tools, the search must run against the configured web service —
-		// visible as a hit on the searcher server.
+		// Each run asserts both halves: the request side (provider-executed
+		// web tool stripped, client-executed tools kept, proxy tools injected)
+		// and the execution side (the configured web service actually called
+		// when the downstream model uses one of the injected tools).
 		{key: "web_proxy_service", run: func(t flagTB, env *TestEnv) {
 			searchURL, searchHits := newCountingChatServer(t, "Go 1.26 was released (https://go.dev/doc/devel/release)")
 			registerOpenAIProvider(env, "web-searcher", searchURL)
+			flags := typ.RuleFlags{WebProxyService: &typ.WebProxyService{Provider: "web-searcher", Model: "web-model"}}
 
-			model := env.SetupRouteWithFlags(protocol.TypeOpenAIChat, protocol.TypeOpenAIChat,
-				webProxyToolCallScenario("latest go release"),
-				typ.RuleFlags{WebProxyService: &typ.WebProxyService{Provider: "web-searcher", Model: "web-model"}})
+			runs := []struct {
+				name      string
+				source    protocol.APIType
+				target    protocol.APIType
+				streaming bool
+				endpoint  EndpointKind
+			}{
+				{"openai_chat nonstream", protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, false, EndpointChat},
+				{"openai_chat stream", protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, true, EndpointChat},
+				{"anthropic stream", protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, true, EndpointAnthropic},
+			}
 
-			sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, false, func(m map[string]any) {
-				tools, _ := m["tools"].([]any)
-				m["tools"] = append(tools, map[string]any{
-					"type":     "function",
-					"function": map[string]any{"name": "web_search_preview", "parameters": map[string]any{"type": "object"}},
-				})
-			}, nil)
+			for _, run := range runs {
+				before := atomic.LoadInt64(searchHits)
 
-			up := env.virtual.LastRequest(EndpointChat)
-			if up == nil {
-				t.Fatal("no upstream request captured")
-			}
-			var body map[string]any
-			if err := json.Unmarshal(up.Body, &body); err != nil {
-				t.Fatalf("unmarshal upstream body: %v", err)
-			}
-			names := upstreamToolNames(body)
-			if slices.Contains(names, "web_search_preview") {
-				t.Errorf("provider-executed web tool reached the downstream model; tools=%v", names)
-			}
-			for _, keep := range []string{"web_search", "keep_me"} {
-				if !slices.Contains(names, keep) {
-					t.Errorf("client-executed tool %q was dropped; tools=%v", keep, names)
+				// A fresh scenario (and therefore a fresh route) per run: the
+				// fixture counts rounds, so reusing one across runs would have
+				// later runs skip straight to the answer and never exercise
+				// the tool loop at all.
+				model := env.SetupRouteWithFlags(run.source, run.target,
+					webProxyToolCallScenario(run.name, "latest go release"), flags)
+
+				sendFlag(t, env, run.source, run.target, model, run.streaming, webProxyNativeToolMutation(run.source), nil)
+
+				up := env.virtual.LastRequest(run.endpoint)
+				if up == nil {
+					t.Errorf("%s: no upstream request captured", run.name)
+					continue
+				}
+				names := upstreamToolNamesFor(t, run.endpoint, up.Body)
+
+				if slices.Contains(names, "web_search_preview") {
+					t.Errorf("%s: provider-executed web tool reached the downstream; tools=%v", run.name, names)
+				}
+				if !slices.Contains(names, webProxySearchToolName) || !slices.Contains(names, webProxyFetchToolName) {
+					t.Errorf("%s: web proxy tools were not injected; tools=%v", run.name, names)
+				}
+				if atomic.LoadInt64(searchHits) == before {
+					t.Errorf("%s: web proxy did not call the configured web service", run.name)
 				}
 			}
-			if !slices.Contains(names, webProxySearchToolName) || !slices.Contains(names, webProxyFetchToolName) {
-				t.Errorf("web proxy tools were not injected; tools=%v", names)
-			}
 
-			if atomic.LoadInt64(searchHits) == 0 {
-				t.Fatal("web proxy did not call the configured web service")
+			// Client-executed tools survive. Only checked on the OpenAI-Chat
+			// request, which is the one the shared fixture gives a tool list.
+			up := env.virtual.LastRequest(EndpointChat)
+			if up != nil {
+				names := upstreamToolNamesFor(t, EndpointChat, up.Body)
+				for _, keep := range []string{"web_search", "keep_me"} {
+					if !slices.Contains(names, keep) {
+						t.Errorf("client-executed tool %q was dropped; tools=%v", keep, names)
+					}
+				}
 			}
 		}},
 	}
@@ -686,14 +703,72 @@ const (
 	webProxyFetchToolName  = "tingly_box_mcp__webproxy__web_fetch"
 )
 
+// webProxyNativeToolMutation adds a provider-executed web tool to the request
+// so each run has something that must be stripped. The shared OpenAI fixture
+// already carries a tool list to append to; the Anthropic fixture has none, so
+// a native web_search server tool is declared from scratch there — which is
+// also exactly what Claude Code sends.
+func webProxyNativeToolMutation(source protocol.APIType) func(map[string]any) {
+	if source == protocol.TypeOpenAIChat {
+		return func(m map[string]any) {
+			tools, _ := m["tools"].([]any)
+			m["tools"] = append(tools, map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "web_search_preview", "parameters": map[string]any{"type": "object"}},
+			})
+		}
+	}
+	return func(m map[string]any) {
+		m["tools"] = []map[string]any{{"type": "web_search_20250305", "name": "web_search"}}
+	}
+}
+
+// upstreamToolNamesFor extracts declared tool names from a captured upstream
+// body, in whichever protocol that endpoint speaks.
+func upstreamToolNamesFor(t flagTB, kind EndpointKind, raw []byte) []string {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal upstream body: %v", err)
+	}
+	if kind != EndpointAnthropic {
+		return upstreamToolNames(body)
+	}
+	// Anthropic declares tools flat: {"name": ...} for function tools,
+	// {"type": "web_search_20250305"} for server tools.
+	var names []string
+	tools, _ := body["tools"].([]any)
+	for _, raw := range tools {
+		tool, _ := raw.(map[string]any)
+		if name, ok := tool["name"].(string); ok && name != "" {
+			names = append(names, name)
+			continue
+		}
+		if typeName, ok := tool["type"].(string); ok {
+			names = append(names, typeName)
+		}
+	}
+	return names
+}
+
 // webProxyToolCallScenario is a downstream model that asks for one web search
 // and then answers. The first upstream round returns a tool call naming the
 // injected proxy tool — that is what drives the server-side tool loop into the
 // web proxy — and every later round returns plain text so the loop terminates
 // instead of burning its round budget.
-func webProxyToolCallScenario(query string) Scenario {
+//
+// Both OpenAI-Chat and Anthropic formats are provided, streaming and not, so
+// one fixture covers every path the web proxy actually runs on. The round
+// counter is per-instance: build a fresh scenario for each run, or a later run
+// will skip straight to the answer and never exercise the loop.
+func webProxyToolCallScenario(name, query string) Scenario {
 	var round int64
-	toolCall := mustMarshal(map[string]any{
+	firstRound := func() bool { return atomic.AddInt64(&round, 1) == 1 }
+
+	argsJSON := string(mustMarshal(map[string]any{"query": query}))
+	const answer = "Go 1.26 is the latest release."
+
+	openAIToolCall := mustMarshal(map[string]any{
 		"id": "chatcmpl-webproxy", "object": "chat.completion", "created": 0, "model": "downstream",
 		"choices": []map[string]any{{
 			"index": 0,
@@ -701,40 +776,110 @@ func webProxyToolCallScenario(query string) Scenario {
 				"role":    "assistant",
 				"content": nil,
 				"tool_calls": []map[string]any{{
-					"id":   "call_webproxy_1",
-					"type": "function",
-					"function": map[string]any{
-						"name":      webProxySearchToolName,
-						"arguments": string(mustMarshal(map[string]any{"query": query})),
-					},
+					"id":       "call_webproxy_1",
+					"type":     "function",
+					"function": map[string]any{"name": webProxySearchToolName, "arguments": argsJSON},
 				}},
 			},
 			"finish_reason": "tool_calls",
 		}},
 		"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
 	})
-	answer := mustMarshal(map[string]any{
+	openAIAnswer := mustMarshal(map[string]any{
 		"id": "chatcmpl-webproxy", "object": "chat.completion", "created": 0, "model": "downstream",
 		"choices": []map[string]any{{
 			"index":         0,
-			"message":       map[string]any{"role": "assistant", "content": "Go 1.26 is the latest release."},
+			"message":       map[string]any{"role": "assistant", "content": answer},
 			"finish_reason": "stop",
 		}},
 		"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
 	})
 
-	nonStream := func() (int, []byte) {
-		if atomic.AddInt64(&round, 1) == 1 {
-			return http.StatusOK, toolCall
-		}
-		return http.StatusOK, answer
-	}
+	anthropicToolCall := mustMarshal(map[string]any{
+		"id": "msg-webproxy", "type": "message", "role": "assistant",
+		"content": []map[string]any{{
+			"type":  "tool_use",
+			"id":    "toolu_webproxy_1",
+			"name":  webProxySearchToolName,
+			"input": map[string]any{"query": query},
+		}},
+		"model": "downstream", "stop_reason": "tool_use",
+		"usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+	})
+	anthropicAnswer := mustMarshal(map[string]any{
+		"id": "msg-webproxy", "type": "message", "role": "assistant",
+		"content": []map[string]any{{"type": "text", "text": answer}},
+		"model":   "downstream", "stop_reason": "end_turn",
+		"usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+	})
 
 	s := flagScenario()
-	s.Name = "web_proxy_flags"
+	s.Name = "web_proxy_" + name
 	s.Description = "Downstream model that calls the injected web proxy search tool once"
 	s.MockResponses = map[ResponseFormat]MockResponseBuilder{
-		FormatOpenAIChat: {NonStream: nonStream},
+		FormatOpenAIChat: {
+			NonStream: func() (int, []byte) {
+				if firstRound() {
+					return http.StatusOK, openAIToolCall
+				}
+				return http.StatusOK, openAIAnswer
+			},
+			Stream: func() []string {
+				if firstRound() {
+					return []string{
+						`data: {"id":"chatcmpl-webproxy","object":"chat.completion.chunk","created":0,"model":"downstream","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_webproxy_1","type":"function","function":{"name":"` + webProxySearchToolName + `","arguments":""}}]},"finish_reason":null}]}`,
+						`data: {"id":"chatcmpl-webproxy","object":"chat.completion.chunk","created":0,"model":"downstream","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":` + string(mustMarshal(argsJSON)) + `}}]},"finish_reason":null}]}`,
+						`data: {"id":"chatcmpl-webproxy","object":"chat.completion.chunk","created":0,"model":"downstream","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+						`data: [DONE]`,
+					}
+				}
+				return []string{
+					`data: {"id":"chatcmpl-webproxy","object":"chat.completion.chunk","created":0,"model":"downstream","choices":[{"index":0,"delta":{"role":"assistant","content":"` + answer + `"},"finish_reason":null}]}`,
+					`data: {"id":"chatcmpl-webproxy","object":"chat.completion.chunk","created":0,"model":"downstream","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+					`data: [DONE]`,
+				}
+			},
+		},
+		FormatAnthropic: {
+			NonStream: func() (int, []byte) {
+				if firstRound() {
+					return http.StatusOK, anthropicToolCall
+				}
+				return http.StatusOK, anthropicAnswer
+			},
+			Stream: func() []string {
+				if firstRound() {
+					return []string{
+						`event: message_start`,
+						`data: {"type":"message_start","message":{"id":"msg-webproxy","type":"message","role":"assistant","content":[],"model":"downstream","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}`,
+						`event: content_block_start`,
+						`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_webproxy_1","name":"` + webProxySearchToolName + `","input":{}}}`,
+						`event: content_block_delta`,
+						`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + string(mustMarshal(argsJSON)) + `}}`,
+						`event: content_block_stop`,
+						`data: {"type":"content_block_stop","index":0}`,
+						`event: message_delta`,
+						`data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":1}}`,
+						`event: message_stop`,
+						`data: {"type":"message_stop"}`,
+					}
+				}
+				return []string{
+					`event: message_start`,
+					`data: {"type":"message_start","message":{"id":"msg-webproxy","type":"message","role":"assistant","content":[],"model":"downstream","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}`,
+					`event: content_block_start`,
+					`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+					`event: content_block_delta`,
+					`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"` + answer + `"}}`,
+					`event: content_block_stop`,
+					`data: {"type":"content_block_stop","index":0}`,
+					`event: message_delta`,
+					`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}`,
+					`event: message_stop`,
+					`data: {"type":"message_stop"}`,
+				}
+			},
+		},
 	}
 	return s
 }

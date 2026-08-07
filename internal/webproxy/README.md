@@ -155,9 +155,33 @@ MCP executor: the MCP guard would reject them as uncallable.
 - `webproxytest/` — shared test doubles (`StubWebClient`, context helper) for
   this package and for `internal/protocolserver` tests.
 - `internal/protocoltest/flags.go` carries the end-to-end `web_proxy_service`
-  case: one request that asserts both halves — the native tool never reaches
-  the downstream model, the proxy tools do, and the configured web service is
-  actually called when the model uses one.
+  case. It runs three times, over the paths that matter in production, each
+  with its own route and fixture:
+
+  | run | why |
+  |---|---|
+  | OpenAI Chat, non-streaming | base behavioral check |
+  | OpenAI Chat, streaming | a different code path (`GenericStreamInterceptor`) |
+  | Anthropic v1 → beta, streaming | Claude Code's real shape |
+
+  Each run asserts both halves: the provider-executed web tool is stripped,
+  client-executed tools survive, both proxy tools are injected, and the
+  configured web service is actually called when the downstream model uses
+  one. The fixture counts rounds, so each run needs a fresh instance —
+  otherwise a later run skips straight to the answer and never exercises the
+  loop at all.
+
+- **Zero-key manual run.** Two virtual models in `vmodel.SharedDefaultMocks()`
+  form a demo pair: `web-proxy-downstream` (a model with no web access that
+  calls the injected tool once, reads the result, then answers) and
+  `web-search-mock` (stands in for the web-capable provider). Point a rule at
+  the former and set its Web Proxy service to the latter, both on the virtual
+  provider, and the whole feature runs with no API keys — including under
+  `harness agent claude --mock`, which drives the real Claude Code CLI.
+
+  `web-proxy-downstream` relies on `ToolCallConfig.Once`: without it a tool
+  mock is stateless, re-requests the same call every round, and the loop spins
+  to its round budget and returns nothing.
 
 ## Out of scope (today)
 

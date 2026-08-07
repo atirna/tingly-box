@@ -87,11 +87,31 @@ func (m *MockModel) streamChunks() []string {
 }
 
 // HandleAnthropic returns fixed content from config in Anthropic format.
-func (m *MockModel) HandleAnthropic(_ *protocol.AnthropicBetaMessagesRequest) (VModelResponse, error) {
-	if m.cfg.ToolCall != nil {
+//
+// A one-shot tool mock (ToolCallConfig.Once) answers with its static content
+// once the conversation carries a tool result, so a server-side tool loop
+// terminates instead of re-requesting the same call every round.
+func (m *MockModel) HandleAnthropic(req *protocol.AnthropicBetaMessagesRequest) (VModelResponse, error) {
+	if m.cfg.ToolCall != nil && !(m.cfg.ToolCall.Once && anthropicHasToolResult(req)) {
 		return m.toolResponse(), nil
 	}
 	return m.staticResponse(), nil
+}
+
+// anthropicHasToolResult reports whether the conversation already carries a
+// tool result — i.e. a previous round's tool call has been answered.
+func anthropicHasToolResult(req *protocol.AnthropicBetaMessagesRequest) bool {
+	if req == nil || req.BetaMessageNewParams == nil {
+		return false
+	}
+	for _, msg := range req.Messages {
+		for _, block := range msg.Content {
+			if block.OfToolResult != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *MockModel) staticResponse() VModelResponse {
