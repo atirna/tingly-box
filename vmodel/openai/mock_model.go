@@ -76,11 +76,16 @@ func NewMockModel(cfg *MockModelConfig) *MockModel {
 // ErrorInjection implements vmodel.ErrorInjectingModel.
 func (m *MockModel) ErrorInjection() *vmodel.ErrorInjection { return m.cfg.Error }
 
-func (m *MockModel) streamChunks() []string {
-	if len(m.cfg.StreamChunks) > 0 {
+// chunksFor splits one round's text for streaming. See the Anthropic sibling
+// for why the round's own content is used rather than cfg.Content.
+func (m *MockModel) chunksFor(text string) []string {
+	if len(m.cfg.StreamChunks) > 0 && text == m.cfg.Content {
 		return m.cfg.StreamChunks
 	}
-	return token.SplitIntoChunks(m.cfg.Content)
+	if text == "" {
+		return nil
+	}
+	return token.SplitIntoChunks(text)
 }
 
 // HandleOpenAIChat returns fixed content from config in OpenAI Chat format.
@@ -130,7 +135,10 @@ func (m *MockModel) HandleOpenAIChatStream(ctx context.Context, req *protocol.Op
 	if err != nil {
 		return err
 	}
-	chunks := m.streamChunks()
+	// Chunk the round's own content, not cfg.Content: a tool round carries no
+	// text, and streaming the static answer there would emit it during the
+	// tool round and again after it.
+	chunks := m.chunksFor(resp.Content)
 	perChunk := vmodel.ResolveChunkDelay(m.cfg.Delay, len(chunks))
 	if err := vmodel.EmitChunks(ctx, chunks, perChunk, func(i int, chunk string) bool {
 		emit(DeltaEvent{Index: i, Content: chunk})

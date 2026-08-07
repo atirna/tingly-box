@@ -79,11 +79,21 @@ func NewMockModel(cfg *MockModelConfig) *MockModel {
 // ErrorInjection implements vmodel.ErrorInjectingModel.
 func (m *MockModel) ErrorInjection() *vmodel.ErrorInjection { return m.cfg.Error }
 
-func (m *MockModel) streamChunks() []string {
-	if len(m.cfg.StreamChunks) > 0 {
+// chunksFor splits the text of one content block for streaming.
+//
+// It takes the block's own text rather than cfg.Content because a tool
+// response's text block is the tool's display line, not the static answer —
+// streaming cfg.Content there would emit the answer during the tool round and
+// again after it. Configured StreamChunks still win, but only for the static
+// block they were written for.
+func (m *MockModel) chunksFor(text string) []string {
+	if len(m.cfg.StreamChunks) > 0 && text == m.cfg.Content {
 		return m.cfg.StreamChunks
 	}
-	return token.SplitIntoChunks(m.cfg.Content)
+	if text == "" {
+		return nil
+	}
+	return token.SplitIntoChunks(text)
 }
 
 // HandleAnthropic returns fixed content from config in Anthropic format.
@@ -115,11 +125,20 @@ func anthropicHasToolResult(req *protocol.AnthropicBetaMessagesRequest) bool {
 }
 
 func (m *MockModel) staticResponse() VModelResponse {
+	// An empty stop_reason is not valid on the wire — the Anthropic protocol
+	// expects a terminal reason on message_delta, and downstream consumers
+	// that find none fall back to whatever they last saw (a preceding tool
+	// round's "tool_use", for instance). Default a plain text answer to
+	// end_turn; configs that mean something else still set it explicitly.
+	stopReason := m.cfg.StopReason
+	if stopReason == "" {
+		stopReason = string(sdk.BetaStopReasonEndTurn)
+	}
 	return VModelResponse{
 		Content: []sdk.BetaContentBlockParamUnion{
 			{OfText: &sdk.BetaTextBlockParam{Text: m.cfg.Content}},
 		},
-		StopReason: sdk.BetaStopReason(m.cfg.StopReason),
+		StopReason: sdk.BetaStopReason(stopReason),
 	}
 }
 
@@ -148,24 +167,34 @@ func (m *MockModel) HandleAnthropicStream(ctx context.Context, req *protocol.Ant
 		return err
 	}
 	emit(StreamStartEvent{MsgID: "msg_virtual", Model: m.cfg.ID})
-	chunks := m.streamChunks()
-	perChunk := vmodel.ResolveChunkDelay(m.cfg.Delay, len(chunks))
-	for i, blk := range resp.Content {
+	// Content-block indices must be contiguous from 0 — the SDK accumulator
+	// rejects a gap — so they count emitted blocks, not source blocks. A tool
+	// response whose display text is empty contributes no text block at all.
+	index := 0
+	for _, blk := range resp.Content {
 		if blk.OfText != nil {
+			chunks := m.chunksFor(blk.OfText.Text)
+			if len(chunks) == 0 {
+				continue
+			}
+			perChunk := vmodel.ResolveChunkDelay(m.cfg.Delay, len(chunks))
+			i := index
 			if err := vmodel.EmitChunks(ctx, chunks, perChunk, func(_ int, chunk string) bool {
 				emit(TextDeltaEvent{Index: i, Text: chunk})
 				return true
 			}); err != nil {
 				return err
 			}
+			index++
 		} else if blk.OfToolUse != nil {
 			inputJSON, _ := json.Marshal(blk.OfToolUse.Input)
 			emit(ToolUseEvent{
-				Index: i,
+				Index: index,
 				ID:    blk.OfToolUse.ID,
 				Name:  blk.OfToolUse.Name,
 				Input: inputJSON,
 			})
+			index++
 		}
 	}
 	if m.cfg.Usage != nil {
