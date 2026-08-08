@@ -15,6 +15,7 @@ from . import config as _config
 from . import discovery as _discovery
 from . import scenarios as _scenarios
 from ._api import ControlPlane
+from ._generated.models import Rule, RulesResponse
 from .errors import TinglyError
 from .helpers.guardrails import GuardrailsView
 from .helpers.usage import UsageView
@@ -178,6 +179,22 @@ class Client:
                 self._gateway_url, self._admin_token, self._timeout
             )
         return self._guardrails
+
+    def rules(self, scenario: Optional[str] = None) -> "list[Rule]":
+        """The rules configured under ``scenario`` (defaults to this session's).
+
+        A rule is tb's ``(scenario, request_model) -> services`` binding, so
+        this is how a provider discovers what it can dispatch *to* instead of
+        hard-coding model names that may not exist on this box.
+
+            for r in srv.tb.rules("openai"):
+                print(r.request_model, [s.model for s in r.services])
+        """
+        return self.api.get(
+            "/api/v1/rules",
+            RulesResponse,
+            params={"scenario": scenario or self.scenario},
+        ).data
 
     @property
     def api(self) -> ControlPlane:

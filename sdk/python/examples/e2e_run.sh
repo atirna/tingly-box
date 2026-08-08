@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # End-to-end proof, using NO network and NO API keys:
-#   client → tb (rule rag-demo) → Python provider → srv.use("experiment")
-#          → tb (rule echo-model → vmodel provider) → echoed text → back to client
+#   client → tb (rule `router`) → Python provider → classify
+#          → srv.use("openai").ask(model=fast-model | strong-model)
+#          → tb (that rule → vmodel provider) → answer → back to the client
+#
+# The two target rules are backed by DIFFERENT virtual models, so the response
+# text proves which branch ran: a short prompt and a long one must come back
+# from different upstreams. That is the assertion that makes this a test of
+# dispatch rather than of plumbing.
 #
 # The point of this script is as much what it does NOT do. There is no
 # registration call, no plugin endpoint, no manifest. Step 4 creates the
@@ -63,13 +69,18 @@ VUUID=$(curl -s "${UADMIN[@]}" -X POST "$BASE/api/v2/providers" -d '{
   | $PY -c "import sys,json;d=json.load(sys.stdin);print(d.get('data',{}).get('uuid') or d.get('uuid',''))")
 note "vmodel provider uuid: $VUUID"
 
-echo "== 3. create the echo-model rule under the experiment scenario =="
-note "this is the rule the Python provider will call BACK into"
-curl -s "${UADMIN[@]}" -X POST "$BASE/api/v1/rule" -d "{
-  \"scenario\":\"experiment\",\"request_model\":\"echo-model\",\"active\":true,
-  \"lb_tactic\":{\"type\":\"random\",\"params\":{}},
-  \"services\":[{\"provider\":\"$VUUID\",\"model\":\"echo-model\",\"weight\":1,\"active\":true}]}" \
-  | $PY -c "import sys,json;d=json.load(sys.stdin);print('   rule created:', d.get('success'), d.get('data',{}).get('uuid',''))"
+echo "== 3. create the two DISPATCH TARGET rules under the openai scenario =="
+note "these are the rules the Python provider fans out to. Different vmodels"
+note "back them, so the answer text identifies which branch ran."
+make_rule() { # make_rule <request_model> <vmodel>
+  curl -s "${UADMIN[@]}" -X POST "$BASE/api/v1/rule" -d "{
+    \"scenario\":\"openai\",\"request_model\":\"$1\",\"active\":true,
+    \"lb_tactic\":{\"type\":\"random\",\"params\":{}},
+    \"services\":[{\"provider\":\"$VUUID\",\"model\":\"$2\",\"weight\":1,\"active\":true}]}" \
+    | $PY -c "import sys,json;d=json.load(sys.stdin);print('   rule', '$1', '->', '$2', ':', d.get('success'))"
+}
+make_rule fast-model   echo-model      # echoes the prompt back
+make_rule strong-model virtual-gpt-4   # returns a fixed, recognisably different text
 
 echo "== 4. start the Python server — it registers NOTHING =="
 TINGLY_BOX_URL="$BASE" TINGLY_BOX_TOKEN="$UTOK" \
@@ -84,13 +95,13 @@ note "serving on http://127.0.0.1:$SRV_PORT (both /v1/messages and /v1/chat/comp
 
 # tb's model-list refresh uses this; it is why the model id never has to be typed.
 MODELS=$(curl -s "http://127.0.0.1:$SRV_PORT/v1/models")
-echo "$MODELS" | grep -q '"rag-demo"'; check "GET /v1/models advertises rag-demo" $?
+echo "$MODELS" | grep -q '"router"'; check "GET /v1/models advertises router" $?
 
 echo "== 5. add it to tb as an ORDINARY provider =="
 note "POST /api/v2/providers — exactly what Connect AI → Self-hosted sends."
 note "No plugin endpoint is involved because none exists."
 PUUID=$(curl -s "${UADMIN[@]}" -X POST "$BASE/api/v2/providers" -d "{
-  \"name\":\"rag-demo\",\"api_base\":\"http://127.0.0.1:$SRV_PORT\",
+  \"name\":\"router\",\"api_base\":\"http://127.0.0.1:$SRV_PORT\",
   \"api_style\":\"anthropic\",\"auth_type\":\"api_key\",
   \"no_key_required\":true,\"enabled\":true}" \
   | $PY -c "import sys,json;d=json.load(sys.stdin);print(d.get('data',{}).get('uuid') or d.get('uuid',''))")
@@ -99,43 +110,71 @@ note "python provider uuid: $PUUID"
 
 # supports_models_endpoint in the provider template means tb refreshes the
 # model list off the server itself — the id is discovered, never typed.
-curl -s "${UADMIN[@]}" -X POST "$BASE/api/v2/provider-models/$PUUID" -d '{}' | grep -q '"rag-demo"'
+curl -s "${UADMIN[@]}" -X POST "$BASE/api/v2/provider-models/$PUUID" -d '{}' | grep -q '"router"'
 check "tb's model-list refresh discovered the model" $?
 
-echo "== 6. bind a rule to it =="
+echo "== 6. bind the inbound rule to it =="
+note "one model id in — `router` — which fans out to the two rules from step 3"
 curl -s "${UADMIN[@]}" -X POST "$BASE/api/v1/rule" -d "{
-  \"scenario\":\"experiment\",\"request_model\":\"rag-demo\",\"active\":true,
+  \"scenario\":\"openai\",\"request_model\":\"router\",\"active\":true,
   \"lb_tactic\":{\"type\":\"random\",\"params\":{}},
-  \"services\":[{\"provider\":\"$PUUID\",\"model\":\"rag-demo\",\"weight\":1,\"active\":true}]}" \
+  \"services\":[{\"provider\":\"$PUUID\",\"model\":\"router\",\"weight\":1,\"active\":true}]}" \
   | $PY -c "import sys,json;d=json.load(sys.stdin);print('   rule created:', d.get('success'))"
 
-echo "== 7. CLIENT CALL: OpenAI-shaped request for model=rag-demo =="
-note "client speaks OpenAI → tb calls the Python provider as Anthropic"
-note "→ handler calls back into tb → vmodel echoes → reshaped to chat.completion"
-OUT=$(curl -s "${UMODEL[@]}" -X POST "$BASE/tingly/experiment/v1/chat/completions" -d '{
-  "model":"rag-demo",
-  "messages":[{"role":"user","content":"What is tingly-box?"}]}')
-echo "$OUT" | $PY -m json.tool
-echo "$OUT" | grep -q "tb echo returned"; check "round trip completed through the callback" $?
+# ask <prompt> -> the assistant's DECODED text.
+#
+# Decoded, not the raw body, deliberately: Go's encoding/json HTML-escapes `>`
+# to \u003e, so grepping the wire bytes for a marker like "fast->fast-model"
+# silently never matches even when the routing is correct. Assert on the value,
+# not on its transport encoding.
+ask() {
+  curl -s "${UMODEL[@]}" -X POST "$BASE/tingly/openai/v1/chat/completions" \
+    -d "$($PY -c "import json,sys;print(json.dumps({'model':'router','messages':[{'role':'user','content':sys.argv[1]}]}))" "$1")" \
+  | $PY -c "import json,sys
+d = json.load(sys.stdin)
+try:
+    print(d['choices'][0]['message']['content'])
+except (KeyError, IndexError, TypeError):
+    print('NO_CONTENT: ' + json.dumps(d)[:300])"
+}
 
-echo "== 8. no separate lifecycle: SIGKILL the server =="
+echo "== 7. DISPATCH: a short prompt must take the fast branch =="
+note "client speaks OpenAI → tb calls the Python provider as Anthropic →"
+note "handler classifies → calls BACK into tb against the fast-model rule"
+SHORT_OUT=$(ask "hi")
+note "answer: $SHORT_OUT"
+echo "$SHORT_OUT" | grep -q "routed:fast->fast-model"; check "short prompt routed to fast-model" $?
+echo "$SHORT_OUT" | grep -q "Echo:"; check "  ...and reached the echo vmodel behind it" $?
+
+echo "== 8. DISPATCH: a long prompt must take the strong branch =="
+LONG_OUT=$(ask "$($PY -c "print('please analyse this at length. ' * 20)")")
+note "answer: ${LONG_OUT:0:90}…"
+echo "$LONG_OUT" | grep -q "routed:strong->strong-model"; check "long prompt routed to strong-model" $?
+echo "$LONG_OUT" | grep -q "virtual GPT-4"; check "  ...and reached the OTHER vmodel behind it" $?
+
+# The pair above is the actual claim: one inbound model id, two different
+# upstreams chosen by the provider's own logic, each through a real tb rule.
+if echo "$SHORT_OUT" | grep -q "virtual GPT-4" || echo "$LONG_OUT" | grep -q "Echo:"; then
+  check "branches are genuinely distinct" 1
+else
+  check "branches are genuinely distinct" 0
+fi
+
+echo "== 9. no separate lifecycle: SIGKILL the server =="
 note "the provider is a normal DB row, so it stays listed like any other"
 kill -KILL "$SRV_PID" 2>/dev/null
 SRV_PID=""
 sleep 0.5
-curl -s "${UADMIN[@]}" "$BASE/api/v2/providers" | grep -q 'rag-demo'
+curl -s "${UADMIN[@]}" "$BASE/api/v2/providers" | grep -q '"router"'
 check "provider still listed after the process died" $?
 
-echo "== 9. client call against the dead provider =="
+echo "== 10. client call against the dead provider =="
 note "liveness is the SAME per-service circuit breaker every provider gets."
 note "No fallback tier is configured on this rule, so the request just errors —"
 note "add a tier-1 real model and this would tier-failover instead."
-curl -s "${UMODEL[@]}" -X POST "$BASE/tingly/experiment/v1/chat/completions" -d '{
-  "model":"rag-demo",
-  "messages":[{"role":"user","content":"still there?"}]}' \
-  | $PY -c "import sys,json; d=json.load(sys.stdin); e=d.get('error', d); print('   ->', (json.dumps(e) if isinstance(e,dict) else str(e))[:200])"
+note "-> $(ask "still there?" | head -c 200)"
 
-echo "== 10. restart the server; the provider row is untouched =="
+echo "== 11. restart the server; the provider row is untouched =="
 TINGLY_BOX_URL="$BASE" TINGLY_BOX_TOKEN="$UTOK" \
   $PY "$SDK/examples/e2e_server.py" >/tmp/py_server_e2e_2.log 2>&1 &
 SRV_PID=$!
@@ -144,14 +183,12 @@ for i in $(seq 1 40); do
   sleep 0.3
 done
 COUNT=$(curl -s "${UADMIN[@]}" "$BASE/api/v2/providers" \
-  | $PY -c "import sys,json; d=json.load(sys.stdin); print(sum(1 for p in (d.get('data') or []) if p.get('name')=='rag-demo'))")
-note "providers named rag-demo after restart: $COUNT (expect 1)"
+  | $PY -c "import sys,json; d=json.load(sys.stdin); print(sum(1 for p in (d.get('data') or []) if p.get('name')=='router'))")
+note "providers named router after restart: $COUNT (expect 1)"
 [[ "$COUNT" == "1" ]]; check "no duplicate provider (nothing re-registers)" $?
 
-OUT=$(curl -s "${UMODEL[@]}" -X POST "$BASE/tingly/experiment/v1/chat/completions" -d '{
-  "model":"rag-demo",
-  "messages":[{"role":"user","content":"What is tingly-box?"}]}')
-echo "$OUT" | grep -q "tb echo returned"; check "traffic resumes with no reconfiguration" $?
+ask "hi" | grep -q "routed:fast->fast-model"
+check "traffic resumes with no reconfiguration" $?
 
 echo
 if [[ "$FAILED" == "0" ]]; then echo "== ALL CHECKS PASSED =="; else echo "== SOME CHECKS FAILED =="; fi

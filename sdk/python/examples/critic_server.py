@@ -10,6 +10,15 @@ handler does zero LLM work itself, it only forwards the artifact-to-review to
 a different tb rule/model via `srv.use(...)` and shapes the structured verdict
 that comes back. No hard-coded provider or key — same gateway, different rule.
 
+Dispatch shape: **one target, deliberately not the caller's**. Where
+router_server picks a rule by classifying the request, this one always routes
+away from whatever asked — reviewing with the same model is the thing the
+research says does not work.
+
+Targets rules in the `openai` scenario, which is where a stock install already
+has models bound. Set CRITIC_MODEL to a request_model you actually have
+(`srv.tb.rules("openai")` lists them) — "auto" lets tb's smart routing pick.
+
 Run it (serves on :8766):
 
     pip install -e .                 # from sdk/python
@@ -30,7 +39,7 @@ from tingly import ChatRequest, Server
 # Where the critique itself is delegated — point CRITIC_SCENARIO / CRITIC_MODEL
 # at a rule bound to a genuinely different (ideally stronger) model than
 # whatever called this server; reviewing with the same model defeats the point.
-CRITIC_SCENARIO = "experiment"
+CRITIC_SCENARIO = "openai"
 CRITIC_MODEL = "auto"
 
 CRITIQUE_PROMPT = """You are reviewing the following for correctness, risk and \
@@ -46,7 +55,7 @@ missing considerations. Respond with ONLY JSON matching:
 
 srv = Server(
     name="critic",
-    scenario="experiment",  # which rule-set the delegation below runs against
+    scenario=CRITIC_SCENARIO,  # which rule-set the delegation below runs against
     description="Cross-model critique — delegates review to a different rule/model",
 )
 

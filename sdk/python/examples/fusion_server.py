@@ -24,14 +24,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 from tingly import ChatRequest, Server
 
-# The panel: each entry is (scenario, model) called independently and
-# concurrently. Point these at genuinely different rules/models — a panel of
-# clones of the same model adds latency without adding a second opinion.
+# The panel: each entry is a (scenario, request_model) pair — i.e. one tb rule
+# — called independently and concurrently. Point these at genuinely different
+# rules; a panel of clones of the same model adds latency without adding a
+# second opinion. `srv.tb.rules("openai")` lists what this box actually has.
 PANEL = [
-    ("experiment", "auto"),
-    ("experiment", "auto"),
+    ("openai", "auto"),
+    ("openai", "auto"),
 ]
-JUDGE_SCENARIO = "experiment"
+JUDGE_SCENARIO = "openai"
 JUDGE_MODEL = "auto"
 
 JUDGE_PROMPT = """Multiple models answered the same question independently. \
@@ -47,7 +48,7 @@ the panel disagreed.
 
 srv = Server(
     name="fusion",
-    scenario="experiment",  # which rule-set the panel/judge calls run against
+    scenario=JUDGE_SCENARIO,  # which rule-set the panel/judge calls run against
     description="Multi-model consensus — panel of rules/models + judge synthesis",
 )
 

@@ -1,8 +1,10 @@
-"""Tests for the critic/fusion showcase servers (sdk/python/examples/).
+"""Tests for the example servers (sdk/python/examples/).
 
-These exercise handler logic only — srv.use() is monkeypatched to a fake
-client, so no real tb and no real model calls. The examples aren't part of
-the installed `tingly` package, so they're loaded by file path.
+Every example is a provider that dispatches to tb rules, so what these pin is
+the *dispatch decision* — which rule each request is routed to — rather than
+any model output. srv.use() / srv.tb are monkeypatched, so no real tb and no
+real model calls. The examples aren't part of the installed `tingly` package,
+so they're loaded by file path.
 """
 
 import importlib.util
@@ -133,3 +135,87 @@ def test_fusion_calls_judge_when_panel_disagrees(monkeypatch):
     judge_prompt = judge.calls[0][0]
     assert "A" in judge_prompt and "B" in judge_prompt
     assert "question" in judge_prompt
+
+
+# -- router -----------------------------------------------------------------
+
+class _FakeRule:
+    """Stands in for a generated models.Rule — only the fields pick_rule reads."""
+
+    def __init__(self, request_model, active=True):
+        self.request_model = request_model
+        self.active = active
+
+
+class _FakeTB:
+    def __init__(self, rules):
+        self._rules = rules
+
+    def rules(self, scenario=None):
+        return self._rules
+
+
+def _router(monkeypatch, available, reply="answer"):
+    router = _load("router_server")
+    monkeypatch.setattr(
+        type(router.srv), "tb", property(lambda self: _FakeTB(available)), raising=False
+    )
+    fake = _FakeClient(reply)
+    monkeypatch.setattr(router.srv, "use", lambda scenario: fake)
+    return router, fake
+
+
+def test_router_sends_short_prompts_to_a_cheap_rule(monkeypatch):
+    router, fake = _router(
+        monkeypatch, [_FakeRule("gpt-5"), _FakeRule("claude-haiku-4-5")]
+    )
+    router.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "claude-haiku-4-5"
+
+
+def test_router_sends_long_prompts_to_a_strong_rule(monkeypatch):
+    router, fake = _router(
+        monkeypatch, [_FakeRule("claude-haiku-4-5"), _FakeRule("claude-opus-4-6")]
+    )
+    router.handle(_req("x" * (router.LONG_REQUEST_CHARS + 1)))
+    assert fake.calls[0][1]["model"] == "claude-opus-4-6"
+
+
+def test_router_recognises_code(monkeypatch):
+    router, fake = _router(
+        monkeypatch, [_FakeRule("claude-haiku-4-5"), _FakeRule("claude-sonnet-4-6")]
+    )
+    router.handle(_req("def f():\n    return 1"))
+    assert fake.calls[0][1]["model"] == "claude-sonnet-4-6"
+
+
+def test_router_skips_rules_this_box_does_not_have(monkeypatch):
+    """Preferences are hints matched against real rules, not requirements.
+
+    A box with only one model must still work rather than dispatching to a
+    model id that does not exist.
+    """
+    router, fake = _router(monkeypatch, [_FakeRule("only-model")])
+    router.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "only-model"
+
+
+def test_router_ignores_inactive_rules(monkeypatch):
+    router, fake = _router(
+        monkeypatch, [_FakeRule("claude-haiku-4-5", active=False), _FakeRule("gpt-5")]
+    )
+    router.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "gpt-5"
+
+
+def test_router_falls_back_to_auto_on_an_empty_box(monkeypatch):
+    """No rules configured -> let tb's own smart routing decide."""
+    router, fake = _router(monkeypatch, [])
+    router.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "auto"
+
+
+def test_router_reports_its_decision(monkeypatch):
+    router, _ = _router(monkeypatch, [_FakeRule("gpt-5")], reply="the answer")
+    out = router.handle(_req("hi"))
+    assert "router:" in out and "gpt-5" in out and "the answer" in out

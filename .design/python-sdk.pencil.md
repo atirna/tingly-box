@@ -54,7 +54,11 @@ Steps 1–2 are `connect()` / `Client` — the consume half. Step 3 is `Server` 
 the provide half. They meet only at the arrow, and either works without the
 other.
 
-`critic_server.py` (ask a different model to review), `fusion_server.py` (ask
-several, then a judge), and `rag_server.py` (ask one, with retrieved context)
-are all step 3 with different logic in the handler — no new mechanism, and
-nothing tb has to know about.
+`router_server.py` (classify, then pick a rule), `critic_server.py` (always a
+*different* rule than the caller's), and `fusion_server.py` (several rules at
+once, then a judge) are all step 3 with different dispatch policies in the
+handler — no new mechanism, and nothing tb has to know about.
+
+The interesting consequence: one model id in your editor can fan out across
+every rule you have configured, and each hop is a real tb rule, so guard rails,
+quota, logging and failover apply on all of them.

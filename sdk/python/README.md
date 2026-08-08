@@ -96,15 +96,17 @@ name.
 ```python
 from tingly import Server
 
-srv = Server(name="my-rag")          # serves model id: my-rag
+srv = Server(name="router", scenario="openai")   # serves model id: router
 
 @srv.chat
 def handle(req):
-    docs = retrieve(req.last_user_text())
-    return srv.tb.ask(f"Using {docs}, answer: {req.last_user_text()}")
+    question = req.last_user_text()
+    # Route each request to a different rule in the openai scenario.
+    target = "claude-opus-4-6" if len(question) > 4000 else "claude-haiku-4-5"
+    return srv.use("openai").ask(question, model=target)
 
 if __name__ == "__main__":
-    srv.run()                        # http://127.0.0.1:8765
+    srv.run()                                    # http://127.0.0.1:8765
 ```
 
 ```bash
@@ -144,23 +146,43 @@ Python provider more than a static model: it never hard-codes an upstream or a
 key, and it can originate as many calls as it likes, against as many rules as
 you've configured, before answering once.
 
-### Examples
+`srv.tb.rules(scenario)` lists what those rules actually are, so a provider can
+dispatch to what this box has rather than to model names you hoped were there:
 
-`sdk/python/examples/`, each a different real-world shape of the same idea:
+```python
+for r in srv.tb.rules("openai"):
+    print(r.request_model, r.active, [s.model for s in r.services])
+```
 
-- **`rag_server.py`** — retrieval-augmented answers from a toy corpus, one call
-  back into tb for generation. The baseline shape.
-- **`critic_server.py`** — cross-model critique: forwards the thing to review to
-  a *different* rule/model and returns a structured verdict. Self-critique is
-  unreliable (Huang et al., ICLR 2024: LLMs can't reliably self-correct without
-  external feedback); this is the pattern behind
+### Examples — one model id in, many rules out
+
+Every example in `sdk/python/examples/` is the same shape: a provider that
+connects back to tb and **dispatches each request to a different rule**. They
+differ only in the dispatch policy. Targets are rules in the `openai` scenario,
+because that is where a stock install already has real models bound — and each
+discovers what exists via `srv.tb.rules("openai")` rather than hard-coding
+model names that may not be configured on your box.
+
+- **`router_server.py`** — dispatch by classification: short prompts to a cheap
+  rule, long ones to a strong rule, code to a coding rule. The baseline shape,
+  and the one to copy.
+- **`critic_server.py`** — dispatch *away from the caller*: forwards the thing
+  to review to a different rule and returns a structured verdict. Self-critique
+  is unreliable (Huang et al., ICLR 2024: LLMs can't reliably self-correct
+  without external feedback), so routing to a different model is the point, not
+  a detail. The pattern behind
   [Zen MCP](https://github.com/jray2123/zen-mcp-server),
   [Consult7](https://github.com/szeider/consult7), and aider's architect/editor
   split.
-- **`fusion_server.py`** — multi-model consensus: polls a panel of rules/models
+- **`fusion_server.py`** — dispatch to *many* rules at once: polls a panel
   concurrently, skips the judge call when they already agree, otherwise
-  synthesizes. Mirrors Consult7's 2026 Fusion feature, and is the clearest
-  illustration that one provider can drive many rules per request.
+  synthesizes. Mirrors Consult7's 2026 Fusion feature.
+
+Every hop is a real tb rule, so guard rails, quota, logging and tier-failover
+apply to the inbound request *and* to each call the provider originates.
+
+`rag_experiment.py` is the other half — a plain script that only consumes the
+box, serving nothing.
 
 ## Two implementations of one concept
 

@@ -287,12 +287,13 @@ users can name parallel experiments via profiles (`experiment:p1`).
 ```python
 from tingly import Server
 
-srv = Server(name="my-rag")          # model id: my-rag
+srv = Server(name="router", scenario="openai")   # model id: router
 
 @srv.chat
 def handle(req):                     # req: ChatRequest
-    docs = retrieve(req.last_user_text())
-    return srv.tb.ask(f"Using {docs}, answer: {req.last_user_text()}")
+    question = req.last_user_text()
+    target = "claude-opus-4-6" if len(question) > 4000 else "claude-haiku-4-5"
+    return srv.use("openai").ask(question, model=target)
 
 if __name__ == "__main__":
     srv.run()                        # http://127.0.0.1:8765
@@ -322,6 +323,12 @@ Design choices:
 - **`srv.tb` is a lazy Layer-1 client**, `srv.use(scenario)` targets another
   rule-set. This is the recursion in the graph above, and the only reason an
   out-of-process provider beats an in-process vmodel.
+- **`srv.tb.rules(scenario)` lets it dispatch to what exists.** A rule is tb's
+  `(scenario, request_model) -> services` binding, so "pick a rule" is "pick a
+  scenario + model" — and listing them means a provider routes to what *this*
+  box has rather than to model ids the author hoped were configured. The
+  examples default their targets to the `openai` scenario for the same reason:
+  it is the one a stock install already populates.
 - **Optional token auth.** `Server(api_key=...)` enforces a bearer token so
   only tb (carrying the matching provider token) can call it — checked once,
   ahead of both routes.
@@ -370,6 +377,31 @@ Connect AI values for the serving half.
   including `tingly-python`.
 - End-to-end: `sdk/python/examples/e2e_run.sh` — real `tb` binary, no network,
   no keys. See its header for the assertions.
+
+## Examples: one model id in, many rules out
+
+Every example under `sdk/python/examples/` is the same shape — a provider that
+connects back to tb and dispatches each request to a *different rule* — and
+they differ only in policy: `router_server.py` classifies and picks;
+`critic_server.py` always routes away from the caller (self-critique is
+unreliable, so a different model is the point); `fusion_server.py` fans out to
+several at once and then judges. `rag_experiment.py` is the other half, a
+script that only consumes.
+
+This is worth stating as the canonical shape because it is where the two halves
+compose into something neither has alone: **one model id in your editor fans
+out across every rule you have configured**, and because each hop is an
+ordinary tb rule, guard rails / quota / logging / tier-failover apply to the
+inbound request *and* to every call the provider originates.
+
+`e2e_run.sh` proves the dispatch rather than just the plumbing: its two target
+rules are backed by different virtual models, so a short prompt and a long one
+must come back from demonstrably different upstreams.
+
+> A trap worth recording, found writing that assertion: Go's `encoding/json`
+> HTML-escapes `>` to `\u003e`, so grepping a raw response body for a marker
+> like `fast->fast-model` silently never matches even when routing is correct.
+> Assert on the decoded value, not on its transport encoding.
 
 ## Open follow-ups
 
