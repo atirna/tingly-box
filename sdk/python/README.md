@@ -154,6 +154,20 @@ for r in srv.tb.rules("openai"):
     print(r.request_model, r.active, [s.model for s in r.services])
 ```
 
+`srv.tb.quota` answers the other half of "where should this go" — how much
+headroom each upstream account has left:
+
+```python
+for usage, left in srv.tb.quota.usable("codex", min_headroom=5):
+    print(usage.provider_name, f"{left:.0f}% left")
+```
+
+Every provider reports quota in its own currency — percentages, request counts,
+credits, dollars — so the view reduces each to its *tightest countable window*,
+the one that runs out first, mirroring what tb does internally. An account
+whose usage is unknown reports `None` rather than 0%, because "no data" is not
+"nothing used" and would otherwise win every comparison.
+
 ### Examples — one model id in, many rules out
 
 Every example in `sdk/python/examples/` is the same shape: a provider that
@@ -176,7 +190,12 @@ model names that may not be configured on your box.
   split.
 - **`fusion_server.py`** — dispatch to *many* rules at once: polls a panel
   concurrently, skips the judge call when they already agree, otherwise
-  synthesizes. Mirrors Consult7's 2026 Fusion feature.
+  synthesizes. Mirrors Consult7's 2026 Fusion feature. The panel members are
+  discovered and de-duplicated, since a panel of clones is latency without a
+  second opinion.
+- **`quota_router_server.py`** — dispatch by **remaining quota**: with several
+  Codex accounts connected, it reads each one's headroom, skips the nearly
+  spent, and sends the request to whichever has the most room left.
 
 Every hop is a real tb rule, so guard rails, quota, logging and tier-failover
 apply to the inbound request *and* to each call the provider originates.

@@ -1,6 +1,7 @@
 """Tests for the usage / guardrails views (gateway mocked with respx)."""
 
 import httpx
+import pytest
 import respx
 
 from tingly.helpers.guardrails import GuardrailsView
@@ -177,3 +178,114 @@ def test_guardrails_absent_config_is_reported_not_raised():
     view.close()
     assert got.exists is False and got.enabled is False
     assert "no guard-rail config" in got.summary
+
+
+# -- quota ------------------------------------------------------------------
+
+def _win(**kw):
+    from tingly._generated.models import UsageWindow
+
+    base = dict(description="", label="", limit=100.0, type="", unit="",
+                used=0.0, used_percent=0.0)
+    base.update(kw)
+    return UsageWindow(**base)
+
+
+def _usage(name="codex-a", uuid="p1", provider_type="codex", windows=()):
+    return {
+        "provider_name": name,
+        "provider_uuid": uuid,
+        "provider_type": provider_type,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "expires_at": "2026-01-01T01:00:00Z",
+        "windows": [w.model_dump(mode="json") for w in windows],
+    }
+
+
+def test_headroom_uses_the_tightest_window():
+    """Mirrors ai/quota semantic.go: the window that runs out first binds."""
+    from tingly._generated.models import ProviderUsage
+    from tingly.helpers.quota import headroom_percent, tightest_window
+
+    u = ProviderUsage.model_validate(
+        _usage(windows=[_win(used_percent=10.0, label="weekly"),
+                        _win(used_percent=93.0, label="5h")])
+    )
+    assert tightest_window(u).label == "5h"
+    assert headroom_percent(u) == pytest.approx(7.0)
+
+
+def test_unknown_and_unlimited_windows_are_not_zero_percent_used():
+    """The trap this mirrors: treating "no data" as 0% used makes an account
+    with nothing reported look like the emptiest one and win every comparison."""
+    from tingly._generated.models import ProviderUsage
+    from tingly.helpers.quota import headroom_percent
+
+    unknown = ProviderUsage.model_validate(_usage(windows=[_win(unknown=True)]))
+    unlimited = ProviderUsage.model_validate(_usage(windows=[_win(unlimited=True)]))
+    uncapped = ProviderUsage.model_validate(_usage(windows=[_win(limit=0.0)]))
+
+    for u in (unknown, unlimited, uncapped):
+        assert headroom_percent(u) is None
+
+
+def test_no_windows_at_all_is_unknown_not_full():
+    from tingly._generated.models import ProviderUsage
+    from tingly.helpers.quota import headroom_percent
+
+    assert headroom_percent(ProviderUsage.model_validate(_usage())) is None
+
+
+def test_ties_prefer_the_shorter_window():
+    from tingly._generated.models import ProviderUsage
+    from tingly.helpers.quota import tightest_window
+
+    u = ProviderUsage.model_validate(
+        _usage(windows=[_win(used_percent=50.0, label="weekly", window_minutes=10080),
+                        _win(used_percent=50.0, label="5h", window_minutes=300)])
+    )
+    assert tightest_window(u).label == "5h"
+
+
+def test_used_percent_falls_back_to_used_over_limit():
+    from tingly._generated.models import ProviderUsage
+    from tingly.helpers.quota import used_percent
+
+    u = ProviderUsage.model_validate(
+        _usage(windows=[_win(used=25.0, limit=50.0, used_percent=0.0)])
+    )
+    assert used_percent(u) == pytest.approx(50.0)
+
+
+@respx.mock
+def test_quota_usable_ranks_and_filters():
+    from tingly.helpers.quota import QuotaView
+
+    respx.get(f"{BASE}/api/v1/provider-quota").mock(
+        return_value=httpx.Response(200, json={
+            "meta": {"total": 3, "updated_at": "2026-01-01T00:00:00Z"},
+            "data": [
+                _usage("codex-work", "p1", windows=[_win(used_percent=98.0)]),
+                _usage("codex-team", "p2", windows=[_win(used_percent=39.0)]),
+                _usage("claude", "p3", provider_type="anthropic",
+                       windows=[_win(used_percent=1.0)]),
+            ],
+        })
+    )
+    view = QuotaView(BASE, "admin", 5.0)
+    ranked = view.usable("codex", min_headroom=5.0)
+    view.close()
+
+    assert [u.provider_name for u, _ in ranked] == ["codex-team"]
+    assert ranked[0][1] == pytest.approx(61.0)
+
+
+@respx.mock
+def test_quota_unavailable_degrades_to_empty():
+    """503 = quota tracking not enabled; a normal state, not an error."""
+    from tingly.helpers.quota import QuotaView
+
+    respx.get(f"{BASE}/api/v1/provider-quota").mock(return_value=httpx.Response(503))
+    view = QuotaView(BASE, "admin", 5.0)
+    assert view.all() == []
+    view.close()

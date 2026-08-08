@@ -97,22 +97,97 @@ def test_critic_strips_markdown_code_fence(monkeypatch):
     assert result == "verdict: approve"
 
 
+# -- shared fakes for rule discovery ----------------------------------------
+
+class _FakeRule:
+    """Stands in for a generated models.Rule — only the fields examples read."""
+
+    def __init__(self, request_model, active=True, provider=None):
+        self.request_model = request_model
+        self.active = active
+        self.services = [_FakeService(provider)] if provider else []
+
+
+class _FakeService:
+    def __init__(self, provider, active=True):
+        self.provider = provider
+        self.active = active
+
+
+class _FakeTB:
+    def __init__(self, rules=(), quota=None):
+        self._rules = list(rules)
+        self.quota = quota
+
+    def rules(self, scenario=None):
+        return self._rules
+
+
+def _bind_tb(monkeypatch, module, tb):
+    """Point module.srv.tb at a fake without touching the real property."""
+    monkeypatch.setattr(type(module.srv), "tb", property(lambda self: tb), raising=False)
+
+
 # -- fusion -------------------------------------------------------------
+
+def test_panel_is_discovered_and_deduplicated(monkeypatch):
+    """The panel used to be two hard-coded copies of the same rule, which is
+    latency without a second opinion. Members must be distinct."""
+    fusion = _load("fusion_server")
+    _bind_tb(monkeypatch, fusion, _FakeTB([
+        _FakeRule("gpt-5"),
+        _FakeRule("gpt-5"),                 # duplicate rule id
+        _FakeRule("claude-sonnet-4-6"),
+        _FakeRule("stale", active=False),   # inactive
+        _FakeRule("gemini-3-pro"),
+        _FakeRule("extra"),                 # beyond PANEL_SIZE
+    ]))
+    panel = fusion._panel()
+    assert panel == ["gpt-5", "claude-sonnet-4-6", "gemini-3-pro"]
+    assert len(panel) == len(set(panel)) == fusion.PANEL_SIZE
+
+
+def test_judge_prefers_a_rule_the_panel_did_not_use(monkeypatch):
+    fusion = _load("fusion_server")
+    _bind_tb(monkeypatch, fusion, _FakeTB([
+        _FakeRule("gpt-5"), _FakeRule("claude-opus-4-6")
+    ]))
+    assert fusion._judge(["gpt-5"]) == "claude-opus-4-6"
+
+
+def test_judge_falls_back_to_a_panel_member_when_nothing_else_exists(monkeypatch):
+    fusion = _load("fusion_server")
+    _bind_tb(monkeypatch, fusion, _FakeTB([_FakeRule("gpt-5")]))
+    assert fusion._judge(["gpt-5"]) == "gpt-5"
+
+
+def test_single_rule_box_answers_directly_instead_of_paying_for_a_judge(monkeypatch):
+    fusion = _load("fusion_server")
+    _bind_tb(monkeypatch, fusion, _FakeTB([_FakeRule("only-model")]))
+    fake = _FakeClient("direct")
+    monkeypatch.setattr(fusion.srv, "use", lambda scenario: fake)
+
+    assert fusion.handle(_req("q")) == "direct"
+    assert len(fake.calls) == 1
+    assert fake.calls[0][1]["model"] == "only-model"
+
 
 def test_poll_panel_gathers_one_result_per_panel_entry(monkeypatch):
     fusion = _load("fusion_server")
     fake = _FakeClient("same-answer")
     monkeypatch.setattr(fusion.srv, "use", lambda scenario: fake)
 
-    results = fusion._poll_panel("q")
+    panel = ["a", "b"]
+    results = fusion._poll_panel("q", panel)
 
-    assert results == ["same-answer"] * len(fusion.PANEL)
-    assert len(fake.calls) == len(fusion.PANEL)
+    assert results == ["same-answer"] * len(panel)
+    assert [c[1]["model"] for c in fake.calls] == panel
 
 
 def test_fusion_skips_judge_when_panel_agrees(monkeypatch):
     fusion = _load("fusion_server")
-    monkeypatch.setattr(fusion, "_poll_panel", lambda question: ["42", "42"])
+    _bind_tb(monkeypatch, fusion, _FakeTB([_FakeRule("a"), _FakeRule("b")]))
+    monkeypatch.setattr(fusion, "_poll_panel", lambda question, panel: ["42", "42"])
 
     def judge_should_not_be_called(scenario):
         raise AssertionError("judge must not be called when the panel agrees")
@@ -124,7 +199,8 @@ def test_fusion_skips_judge_when_panel_agrees(monkeypatch):
 
 def test_fusion_calls_judge_when_panel_disagrees(monkeypatch):
     fusion = _load("fusion_server")
-    monkeypatch.setattr(fusion, "_poll_panel", lambda question: ["A", "B"])
+    _bind_tb(monkeypatch, fusion, _FakeTB([_FakeRule("a"), _FakeRule("b")]))
+    monkeypatch.setattr(fusion, "_poll_panel", lambda question, panel: ["A", "B"])
     judge = _FakeClient("SYNTHESIZED")
     monkeypatch.setattr(fusion.srv, "use", lambda scenario: judge)
 
@@ -139,27 +215,9 @@ def test_fusion_calls_judge_when_panel_disagrees(monkeypatch):
 
 # -- router -----------------------------------------------------------------
 
-class _FakeRule:
-    """Stands in for a generated models.Rule — only the fields pick_rule reads."""
-
-    def __init__(self, request_model, active=True):
-        self.request_model = request_model
-        self.active = active
-
-
-class _FakeTB:
-    def __init__(self, rules):
-        self._rules = rules
-
-    def rules(self, scenario=None):
-        return self._rules
-
-
 def _router(monkeypatch, available, reply="answer"):
     router = _load("router_server")
-    monkeypatch.setattr(
-        type(router.srv), "tb", property(lambda self: _FakeTB(available)), raising=False
-    )
+    _bind_tb(monkeypatch, router, _FakeTB(available))
     fake = _FakeClient(reply)
     monkeypatch.setattr(router.srv, "use", lambda scenario: fake)
     return router, fake
@@ -219,3 +277,138 @@ def test_router_reports_its_decision(monkeypatch):
     router, _ = _router(monkeypatch, [_FakeRule("gpt-5")], reply="the answer")
     out = router.handle(_req("hi"))
     assert "router:" in out and "gpt-5" in out and "the answer" in out
+
+
+# -- quota router -----------------------------------------------------------
+
+class _FakeUsage:
+    """Stands in for a generated models.ProviderUsage."""
+
+    def __init__(self, name, uuid, provider_type="codex", windows=()):
+        self.provider_name = name
+        self.provider_uuid = uuid
+        self.provider_type = provider_type
+        self.windows = list(windows)
+
+
+class _FakeQuota:
+    """Stands in for QuotaView, using the real headroom maths."""
+
+    def __init__(self, usages):
+        self._usages = list(usages)
+
+    def of_type(self, provider_type):
+        return [u for u in self._usages if u.provider_type == provider_type]
+
+    def usable(self, provider_type, min_headroom=5.0):
+        from tingly.helpers.quota import headroom_percent
+
+        scored = []
+        for u in self.of_type(provider_type):
+            left = headroom_percent(u)
+            if left is not None and left > min_headroom:
+                scored.append((u, left))
+        scored.sort(key=lambda pair: pair[1], reverse=True)
+        return scored
+
+
+def _window(used_percent, limit=100.0, **kw):
+    from tingly._generated.models import UsageWindow
+
+    return UsageWindow(
+        description="", label="", limit=limit, type="", unit="",
+        used=used_percent, used_percent=used_percent, **kw
+    )
+
+
+def _quota_router(monkeypatch, usages, rules):
+    mod = _load("quota_router_server")
+    _bind_tb(monkeypatch, mod, _FakeTB(rules, quota=_FakeQuota(usages)))
+    fake = _FakeClient("answer")
+    monkeypatch.setattr(mod.srv, "use", lambda scenario: fake)
+    return mod, fake
+
+
+def test_quota_router_picks_the_account_with_the_most_headroom(monkeypatch):
+    mod, fake = _quota_router(
+        monkeypatch,
+        usages=[
+            _FakeUsage("codex-personal", "p1", windows=[_window(88.0)]),  # 12% left
+            _FakeUsage("codex-team", "p2", windows=[_window(39.0)]),      # 61% left
+        ],
+        rules=[
+            _FakeRule("codex-a", provider="p1"),
+            _FakeRule("codex-b", provider="p2"),
+        ],
+    )
+    out = mod.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "codex-b"
+    assert "codex-team" in out and "61% left" in out
+
+
+def test_quota_router_skips_accounts_below_the_threshold(monkeypatch):
+    mod, fake = _quota_router(
+        monkeypatch,
+        usages=[
+            _FakeUsage("codex-work", "p1", windows=[_window(98.0)]),   # 2% left
+            _FakeUsage("codex-team", "p2", windows=[_window(90.0)]),   # 10% left
+        ],
+        rules=[
+            _FakeRule("codex-a", provider="p1"),
+            _FakeRule("codex-b", provider="p2"),
+        ],
+    )
+    mod.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "codex-b"
+
+
+def test_quota_router_still_routes_when_everything_is_low(monkeypatch):
+    """Running low is not being out — keep serving via the least exhausted."""
+    mod, fake = _quota_router(
+        monkeypatch,
+        usages=[
+            _FakeUsage("codex-work", "p1", windows=[_window(99.0)]),
+            _FakeUsage("codex-team", "p2", windows=[_window(97.0)]),
+        ],
+        rules=[
+            _FakeRule("codex-a", provider="p1"),
+            _FakeRule("codex-b", provider="p2"),
+        ],
+    )
+    out = mod.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "codex-b"
+    assert "all accounts low" in out
+
+
+def test_quota_router_ignores_other_provider_types(monkeypatch):
+    mod, fake = _quota_router(
+        monkeypatch,
+        usages=[
+            _FakeUsage("claude", "p1", provider_type="anthropic", windows=[_window(1.0)]),
+            _FakeUsage("codex-team", "p2", windows=[_window(50.0)]),
+        ],
+        rules=[
+            _FakeRule("claude-rule", provider="p1"),
+            _FakeRule("codex-b", provider="p2"),
+        ],
+    )
+    mod.handle(_req("hi"))
+    assert fake.calls[0][1]["model"] == "codex-b"
+
+
+def test_quota_router_explains_itself_when_no_rule_points_at_the_account(monkeypatch):
+    mod, fake = _quota_router(
+        monkeypatch,
+        usages=[_FakeUsage("codex-team", "p2", windows=[_window(10.0)])],
+        rules=[_FakeRule("something-else", provider="other-uuid")],
+    )
+    out = mod.handle(_req("hi"))
+    assert fake.calls == []
+    assert "no rule under openai" in out
+
+
+def test_quota_router_explains_itself_when_nothing_reports_quota(monkeypatch):
+    mod, fake = _quota_router(monkeypatch, usages=[], rules=[])
+    out = mod.handle(_req("hi"))
+    assert fake.calls == []
+    assert "no usable codex rule" in out

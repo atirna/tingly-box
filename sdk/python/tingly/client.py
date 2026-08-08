@@ -18,6 +18,7 @@ from ._api import ControlPlane
 from ._generated.models import Rule, RulesResponse
 from .errors import TinglyError
 from .helpers.guardrails import GuardrailsView
+from .helpers.quota import QuotaView
 from .helpers.usage import UsageView
 from .transports import anthropic_compat, openai_compat
 
@@ -49,6 +50,7 @@ class Client:
         # reuse it rather than reconnecting on every property access.
         self._usage: Optional[UsageView] = None
         self._guardrails: Optional[GuardrailsView] = None
+        self._quota: Optional[QuotaView] = None
         self._api: Optional[ControlPlane] = None
 
     # -- identity --------------------------------------------------------
@@ -180,6 +182,17 @@ class Client:
             )
         return self._guardrails
 
+    @property
+    def quota(self) -> QuotaView:
+        """How much headroom each upstream account has left.
+
+            for usage, left in tb.quota.usable("codex", min_headroom=5):
+                print(usage.provider_name, f"{left:.0f}% left")
+        """
+        if self._quota is None:
+            self._quota = QuotaView(self._gateway_url, self._admin_token, self._timeout)
+        return self._quota
+
     def rules(self, scenario: Optional[str] = None) -> "list[Rule]":
         """The rules configured under ``scenario`` (defaults to this session's).
 
@@ -214,7 +227,8 @@ class Client:
     # -- lifecycle -------------------------------------------------------
 
     def close(self) -> None:
-        for c in (self._openai, self._anthropic, self._usage, self._guardrails, self._api):
+        for c in (self._openai, self._anthropic, self._usage, self._guardrails,
+                  self._quota, self._api):
             closer = getattr(c, "close", None)
             if callable(closer):
                 try:

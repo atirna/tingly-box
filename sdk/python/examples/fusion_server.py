@@ -24,16 +24,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 from tingly import ChatRequest, Server
 
-# The panel: each entry is a (scenario, request_model) pair — i.e. one tb rule
-# — called independently and concurrently. Point these at genuinely different
-# rules; a panel of clones of the same model adds latency without adding a
-# second opinion. `srv.tb.rules("openai")` lists what this box actually has.
-PANEL = [
-    ("openai", "auto"),
-    ("openai", "auto"),
-]
+PANEL_SCENARIO = "openai"
 JUDGE_SCENARIO = "openai"
-JUDGE_MODEL = "auto"
+
+# How many rules to poll. The panel members are *discovered*, not listed here:
+# a panel is only worth its latency if its members are genuinely different
+# models, and only this box knows which rules it actually has. Hard-coding
+# entries is how you end up polling the same model twice and calling it a
+# second opinion.
+PANEL_SIZE = 3
 
 JUDGE_PROMPT = """Multiple models answered the same question independently. \
 Synthesize the single best answer, resolving disagreements and noting when \
@@ -56,7 +55,15 @@ srv = Server(
 @srv.chat
 def handle(req: ChatRequest) -> str:
     question = req.last_user_text()
-    answers = _poll_panel(question)
+    panel = _panel()
+
+    if len(panel) < 2:
+        # One model is not a panel. Answer directly rather than paying for a
+        # judge call that has nothing to reconcile.
+        only = panel[0] if panel else "auto"
+        return srv.use(PANEL_SCENARIO).ask(question, model=only)
+
+    answers = _poll_panel(question, panel)
 
     if len(set(answers)) == 1:
         # The panel already agreed — the judge call would just restate this,
@@ -67,15 +74,40 @@ def handle(req: ChatRequest) -> str:
     answers_block = "\n\n".join(f"[{i + 1}] {a}" for i, a in enumerate(answers))
     return srv.use(JUDGE_SCENARIO).ask(
         JUDGE_PROMPT.format(question=question, answers=answers_block),
-        model=JUDGE_MODEL,
+        model=_judge(panel),
     )
 
 
-def _poll_panel(question: str) -> list:
-    with ThreadPoolExecutor(max_workers=len(PANEL)) as pool:
+def _panel() -> list:
+    """Up to PANEL_SIZE distinct active rules under PANEL_SCENARIO."""
+    seen, models = set(), []
+    for rule in srv.tb.rules(PANEL_SCENARIO):
+        if not rule.active or rule.request_model in seen:
+            continue
+        seen.add(rule.request_model)
+        models.append(rule.request_model)
+        if len(models) == PANEL_SIZE:
+            break
+    return models
+
+
+def _judge(panel: list) -> str:
+    """Prefer a rule the panel did not use, so the judge is a fresh opinion.
+
+    Falls back to the first panel member when the box has nothing else — a
+    judge that also answered is still better than no synthesis.
+    """
+    for rule in srv.tb.rules(JUDGE_SCENARIO):
+        if rule.active and rule.request_model not in panel:
+            return rule.request_model
+    return panel[0]
+
+
+def _poll_panel(question: str, panel: list) -> list:
+    with ThreadPoolExecutor(max_workers=len(panel)) as pool:
         futures = [
-            pool.submit(srv.use(scenario).ask, question, model=model)
-            for scenario, model in PANEL
+            pool.submit(srv.use(PANEL_SCENARIO).ask, question, model=model)
+            for model in panel
         ]
         return [f.result() for f in futures]
 

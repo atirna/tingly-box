@@ -133,7 +133,7 @@ sdk/python/
     config.py        # (base_url, admin_token) resolution precedence
     scenarios.py     # scenario + transport constants
     transports/      # build openai.OpenAI / anthropic.Anthropic bound to tb
-    helpers/         # usage + guardrails views
+    helpers/         # usage, guardrails and quota views
     server/          # ← be a provider
       core.py        #   Server class (@srv.chat, .tb, .use, .run, .connect_hint)
       http.py        #   stdlib HTTP server: /v1/messages + /v1/chat/completions, + SSE
@@ -385,8 +385,28 @@ connects back to tb and dispatches each request to a *different rule* — and
 they differ only in policy: `router_server.py` classifies and picks;
 `critic_server.py` always routes away from the caller (self-critique is
 unreliable, so a different model is the point); `fusion_server.py` fans out to
-several at once and then judges. `rag_experiment.py` is the other half, a
-script that only consumes.
+several at once and then judges; `quota_router_server.py` picks by *remaining
+quota*, which is the case that motivated exposing quota to the SDK at all —
+several Codex accounts, one model id, always land on the one with room left.
+`rag_experiment.py` is the other half, a script that only consumes.
+
+Two things make dispatch decidable without any new tb mechanism, and both are
+plain reads through the generated client:
+
+- **`Client.rules(scenario)`** — a rule is tb's
+  `(scenario, request_model) -> services` binding, so "pick a rule" is "pick a
+  scenario + model", and listing them means an example routes to what *this*
+  box has rather than to ids its author hoped were configured.
+- **`Client.quota`** — reduces each provider to its tightest countable window,
+  mirroring `ai/quota/semantic.go`. The subtle part is what counts as
+  countable: a window that is unknown, unlimited, or uncapped is not 0% used,
+  it is an absence of data, and scoring it as 0% would make the account we know
+  least about look emptiest and win every comparison. Those report `None`.
+
+The join between them is `service.provider`: quota identifies an account by
+uuid, tb addresses upstreams by rule, so a provider is only reachable if some
+rule points at it. `quota_router_server.py` does that lookup and says so
+plainly when it fails, because that failure is a configuration one.
 
 This is worth stating as the canonical shape because it is where the two halves
 compose into something neither has alone: **one model id in your editor fans
