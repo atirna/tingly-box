@@ -18,8 +18,22 @@ handler calls back into the box can orchestrate every other rule you have.
 pip install tingly
 ```
 
-Ships with the `openai` and `anthropic` SDKs so `tb.openai` / `tb.anthropic`
-give you full fine-grained control out of the box.
+Requires Python 3.10+. Ships with the `openai` and `anthropic` SDKs so
+`tb.openai` / `tb.anthropic` give you full fine-grained control out of the box.
+
+### From a checkout
+
+The typed models are generated from tingly-box's `openapi.json` and are not
+committed, so a source checkout needs one step first:
+
+```bash
+task gen:py          # from the repository root
+cd sdk/python && pip install -e '.[dev]' && pytest
+```
+
+Re-run `task gen:py` after any backend API change (`task codegen` does it as
+its last step). A wheel from PyPI already contains the models — CI generates
+them before building it.
 
 ## Consume the box
 
@@ -59,6 +73,23 @@ tingly doctor --link     # save gateway URL + token to ~/.tingly-box/sdk.json
 ```
 
 A green `tingly doctor` is a guarantee your code will run.
+
+### Anything else the gateway can do
+
+The two views above are the common cases. Everything else in tingly-box's
+control plane — ~195 operations — is reachable with the same typed models,
+which are generated from the gateway's own `openapi.json`:
+
+```python
+from tingly._generated.models import ProvidersResponse, UsageStatsResponse
+
+tb.api.get("/api/v2/providers", ProvidersResponse)
+tb.usage.raw(group_by="rule", sort_by="total_tokens", limit=5)  # -> UsageStatsResponse
+```
+
+A response that doesn't match its model raises `SchemaMismatchError` naming the
+fix, rather than quietly returning a default — the SDK never guesses at a field
+name.
 
 ## Be a provider
 

@@ -14,9 +14,13 @@ BASE = "http://tb.test:12580"
 def test_probe_version_ok():
     # Discovery probes the unauthenticated health endpoint, not /info/version.
     respx.get(f"{BASE}/api/v1/info/health").mock(
-        return_value=httpx.Response(200, json={"health": True, "status": "healthy"})
+        return_value=httpx.Response(
+            200,
+            json={"health": True, "status": "healthy", "service": "tingly-box"},
+        )
     )
-    assert disco.probe_version(BASE) == "ok"
+    # Returns the gateway's reported status, parsed through HealthInfoResponse.
+    assert disco.probe_version(BASE) == "healthy"
 
 
 @respx.mock
@@ -32,16 +36,16 @@ def test_create_session_ok():
     respx.post(f"{BASE}/api/v1/sdk/session").mock(
         return_value=httpx.Response(
             200,
+            # Bare, not wrapped in {success, data}: this is exactly the shape
+            # the route's swagger annotation declares, and therefore the shape
+            # the generated SDKSessionResponse model describes.
             json={
-                "success": True,
-                "data": {
-                    "base_url": f"{BASE}/tingly/experiment",
-                    "token": "model-tok",
-                    "scenario": "experiment",
-                    "transport": "both",
-                    "ready": True,
-                    "services": 2,
-                },
+                "base_url": f"{BASE}/tingly/experiment",
+                "token": "model-tok",
+                "scenario": "experiment",
+                "transport": "both",
+                "ready": True,
+                "services": 2,
             },
         )
     )

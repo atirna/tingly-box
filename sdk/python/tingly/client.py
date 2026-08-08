@@ -14,6 +14,7 @@ from typing import Any, Iterator, Optional
 from . import config as _config
 from . import discovery as _discovery
 from . import scenarios as _scenarios
+from ._api import ControlPlane
 from .errors import TinglyError
 from .helpers.guardrails import GuardrailsView
 from .helpers.usage import UsageView
@@ -43,6 +44,11 @@ class Client:
 
         self._openai: Optional[Any] = None
         self._anthropic: Optional[Any] = None
+        # Management views hold pooled HTTP connections, so build each once and
+        # reuse it rather than reconnecting on every property access.
+        self._usage: Optional[UsageView] = None
+        self._guardrails: Optional[GuardrailsView] = None
+        self._api: Optional[ControlPlane] = None
 
     # -- identity --------------------------------------------------------
 
@@ -157,16 +163,41 @@ class Client:
 
     @property
     def usage(self) -> UsageView:
-        return UsageView(self._gateway_url, self._admin_token, self.name, self._timeout)
+        """Token / request numbers for this session's scenario."""
+        if self._usage is None:
+            self._usage = UsageView(
+                self._gateway_url, self._admin_token, self.scenario, self._timeout
+            )
+        return self._usage
 
     @property
     def guardrails(self) -> GuardrailsView:
-        return GuardrailsView(self._gateway_url, self._admin_token, self._timeout)
+        """What guard rails the gateway is currently enforcing."""
+        if self._guardrails is None:
+            self._guardrails = GuardrailsView(
+                self._gateway_url, self._admin_token, self._timeout
+            )
+        return self._guardrails
+
+    @property
+    def api(self) -> ControlPlane:
+        """Typed access to *any* tingly-box control-plane endpoint.
+
+        The named views above cover what an experiment usually wants. This is
+        the escape hatch onto the rest of the gateway's ~195 operations, with
+        the same generated models and the same validation:
+
+            from tingly._generated.models import ProvidersResponse
+            tb.api.get("/api/v2/providers", ProvidersResponse)
+        """
+        if self._api is None:
+            self._api = ControlPlane(self._gateway_url, self._admin_token, self._timeout)
+        return self._api
 
     # -- lifecycle -------------------------------------------------------
 
     def close(self) -> None:
-        for c in (self._openai, self._anthropic):
+        for c in (self._openai, self._anthropic, self._usage, self._guardrails, self._api):
             closer = getattr(c, "close", None)
             if callable(closer):
                 try:

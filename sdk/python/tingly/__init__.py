@@ -28,10 +28,12 @@ from ._version import __version__
 from .client import Client, connect
 from .config import Connection, configure
 from .errors import (
+    APIStatusError,
     AuthError,
     GatewayUnreachableError,
     GuardrailBlockedError,
     ScenarioNotFoundError,
+    SchemaMismatchError,
     TinglyError,
     UpstreamError,
 )
@@ -51,4 +53,6 @@ __all__ = [
     "ScenarioNotFoundError",
     "GuardrailBlockedError",
     "UpstreamError",
+    "APIStatusError",
+    "SchemaMismatchError",
 ]

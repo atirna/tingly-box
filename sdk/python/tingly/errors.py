@@ -26,6 +26,33 @@ class AuthError(TinglyError):
     """The gateway rejected the supplied token (HTTP 401)."""
 
 
+class APIStatusError(TinglyError):
+    """A control-plane call returned a non-2xx status.
+
+    Carries the decoded body so callers can read fields the gateway only sends
+    on the error path — ``valid_scenarios`` on a 404, say — without re-issuing
+    the request just to see them.
+    """
+
+    def __init__(self, method: str, path: str, status_code: int, body: Optional[dict], text: str = ""):
+        self.method = method
+        self.path = path
+        self.status_code = status_code
+        self.body = body or {}
+        detail = (body or {}).get("error") or text[:200]
+        super().__init__(f"{method} {path} failed: HTTP {status_code} {detail}")
+
+
+class SchemaMismatchError(TinglyError):
+    """A response did not match the model generated from ``openapi.json``.
+
+    Almost always means the generated models are stale relative to the running
+    gateway — the fix is to re-run ``task gen:py``. Raised rather than swallowed
+    on purpose: returning a default here would hide exactly the drift that
+    generating from the spec is meant to make impossible to miss.
+    """
+
+
 class ScenarioNotFoundError(TinglyError):
     """The requested scenario is unknown or not bindable (HTTP 404).
 

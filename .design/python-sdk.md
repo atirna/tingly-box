@@ -126,6 +126,8 @@ local Python server is simply the one that surfaced it.
 ```
 sdk/python/
   tingly/
+    _generated/      # ← models.py, generated from openapi.json, NOT committed
+    _api.py          # ControlPlane: typed httpx wrapper over /api/v1 + /api/v2
     client.py        # Client + connect()  ← consume tb
     discovery.py     # probe gateway + POST /sdk/session
     config.py        # (base_url, admin_token) resolution precedence
@@ -139,6 +141,83 @@ sdk/python/
     cli.py           # `tingly doctor`
     errors.py        # TinglyError hierarchy
 ```
+
+## The control plane is generated, not hand-written
+
+`openapi.json` describes 150 paths / **195 operations / 276 schemas**. The SDK
+hand-wrote four of them, and got them wrong in ways nobody noticed — see below.
+So the models come from the spec:
+
+```
+openapi.json ──task gen:py──► tingly/_generated/models.py  (pydantic v2, 287 models)
+                              └─ consumed by _api.ControlPlane, discovery, helpers
+```
+
+- **`task gen:py`** runs `datamodel-code-generator`. It is deliberately *not*
+  folded into `task swagger`, and `task codegen` calls it as a last step — a
+  backend-only change shouldn't force a `pnpm install`, and a Python-only
+  change shouldn't regenerate the frontend client.
+- **The output is not committed** (`.gitignore`). It is a pure function of the
+  spec, and 2.7k generated lines would drown every SDK diff. CI regenerates it
+  before tests and before building the wheel; `pyproject.toml`'s
+  `[tool.hatch.build.targets.wheel.force-include]` is what actually ships a
+  gitignored file, and `.github/workflows/python-sdk.yml` asserts it made it
+  into the wheel — otherwise that breakage would only appear at `pip install`.
+- **Requires Python 3.10+** because the generator emits `X | None` unions.
+  3.9 reached EOL in October 2025.
+
+### Scope: control plane only
+
+Only tb's **control plane** (`/api/v1`, `/api/v2`) is in `openapi.json`. The
+LLM data plane (`/tingly/<scenario>/...`) is dynamic pass-through and appears
+nowhere in the spec — those calls go through the vendored `openai` /
+`anthropic` SDKs, which are themselves generated, by their own vendors, and
+stay that way. So generating here buys **type coverage and no drift**, not
+throughput: the control plane is not a hot path.
+
+### What generating from the spec actually caught
+
+Three real defects, none of which any test had noticed:
+
+1. **`Client.usage` could only ever report zeros.** It read
+   `GET /api/v1/requests`, took `payload["data"]` — that endpoint sends
+   `{"total", "requests"}` — and summed `rec["input_tokens"]` off
+   `ModelRequestSummary`, which has no token fields at all. All inside a bare
+   `except` returning an empty summary. It now reads
+   `GET /api/v1/usage/stats` (`AggregatedStat`, filtered to the session's
+   scenario), which is where token counts actually live — and the fields are
+   `total_input_tokens` / `total_output_tokens`, which is itself a name the
+   hand-written version would have got wrong a second time.
+2. **`openapi.json` emitted two case-colliding schemas**, `ErrorDetail`
+   (onboarding) and `errorDetail` (probe's local envelope). Generators
+   normalize schema keys, so `openapi-python-client` silently *dropped*
+   `E2EResponse` and `LightweightResponse` — both of probe's response types.
+   Fixed by renaming probe's to `ProbeErrorDetail`; the wire JSON is unchanged.
+   This affected every language's generator, not just Python.
+3. **`POST /api/v1/sdk/session` lied about its own shape.** The route declares
+   `WithResponseModel(SDKSessionResponse{})` but the handler wrapped the
+   payload in `{success, data}`, so the spec described a body the endpoint
+   never sent. Now returned bare, matching the declaration and matching the
+   three sibling endpoints the SDK reads. `TestCreateSDKSessionWritesTheDeclaredShape` drives the real handler and decodes with `DisallowUnknownFields`, so
+   a re-wrap fails as an unknown `data` key — the previous test marshalled the
+   struct and could not see the envelope at all.
+
+### Failure modes are loud on purpose
+
+`ControlPlane` raises rather than degrading:
+
+| condition | error |
+|---|---|
+| body doesn't match the generated model | `SchemaMismatchError`, naming `task gen:py` as the fix |
+| non-2xx | `APIStatusError`, carrying the decoded body (so a 404's `valid_scenarios` survives without a second request) |
+| 401 | `AuthError` |
+| connection refused | `GatewayUnreachableError` |
+
+A shape mismatch means the models are stale relative to the running gateway.
+Returning a default there would hide precisely the drift that generating from
+the spec exists to make impossible to miss — which is how defect 1 above
+survived. The views layered on top still degrade where a *state* is legitimately
+empty (no usage store → 503 → zero rows), but never where a *shape* is wrong.
 
 ## Consume: request flow
 
@@ -277,10 +356,13 @@ Connect AI values for the serving half.
 ## Testing
 
 - Python: `sdk/python/tests/` — config precedence, discovery/session (respx
-  mocked gateway), transport URL shaping, client routing, the dual-protocol
-  server over real HTTP, and the example handlers with `use()` faked.
-  Integration tests needing a live tb are marked `@needs_tb`, skipped by
-  default.
+  mocked gateway), the typed control-plane layer and its failure modes, the
+  usage/guardrails views (including a test that pins non-zero token totals, so
+  a regression to the always-zero shape cannot pass), transport URL shaping,
+  client routing, the dual-protocol server over real HTTP, and the example
+  handlers with `use()` faked. Integration tests needing a live tb are marked
+  `@needs_tb`, skipped by default. CI (`.github/workflows/python-sdk.yml`) runs
+  the whole generate → install → test → package chain on 3.10 and 3.13.
 - Go: `internal/server/sdk_session_test.go` freezes the response JSON field
   names (contract with the SDK) and the transport-label logic;
   `internal/typ/scenario_registry_test.go` pins the experiment descriptor;
