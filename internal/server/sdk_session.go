@@ -77,16 +77,20 @@ func (s *Server) CreateSDKSession(c *gin.Context) {
 
 	ready, services := s.scenarioRuleStatus(scenario)
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": SDKSessionResponse{
-			BaseURL:   s.scenarioBaseURL(scenario),
-			Token:     s.config.GetModelToken(),
-			Scenario:  string(scenario),
-			Transport: scenarioTransportLabel(descriptor),
-			Ready:     ready,
-			Services:  services,
-		},
+	// Returned bare, not wrapped in a {success, data} envelope. Two reasons:
+	// the route's swagger annotation declares SDKSessionResponse, so wrapping
+	// would make openapi.json describe a shape the endpoint never sends — and
+	// the generated SDK models come straight off that spec; and the sibling
+	// endpoints the SDK reads (/info/health, /usage/stats, /guardrails/config)
+	// are all bare too. Failures still carry `error`, and the HTTP status is
+	// what callers branch on.
+	c.JSON(http.StatusOK, SDKSessionResponse{
+		BaseURL:   s.scenarioBaseURL(scenario),
+		Token:     s.config.GetModelToken(),
+		Scenario:  string(scenario),
+		Transport: scenarioTransportLabel(descriptor),
+		Ready:     ready,
+		Services:  services,
 	})
 }
 
