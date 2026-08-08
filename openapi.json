@@ -9030,7 +9030,7 @@
             "$ref": "#/components/schemas/ProbeResult"
           },
           "error": {
-            "$ref": "#/components/schemas/errorDetail"
+            "$ref": "#/components/schemas/ProbeErrorDetail"
           },
           "success": {
             "type": "boolean",
@@ -10263,7 +10263,7 @@
             "$ref": "#/components/schemas/LightweightProbeResponseData"
           },
           "error": {
-            "$ref": "#/components/schemas/errorDetail"
+            "$ref": "#/components/schemas/ProbeErrorDetail"
           },
           "success": {
             "type": "boolean",
@@ -11923,6 +11923,27 @@
           "policy_name",
           "policy_type",
           "verdict"
+        ]
+      },
+      "ProbeErrorDetail": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Field code"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "type": {
+            "type": "string",
+            "description": "Field type"
+          }
+        },
+        "required": [
+          "message",
+          "type"
         ]
       },
       "ProbeResult": {
@@ -15262,27 +15283,6 @@
         "required": [
           "provider",
           "model"
-        ]
-      },
-      "errorDetail": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "Field code"
-          },
-          "message": {
-            "type": "string",
-            "description": "Field message"
-          },
-          "type": {
-            "type": "string",
-            "description": "Field type"
-          }
-        },
-        "required": [
-          "message",
-          "type"
         ]
       },
       "guardrailsBuiltinsResponse": {
