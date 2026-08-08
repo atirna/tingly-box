@@ -5262,6 +5262,39 @@
         }
       }
     },
+    "/api/v1/sdk/session": {
+      "post": {
+        "tags": [
+          "sdk"
+        ],
+        "summary": "Mint a scoped SDK session for a scenario",
+        "description": "Mint a scoped SDK session for a scenario",
+        "operationId": "apiV1SdkSessionPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SDKSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SDKSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/server/restart": {
       "post": {
         "tags": [
@@ -13059,6 +13092,65 @@
           "data"
         ]
       },
+      "SDKSessionRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Field name"
+          },
+          "scenario": {
+            "type": "string",
+            "description": "Field scenario"
+          }
+        },
+        "required": [
+          "scenario",
+          "name"
+        ]
+      },
+      "SDKSessionResponse": {
+        "type": "object",
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "description": "Field base_url"
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "Field expires_at"
+          },
+          "ready": {
+            "type": "boolean",
+            "description": "Field ready"
+          },
+          "scenario": {
+            "type": "string",
+            "description": "Field scenario"
+          },
+          "services": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field services"
+          },
+          "token": {
+            "type": "string",
+            "description": "Field token"
+          },
+          "transport": {
+            "type": "string",
+            "description": "Field transport"
+          }
+        },
+        "required": [
+          "base_url",
+          "token",
+          "scenario",
+          "transport",
+          "ready",
+          "services"
+        ]
+      },
       "ScanIdesResponse": {
         "type": "object",
         "properties": {
@@ -16092,6 +16184,10 @@
     {
       "name": "scenarios",
       "description": "Operations related to scenarios"
+    },
+    {
+      "name": "sdk",
+      "description": "Operations related to sdk"
     },
     {
       "name": "server",
