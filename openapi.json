@@ -13100,7 +13100,11 @@
         "type": "object",
         "properties": {
           "data": {
-            "description": "Field data"
+            "type": "array",
+            "description": "Field data",
+            "items": {
+              "$ref": "#/components/schemas/Rule"
+            }
           },
           "success": {
             "type": "boolean",
