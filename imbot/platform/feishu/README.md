@@ -47,15 +47,16 @@ No public inbound webhook URL is required; the bot initiates the connection.
 
 ## ID routing
 
-`SendMessage` automatically selects `receive_id_type` based on the target ID
-prefix:
+`SendMessage` automatically selects `receive_id_type` from the target ID's
+prefix (Feishu writes the ID kind into the prefix):
 
-| Prefix | Type | Usage |
+| Prefix | `receive_id_type` | Meaning |
 |---|---|---|
-| `cli_` | `chat_id` | Group chat |
-| `ou_` | `user_id` | User (cross-app, global) |
-| `oc_` | `open_id` | User (app-specific) |
-| *(other)* | `open_id` | Default fallback |
+| `oc_` | `chat_id` | Conversation (group or one-to-one) |
+| `ou_` | `open_id` | User, scoped to this app |
+| `on_` | `union_id` | User, scoped to the app developer |
+| *(contains `@`)* | `email` | Email address |
+| *(no prefix)* | `user_id` | Tenant-assigned user id |
 
 ## Capabilities
 
@@ -74,9 +75,20 @@ prefix:
 
 ## Platform-specific API
 
+The preferred path for the quick-action (`/`) menu is the package helper, which
+builds the actions from a `core.CommandRegistry`:
+
 ```go
 import "github.com/tingly-dev/tingly-box/imbot/platform/feishu"
 
+if err := feishu.SetupQuickActions(bot, registry); err != nil {
+    // handle error
+}
+```
+
+For lower-level control, cast the `core.Bot` directly to `*feishu.Bot`:
+
+```go
 if fs, ok := bot.(*feishu.Bot); ok {
     // Register quick actions shown when the user types "/".
     fs.SetQuickActions(actions)
@@ -86,16 +98,18 @@ if fs, ok := bot.(*feishu.Bot); ok {
 }
 ```
 
-`imbot.AsFeishuBot(bot)` is a convenience wrapper for the type assertion.
+(There is no `imbot.AsFeishuBot` helper — use the direct `bot.(*feishu.Bot)`
+assertion shown above.)
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `bot_sdk.go` | `Bot` struct, lifecycle, send/react/edit/delete; domain constants |
-| `adapter.go` | Converts Feishu event payloads → `core.Message` |
+| `feishu.go` | `Bot` struct, lifecycle, send/react/edit/delete; receive-id routing; `Domain` (feishu/lark) |
+| `adapter.go` | Converts Feishu/Lark event payloads → `core.Message` |
 | `types.go` | Feishu-specific event and payload structs |
-| `interaction.go` | Builds interactive cards from `interaction.Interaction` |
-| `menu.go` | Converts `menu.Menu` → Feishu interactive card buttons |
-| `menu_setup.go` | Registers quick actions via Feishu API |
-| `registration.go` | Registers the platform in the global registry |
+| `action_render.go` | Renders a `core.ActionSet` as a Feishu action card |
+| `card_render.go` | `CardRenderer` — converts a platform-neutral card into Feishu card JSON |
+| `card_callback.go` | Handles card button-press callback events |
+| `menu_setup.go` | Installs quick actions (the `/` command menu) from a `core.CommandRegistry` |
+| `registration.go` | One-click app registration (QR-based provisioning) outcome types |

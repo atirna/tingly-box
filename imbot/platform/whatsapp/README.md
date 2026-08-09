@@ -68,9 +68,10 @@ payload format (`object → entry[].changes[].value.messages[]`).
 |---|---|
 | Send text | ✅ |
 | Send media (image, audio, video, document) | ✅ |
+| Reactions | ✅ |
+| Delete message | ✅ |
+| Edit message | ⚠️ soft no-op (Meta has no edit; logged and ignored) |
 | Read receipts | ✅ |
-| Reactions | ❌ |
-| Edit / Delete message | ❌ |
 | Interactive buttons | ❌ (planned via template messages) |
 | Text limit | 4 096 chars |
 

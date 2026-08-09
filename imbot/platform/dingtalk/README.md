@@ -75,6 +75,5 @@ correct conversation without a separate target-resolution call.
 
 | File | Purpose |
 |---|---|
-| `dingtalk.go` | `Bot` struct, lifecycle, send/react/edit/delete; token cache; webhook map |
+| `dingtalk.go` | `Bot` struct, lifecycle, send/react/edit/delete; in-memory access-token cache; per-conversation webhook map |
 | `adapter.go` | Converts `chatbot.BotCallbackDataModel` → `core.Message` |
-| `interaction.go` | Builds DingTalk card button layouts from `interaction.Interaction` |
