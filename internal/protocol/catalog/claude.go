@@ -6,11 +6,15 @@
 //
 // Layout: one <vendor>.models.json data file plus one <vendor>.go loader per
 // vendor (claude.models.json + claude.go today; openai/gemini can follow the
-// same pattern). The Claude file mirrors the Anthropic /v1/models response
-// shape so it can be refreshed from the API. Update the JSON when new models
-// land instead of hardcoding model names in code; the completeness test in
-// this package fails when providers.json offers a Claude model this catalog
-// does not describe.
+// same pattern). Each file only carries the fields its loader actually
+// consumes — deliberately not a mirror of the vendor's full /v1/models
+// response, whose unused fields (display names, dates, unrelated capability
+// flags) are dead weight. The shape is inspired by OpenRouter's flat
+// `reasoning: {supported_efforts: [...], ...}` block rather than Anthropic's
+// nested `capabilities.effort.<level>.supported` tree. Update the JSON when
+// new models land instead of hardcoding model names in code; the
+// completeness test in this package fails when providers.json offers a
+// Claude model this catalog does not describe.
 package catalog
 
 import (
@@ -37,51 +41,13 @@ type ClaudeThinkingCaps struct {
 	EffortLevels map[string]bool
 }
 
-type supportedFlag struct {
-	Supported bool `json:"supported"`
-}
-
-// catalogEffort decodes the catalog's effort capability object, treating every
-// key other than "supported" as a level flag so future levels need no code
-// change.
-type catalogEffort struct {
-	Supported bool
-	Levels    map[string]bool
-}
-
-func (e *catalogEffort) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	e.Levels = map[string]bool{}
-	for key, val := range raw {
-		if key == "supported" {
-			if err := json.Unmarshal(val, &e.Supported); err != nil {
-				return err
-			}
-			continue
-		}
-		var f supportedFlag
-		if err := json.Unmarshal(val, &f); err == nil && f.Supported {
-			e.Levels[key] = true
-		}
-	}
-	return nil
-}
-
 type catalogModel struct {
-	ID           string `json:"id"`
-	Capabilities struct {
-		Effort   catalogEffort `json:"effort"`
-		Thinking struct {
-			Supported bool `json:"supported"`
-			Types     struct {
-				Enabled  supportedFlag `json:"enabled"`
-				Adaptive supportedFlag `json:"adaptive"`
-			} `json:"types"`
-		} `json:"thinking"`
-	} `json:"capabilities"`
+	ID       string `json:"id"`
+	Thinking struct {
+		Budget   bool     `json:"budget"`
+		Adaptive bool     `json:"adaptive"`
+		Efforts  []string `json:"efforts"`
+	} `json:"thinking"`
 }
 
 type claudeCapsEntry struct {
@@ -100,10 +66,8 @@ var claudeDateSuffixRE = regexp.MustCompile(`-\d{8}$`)
 // sorted longest-first so the most specific entry wins (e.g.
 // "claude-sonnet-4-6" before "claude-sonnet-4").
 func buildClaudeCapsIndex() []claudeCapsEntry {
-	var doc struct {
-		Data []catalogModel `json:"data"`
-	}
-	if err := json.Unmarshal(claudeModelsJSON, &doc); err != nil {
+	var models []catalogModel
+	if err := json.Unmarshal(claudeModelsJSON, &models); err != nil {
 		return nil
 	}
 
@@ -118,13 +82,16 @@ func buildClaudeCapsIndex() []claudeCapsEntry {
 		entries = append(entries, claudeCapsEntry{key: key, caps: caps})
 	}
 
-	for _, m := range doc.Data {
+	for _, m := range models {
 		caps := ClaudeThinkingCaps{
-			ThinkingEnabled:  m.Capabilities.Thinking.Supported && m.Capabilities.Thinking.Types.Enabled.Supported,
-			ThinkingAdaptive: m.Capabilities.Thinking.Supported && m.Capabilities.Thinking.Types.Adaptive.Supported,
+			ThinkingEnabled:  m.Thinking.Budget,
+			ThinkingAdaptive: m.Thinking.Adaptive,
 		}
-		if m.Capabilities.Effort.Supported && len(m.Capabilities.Effort.Levels) > 0 {
-			caps.EffortLevels = m.Capabilities.Effort.Levels
+		if len(m.Thinking.Efforts) > 0 {
+			caps.EffortLevels = make(map[string]bool, len(m.Thinking.Efforts))
+			for _, lvl := range m.Thinking.Efforts {
+				caps.EffortLevels[lvl] = true
+			}
 		}
 		add(m.ID, caps)
 		add(claudeDateSuffixRE.ReplaceAllString(m.ID, ""), caps)
