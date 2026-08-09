@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/remote/control/bot"
 )
 
@@ -77,41 +78,25 @@ func (h *BotHandler) VerifyAndPair(botUUID, chatID, senderID, platform, code str
 		return errors.New("pairing is not enabled on this bot")
 	}
 	if err := h.pairing.Verify(botUUID, code); err != nil {
-		h.auditWarn("imbot.pair.fail", senderID, "verify failed", map[string]interface{}{
+		logrus.WithFields(logrus.Fields{
+			"action":   "imbot.pair.fail",
+			"user_id":  senderID,
 			"bot_uuid": botUUID,
 			"chat_id":  chatID,
 			"platform": platform,
 			"reason":   err.Error(),
-		})
+		}).Warn("verify failed")
 		return errors.New(userFacingPairError(err))
 	}
 	if err := h.chatStore.SetPaired(chatID, platform, botUUID, senderID); err != nil {
 		return err
 	}
-	h.auditInfo("imbot.pair.success", senderID, "chat paired", map[string]interface{}{
+	logrus.WithFields(logrus.Fields{
+		"action":   "imbot.pair.success",
+		"user_id":  senderID,
 		"bot_uuid": botUUID,
 		"chat_id":  chatID,
 		"platform": platform,
-	})
+	}).Info("chat paired")
 	return nil
-}
-
-// auditInfo records an info-level security event (pairing attempts,
-// rejections, …) through the regular application log — these are just
-// structured log lines, not a separate audit trail. Delegates to the same
-// security.LogAuditor field-shaping bot.PairingManager itself uses, so the two
-// don't drift (e.g. client_ip support) out of sync.
-func (h *BotHandler) auditInfo(action, userID, message string, details map[string]interface{}) {
-	if h == nil {
-		return
-	}
-	bot.NewLogAuditor().Info(action, userID, "", message, details)
-}
-
-// auditWarn records a warn-level security event.
-func (h *BotHandler) auditWarn(action, userID, message string, details map[string]interface{}) {
-	if h == nil {
-		return
-	}
-	bot.NewLogAuditor().Warn(action, userID, "", message, details)
 }

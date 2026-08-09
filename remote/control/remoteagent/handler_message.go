@@ -190,12 +190,13 @@ func (h *BotHandler) handlePairingGate(hCtx HandlerContext) bool {
 		// Fall through so the /bind handler can verify the code.
 		return false
 	}
-	h.auditWarn("imbot.pair.unpaired_message", hCtx.Message.Sender.ID,
-		"rejected unpaired direct message", map[string]interface{}{
-			"bot_uuid": hCtx.BotUUID,
-			"chat_id":  hCtx.ChatID,
-			"platform": string(hCtx.Platform),
-		})
+	logrus.WithFields(logrus.Fields{
+		"action":   "imbot.pair.unpaired_message",
+		"user_id":  hCtx.Message.Sender.ID,
+		"bot_uuid": hCtx.BotUUID,
+		"chat_id":  hCtx.ChatID,
+		"platform": string(hCtx.Platform),
+	}).Warn("rejected unpaired direct message")
 	h.SendText(hCtx, pairingHintMessage())
 	return true
 }
@@ -211,13 +212,13 @@ func (h *BotHandler) handleWhitelistGate(hCtx HandlerContext) bool {
 		return true
 	}
 	if h.botSetting.IsRequirePairing() && !h.isWhitelisterPaired(hCtx.ChatID, hCtx.BotUUID) {
-		h.auditWarn("imbot.pair.unpaired_message", hCtx.Message.Sender.ID,
-			"rejected group whitelisted by unpaired operator",
-			map[string]interface{}{
-				"bot_uuid": hCtx.BotUUID,
-				"chat_id":  hCtx.ChatID,
-				"platform": string(hCtx.Platform),
-			})
+		logrus.WithFields(logrus.Fields{
+			"action":   "imbot.pair.unpaired_message",
+			"user_id":  hCtx.Message.Sender.ID,
+			"bot_uuid": hCtx.BotUUID,
+			"chat_id":  hCtx.ChatID,
+			"platform": string(hCtx.Platform),
+		}).Warn("rejected group whitelisted by unpaired operator")
 		h.SendText(hCtx, "🔒 This group's operator has not paired with the bot. Ask them to send /bind <code> in a DM first.")
 		return true
 	}

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/remote/control/bot"
 
 	"github.com/tingly-dev/tingly-box/internal/constant"
@@ -21,15 +22,17 @@ func resolveRequirePairing(s db.Settings) bool {
 	return bot.PlatformDefaultsRequirePairing(s.Platform)
 }
 
-// logPairAudit records a web-UI pairing event through the same
-// security.LogAuditor field shape PairingManager itself uses (via
-// bot.NewLogAuditor), so the imbot.pair.* action family stays consistent
-// whether the event came from a chat command or the web UI.
+// logPairAudit records a web-UI pairing event through the regular application
+// log, keeping the imbot.pair.* action family consistent whether the event
+// came from a chat command or the web UI.
 func logPairAudit(c *gin.Context, action, uuid, message string) {
-	bot.NewLogAuditor().Info(action, c.GetString(constant.CtxKeyUserID), c.ClientIP(), message, map[string]interface{}{
-		"bot_uuid": uuid,
-		"by":       "web",
-	})
+	logrus.WithFields(logrus.Fields{
+		"action":    action,
+		"user_id":   c.GetString(constant.CtxKeyUserID),
+		"client_ip": c.ClientIP(),
+		"bot_uuid":  uuid,
+		"by":        "web",
+	}).Info(message)
 }
 
 // GetPairingCode reveals the bot's current TOFU pairing code so the operator

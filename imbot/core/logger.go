@@ -2,18 +2,19 @@ package core
 
 import (
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"log"
 	"os"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Logger represents a logger interface
 type Logger interface {
-	Debug(format string, args ...interface{})
-	Info(format string, args ...interface{})
-	Warn(format string, args ...interface{})
-	Error(format string, args ...interface{})
+	Debug(format string, args ...any)
+	Info(format string, args ...any)
+	Warn(format string, args ...any)
+	Error(format string, args ...any)
 }
 
 // LogLevel represents log level
@@ -83,35 +84,35 @@ func NewLoggerWithPrefix(prefix string, level LogLevel, timestamps bool) Logger 
 }
 
 // Debug logs a debug message
-func (l *defaultLogger) Debug(format string, args ...interface{}) {
+func (l *defaultLogger) Debug(format string, args ...any) {
 	if l.level <= LevelDebug {
 		l.log("DEBUG", format, args...)
 	}
 }
 
 // Info logs an info message
-func (l *defaultLogger) Info(format string, args ...interface{}) {
+func (l *defaultLogger) Info(format string, args ...any) {
 	if l.level <= LevelInfo {
 		l.log("INFO", format, args...)
 	}
 }
 
 // Warn logs a warning message
-func (l *defaultLogger) Warn(format string, args ...interface{}) {
+func (l *defaultLogger) Warn(format string, args ...any) {
 	if l.level <= LevelWarn {
 		l.log("WARN", format, args...)
 	}
 }
 
 // Error logs an error message
-func (l *defaultLogger) Error(format string, args ...interface{}) {
+func (l *defaultLogger) Error(format string, args ...any) {
 	if l.level <= LevelError {
 		l.log("ERROR", format, args...)
 	}
 }
 
 // log logs a message with the given level
-func (l *defaultLogger) log(level, format string, args ...interface{}) {
+func (l *defaultLogger) log(level, format string, args ...any) {
 	var prefix string
 
 	if l.timestamps {
@@ -133,16 +134,16 @@ func NewNoopLogger() Logger {
 }
 
 // Debug does nothing
-func (l *NoopLogger) Debug(format string, args ...interface{}) {}
+func (l *NoopLogger) Debug(format string, args ...any) {}
 
 // Info does nothing
-func (l *NoopLogger) Info(format string, args ...interface{}) {}
+func (l *NoopLogger) Info(format string, args ...any) {}
 
 // Warn does nothing
-func (l *NoopLogger) Warn(format string, args ...interface{}) {}
+func (l *NoopLogger) Warn(format string, args ...any) {}
 
 // Error does nothing
-func (l *NoopLogger) Error(format string, args ...interface{}) {}
+func (l *NoopLogger) Error(format string, args ...any) {}
 
 // MultiLogger logs to multiple loggers
 type MultiLogger struct {
@@ -155,28 +156,28 @@ func NewMultiLogger(loggers ...Logger) Logger {
 }
 
 // Debug logs to all loggers
-func (l *MultiLogger) Debug(format string, args ...interface{}) {
+func (l *MultiLogger) Debug(format string, args ...any) {
 	for _, logger := range l.loggers {
 		logger.Debug(format, args...)
 	}
 }
 
 // Info logs to all loggers
-func (l *MultiLogger) Info(format string, args ...interface{}) {
+func (l *MultiLogger) Info(format string, args ...any) {
 	for _, logger := range l.loggers {
 		logger.Info(format, args...)
 	}
 }
 
 // Warn logs to all loggers
-func (l *MultiLogger) Warn(format string, args ...interface{}) {
+func (l *MultiLogger) Warn(format string, args ...any) {
 	for _, logger := range l.loggers {
 		logger.Warn(format, args...)
 	}
 }
 
 // Error logs to all loggers
-func (l *MultiLogger) Error(format string, args ...interface{}) {
+func (l *MultiLogger) Error(format string, args ...any) {
 	for _, logger := range l.loggers {
 		logger.Error(format, args...)
 	}
@@ -187,6 +188,11 @@ func (l *MultiLogger) Error(format string, args ...interface{}) {
 // shadow migration warning) — not a replacement for the per-bot Logger
 // interface above, which stays injectable for bots. The logrus standard
 // logger is the same stream the rest of tingly-box watches.
-func warn(format string, args ...interface{}) {
+func warn(format string, args ...any) {
 	logrus.Warnf(format, args...)
+}
+
+// info logs at info level through the package-wide logrus logger. See warn.
+func info(format string, args ...any) {
+	logrus.Infof(format, args...)
 }

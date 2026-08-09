@@ -55,8 +55,7 @@ clusters: the command system (`command_*.go`), the pairing/security primitives
 
 | File | Responsibility |
 |---|---|
-| `pairing.go` | `PairingManager` — trust-on-first-use pairing: code minting, constant-time verify, TTL, lockout |
-| `pairing_auditor.go` | `LogAuditor` — `PairingAuditor` backed by the application logger |
+| `pairing.go` | `PairingManager` — trust-on-first-use pairing: code minting, constant-time verify, TTL, lockout; pairing events are logged directly through the package logger |
 
 Design rationale for actions, payloads, capabilities, and restate lives in
 `.design/imbot-platform-seams.md` at the repo root.

@@ -414,7 +414,7 @@ func runBotWithSettingsInternal(ctx context.Context, appManager *AppManager, set
 
 	// Standalone bots get their own PairingManager so that /bind works the
 	// same way as in server mode.
-	pairing := bot.NewPairingManager(bot.NewLogAuditor())
+	pairing := bot.NewPairingManager()
 
 	// Register unified message handler
 	// Pass nil as SettingsStore - standalone bots don't have dynamic config updates
