@@ -11,58 +11,128 @@ import (
 )
 
 func TestAnthropicModelThinkingCaps(t *testing.T) {
+	// Expectations mirror internal/data/ref/claude.models.json — the caps are
+	// catalog-driven, not hardcoded per model name.
 	tests := []struct {
 		name     string
 		model    string
-		expected anthropicThinkingCaps
+		adaptive bool
+		budget   bool
+		effort   []string // supported effort levels; empty = no effort support
 	}{
 		{
 			name:     "Claude Opus 4.7 is adaptive-only",
 			model:    "claude-opus-4-7",
-			expected: anthropicThinkingCaps{adaptive: true, budget: false, effort: true, effortMax: true},
+			adaptive: true,
+			budget:   false,
+			effort:   []string{"low", "medium", "high", "max"},
 		},
 		{
 			name:     "Claude Opus 4.6",
 			model:    "claude-opus-4-6",
-			expected: anthropicThinkingCaps{adaptive: true, budget: true, effort: true, effortMax: true},
+			adaptive: true,
+			budget:   true,
+			effort:   []string{"low", "medium", "high", "max"},
 		},
 		{
 			name:     "Claude Opus 4.6 uppercase",
 			model:    "CLAUDE-OPUS-4-6",
-			expected: anthropicThinkingCaps{adaptive: true, budget: true, effort: true, effortMax: true},
+			adaptive: true,
+			budget:   true,
+			effort:   []string{"low", "medium", "high", "max"},
 		},
 		{
-			name:     "Claude Sonnet 4.6",
-			model:    "claude-sonnet-4-6",
-			expected: anthropicThinkingCaps{adaptive: true, budget: true, effort: true, effortMax: true},
+			name:     "Bedrock-decorated Sonnet 4.6 resolves via substring",
+			model:    "us.anthropic.claude-sonnet-4-6-v1:0",
+			adaptive: true,
+			budget:   true,
+			effort:   []string{"low", "medium", "high", "max"},
 		},
 		{
-			name:     "Claude Opus 4.5 has effort but no adaptive and no effort=max",
+			name:     "Claude Opus 4.5 has effort low..high but no adaptive",
 			model:    "claude-opus-4-5-20251101",
-			expected: anthropicThinkingCaps{adaptive: false, budget: true, effort: true, effortMax: false},
+			adaptive: false,
+			budget:   true,
+			effort:   []string{"low", "medium", "high"},
+		},
+		{
+			name:     "Undated Opus 4.5 resolves via family key",
+			model:    "claude-opus-4-5",
+			adaptive: false,
+			budget:   true,
+			effort:   []string{"low", "medium", "high"},
 		},
 		{
 			name:     "Claude Haiku 4.5 is budget-only",
 			model:    "claude-haiku-4-5-20251001",
-			expected: anthropicThinkingCaps{adaptive: false, budget: true, effort: false, effortMax: false},
+			adaptive: false,
+			budget:   true,
 		},
 		{
-			name:     "Claude Sonnet 3.5 is budget-only",
+			name:     "Claude 3 Haiku has no thinking at all",
+			model:    "claude-3-haiku-20240307",
+			adaptive: false,
+			budget:   false,
+		},
+		{
+			name:     "Uncataloged model gets the legacy budget-only profile",
 			model:    "claude-3-5-sonnet-20241022",
-			expected: anthropicThinkingCaps{adaptive: false, budget: true, effort: false, effortMax: false},
+			adaptive: false,
+			budget:   true,
 		},
 		{
-			name:     "Empty model gets legacy profile",
-			model:    "",
-			expected: anthropicThinkingCaps{adaptive: false, budget: true, effort: false, effortMax: false},
+			name:   "Empty model gets legacy profile",
+			model:  "",
+			budget: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, anthropicModelThinkingCaps(tt.model))
+			caps := anthropicModelThinkingCaps(tt.model)
+			assert.Equal(t, tt.adaptive, caps.adaptive, "adaptive")
+			assert.Equal(t, tt.budget, caps.budget, "budget")
+			assert.Equal(t, len(tt.effort) > 0, caps.supportsEffort(), "supportsEffort")
+			for _, level := range tt.effort {
+				assert.True(t, caps.effortLevels[level], "level %s should be supported", level)
+			}
+			assert.False(t, caps.effortLevels["xhigh"], "no cataloged model advertises xhigh yet")
 		})
 	}
+}
+
+func TestClampAnthropicEffort(t *testing.T) {
+	caps46 := anthropicModelThinkingCaps("claude-opus-4-6")           // low/medium/high/max
+	caps45 := anthropicModelThinkingCaps("claude-opus-4-5")           // low/medium/high
+	capsOld := anthropicModelThinkingCaps("claude-sonnet-4-20250514") // no effort
+
+	assert.Equal(t, anthropic.OutputConfigEffortMax, clampAnthropicEffort(anthropic.OutputConfigEffortMax, caps46))
+	assert.Equal(t, anthropic.OutputConfigEffortHigh, clampAnthropicEffort(anthropic.OutputConfigEffortXhigh, caps46),
+		"xhigh steps down to the nearest supported level")
+	assert.Equal(t, anthropic.OutputConfigEffortHigh, clampAnthropicEffort(anthropic.OutputConfigEffortMax, caps45),
+		"Opus 4.5 has no max, steps down to high")
+	assert.Equal(t, anthropic.OutputConfigEffortLow, clampAnthropicEffort("minimal", caps46),
+		"minimal enters the ladder at low")
+	assert.Equal(t, anthropic.OutputConfigEffort(""), clampAnthropicEffort(anthropic.OutputConfigEffortHigh, capsOld),
+		"models without effort support get the field stripped")
+}
+
+func TestApplyAnthropicModelTransform_V1_Claude3Haiku_EnabledDisables(t *testing.T) {
+	// claude-3-haiku has no extended thinking at all per the catalog — an
+	// enabled(budget) request must degrade to disabled, not pass through.
+	req := &anthropic.MessageNewParams{
+		Model:     anthropic.Model("claude-3-haiku-20240307"),
+		MaxTokens: int64(4096),
+		Thinking:  anthropic.ThinkingConfigParamOfEnabled(4096),
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("Hello")),
+		},
+	}
+
+	result := ApplyAnthropicV1ModelTransform(req, "claude-3-haiku-20240307")
+
+	assert.Nil(t, result.Thinking.OfEnabled)
+	assert.NotNil(t, result.Thinking.OfDisabled)
 }
 
 func TestApplyAnthropicModelTransform_V1_AdaptiveWithEffort_FallsBackToBudget(t *testing.T) {
