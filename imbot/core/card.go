@@ -41,7 +41,6 @@ type CardAction struct {
 	ID       string          `json:"id,omitempty"`
 	Label    string          `json:"label,omitempty"`
 	Value    string          `json:"value,omitempty"`
-	Type     ActionType      `json:"type,omitempty"`
 	URL      string          `json:"url,omitempty"`
 	Style    CardActionStyle `json:"style,omitempty"`
 	Disabled bool            `json:"disabled,omitempty"`
@@ -142,12 +141,6 @@ func (b *CardBuilder) Build() Card {
 	return b.card
 }
 
-// BuildPtr returns the card as a pointer.
-func (b *CardBuilder) BuildPtr() *Card {
-	card := b.Build()
-	return &card
-}
-
 // CardSectionBuilder builds card sections with a fluent API.
 type CardSectionBuilder struct {
 	section CardSection
@@ -209,7 +202,6 @@ func NewCardAction(id, label string) *CardActionBuilder {
 		action: CardAction{
 			ID:    id,
 			Label: label,
-			Type:  ActionCustom,
 			Style: CardActionStyleDefault,
 			Meta:  make(map[string]any),
 		},
@@ -229,12 +221,6 @@ func URLCardAction(id, label, url string) *CardActionBuilder {
 // WithValue sets the action value.
 func (b *CardActionBuilder) WithValue(value string) *CardActionBuilder {
 	b.action.Value = value
-	return b
-}
-
-// WithType sets the action type.
-func (b *CardActionBuilder) WithType(actionType ActionType) *CardActionBuilder {
-	b.action.Type = actionType
 	return b
 }
 
@@ -268,30 +254,4 @@ func (b *CardActionBuilder) WithMeta(key string, value any) *CardActionBuilder {
 // Build returns the action.
 func (b *CardActionBuilder) Build() CardAction {
 	return b.action
-}
-
-// ToInteractions converts card actions to platform-neutral interactions.
-func (c Card) ToInteractions() []Interaction {
-	interactions := make([]Interaction, 0, len(c.Actions))
-	for _, action := range c.Actions {
-		interactions = append(interactions, Interaction{
-			ID:    action.ID,
-			Type:  action.Type,
-			Label: action.Label,
-			Value: action.Value,
-			Meta:  cloneCardMeta(action.Meta),
-		})
-	}
-	return interactions
-}
-
-func cloneCardMeta(meta map[string]any) map[string]any {
-	if meta == nil {
-		return nil
-	}
-	cloned := make(map[string]any, len(meta))
-	for key, value := range meta {
-		cloned[key] = value
-	}
-	return cloned
 }

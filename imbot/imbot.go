@@ -314,31 +314,8 @@ func FormatDirButton(name string, maxLen int) string {
 	return core.FormatDirButton(name, maxLen)
 }
 
-// Interaction types re-exported from the interaction package
-
-// Interaction types
-type (
-	// ActionType represents the type of user action
-	ActionType = core.ActionType
-
-	// Interaction represents a platform-agnostic interactive element
-	Interaction = core.Interaction
-
-	// Option represents a selectable option
-	Option = core.Option
-)
-
-// Interaction constants
+// Card action styles
 const (
-	// Action types
-	ActionSelect   = core.ActionSelect
-	ActionConfirm  = core.ActionConfirm
-	ActionCancel   = core.ActionCancel
-	ActionNavigate = core.ActionNavigate
-	ActionInput    = core.ActionInput
-	ActionCustom   = core.ActionCustom
-
-	// Card action styles
 	CardActionStyleDefault = core.CardActionStyleDefault
 	CardActionStylePrimary = core.CardActionStylePrimary
 	CardActionStyleDanger  = core.CardActionStyleDanger

@@ -7,14 +7,14 @@ import (
 	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
-// CardRenderer converts a platform-neutral interaction.Card into the Feishu
-// card JSON the Lark API expects.
+// CardRenderer converts a platform-neutral core.Card into the Feishu card JSON
+// the Lark API expects.
 //
 // It lives here, next to the Feishu bot, because rendering a neutral card into
 // a platform's wire format is the platform's job. It previously lived in
 // internal/remote_control/bot/feature with a note claiming imbot/platform
 // packages could not be imported without a cycle; that was not the case — the
-// renderer only needs interaction.Card, which this package already depends on.
+// renderer only needs core.Card, which this package already depends on.
 type CardRenderer struct{}
 
 // NewCardRenderer creates a new Feishu card renderer.
@@ -28,7 +28,7 @@ func RenderCard(card core.Card) (string, error) {
 	return NewCardRenderer().Render(card)
 }
 
-// Render converts an interaction.Card to a Feishu card JSON string.
+// Render converts a core.Card to a Feishu card JSON string.
 func (r *CardRenderer) Render(card core.Card) (string, error) {
 	if card.ID == "" {
 		return "", fmt.Errorf("card ID cannot be empty")
@@ -145,7 +145,7 @@ func (r *CardRenderer) buildActionButton(action core.CardAction) larkcard.Messag
 	return button
 }
 
-// mapActionStyleToButtonType maps interaction.CardActionStyle to Feishu button type
+// mapActionStyleToButtonType maps core.CardActionStyle to Feishu button type
 func (r *CardRenderer) mapActionStyleToButtonType(style core.CardActionStyle) larkcard.MessageCardButtonType {
 	switch style {
 	case core.CardActionStylePrimary:

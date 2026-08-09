@@ -51,7 +51,6 @@ func TestCardBuilder_AddSection(t *testing.T) {
 
 func TestCardBuilder_AddAction(t *testing.T) {
 	callbackAction := CallbackCardAction("clear", "Clear", "action:clear").
-		WithType(ActionCustom).
 		WithStyle(CardActionStyleDanger).
 		Build()
 	urlAction := URLCardAction("docs", "Docs", "https://example.com").Build()
@@ -62,7 +61,6 @@ func TestCardBuilder_AddAction(t *testing.T) {
 	assert.Equal(t, "clear", card.Actions[0].ID)
 	assert.Equal(t, "Clear", card.Actions[0].Label)
 	assert.Equal(t, "action:clear", card.Actions[0].Value)
-	assert.Equal(t, ActionCustom, card.Actions[0].Type)
 	assert.Equal(t, CardActionStyleDanger, card.Actions[0].Style)
 	assert.Equal(t, "docs", card.Actions[1].ID)
 	assert.Equal(t, "https://example.com", card.Actions[1].URL)
@@ -96,27 +94,6 @@ func TestCardBuilder_Chaining(t *testing.T) {
 	assert.Len(t, card.Sections, 1)
 	assert.Len(t, card.Actions, 2)
 	assert.Equal(t, CardActionStylePrimary, card.Actions[0].Style)
-}
-
-func TestCard_ToInteractions(t *testing.T) {
-	card := NewCard("test-card").
-		AddActionBuilder(NewCardAction("run", "Run").
-			WithValue("action:run").
-			WithType(ActionConfirm).
-			WithMeta("scope", "local")).
-		Build()
-
-	interactions := card.ToInteractions()
-
-	assert.Len(t, interactions, 1)
-	assert.Equal(t, "run", interactions[0].ID)
-	assert.Equal(t, "Run", interactions[0].Label)
-	assert.Equal(t, "action:run", interactions[0].Value)
-	assert.Equal(t, ActionConfirm, interactions[0].Type)
-	assert.Equal(t, "local", interactions[0].Meta["scope"])
-
-	card.Actions[0].Meta["scope"] = "changed"
-	assert.Equal(t, "local", interactions[0].Meta["scope"])
 }
 
 func TestCardBuilder_ClearSectionsAndActions(t *testing.T) {
