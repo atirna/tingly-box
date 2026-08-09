@@ -1,7 +1,7 @@
 //go:build e2e
 // +build e2e
 
-package tests
+package telegram_e2e_test
 
 import (
 	"context"
