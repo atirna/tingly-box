@@ -142,7 +142,7 @@ func openaiReasoningEffort(effort string) shared.ReasoningEffort {
 // anthropicOutputEffort maps a rule effort level to a valid Anthropic
 // output_config.effort. Anthropic's ladder has no "minimal" (collapses to
 // "low"); "xhigh" collapses to "high" because no current Claude model
-// advertises xhigh support (see internal/data/catalog/claude.models.json) even
+// advertises xhigh support (see internal/protocol/catalog/claude.models.json) even
 // though the SDK enum defines it. Unknown values fall back to "medium".
 func anthropicOutputEffort(effort string) anthropic.OutputConfigEffort {
 	switch effort {

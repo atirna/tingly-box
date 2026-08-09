@@ -14,7 +14,7 @@ import (
 // provider offers must resolve to a catalog entry. When this fails, add the
 // new model to claude.models.json — do not special-case it in code.
 func TestClaudeCatalogCoversProvidersJSON(t *testing.T) {
-	raw, err := os.ReadFile("../providers.json")
+	raw, err := os.ReadFile("../../data/providers.json")
 	require.NoError(t, err)
 
 	var doc struct {

@@ -4,7 +4,7 @@
 
 | 层 | 位置 | 回答的问题 | 维护方式 |
 |----|------|-----------|---------|
-| **能力目录(catalog)** | `internal/data/catalog/<vendor>.models.json` + `<vendor>.go` | 这个模型本身能做什么(thinking 方言、effort 档位、structured outputs…)。能力是**模型族属性**,与哪个 provider 提供无关,每个模型只声明一次。 | 镜像 vendor 的 models API 响应形状(Claude 文件即 `/v1/models` 形状),新模型发布时更新 JSON,不改代码。 |
+| **能力目录(catalog)** | `internal/protocol/catalog/<vendor>.models.json` + `<vendor>.go` | 这个模型本身能做什么(thinking 方言、effort 档位、structured outputs…)。能力是**模型族属性**,与哪个 provider 提供无关,每个模型只声明一次。 | 镜像 vendor 的 models API 响应形状(Claude 文件即 `/v1/models` 形状),新模型发布时更新 JSON,不改代码。 |
 | **供给注册表(providers)** | `internal/data/providers.json` | 谁在哪个端点、以什么限额提供哪些模型(base_url、context、max_output、deprecated)。这些**可能**因 provider 而异,所以挂在 provider 条目下。 | 人工策展。 |
 
 运行时从 provider API 拉取的模型列表(`ModelListManager` / DB)是第三层缓存,不在本文件讨论范围;长期方向是能力数据也从 API 刷新、embedded catalog 退化为离线 seed。
