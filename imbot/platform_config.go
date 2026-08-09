@@ -18,12 +18,12 @@ type FieldSpec struct {
 // settings-UI form fields. It is what GetPlatforms / GetPlatformConfig return
 // to the frontend.
 type PlatformAuthConfig struct {
-	Platform    string            `json:"platform"`     // Platform identifier
-	AuthType    string            `json:"auth_type"`    // "token", "oauth", "qr", "none"
-	DisplayName string            `json:"display_name"` // Human-readable platform name
-	Category    string            `json:"category"`     // "im", "enterprise", "business"
-	Fields      []FieldSpec       `json:"fields"`       // Settings-UI form fields
-	Auth        core.AuthMapping  `json:"-"`            // Wire mapping (auth-map -> core.AuthConfig), from core
+	Platform    string           `json:"platform"`     // Platform identifier
+	AuthType    string           `json:"auth_type"`    // "token", "oauth", "qr", "none"
+	DisplayName string           `json:"display_name"` // Human-readable platform name
+	Category    string           `json:"category"`     // "im", "enterprise", "business"
+	Fields      []FieldSpec      `json:"fields"`       // Settings-UI form fields
+	Auth        core.AuthMapping `json:"-"`            // Wire mapping (auth-map -> core.AuthConfig), from core
 }
 
 // platformFormFields holds the per-platform settings-UI form (labels,
