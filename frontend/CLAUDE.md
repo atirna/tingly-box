@@ -15,6 +15,8 @@ Every route element in `App.tsx` must be `React.lazy(() => import('./pages/...')
 
 **How to verify a page (or a dependency) is actually lazy:** `pnpm build`, then check `dist/index.html`'s `<link rel="modulepreload">` list. Anything in that list downloads on every single page load, regardless of whether the code that uses it is wrapped in `lazy()` — that list is the real "what ships on first paint" answer, not the presence of `lazy()` in the source.
 
+**`vite.config.wails.ts`'s `manualChunks`/`optimizeDeps` must stay in sync with `vite.config.ts`.** They're separate config files (Rollup can't share a function across two `defineConfig` calls), so a fix applied to one doesn't propagate to the other — this has drifted before (the wails config kept forcing `recharts`/`d3` into an eager `recharts-vendor` chunk after the web config was fixed to leave them lazy). When you change one file's chunking/`optimizeDeps` logic, apply the same change to the other, or explain in a comment why they intentionally differ.
+
 ## Type checking
 
 `pnpm typecheck` runs in CI (`release.yml`) as a non-blocking, `continue-on-error` step — the repo has pre-existing legacy type errors that aren't being fixed as part of unrelated changes, so this only warns instead of failing the build. Still run `pnpm typecheck` locally before opening a PR and fix anything your change introduces; don't rely on CI to catch it.

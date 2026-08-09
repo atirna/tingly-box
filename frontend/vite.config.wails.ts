@@ -27,19 +27,28 @@ export default defineConfig(({mode}) => {
                 '@': path.resolve(__dirname, './src'),
             }
         },
-        // Memory optimization for build process
+        // Memory optimization for build process.
+        // @mui/icons-material is NOT listed: the app only ever imports it as a
+        // type (see components/icons/tablerMui.tsx), so it's a devDependency
+        // with no runtime module to pre-bundle.
         optimizeDeps: {
             include: [
                 'react',
                 'react-dom',
                 '@mui/material',
-                '@mui/icons-material',
             ],
         },
         build: {
             rollupOptions: {
                 output: {
-                    // Optimized chunk splitting strategy - aligned with vite.config.ts
+                    // Chunk splitting strategy — kept in sync with vite.config.ts (see
+                    // that file's comment for the full rationale). Routes are lazy-loaded
+                    // (see App.tsx), so only MUI — imported eagerly by Layout/App — is
+                    // forced into its own vendor chunk. recharts/d3 deliberately have NO
+                    // manual rule: they're only reached through lazy pages (Dashboard,
+                    // UserUsage), and forcing them into a named vendor chunk makes the
+                    // bundler preload it on every page load instead of only when one of
+                    // those pages is actually visited.
                     manualChunks: (id) => {
                         if (!id.includes('node_modules')) {
                             return;
@@ -48,13 +57,6 @@ export default defineConfig(({mode}) => {
                         // MUI packages - group together for better caching
                         if (id.includes('@mui/material') || id.includes('@mui/system') || id.includes('@mui/utils')) {
                             return 'mui-vendor';
-                        }
-                        if (id.includes('@mui/icons-material')) {
-                            return 'mui-icons-vendor';
-                        }
-                        // Charts/visualization - depends on react and d3
-                        if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-')) {
-                            return 'recharts-vendor';
                         }
                         // Let Rollup handle remaining node_modules automatically
                         return undefined;
