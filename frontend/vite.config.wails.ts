@@ -1,4 +1,4 @@
-import react from '@vitejs/plugin-react-swc';
+import react from '@vitejs/plugin-react';
 import wails from "@wailsio/runtime/plugins/vite";
 import {defineConfig} from 'vite';
 import {visualizer} from 'rollup-plugin-visualizer';
@@ -66,7 +66,11 @@ export default defineConfig(({mode}) => {
             },
             chunkSizeWarningLimit: 500,
             sourcemap: mode !== 'production',
-            minify: 'swc',
+            // 'swc' is not a value Vite/Rolldown recognizes for build.minify
+            // (valid: true | false | 'oxc' | 'terser' | 'esbuild') — it was
+            // silently falling through to unminified output. 'oxc' is
+            // Rolldown-Vite's native minifier (same as the `true` default).
+            minify: 'oxc',
         },
     }
 })

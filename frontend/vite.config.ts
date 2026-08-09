@@ -1,4 +1,4 @@
-import react from '@vitejs/plugin-react-swc';
+import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { visualizer } from 'rollup-plugin-visualizer';
 import path from 'path';
@@ -103,8 +103,11 @@ export default defineConfig(({ mode }) => {
             chunkSizeWarningLimit: 500,
             // Disable sourcemap in production to reduce memory and output size
             sourcemap: mode !== 'production',
-            // Use SWC for minification (via @vitejs/plugin-react-swc)
-            minify: 'swc',
+            // 'swc' is not a value Vite/Rolldown recognizes for build.minify
+            // (valid: true | false | 'oxc' | 'terser' | 'esbuild') — it was
+            // silently falling through to unminified output. 'oxc' is
+            // Rolldown-Vite's native minifier (same as the `true` default).
+            minify: 'oxc',
         },
     }
 })
