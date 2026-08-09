@@ -3,13 +3,12 @@ package feishu
 import (
 	"fmt"
 
-	"github.com/tingly-dev/tingly-box/imbot/command"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 // SetupQuickActions configures the quick actions for a Feishu/Lark bot using the CommandRegistry.
 // Quick actions appear when users type "/" in the chat.
-func SetupQuickActions(bot core.Bot, cmdRegistry *command.CommandRegistry) error {
+func SetupQuickActions(bot core.Bot, cmdRegistry *core.CommandRegistry) error {
 	// Cast to FeishuBot interface to access Feishu-specific methods
 	fsBot, ok := bot.(*Bot)
 	if !ok {

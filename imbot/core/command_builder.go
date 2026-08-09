@@ -1,7 +1,5 @@
 // Package command provides a simple, generic command management system for bots.
-package command
-
-import "github.com/tingly-dev/tingly-box/imbot/core"
+package core
 
 // CommandBuilder provides a fluent API for command definition.
 type CommandBuilder struct {
@@ -53,7 +51,7 @@ func (b *CommandBuilder) Hidden() *CommandBuilder {
 
 // WithPlatforms restricts the command to specific platforms.
 // If not called, the command is available on all platforms.
-func (b *CommandBuilder) WithPlatforms(platforms ...core.Platform) *CommandBuilder {
+func (b *CommandBuilder) WithPlatforms(platforms ...Platform) *CommandBuilder {
 	b.cmd.Platforms = append(b.cmd.Platforms, platforms...)
 	return b
 }
