@@ -1,546 +1,173 @@
-# IMBot - Unified IM Bot Framework for Go
+# imbot — unified IM bot framework for Go
 
-A unified, extensible framework for building IM bots that work across multiple messaging platforms.
+A unified, extensible framework for building IM bots that run across many
+messaging platforms through one API. Used in production by the
+[tingly-box](https://github.com/tingly-dev/tingly-box) AI orchestrator.
 
-## Features
+> This README is the entry point. Per-package and per-platform detail lives in
+> `core/README.md`, `platform/README.md`, and each `platform/<name>/README.md`.
 
-- **Unified API** - Single interface for all platforms
-- **Type-Safe** - Full Go type safety with compile-time checks
-- **Extensible** - Easy to add new platforms via core interfaces
-- **Multi-Platform** - Manage multiple bots from different platforms in one manager
-- **Rich Interactions** - Platform-neutral action sets, inline keyboards, and commands
-- **Markdown Support** - Cross-platform markdown conversion with entity handling
-- **Well-Tested** - Comprehensive test coverage including E2E tests
-- **Production Ready** - Used in tingly-box AI orchestrator
+## Layering
 
-## Supported Platforms
+```
+imbot/                       public API + multi-bot runtime
+├── imbot.go                 re-exports core types; Manager entry; cast helpers (AsTelegramBot, AsRestater)
+├── manager.go               Manager — owns bot lifecycle, fan-out event handlers, reconnect
+├── factory.go / registry.go CreateBot / global registry + RegisterBuiltinPlatforms
+├── menu_setup.go            per-platform native command-menu installer dispatch
+├── platform_auth.go         per-platform auth requirements (fields, required keys)
+│
+├── core/                    platform-neutral vocabulary — knows no concrete SDK
+├── markdown/                cross-platform markdown → entity conversion
+├── platform/                one package per platform, each implementing core.Bot
+└── examples/, tests/        runnable examples and E2E tests
+```
 
-| Platform | Status | Auth | Connection |
+The three layers are strictly ordered: **`core`** holds the abstractions;
+**`imbot`** (this package) is the flat entry that wires them into a runtime;
+**`platform/*`** are the per-platform adapters. Nothing in `core` imports a
+platform package. See `.design/imbot-platform-seams.md` for the design
+rationale behind actions, payloads, capabilities, and restate.
+
+- `core/` internals → [`core/README.md`](core/README.md)
+- platform registry & "add a new platform" → [`platform/README.md`](platform/README.md)
+- markdown rendering → [`markdown/README.md`](markdown/README.md)
+
+## Supported platforms
+
+`core.Platform` constants: `telegram`, `discord`, `slack`, `feishu`, `lark`,
+`dingtalk`, `weixin`, `wecom`, `whatsapp`, and the internal test platform
+`tingly`. The single source of truth for display names, capabilities, and
+per-platform behavior is the `PlatformDescriptor` table in
+`core/platforms.go`; per-platform connection and auth detail is in each
+`platform/<name>/README.md`.
+
+| Platform | Auth | Connection | README |
 |---|---|---|---|
-| **Telegram** | ✅ Full | Token | Polling / WebSocket |
-| **Discord** | ✅ Full | Token | WebSocket (Gateway) |
-| **Slack** | ✅ Full | Token | RTM |
-| **Feishu** | ✅ Full | OAuth | WebSocket (Event Push) |
-| **Lark** | ✅ Full | OAuth | WebSocket (Event Push) |
-| **DingTalk** | ✅ Full | OAuth | Stream SDK |
-| **Weixin** | ✅ Basic | Token + AccountID | WebSocket |
-| **WeCom** | ✅ Basic | OAuth | WebSocket |
-| **WhatsApp** | ✅ Basic | Token | HTTP Webhook |
-| **Google Chat** | 🚧 Planned | — | — |
-| **Signal** | 🚧 Planned | — | — |
+| Telegram | token | long-polling | [`telegram/`](platform/telegram/README.md) |
+| Discord | token | WebSocket (Gateway) | [`discord/`](platform/discord/README.md) |
+| Slack | token (+ optional app token) | RTM / Socket Mode | [`slack/`](platform/slack/README.md) |
+| Feishu | oauth | WebSocket (event push) | [`feishu/`](platform/feishu/README.md) |
+| Lark | oauth | WebSocket (event push) | [`lark/`](platform/lark/README.md) |
+| DingTalk | oauth | Stream SDK | [`dingtalk/`](platform/dingtalk/README.md) |
+| Weixin | token (+ account/user ids) | WebSocket | [`weixin/`](platform/weixin/README.md) |
+| WeCom | oauth | WebSocket | [`wecom/`](platform/wecom/README.md) |
+| WhatsApp | token | REST (Meta Cloud API) | [`whatsapp/`](platform/whatsapp/README.md) |
+| Tingly (test) | none | in-process Transport | [`tingly/`](platform/tingly/README.md) |
 
-See [`platform/README.md`](platform/README.md) for per-platform design details and configuration reference.
-
-## Architecture
-
-```
-imbot/
-├── core/              # Core abstractions and interfaces
-│   ├── bot.go         # Bot interface definition
-│   ├── message.go     # Message types and content
-│   ├── config.go      # Configuration structures
-│   ├── errors.go      # Error handling
-│   └── types.go       # Common types and constants
-├── platform/          # Platform-specific implementations
-│   ├── telegram/      # Telegram bot implementation
-│   ├── feishu/        # Feishu/Lark bot implementation
-│   ├── dingtalk/      # DingTalk bot implementation
-│   ├── discord/       # Discord bot implementation
-│   ├── slack/         # Slack bot implementation
-│   └── weixin/        # WeixinWork bot implementation
-├── interaction/       # Interactive elements (keyboards, cards)
-├── command/           # Command registry and handling
-├── markdown/          # Markdown parser and converter
-├── security/          # TOFU pairing-code manager
-├── manager.go         # Multi-bot manager
-└── factory.go         # Bot factory for creating platform instances
-```
-
-## Installation
-
-```bash
-go get github.com/tingly-dev/tingly-box/imbot
-```
-
-## Quick Start
-
-### Basic Telegram Bot
+## Quick start
 
 ```go
 package main
 
 import (
-    "context"
-    "log"
-    "os"
+	"context"
+	"log"
+	"os"
 
-    "github.com/tingly-dev/tingly-box/imbot"
+	"github.com/tingly-dev/tingly-box/imbot"
 )
 
 func main() {
-    // Create bot manager
-    manager := imbot.NewManager()
+	manager := imbot.NewManager()
 
-    // Add Telegram bot
-    err := manager.AddBot(&imbot.Config{
-        Platform: imbot.PlatformTelegram,
-        Enabled:  true,
-        Auth: imbot.AuthConfig{
-            Type:  "token",
-            Token: os.Getenv("TELEGRAM_BOT_TOKEN"),
-        },
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
+	err := manager.AddBot(&imbot.Config{
+		Platform: imbot.PlatformTelegram,
+		Enabled:  true,
+		Auth: imbot.AuthConfig{
+			Type:  "token",
+			Token: os.Getenv("TELEGRAM_BOT_TOKEN"),
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    // Set message handler
-    manager.OnMessage(func(msg imbot.Message, platform imbot.Platform) {
-        log.Printf("[%-10s] %s: %s", platform, msg.Sender.DisplayName, msg.GetText())
+	// OnMessage handlers receive (message, platform, botUUID).
+	manager.OnMessage(func(msg imbot.Message, platform imbot.Platform, botUUID string) {
+		log.Printf("[%-10s] %s: %s", platform, msg.Sender.DisplayName, msg.GetText())
 
-        // Reply
-        bot := manager.GetBot(platform)
-        if bot != nil {
-            bot.SendText(context.Background(), msg.Sender.ID, "Echo: "+msg.GetText())
-        }
-    })
+		bot := manager.GetBotByUUID(botUUID)
+		if bot != nil {
+			bot.SendText(context.Background(), msg.Recipient.ID, "Echo: "+msg.GetText())
+		}
+	})
 
-    // Start manager
-    if err := manager.Start(context.Background()); err != nil {
-        log.Fatal(err)
-    }
-
-    // Wait forever
-    select {}
+	if err := manager.Start(context.Background()); err != nil {
+		log.Fatal(err)
+	}
+	select {}
 }
 ```
 
-### Multi-Platform Bot
-
-```go
-package main
-
-import (
-    "context"
-    "log"
-    "os"
-
-    "github.com/tingly-dev/tingly-box/imbot"
-)
-
-func main() {
-    manager := imbot.NewManager()
-
-    // Add multiple platforms
-    configs := []*imbot.Config{
-        {
-            Platform: imbot.PlatformTelegram,
-            Enabled:  true,
-            Auth: imbot.AuthConfig{
-                Type:  "token",
-                Token: os.Getenv("TELEGRAM_TOKEN"),
-            },
-        },
-        {
-            Platform: imbot.PlatformFeishu,
-            Enabled:  true,
-            Auth: imbot.AuthConfig{
-                Type:         "oauth",
-                ClientID:     os.Getenv("FEISHU_APP_ID"),
-                ClientSecret: os.Getenv("FEISHU_APP_SECRET"),
-            },
-        },
-    }
-
-    if err := manager.AddBots(configs); err != nil {
-        log.Fatal(err)
-    }
-
-    // Unified message handler
-    manager.OnMessage(func(msg imbot.Message, platform imbot.Platform) {
-        log.Printf("[%-10s] %s: %s", platform, msg.Sender.DisplayName, msg.GetText())
-
-        bot := manager.GetBot(platform)
-        if bot != nil {
-            bot.SendText(context.Background(), msg.Sender.ID, "Thanks for your message!")
-        }
-    })
-
-    manager.Start(context.Background())
-    select {}
-}
-```
-
-## Configuration
-
-### Bot Configuration
-
-```go
-config := &imbot.Config{
-    Platform: imbot.PlatformTelegram,
-    Enabled:  true,
-    Auth: imbot.AuthConfig{
-        Type:  "token",
-        Token: "your-bot-token",
-    },
-    Options: map[string]interface{}{
-        "debug": false,
-    },
-}
-```
-
-### Auth Configuration
-
-The framework supports multiple authentication methods:
-
-```go
-// Token authentication (Telegram, Discord)
-Auth: imbot.AuthConfig{
-    Type:  "token",
-    Token: "your-bot-token",
-}
-
-// OAuth authentication (Feishu, Slack)
-Auth: imbot.AuthConfig{
-    Type:         "oauth",
-    ClientID:     "client-id",
-    ClientSecret: "client-secret",
-}
-```
-
-### Environment Variables
-
-You can use environment variables in your config:
-
-```go
-config := &imbot.Config{
-    Auth: imbot.AuthConfig{
-        Token: os.Getenv("TELEGRAM_BOT_TOKEN"),
-    },
-}
-```
-
-## Message Handling
-
-### Send Text Message
-
-```go
-bot.SendText(ctx, "chat-id", "Hello, World!")
-```
-
-### Send Message with Markdown
-
-```go
-bot.SendMessage(ctx, "chat-id", &imbot.SendMessageOptions{
-    Text:      "*Bold* _italic_ `code`",
-    ParseMode: imbot.ParseModeMarkdown,
-})
-```
-
-### Send Message with Inline Keyboard
-
-```go
-keyboard := imbot.NewKeyboardBuilder().
-    AddRow(
-        imbot.CallbackButton("Option 1", "opt:1"),
-        imbot.CallbackButton("Option 2", "opt:2"),
-    ).
-    Build()
-
-bot.SendMessage(ctx, "chat-id", &imbot.SendMessageOptions{
-    Text:     "Choose an option:",
-    Keyboard: keyboard,
-})
-```
-
-### Reply to Message
-
-```go
-bot.SendMessage(ctx, "chat-id", &imbot.SendMessageOptions{
-    Text:    "Replying to your message",
-    ReplyTo: messageID,
-})
-```
-
-## Event Handlers
-
-```go
-// Message received
-manager.OnMessage(func(msg imbot.Message, platform imbot.Platform) {
-    log.Printf("Message from %s: %s", msg.Sender.DisplayName, msg.GetText())
-})
-
-// Error occurred
-manager.OnError(func(err error, platform imbot.Platform) {
-    log.Printf("Error on %s: %v", platform, err)
-})
-
-// Bot connected
-manager.OnConnected(func(platform imbot.Platform) {
-    log.Printf("%s bot connected", platform)
-})
-```
-
-## Interactive Elements
-
-### Inline Keyboards
-
-```go
-// Create inline keyboard
-keyboard := imbot.NewKeyboardBuilder().
-    AddRow(
-        imbot.CallbackButton("Approve", "action:approve"),
-        imbot.CallbackButton("Reject", "action:reject"),
-    ).
-    AddRow(
-        imbot.CallbackButton("Cancel", "action:cancel"),
-    ).
-    Build()
-
-// Send message with keyboard
-bot.SendMessage(ctx, chatID, &imbot.SendMessageOptions{
-    Text:     "Do you approve this action?",
-    Keyboard: keyboard,
-})
-
-// Handle callback
-manager.OnMessage(func(msg imbot.Message, platform imbot.Platform) {
-    if msg.IsCallbackQuery() {
-        parts := imbot.ParseCallbackData(msg.CallbackData)
-        action := parts[0]  // "action"
-        value := parts[1]   // "approve", "reject", or "cancel"
-
-        // Process the callback
-        // ...
-    }
-})
-```
-
-### Commands
-
-```go
-// Create command registry
-registry := imbot.NewCommandRegistry()
-
-// Register commands
-registry.Register(
-    imbot.NewCommand("start", "/start", "Start the bot").
-        SetHandler(func(ctx *imbot.HandlerContext) error {
-            return ctx.Bot.SendText(ctx.Context(), ctx.ChatID, "Welcome!")
-        }).
-        Build(),
-)
-
-// Set command list on Telegram bot
-if tgBot, ok := imbot.AsTelegramBot(bot); ok {
-    tgBot.SetCommandList(registry.ToTelegramCommands())
-}
-```
-
-## Markdown Support
-
-The framework includes a powerful markdown converter that handles cross-platform differences:
-
-```go
-import "github.com/tingly-dev/tingly-box/imbot/markdown"
-
-// Parse markdown and convert to Telegram entities
-text, entities := markdown.ConvertToTelegram("*bold* _italic_ `code`")
-
-// Send with entities
-bot.SendMessage(ctx, chatID, &imbot.SendMessageOptions{
-    Text:     text,
-    Entities: entities,
-})
-```
-
-See `markdown/USAGE.md` for detailed usage and supported formats.
-
-## Platform-Specific Features
-
-### Telegram
-
-```go
-// Cast to TelegramBot for platform-specific features
-if tgBot, ok := imbot.AsTelegramBot(bot); ok {
-    // Resolve chat ID from username or invite link
-    chatID, err := tgBot.ResolveChatID("@username")
-
-    // Set bot commands
-    tgBot.SetCommandList(commands)
-
-    // Edit message with keyboard
-    tgBot.EditMessageWithKeyboard(ctx, chatID, messageID, "Updated text", keyboard)
-}
-```
-
-### Feishu/Lark
-
-```go
-// Cast to FeishuBot for platform-specific features
-if fsBot, ok := imbot.AsFeishuBot(bot); ok {
-    // Set quick actions (shown when typing /)
-    fsBot.SetQuickActions(actions)
-
-    // Get current quick actions
-    actions, err := fsBot.GetQuickActions()
-}
-```
-
-## Security: Pairing (TOFU)
-
-Bot tokens are bearer credentials: anyone who learns them can DM the bot.
-By default the remote-control service trusts every chat that reaches the
-bot. To prevent a leaked token from granting command access, each bot can
-require a one-time pairing handshake (trust-on-first-use).
-
-When `RequirePairing` is enabled on a bot:
-
-1. On bot start the server prints a fresh pairing code to its log and
-   stderr. Operators see something like:
-
-   ```
-   [tingly-box] Bot "personal-tg" (telegram) pairing code: K7P2-QX9M
-   (expires 2026-04-28T11:51:00Z)
-   In the bot DM, send: /bind K7P2-QX9M
-   ```
-
-2. From the bot's direct message the operator sends `/bind K7P2-QX9M`. On
-   success the chat is recorded as the bot's owner and `✅ Paired` is
-   replied. The code is single-use; a server restart mints a new one.
-
-3. Any subsequent message from an *unpaired* DM is dropped with a one-line
-   hint instructing the user to ask the operator for a fresh code. Group
-   chats keep using the existing `/join <chatID>` whitelist, but the
-   operator who whitelisted the group must themselves be paired.
-
-Properties:
-
-- Codes are 8-character base32 with a dash for readability (`K7P2-QX9M`).
-- Codes live only in memory — restart invalidates outstanding codes.
-- Codes are time-limited (default 10 min) and single-use.
-- Comparison is constant-time (`subtle.ConstantTimeCompare`).
-- After 5 wrong attempts in a row the bot is locked out for 10 min.
-- Every attempt (success, mismatch, expired, locked) is recorded by the
-  audit logger as `imbot.pair.*` events.
-
-### Operator commands
+`Config`, `AuthConfig`, `Message`, `Platform`, and the content/error helpers are
+re-exported by the `imbot` package and defined in `core/`. Add several bots at
+once with `manager.AddBots([]*imbot.Config{...})`.
+
+## Core concepts
+
+**Bot lifecycle.** `manager.AddBot(cfg)` constructs the platform `core.Bot`
+through the global registry, `Start(ctx)` connects every bot, and event
+handlers (`OnMessage`, `OnError`, `OnConnected`, `OnDisconnected`, `OnReady`)
+fan out across all of them. Look up a bot later with `GetBotByUUID(uuid)`.
+
+**Inbound messages.** Every platform adapter converts its native events into a
+`core.Message` with a typed `Content` (text / media / poll / reaction / system).
+`msg.GetText()` returns the text; `msg.IsCallback()` reports whether the message
+is a **button press** rather than typed input. Button presses carry their
+identity as `msg.Payload` — an ordered list of segments (see `core/payload.go`)
+— which replaces the old flat `callback_data` string.
+
+**Outbound interactions.** Send with `bot.SendMessage(ctx, target, opts)`. The
+neutral outbound vocabulary is `core.ActionSet` (`core/action.go`): each
+platform renders it natively if it can, or falls back. Build buttons with
+`imbot.NewKeyboardBuilder()` / `imbot.CallbackButton(...)`. `imbot.ParseCallbackData`
+parses the historical flat encoding for producers that have not migrated to
+`Payload`.
+
+**Markdown.** Convert standard markdown to UTF-16-correct entities with
+`markdown.Convert(...)` and attach them via `SendMessageOptions.Entities`
+(precedence over `ParseMode`). See `markdown/README.md`.
+
+**Platform-specific escape hatches.** Cast a `core.Bot` for native features:
+`imbot.AsTelegramBot(bot)` (commands, menu button, chat resolution) and
+`imbot.AsRestater(bot)` (replace a message's presentation).
+
+## Security: pairing (TOFU)
+
+Bot tokens are bearer credentials. Each bot can require a one-time pairing
+handshake (trust-on-first-use) so a leaked token cannot grant command access.
+The TOFU machinery itself (`PairingManager`: code minting, constant-time
+compare, TTL, lockout, audit) lives in `core/pairing.go`; whether a given bot
+*enforces* it is a server-side bot setting (not a field on `core.Config`),
+resolving per-platform defaults from `core.PlatformBehavior.RequiresPairingByDefault`.
+
+When a bot has pairing enabled:
+
+1. The server prints a fresh pairing code to stderr on bot start, e.g.
+   `[tingly-box] Bot "personal-tg" (telegram) pairing code: K7P2-QX9M`.
+2. The operator sends `/bind K7P2-QX9M` from the bot's DM; the chat becomes
+   the bot's owner. Codes are in-memory only, time-limited (default 10 min),
+   single-use, compared in constant time, and lock the bot after 5 wrong
+   attempts. Every outcome is audit-logged as `imbot.pair.*`.
+3. Group chats still use the existing `/join <chatID>` whitelist, but the
+   operator who whitelists a group must themselves be paired.
 
 ```bash
-# Turn pairing on / off (persisted; takes effect on next bot start)
-tingly-box remote pair enable  <bot-uuid>
-tingly-box remote pair disable <bot-uuid>
-
-# Show whether RequirePairing is on and where to find the active code
-tingly-box remote pair status  <bot-uuid>
-
-# Forget a paired chat (the chat must /bind again)
-tingly-box remote pair revoke  <bot-uuid> <chat-id>
+tingly-box remote pair enable|disable|status|revoke <bot-uuid> [<chat-id>]
 ```
 
-To rotate the pairing code, restart the bot — the server will print a
-fresh code on stderr.
+Restart the bot to rotate the code. The CLI commands and tri-state default
+resolution (`db.Settings.RequirePairing` → else platform default) are owned by
+the server module, not by this package.
 
-### Migration
+## Examples & tests
 
-For backwards compatibility, existing bots default to `RequirePairing =
-false` (the legacy behavior). New bots created via the wizard set
-`RequirePairing = true`. We recommend running
+- [`examples/telegram/`](examples/telegram),
+  [`examples/multi_platform/`](examples/multi_platform),
+  [`examples/dingtalk/`](examples/dingtalk) — runnable bots.
+- [`tests/telegram_e2e_test/`](tests/telegram_e2e_test) — Telegram E2E tests
+  (`tests/telegram_e2e_test/TELEGRAM_E2E_TESTS.md`).
 
-```bash
-tingly-box remote pair enable <bot-uuid>
-```
-
-against every bot you operate, then restarting it to harden the
-deployment.
-
-## Error Handling
-
-```go
-manager.OnError(func(err error, platform imbot.Platform) {
-    // Check if it's a bot error
-    if imbot.IsBotError(err) {
-        botErr := err.(*imbot.BotError)
-        code := imbot.GetErrorCode(err)
-
-        switch code {
-        case imbot.ErrAuthFailed:
-            log.Printf("Authentication failed: %v", botErr)
-        case imbot.ErrRateLimited:
-            log.Printf("Rate limited: %v", botErr)
-        case imbot.ErrConnectionFailed:
-            log.Printf("Connection failed: %v", botErr)
-        }
-    }
-})
-```
-
-## Testing
-
-The framework includes comprehensive E2E tests for Telegram:
-
-```bash
-# Set environment variables
-export TELEGRAM_BOT_TOKEN="your-bot-token"
-export TELEGRAM_TEST_CHAT_ID="your-chat-id"
-
-# Run tests
-make test-telegram-e2e
-```
-
-See `tests/TELEGRAM_E2E_TESTS.md` for detailed testing documentation.
-
-## Examples
-
-See the `examples/` directory for complete examples:
-
-- `examples/telegram/` - Telegram bot with commands and keyboards
-- `examples/multi_platform/` - Multi-platform bot example
-- `examples/dingtalk/` - DingTalk bot example
-
-Run examples:
-
-```bash
-cd examples/telegram
-go run telegram-bot.go
-```
-
-## Development
-
-### Building
-
-```bash
-make build
-```
-
-### Running Tests
-
-```bash
-# Unit tests
-make test
-
-# E2E tests (requires environment variables)
-make test-telegram-e2e
-```
-
-### Project Structure
-
-- **core/** - Core abstractions, independent of platform implementations
-- **platform/** - Platform-specific bot implementations
-- **interaction/** - Interactive elements (keyboards, cards)
-- **command/** - Command registry and handling system
-- **markdown/** - Markdown parsing and cross-platform conversion
-- **security/** - TOFU pairing-code manager
-- **tests/** - E2E and integration tests
-
-## Used In
-
-This framework is used in [tingly-box](https://github.com/tingly-dev/tingly-box), an AI orchestrator that provides:
-- LLM gateway with multi-provider support
-- Remote control via IM platforms
-- Smart routing and load balancing
-- Context optimization
-
-## License
-
-Mozilla Public License Version 2.0
+This framework is part of tingly-box; build and test with the project's
+`task` targets (`task build`, `task go:test`).

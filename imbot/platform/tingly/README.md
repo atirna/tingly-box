@@ -104,6 +104,7 @@ case tingly.EventEdit:
 | `EventEdit` | `EditMessage` |
 | `EventDelete` | `DeleteMessage` |
 | `EventReact` | `React` |
+| `EventRestate` | message-presentation replacement (`core.MessageRestater`) |
 
 ### Keyboard decoding
 
@@ -153,5 +154,4 @@ is created automatically.
 | `tingly.go` | `Bot` struct and lifecycle; delegates all ops to `Transport` |
 | `transport.go` | `Transport` interface; `InProcessTransport`; `Event` types; transport registry |
 | `adapter.go` | Decodes reply markup into `Keyboard` / `Button` structs |
-| `interaction.go` | Builds tingly interaction responses |
 | `testenv/` | High-level E2E harness wrapping `InProcessTransport` |

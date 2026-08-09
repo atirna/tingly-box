@@ -82,14 +82,23 @@ that `React` can resolve the target chat from a bare message ID.
 
 ## Platform-specific API
 
-Cast the `core.Bot` to `*telegram.Bot` for Telegram-only features:
+The preferred path for the command list + menu button is the package helper,
+which builds `[]models.BotCommand` from a `core.CommandRegistry` and sets both:
 
 ```go
 import "github.com/tingly-dev/tingly-box/imbot/platform/telegram"
 
+if err := telegram.SetupMenuButton(bot, registry); err != nil {
+    // handle error
+}
+```
+
+For lower-level control, cast the `core.Bot` to `*telegram.Bot`:
+
+```go
 if tg, ok := bot.(*telegram.Bot); ok {
     // Set the bot command list shown in the Telegram menu.
-    tg.SetCommandList(registry.BuildTelegramMenuCommands())
+    tg.SetCommandList(commands) // []models.BotCommand
 
     // Change the menu button shown in the chat header.
     tg.SetMenuButton(telegram.MenuButtonConfig{
@@ -102,6 +111,12 @@ if tg, ok := bot.(*telegram.Bot); ok {
         Text: "Open App",
         URL:  "https://example.com/app",
     })
+
+    // Resolve a chat id from an invite link or username.
+    chatID, err := tg.ResolveChatID("@username")
+
+    // Edit a message and replace its keyboard.
+    tg.EditMessageWithKeyboard(ctx, chatID, messageID, "Updated text", keyboard)
 }
 ```
 
@@ -112,8 +127,8 @@ type assertion.
 
 | File | Purpose |
 |---|---|
-| `telegram.go` | `Bot` struct, lifecycle (`Connect`/`Disconnect`), send/react/edit/delete |
+| `telegram.go` | `Bot` struct, lifecycle (`Connect`/`Disconnect`), send/react/edit/delete, command & menu-button setup |
 | `adapter.go` | Converts `models.Message` / `CallbackQuery` → `core.Message` |
-| `interaction.go` | Builds Telegram inline keyboards from `interaction.Interaction` |
-| `menu.go` | Converts `menu.Menu` → Telegram reply/inline keyboards |
-| `menu_setup.go` | Sets bot commands and menu button via API |
+| `action_render.go` | Renders a `core.ActionSet` natively for Telegram-only button capabilities |
+| `callback_codec.go` | Packs/unpacks callback data within Telegram's 64-byte `callback_data` limit |
+| `menu_setup.go` | Installs the bot command list and menu button from a `core.CommandRegistry` |

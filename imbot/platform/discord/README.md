@@ -74,21 +74,20 @@ appropriate discordgo API.
 
 | Feature | Supported |
 |---|---|
-| Send text | ✅ |
+| Send text (markdown native) | ✅ |
 | Send media (images, files) | ✅ |
-| Components (buttons, select menus) | ✅ |
+| Reply (message reference) | ✅ |
 | Reactions | ✅ |
 | Edit message | ✅ |
 | Delete message | ✅ |
-| Threads | ✅ |
-| Mentions | ✅ |
-| DMs | ✅ |
+| Mentions / DMs | ✅ |
+| Components (buttons, select menus) | ❌ |
+| Threads | ❌ |
 | Text limit | 2 000 chars |
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `discord.go` | `Bot` struct, lifecycle, send/react/edit/delete |
-| `adapter.go` | Converts `discordgo.Message` → `core.Message` |
-| `interaction.go` | Builds Discord component rows from `interaction.Interaction` |
+| `discord.go` | `Bot` struct, lifecycle, send/react/edit/delete; intent parsing |
+| `adapter.go` | Converts `discordgo.Message` → `core.Message`; media/embed extraction |

@@ -65,7 +65,7 @@ single WeChat account identified by `accountID`.
 
 | File | Purpose |
 |---|---|
-| `weixin.go` | `Bot` struct, lifecycle, send methods |
+| `weixin.go` | `Bot` struct, lifecycle, send methods; React/Edit/Delete return "not supported" |
 | `adapter.go` | Converts WeChat message types → `core.Message` |
-| `interaction.go` | Interaction adapter (text-mode fallback) |
-| `registration.go` | Registers the platform in the global registry |
+| `pairing.go` | `InteractionHandler` — QR-code login and account management for a provisioned bot |
+| `qr_client.go` | `QRClient` — provisions bot credentials via the Weixin iLink QR onboarding flow |

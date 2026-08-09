@@ -19,17 +19,20 @@ Each subdirectory implements `core.Bot` for one messaging platform. All platform
 
 ## Registry
 
-`command_registry.go` maps `core.Platform` values to constructor functions. Use the global helpers:
+Platform constructors are mapped from `core.Platform` values to factory
+functions in `imbot/registry.go` (`RegisterBuiltinPlatforms`). `imbot/platform/`
+is a directory of packages, not a package itself — the global helpers live on
+the top-level `imbot` package:
 
 ```go
-bot, err := platform.Create(config)
-ok := platform.IsSupported(core.PlatformSlack)
+bot, err := imbot.Create(config)
+ok := imbot.IsSupported(core.PlatformSlack)
 ```
 
 Register a custom platform at startup:
 
 ```go
-platform.Register(core.Platform("myplatform"), func(cfg *core.Config) (core.Bot, error) {
+imbot.Register(core.Platform("myplatform"), func(cfg *core.Config) (core.Bot, error) {
     return mypkg.NewBot(cfg), nil
 })
 ```
@@ -39,6 +42,6 @@ platform.Register(core.Platform("myplatform"), func(cfg *core.Config) (core.Bot,
 1. Create `platform/<name>/<name>.go` embedding `*core.BaseBot`.
 2. Implement `core.Bot` (connect, disconnect, send, react, edit, delete).
 3. Add an `Adapter` that converts raw SDK events to `core.Message` and calls `b.EmitMessage(msg)`.
-4. Register the constructor in `command_registry.go` → `RegisterBuiltinPlatforms()`.
+4. Register the constructor in `imbot/registry.go` → `RegisterBuiltinPlatforms()`.
 5. Optionally add an `action_render.go` that renders `core.ActionSet` natively, and implement `core.MessageRestater` (see telegram/feishu for the pattern).
 6. Add a `README.md` following the pattern of existing platforms.

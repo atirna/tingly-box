@@ -17,8 +17,8 @@ The new markdown entity rendering system provides elegant Telegram markdown form
 
 ```go
 import (
-    "github.com/tingly-dev/tingly-box/imbot/internal/markdown"
-    "github.com/tingly-dev/tingly-box/imbot/internal/core"
+    "github.com/tingly-dev/tingly-box/imbot/markdown"
+    "github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 // Convert markdown to entities
@@ -114,7 +114,7 @@ bot.SendMessage(ctx, chatID, &core.SendMessageOptions{
 ### Unit Tests
 
 ```bash
-go test ./imbot/internal/markdown/...
+go test ./imbot/markdown/...
 ```
 
 ### E2E Tests
@@ -161,7 +161,7 @@ _, err = bot.SendMessage(ctx, chatID, &core.SendMessageOptions{
 ## Package Structure
 
 ```
-imbot/internal/markdown/
+imbot/markdown/
 ├── converter.go       # Main Convert() function
 ├── entities.go        # MessageEntity types
 ├── utf16.go          # UTF-16 utilities

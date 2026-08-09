@@ -51,5 +51,4 @@ register a webhook endpoint in your HTTP server for Lark event verification.
 
 | File | Purpose |
 |---|---|
-| `lark.go` | Thin `Bot` wrapper; delegates all calls to `feishu.Bot` |
-| `menu.go` | Lark-specific menu helpers (re-uses Feishu card format) |
+| `lark.go` | Thin `Bot` wrapper; delegates all calls to `feishu.Bot` (`NewBot` → `feishu.NewBot(config, feishu.DomainLark)`); Lark `PlatformInfo` and `GetWebhookURL` |
