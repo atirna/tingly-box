@@ -464,9 +464,9 @@ func TestVendorTransform_AnthropicV1_NoSystemPrompt(t *testing.T) {
 func TestVendorTransform_AnthropicV1_EnabledThinkingPreserved(t *testing.T) {
 	vt := NewVendorTransform()
 
-	// Enabled thinking should be preserved even on unsupported models
+	// Haiku 4.5 supports budget thinking; explicit enabled must pass through
 	req := &anthropic.MessageNewParams{
-		Model:     anthropic.Model("claude-3-5-haiku-20241022"),
+		Model:     anthropic.Model("claude-haiku-4-5-20251001"),
 		MaxTokens: 4096,
 		Thinking: anthropic.ThinkingConfigParamUnion{
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{},
@@ -493,7 +493,7 @@ func TestVendorTransform_AnthropicV1_EnabledThinkingPreserved(t *testing.T) {
 
 	// Enabled thinking should be preserved
 	assert.NotNil(t, result.Thinking.OfEnabled,
-		"explicitly enabled thinking should be preserved even on Haiku")
+		"explicitly enabled thinking should be preserved on Haiku 4.5")
 }
 
 // =============================================
@@ -769,7 +769,7 @@ func TestVendorTransform_AnthropicBeta_NoSystemPrompt(t *testing.T) {
 func TestVendorTransform_AnthropicBeta_EnabledThinkingPreserved(t *testing.T) {
 	vt := NewVendorTransform()
 
-	req := newBetaRequest("claude-3-5-haiku-20241022", anthropic.BetaThinkingConfigParamUnion{
+	req := newBetaRequest("claude-haiku-4-5-20251001", anthropic.BetaThinkingConfigParamUnion{
 		OfEnabled: &anthropic.BetaThinkingConfigEnabledParam{},
 	})
 
@@ -789,7 +789,7 @@ func TestVendorTransform_AnthropicBeta_EnabledThinkingPreserved(t *testing.T) {
 	require.True(t, ok)
 
 	assert.NotNil(t, result.Thinking.OfEnabled,
-		"explicitly enabled thinking should be preserved even on Haiku")
+		"explicitly enabled thinking should be preserved on Haiku 4.5")
 }
 
 func TestVendorTransform_AnthropicBeta_ThinkingBlocksFiltered(t *testing.T) {

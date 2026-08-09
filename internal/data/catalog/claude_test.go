@@ -1,4 +1,4 @@
-package ref
+package catalog
 
 import (
 	"testing"
@@ -59,10 +59,34 @@ func TestLookupClaudeThinkingCaps(t *testing.T) {
 		assert.Empty(t, caps.EffortLevels)
 	})
 
+	t.Run("pre-thinking generations are cataloged as thinking-free", func(t *testing.T) {
+		for _, model := range []string{"claude-3-5-sonnet-20241022", "claude-3-opus-20240229"} {
+			caps, ok := LookupClaudeThinkingCaps(model)
+			require.True(t, ok, model)
+			assert.False(t, caps.ThinkingEnabled)
+			assert.False(t, caps.ThinkingAdaptive)
+		}
+		// Sonnet 3.7 introduced budget-based extended thinking.
+		caps, ok := LookupClaudeThinkingCaps("claude-3-7-sonnet-20250219")
+		require.True(t, ok)
+		assert.True(t, caps.ThinkingEnabled)
+		assert.False(t, caps.ThinkingAdaptive)
+	})
+
+	t.Run("latest generation is adaptive-only with effort", func(t *testing.T) {
+		for _, model := range []string{"claude-opus-4-8", "claude-sonnet-5", "claude-opus-5", "claude-fable-5"} {
+			caps, ok := LookupClaudeThinkingCaps(model)
+			require.True(t, ok, model)
+			assert.False(t, caps.ThinkingEnabled, model)
+			assert.True(t, caps.ThinkingAdaptive, model)
+			assert.True(t, caps.EffortLevels["max"], model)
+		}
+	})
+
 	t.Run("unknown models miss", func(t *testing.T) {
-		_, ok := LookupClaudeThinkingCaps("claude-3-5-sonnet-20241022")
-		assert.False(t, ok, "3.5 sonnet is not in the catalog")
-		_, ok = LookupClaudeThinkingCaps("gpt-5.2")
+		_, ok := LookupClaudeThinkingCaps("gpt-5.2")
+		assert.False(t, ok)
+		_, ok = LookupClaudeThinkingCaps("claude-9-experimental")
 		assert.False(t, ok)
 		_, ok = LookupClaudeThinkingCaps("")
 		assert.False(t, ok)

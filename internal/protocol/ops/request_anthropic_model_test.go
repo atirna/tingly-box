@@ -75,8 +75,14 @@ func TestAnthropicModelThinkingCaps(t *testing.T) {
 			budget:   false,
 		},
 		{
-			name:     "Uncataloged model gets the legacy budget-only profile",
+			name:     "Claude 3.5 Sonnet predates extended thinking",
 			model:    "claude-3-5-sonnet-20241022",
+			adaptive: false,
+			budget:   false,
+		},
+		{
+			name:     "Uncataloged model gets the legacy budget-only profile",
+			model:    "claude-9-experimental",
 			adaptive: false,
 			budget:   true,
 		},
@@ -162,7 +168,7 @@ func TestApplyAnthropicModelTransform_V1_AdaptiveWithEffort_FallsBackToBudget(t 
 
 func TestApplyAnthropicModelTransform_V1_AdaptiveBudgetFallbackCappedByMaxTokens(t *testing.T) {
 	req := &anthropic.MessageNewParams{
-		Model:     anthropic.Model("claude-3-5-haiku-20241022"),
+		Model:     anthropic.Model("claude-haiku-4-5-20251001"),
 		MaxTokens: int64(2048),
 		Thinking: anthropic.ThinkingConfigParamUnion{
 			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
@@ -173,7 +179,7 @@ func TestApplyAnthropicModelTransform_V1_AdaptiveBudgetFallbackCappedByMaxTokens
 		},
 	}
 
-	result := ApplyAnthropicV1ModelTransform(req, "claude-3-5-haiku-20241022")
+	result := ApplyAnthropicV1ModelTransform(req, "claude-haiku-4-5-20251001")
 
 	if assert.NotNil(t, result.Thinking.OfEnabled) {
 		assert.LessOrEqual(t, result.Thinking.OfEnabled.BudgetTokens, int64(2048),
@@ -353,8 +359,28 @@ func TestApplyAnthropicModelTransform_V1_Opus37_Adaptive(t *testing.T) {
 	assert.True(t, result.Thinking.OfEnabled == nil, "Thinking.OfEnabled should be nil for Opus 3.7")
 }
 
-func TestApplyAnthropicModelTransform_V1_Haiku_Enabled(t *testing.T) {
-	// Test case: Haiku model with enabled thinking should keep thinking
+func TestApplyAnthropicModelTransform_V1_Haiku45_Enabled(t *testing.T) {
+	// Haiku 4.5 supports budget thinking — enabled passes through untouched.
+	req := &anthropic.MessageNewParams{
+		Model:     anthropic.Model("claude-haiku-4-5-20251001"),
+		MaxTokens: int64(4096),
+		Thinking: anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{},
+		},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("Hello")),
+		},
+	}
+
+	result := ApplyAnthropicV1ModelTransform(req, "claude-haiku-4-5-20251001")
+
+	assert.NotNil(t, result)
+	assert.NotNil(t, result.Thinking.OfEnabled, "Thinking.OfEnabled should be preserved")
+}
+
+func TestApplyAnthropicModelTransform_V1_Haiku35_EnabledDisables(t *testing.T) {
+	// Haiku 3.5 predates extended thinking (introduced with Sonnet 3.7) — an
+	// enabled(budget) request degrades to disabled per the catalog.
 	req := &anthropic.MessageNewParams{
 		Model:     anthropic.Model("claude-3-5-haiku-20241022"),
 		MaxTokens: int64(4096),
@@ -368,8 +394,8 @@ func TestApplyAnthropicModelTransform_V1_Haiku_Enabled(t *testing.T) {
 
 	result := ApplyAnthropicV1ModelTransform(req, "claude-3-5-haiku-20241022")
 
-	assert.NotNil(t, result)
-	assert.NotNil(t, result.Thinking.OfEnabled, "Thinking.OfEnabled should be preserved")
+	assert.Nil(t, result.Thinking.OfEnabled)
+	assert.NotNil(t, result.Thinking.OfDisabled)
 }
 
 func TestApplyAnthropicModelTransform_V1_NoThinking(t *testing.T) {

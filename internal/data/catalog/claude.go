@@ -1,8 +1,17 @@
-// Package ref exposes reference capability snapshots shipped with the binary.
-// claude.models.json mirrors the Anthropic model catalog and is the single
-// source of truth for per-model thinking/effort capability decisions — update
-// that file when new models land instead of hardcoding model names in code.
-package ref
+// Package catalog is the per-vendor model capability catalog: what each model
+// can do, declared once per model family, independent of which provider serves
+// it. It complements internal/data/providers.json, which is the offering
+// registry (who serves which model, at which endpoint, with what limits) —
+// capability facts live here, deployment facts live there.
+//
+// Layout: one <vendor>.models.json data file plus one <vendor>.go loader per
+// vendor (claude.models.json + claude.go today; openai/gemini can follow the
+// same pattern). The Claude file mirrors the Anthropic /v1/models response
+// shape so it can be refreshed from the API. Update the JSON when new models
+// land instead of hardcoding model names in code; the completeness test in
+// this package fails when providers.json offers a Claude model this catalog
+// does not describe.
+package catalog
 
 import (
 	_ "embed"

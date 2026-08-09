@@ -468,7 +468,7 @@ func TestFullChain_AnthropicV1_Haiku_ExplicitThinkingPreserved(t *testing.T) {
 	})
 
 	req := &anthropic.MessageNewParams{
-		Model:     anthropic.Model("claude-3-5-haiku-20241022"),
+		Model:     anthropic.Model("claude-haiku-4-5-20251001"),
 		MaxTokens: 8192,
 		Thinking: anthropic.ThinkingConfigParamUnion{
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
@@ -488,8 +488,8 @@ func TestFullChain_AnthropicV1_Haiku_ExplicitThinkingPreserved(t *testing.T) {
 	out, ok := result.Request.(*anthropic.MessageNewParams)
 	require.True(t, ok)
 
-	// Explicitly enabled thinking should be preserved even on unsupported models
-	assert.NotNil(t, out.Thinking.OfEnabled, "explicitly enabled thinking should be preserved on Haiku")
+	// Haiku 4.5 supports budget thinking, so explicit enabled passes through
+	assert.NotNil(t, out.Thinking.OfEnabled, "explicitly enabled thinking should be preserved on Haiku 4.5")
 }
 
 // =============================================
