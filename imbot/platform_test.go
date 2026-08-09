@@ -38,7 +38,7 @@ func TestConfigurablePlatformsMatchRegistry(t *testing.T) {
 	}
 
 	creatable := make(map[string]bool)
-	for _, p := range SupportedPlatforms() {
+	for _, p := range Platforms() {
 		creatable[string(p)] = true
 	}
 

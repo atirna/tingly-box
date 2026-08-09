@@ -57,8 +57,8 @@ func (r *Registry) IsSupported(platform core.Platform) bool {
 	return ok
 }
 
-// SupportedPlatforms returns all supported platforms
-func (r *Registry) SupportedPlatforms() []core.Platform {
+// Platforms returns all supported platforms
+func (r *Registry) Platforms() []core.Platform {
 	platforms := make([]core.Platform, 0, len(r.creators))
 	for platform := range r.creators {
 		platforms = append(platforms, platform)
@@ -133,7 +133,26 @@ func Create(config *core.Config) (core.Bot, error) {
 	return globalRegistry.Create(config)
 }
 
-// IsSupported checks if a platform is supported in the global registry
-func IsSupported(platform core.Platform) bool {
-	return globalRegistry.IsSupported(platform)
+// CreateBot creates a bot instance based on the configuration
+func CreateBot(config *core.Config) (core.Bot, error) {
+	// Validate config
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	// Expand environment variables
+	config.ExpandEnvVars()
+
+	// Create bot using platform registry
+	return Create(config)
+}
+
+// Platforms returns a list of all supported platforms
+func Platforms() []string {
+	ps := globalRegistry.Platforms()
+	platforms := make([]string, len(ps))
+	for i, p := range ps {
+		platforms[i] = string(p)
+	}
+	return platforms
 }
