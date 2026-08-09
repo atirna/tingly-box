@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/platform"
 )
 
 // TestPlatformConfigDisplayNamesDerived asserts every settings-UI entry takes
@@ -39,7 +38,7 @@ func TestConfigurablePlatformsMatchRegistry(t *testing.T) {
 	}
 
 	creatable := make(map[string]bool)
-	for _, p := range platform.SupportedPlatforms() {
+	for _, p := range SupportedPlatforms() {
 		creatable[string(p)] = true
 	}
 

@@ -1,4 +1,4 @@
-package platform
+package imbot
 
 import (
 	"fmt"
@@ -136,9 +136,4 @@ func Create(config *core.Config) (core.Bot, error) {
 // IsSupported checks if a platform is supported in the global registry
 func IsSupported(platform core.Platform) bool {
 	return globalRegistry.IsSupported(platform)
-}
-
-// SupportedPlatforms returns all supported platforms from the global registry
-func SupportedPlatforms() []core.Platform {
-	return globalRegistry.SupportedPlatforms()
 }

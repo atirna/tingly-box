@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/platform"
 )
 
 // CreateBot creates a bot instance based on the configuration
@@ -18,7 +17,7 @@ func CreateBot(config *core.Config) (core.Bot, error) {
 	config.ExpandEnvVars()
 
 	// Create bot using platform registry
-	return platform.Create(config)
+	return Create(config)
 }
 
 // CreateBots creates multiple bot instances
@@ -44,12 +43,12 @@ func CreateBots(configs []*core.Config) ([]core.Bot, error) {
 
 // IsPlatformSupported checks if a platform is supported
 func IsPlatformSupported(platformStr string) bool {
-	return platform.IsSupported(Platform(platformStr))
+	return IsSupported(Platform(platformStr))
 }
 
 // SupportedPlatforms returns a list of all supported platforms
 func SupportedPlatforms() []string {
-	ps := platform.SupportedPlatforms()
+	ps := SupportedPlatforms()
 	platforms := make([]string, len(ps))
 	for i, p := range ps {
 		platforms[i] = string(p)
