@@ -366,12 +366,12 @@ func URLCardAction(id, label, url string) *core.CardActionBuilder {
 
 // NewCommand creates a new command builder.
 func NewCommand(id, name, description string) *command.CommandBuilder {
-	return command.NewCommand(id, name, description)
+	return command.NewCommandBuilder(id, name, description)
 }
 
 // NewCommandRegistry creates a new command registry.
 func NewCommandRegistry() *command.CommandRegistry {
-	return command.NewRegistry()
+	return command.NewCommandRegistry()
 }
 
 // NewHandlerContext creates a new handler context.

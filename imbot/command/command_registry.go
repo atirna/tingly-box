@@ -110,8 +110,8 @@ type CommandRegistry struct {
 	byName   map[string]*Command // by name/alias
 }
 
-// NewRegistry creates a new command registry.
-func NewRegistry() *CommandRegistry {
+// NewCommandRegistry creates a new command registry.
+func NewCommandRegistry() *CommandRegistry {
 	return &CommandRegistry{
 		commands: make(map[string]*Command),
 		byName:   make(map[string]*Command),
