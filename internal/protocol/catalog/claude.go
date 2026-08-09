@@ -24,6 +24,15 @@
 // Update the JSON when new models land instead of hardcoding model names in
 // code; the completeness test in this package fails when providers.json
 // offers a Claude model this catalog does not describe.
+//
+// claude.models.snapshot.json is a separate, unmodified mirror of Anthropic's
+// actual /v1/models response — the ground truth to cross-check
+// claude.models.json against when adding or revising an entry. It is not
+// embedded and no code reads it; it goes stale as new models ship (it
+// currently covers 10 of the 19 models in claude.models.json — models added
+// afterward had their reasoning capabilities inferred from the newest
+// snapshot entry rather than sourced, see .design/model-data.md) and should
+// be refreshed by hand from the live API when convenient, not on every edit.
 package catalog
 
 import (

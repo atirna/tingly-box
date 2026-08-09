@@ -34,6 +34,10 @@
 - 每个 vendor 一对文件:`claude.models.json`(数据)+ `claude.go`(加载与查询,如
   `catalog.LookupClaudeThinkingCaps`)。openai / gemini 需要能力判定时按同样模式扩展,
   字段集合由各自实际消费方决定,不必与 claude 的 schema 一致。
+- `claude.models.snapshot.json`:未经改动的 Anthropic `/v1/models` 响应镜像(**不是**
+  运行时数据,不被任何代码 embed/读取),作为核对 `claude.models.json` 的事实来源。
+  新增/修订条目时先查这份快照;它会随新模型发布而过期(当前只覆盖 19 个模型中的
+  10 个),按需人工从线上 API 刷新,不必每次改动都同步。
 - 查询按"完整 id + 去日期 family 名"双索引、最长 key 优先做子串匹配,所以裸名
   (`claude-opus-4-5`)、带日期 id、云厂商修饰名(`us.anthropic.…-v1:0`、`…@20251001`)都能解析。
 - **完备性不变式**:`catalog/completeness_test.go` 断言 providers.json 中出现的每个 Claude
