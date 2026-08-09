@@ -1,4 +1,4 @@
-package interaction
+package core
 
 // CardActionStyle represents the visual style of a card action.
 type CardActionStyle string

@@ -7,7 +7,6 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // sendActionCard renders text plus a neutral action set as a Feishu
@@ -168,9 +167,9 @@ func actionSetFromLegacyMarkup(raw any) *core.ActionSet {
 	switch m := raw.(type) {
 	case *core.ActionSet:
 		return m
-	case interaction.InlineKeyboardMarkup:
+	case core.InlineKeyboardMarkup:
 		return m.ToActionSet()
-	case *interaction.InlineKeyboardMarkup:
+	case *core.InlineKeyboardMarkup:
 		if m == nil {
 			return nil
 		}

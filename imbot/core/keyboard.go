@@ -1,10 +1,8 @@
-package interaction
+package core
 
 import (
 	"fmt"
 	"strings"
-
-	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 // InlineKeyboardButton represents a button in an inline keyboard
@@ -13,7 +11,7 @@ type InlineKeyboardButton struct {
 	// Payload is what the button sends back. Prefer it over CallbackData: it
 	// is not bound to any platform's wire encoding, so a segment may be as
 	// long as it needs to be and may contain any character.
-	Payload core.Payload `json:"payload,omitempty"`
+	Payload Payload `json:"payload,omitempty"`
 	// CallbackData is the flat colon-joined form.
 	//
 	// Deprecated: use Payload. See imbot/core/payload.go.
@@ -59,7 +57,7 @@ func (b *KeyboardBuilder) AddButton(button InlineKeyboardButton) *KeyboardBuilde
 func ActionButton(text string, segments ...string) InlineKeyboardButton {
 	return InlineKeyboardButton{
 		Text:    text,
-		Payload: core.NewPayload(segments...),
+		Payload: NewPayload(segments...),
 	}
 }
 
@@ -167,12 +165,12 @@ func FormatDirButton(name string, maxLen int) string {
 // This is the bridge that lets existing keyboard-building code migrate off
 // per-platform pre-rendering without being rewritten: build the keyboard as
 // before, then hand over an action set instead of a Telegram payload.
-func (m InlineKeyboardMarkup) ToActionSet() *core.ActionSet {
-	set := core.NewActionSet()
+func (m InlineKeyboardMarkup) ToActionSet() *ActionSet {
+	set := NewActionSet()
 	for _, row := range m.InlineKeyboard {
-		actions := make([]core.Action, 0, len(row))
+		actions := make([]Action, 0, len(row))
 		for _, btn := range row {
-			actions = append(actions, core.Action{
+			actions = append(actions, Action{
 				Label:        btn.Text,
 				Payload:      btn.Payload,
 				CallbackData: btn.CallbackData,
@@ -185,6 +183,6 @@ func (m InlineKeyboardMarkup) ToActionSet() *core.ActionSet {
 }
 
 // BuildActions returns the built keyboard directly as a neutral action set.
-func (b *KeyboardBuilder) BuildActions() *core.ActionSet {
+func (b *KeyboardBuilder) BuildActions() *ActionSet {
 	return b.Build().ToActionSet()
 }

@@ -4,22 +4,24 @@
 // package unchanged.
 package bot
 
-import "github.com/tingly-dev/tingly-box/imbot/security"
+import (
+	"github.com/tingly-dev/tingly-box/imbot/core"
+)
 
 // Type alias — fully transparent to callers.
-type PairingManager = security.PairingManager
+type PairingManager = core.PairingManager
 
 // Error sentinels forwarded from imbot/security.
 var (
-	ErrPairCodeMissing  = security.ErrPairCodeMissing
-	ErrPairCodeExpired  = security.ErrPairCodeExpired
-	ErrPairCodeMismatch = security.ErrPairCodeMismatch
-	ErrPairLocked       = security.ErrPairLocked
+	ErrPairCodeMissing  = core.ErrPairCodeMissing
+	ErrPairCodeExpired  = core.ErrPairCodeExpired
+	ErrPairCodeMismatch = core.ErrPairCodeMismatch
+	ErrPairLocked       = core.ErrPairLocked
 )
 
 // Constructor helpers forwarded from imbot/security. Callers needing the
 // tuning options (TTL, code length, …) should use imbot/security directly.
 var (
-	NewPairingManager = security.NewPairingManager
-	NewLogAuditor     = security.NewLogAuditor
+	NewPairingManager = core.NewPairingManager
+	NewLogAuditor     = core.NewLogAuditor
 )

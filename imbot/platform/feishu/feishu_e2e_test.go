@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // TestE2E_FeishuBot_RealBot creates a real Feishu bot for debugging purposes
@@ -224,13 +223,13 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 
 			case strings.HasPrefix(input, "/card "):
 				msgText := strings.TrimPrefix(input, "/card ")
-				kb := interaction.NewKeyboardBuilder()
+				kb := core.NewKeyboardBuilder()
 				kb.AddRow(
-					interaction.CallbackButton("👍 Like", interaction.FormatCallbackData("reaction", "like")),
-					interaction.CallbackButton("❤️ Love", interaction.FormatCallbackData("reaction", "love")),
+					core.CallbackButton("👍 Like", core.FormatCallbackData("reaction", "like")),
+					core.CallbackButton("❤️ Love", core.FormatCallbackData("reaction", "love")),
 				)
 				kb.AddRow(
-					interaction.CallbackButton("👎 Dislike", interaction.FormatCallbackData("reaction", "dislike")),
+					core.CallbackButton("👎 Dislike", core.FormatCallbackData("reaction", "dislike")),
 				)
 
 				t.Logf("📤 Sending card to %s: %s", targetChat, msgText)
@@ -248,18 +247,18 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 				shouldSkipEcho = true
 
 			case input == "/keyboard":
-				kb := interaction.NewKeyboardBuilder()
+				kb := core.NewKeyboardBuilder()
 				kb.AddRow(
-					interaction.CallbackButton("🔴 Red", interaction.FormatCallbackData("color", "red")),
-					interaction.CallbackButton("🟢 Green", interaction.FormatCallbackData("color", "green")),
-					interaction.CallbackButton("🔵 Blue", interaction.FormatCallbackData("color", "blue")),
+					core.CallbackButton("🔴 Red", core.FormatCallbackData("color", "red")),
+					core.CallbackButton("🟢 Green", core.FormatCallbackData("color", "green")),
+					core.CallbackButton("🔵 Blue", core.FormatCallbackData("color", "blue")),
 				)
 				kb.AddRow(
-					interaction.CallbackButton("⬜ White", interaction.FormatCallbackData("color", "white")),
-					interaction.CallbackButton("⬛ Black", interaction.FormatCallbackData("color", "black")),
+					core.CallbackButton("⬜ White", core.FormatCallbackData("color", "white")),
+					core.CallbackButton("⬛ Black", core.FormatCallbackData("color", "black")),
 				)
 				kb.AddRow(
-					interaction.CallbackButton("🟡 Yellow", interaction.FormatCallbackData("color", "yellow")),
+					core.CallbackButton("🟡 Yellow", core.FormatCallbackData("color", "yellow")),
 				)
 
 				t.Logf("📤 Sending keyboard to %s", targetChat)
@@ -277,10 +276,10 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 				shouldSkipEcho = true
 
 			case input == "/approve":
-				kb := interaction.NewKeyboardBuilder()
+				kb := core.NewKeyboardBuilder()
 				kb.AddRow(
-					interaction.CallbackButton("✅ Approve", interaction.FormatCallbackData("bash", "approve", "ls -la")),
-					interaction.CallbackButton("❌ Reject", interaction.FormatCallbackData("bash", "reject", "ls -la")),
+					core.CallbackButton("✅ Approve", core.FormatCallbackData("bash", "approve", "ls -la")),
+					core.CallbackButton("❌ Reject", core.FormatCallbackData("bash", "reject", "ls -la")),
 				)
 
 				t.Logf("📤 Sending approval card to %s", targetChat)
@@ -429,14 +428,14 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 		time.Sleep(1 * time.Second)
 
 		// Test 3: Interactive card with buttons
-		kb := interaction.NewKeyboardBuilder()
+		kb := core.NewKeyboardBuilder()
 		kb.AddRow(
-			interaction.CallbackButton("✅ Approve", interaction.FormatCallbackData("test", "approve", "123")),
-			interaction.CallbackButton("❌ Reject", interaction.FormatCallbackData("test", "reject", "123")),
+			core.CallbackButton("✅ Approve", core.FormatCallbackData("test", "approve", "123")),
+			core.CallbackButton("❌ Reject", core.FormatCallbackData("test", "reject", "123")),
 		)
 		kb.AddRow(
-			interaction.CallbackButton("🔄 Defer", interaction.FormatCallbackData("test", "defer", "123")),
-			interaction.CallbackButton("ℹ️ Info", interaction.FormatCallbackData("test", "info", "123")),
+			core.CallbackButton("🔄 Defer", core.FormatCallbackData("test", "defer", "123")),
+			core.CallbackButton("ℹ️ Info", core.FormatCallbackData("test", "info", "123")),
 		)
 
 		cardText := fmt.Sprintf("**🔐 Permission Request**\n\nTool: `Bash`\nCommand: `ls -la`\n\nReason: Testing %s interactive card", platformName)
@@ -547,18 +546,18 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 					t.Logf("❌ FEISHU_TEST_CHAT_ID not set - cannot send messages")
 				} else {
 					// Send keyboard with multiple buttons
-					kb := interaction.NewKeyboardBuilder()
+					kb := core.NewKeyboardBuilder()
 					kb.AddRow(
-						interaction.CallbackButton("🔴 Red", interaction.FormatCallbackData("color", "red")),
-						interaction.CallbackButton("🟢 Green", interaction.FormatCallbackData("color", "green")),
-						interaction.CallbackButton("🔵 Blue", interaction.FormatCallbackData("color", "blue")),
+						core.CallbackButton("🔴 Red", core.FormatCallbackData("color", "red")),
+						core.CallbackButton("🟢 Green", core.FormatCallbackData("color", "green")),
+						core.CallbackButton("🔵 Blue", core.FormatCallbackData("color", "blue")),
 					)
 					kb.AddRow(
-						interaction.CallbackButton("⬜ White", interaction.FormatCallbackData("color", "white")),
-						interaction.CallbackButton("⬛ Black", interaction.FormatCallbackData("color", "black")),
+						core.CallbackButton("⬜ White", core.FormatCallbackData("color", "white")),
+						core.CallbackButton("⬛ Black", core.FormatCallbackData("color", "black")),
 					)
 					kb.AddRow(
-						interaction.CallbackButton("🟡 Yellow", interaction.FormatCallbackData("color", "yellow")),
+						core.CallbackButton("🟡 Yellow", core.FormatCallbackData("color", "yellow")),
 					)
 
 					result, err := bot.SendMessage(ctx, testChatID, &core.SendMessageOptions{
@@ -579,10 +578,10 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 					t.Logf("❌ FEISHU_TEST_CHAT_ID not set - cannot send messages")
 				} else {
 					// Simulate bash tool approval request
-					kb := interaction.NewKeyboardBuilder()
+					kb := core.NewKeyboardBuilder()
 					kb.AddRow(
-						interaction.CallbackButton("✅ Approve", interaction.FormatCallbackData("bash", "approve", "ls -la")),
-						interaction.CallbackButton("❌ Reject", interaction.FormatCallbackData("bash", "reject", "ls -la")),
+						core.CallbackButton("✅ Approve", core.FormatCallbackData("bash", "approve", "ls -la")),
+						core.CallbackButton("❌ Reject", core.FormatCallbackData("bash", "reject", "ls -la")),
 					)
 
 					result, err := bot.SendMessage(ctx, testChatID, &core.SendMessageOptions{
@@ -638,13 +637,13 @@ func TestE2E_FeishuBot_RealBot(t *testing.T) {
 					t.Logf("❌ FEISHU_TEST_CHAT_ID not set - cannot send messages")
 				} else {
 					msgText := strings.TrimPrefix(input, "/card ")
-					kb := interaction.NewKeyboardBuilder()
+					kb := core.NewKeyboardBuilder()
 					kb.AddRow(
-						interaction.CallbackButton("👍 Like", interaction.FormatCallbackData("reaction", "like")),
-						interaction.CallbackButton("❤️ Love", interaction.FormatCallbackData("reaction", "love")),
+						core.CallbackButton("👍 Like", core.FormatCallbackData("reaction", "like")),
+						core.CallbackButton("❤️ Love", core.FormatCallbackData("reaction", "love")),
 					)
 					kb.AddRow(
-						interaction.CallbackButton("👎 Dislike", interaction.FormatCallbackData("reaction", "dislike")),
+						core.CallbackButton("👎 Dislike", core.FormatCallbackData("reaction", "dislike")),
 					)
 
 					t.Logf("📤 Sending card: %s", msgText)

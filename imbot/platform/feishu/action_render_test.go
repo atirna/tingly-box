@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // TestBuildActionCardRendersButtons is the regression test for the defect this
@@ -98,8 +97,8 @@ func TestBuildActionCardTier3Fallback(t *testing.T) {
 }
 
 func TestActionSetFromLegacyMarkup(t *testing.T) {
-	kb := interaction.InlineKeyboardMarkup{
-		InlineKeyboard: [][]interaction.InlineKeyboardButton{
+	kb := core.InlineKeyboardMarkup{
+		InlineKeyboard: [][]core.InlineKeyboardButton{
 			{{Text: "Yes", CallbackData: "yes"}},
 		},
 	}

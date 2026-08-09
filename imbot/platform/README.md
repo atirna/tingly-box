@@ -19,7 +19,7 @@ Each subdirectory implements `core.Bot` for one messaging platform. All platform
 
 ## Registry
 
-`registry.go` maps `core.Platform` values to constructor functions. Use the global helpers:
+`command_registry.go` maps `core.Platform` values to constructor functions. Use the global helpers:
 
 ```go
 bot, err := platform.Create(config)
@@ -39,6 +39,6 @@ platform.Register(core.Platform("myplatform"), func(cfg *core.Config) (core.Bot,
 1. Create `platform/<name>/<name>.go` embedding `*core.BaseBot`.
 2. Implement `core.Bot` (connect, disconnect, send, react, edit, delete).
 3. Add an `Adapter` that converts raw SDK events to `core.Message` and calls `b.EmitMessage(msg)`.
-4. Register the constructor in `registry.go` → `RegisterBuiltinPlatforms()`.
+4. Register the constructor in `command_registry.go` → `RegisterBuiltinPlatforms()`.
 5. Optionally add an `action_render.go` that renders `core.ActionSet` natively, and implement `core.MessageRestater` (see telegram/feishu for the pattern).
 6. Add a `README.md` following the pattern of existing platforms.
