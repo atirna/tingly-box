@@ -9,12 +9,21 @@
 // same pattern). Each file only carries the fields its loader actually
 // consumes — deliberately not a mirror of the vendor's full /v1/models
 // response, whose unused fields (display names, dates, unrelated capability
-// flags) are dead weight. The shape is inspired by OpenRouter's flat
-// `reasoning: {supported_efforts: [...], ...}` block rather than Anthropic's
-// nested `capabilities.effort.<level>.supported` tree. Update the JSON when
-// new models land instead of hardcoding model names in code; the
-// completeness test in this package fails when providers.json offers a
-// Claude model this catalog does not describe.
+// flags) are dead weight.
+//
+// The `reasoning` block's shape and field names (supported_efforts, ...)
+// follow OpenRouter's model-list schema rather than Anthropic's own nested
+// `capabilities.effort.<level>.supported` tree. One field has no OpenRouter
+// equivalent: `dialects`. OpenRouter's clients never see wire-protocol
+// differences between backends — OpenRouter's own proxy absorbs that. This
+// package IS that proxy layer for Anthropic, so it has to know which raw
+// request shape a model accepts: "budget" (thinking.type=enabled +
+// budget_tokens) and/or "adaptive" (thinking.type=adaptive). Models with no
+// `reasoning` block at all do not support extended thinking.
+//
+// Update the JSON when new models land instead of hardcoding model names in
+// code; the completeness test in this package fails when providers.json
+// offers a Claude model this catalog does not describe.
 package catalog
 
 import (
@@ -42,12 +51,11 @@ type ClaudeThinkingCaps struct {
 }
 
 type catalogModel struct {
-	ID       string `json:"id"`
-	Thinking struct {
-		Budget   bool     `json:"budget"`
-		Adaptive bool     `json:"adaptive"`
-		Efforts  []string `json:"efforts"`
-	} `json:"thinking"`
+	ID        string `json:"id"`
+	Reasoning *struct {
+		Dialects         []string `json:"dialects"`
+		SupportedEfforts []string `json:"supported_efforts"`
+	} `json:"reasoning"`
 }
 
 type claudeCapsEntry struct {
@@ -83,14 +91,21 @@ func buildClaudeCapsIndex() []claudeCapsEntry {
 	}
 
 	for _, m := range models {
-		caps := ClaudeThinkingCaps{
-			ThinkingEnabled:  m.Thinking.Budget,
-			ThinkingAdaptive: m.Thinking.Adaptive,
-		}
-		if len(m.Thinking.Efforts) > 0 {
-			caps.EffortLevels = make(map[string]bool, len(m.Thinking.Efforts))
-			for _, lvl := range m.Thinking.Efforts {
-				caps.EffortLevels[lvl] = true
+		var caps ClaudeThinkingCaps
+		if m.Reasoning != nil {
+			for _, d := range m.Reasoning.Dialects {
+				switch d {
+				case "budget":
+					caps.ThinkingEnabled = true
+				case "adaptive":
+					caps.ThinkingAdaptive = true
+				}
+			}
+			if len(m.Reasoning.SupportedEfforts) > 0 {
+				caps.EffortLevels = make(map[string]bool, len(m.Reasoning.SupportedEfforts))
+				for _, lvl := range m.Reasoning.SupportedEfforts {
+					caps.EffortLevels[lvl] = true
+				}
 			}
 		}
 		add(m.ID, caps)

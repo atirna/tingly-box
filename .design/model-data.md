@@ -16,14 +16,21 @@
   code_execution/context_management/image_input/pdf_input/structured_outputs…),
   但代码只读 thinking 和 effort 两块 —— 其余是没人消费的死重量,已删除。加字段前
   先确认有真实消费方。
-- Schema 参考 OpenRouter `reasoning: {supported_efforts: [...], default_effort, ...}`
-  的扁平写法,而非 Anthropic `capabilities.effort.<level>.supported` 的嵌套布尔树:
+- Schema 直接采用 OpenRouter 模型列表的 `reasoning` 块命名(`supported_efforts` 等),
+  而非 Anthropic `capabilities.effort.<level>.supported` 的嵌套布尔树:
   ```json
-  { "id": "claude-opus-4-7", "thinking": { "budget": false, "adaptive": true, "efforts": ["low","medium","high","max"] } }
+  { "id": "claude-opus-4-7", "reasoning": { "dialects": ["adaptive"], "supported_efforts": ["low","medium","high","max"] } }
   ```
-  `budget` = 是否接受 `thinking.type=enabled` + `budget_tokens`;`adaptive` = 是否接受
-  `thinking.type=adaptive`;`efforts` = `output_config.effort` 支持的档位列表,省略即无
-  effort 支持。
+  `supported_efforts` = `output_config.effort` 支持的档位列表,省略即无 effort 支持;
+  没有 `reasoning` 块的模型 = 完全不支持 extended thinking。
+  `dialects`(`"budget"` = 接受 `thinking.type=enabled`+`budget_tokens`;`"adaptive"` =
+  接受 `thinking.type=adaptive`)是 OpenRouter schema 里没有的一个字段 —— OpenRouter
+  的调用方从不接触 wire 协议差异,由 OpenRouter 自己的代理层吸收;而这个包**就是**
+  面向 Anthropic 的那层代理,必须知道该发哪种原始请求形状,所以补了这一个字段,其余
+  照抄 OpenRouter 命名。
+  `mandatory` / `default_enabled` / `default_effort`(OpenRouter schema 里有)目前**未采用**——
+  没有可核实的官方数据支撑每个模型的取值,填 false/编造属于捏造事实,等有可靠来源
+  (或代码出现真实消费方)再补。
 - 每个 vendor 一对文件:`claude.models.json`(数据)+ `claude.go`(加载与查询,如
   `catalog.LookupClaudeThinkingCaps`)。openai / gemini 需要能力判定时按同样模式扩展,
   字段集合由各自实际消费方决定,不必与 claude 的 schema 一致。
