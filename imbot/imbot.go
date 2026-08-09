@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-telegram/bot/models"
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	platformreg "github.com/tingly-dev/tingly-box/imbot/platform"
 	"github.com/tingly-dev/tingly-box/imbot/platform/telegram"
 )
 
@@ -448,10 +447,3 @@ func GetPlatformBehavior(platform Platform) core.PlatformBehavior {
 
 // PlatformBehavior re-exports the platform behavior record.
 type PlatformBehavior = core.PlatformBehavior
-
-// SetupCommandMenu installs a command registry into the platform's native
-// command menu (Telegram's menu button, Feishu/Lark quick actions). Platforms
-// without one are a no-op, so callers do not branch on platform.
-func SetupCommandMenu(bot Bot, platform Platform, reg *CommandRegistry) error {
-	return platformreg.SetupCommandMenu(bot, platform, reg)
-}

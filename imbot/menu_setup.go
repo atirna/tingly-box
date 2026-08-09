@@ -1,4 +1,4 @@
-package platform
+package imbot
 
 import (
 	"github.com/tingly-dev/tingly-box/imbot/core"
