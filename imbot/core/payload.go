@@ -67,13 +67,15 @@ func (p Payload) IsEmpty() bool {
 // shape; it is defined here only so the compatibility helpers below agree.
 const legacySeparator = ":"
 
-// FlatCallbackData renders the payload in the historical colon-joined form.
+// FlatCallbackData renders the payload in the flat colon-joined form, which is
+// the wire identity for platforms whose callback protocol uses the flat string
+// (Feishu inbound, Tingly outbound).
 //
-// This is a compatibility shim for surfaces that still speak the flat string —
-// the interaction and menu packages, and the callback_data metadata key that
-// existing consumers read. It is lossy whenever a segment contains ":", which
-// is exactly why it is not how payloads travel any more. Platforms encoding
-// for the wire must handle that case rather than call this.
+// This is not a throwaway shim: the flat form is a real, long-lived encoding.
+// It is lossy whenever a segment contains ":", which is exactly why Payload —
+// not this string — is the canonical identity. Platforms encoding for the wire
+// must handle the ":" case (e.g. swap in a short token) rather than call this
+// blindly.
 func (p Payload) FlatCallbackData() string {
 	return strings.Join(p, legacySeparator)
 }

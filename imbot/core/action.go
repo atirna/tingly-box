@@ -76,10 +76,14 @@ type Action struct {
 	Payload Payload
 	// CallbackData is the flat colon-joined form of Payload.
 	//
-	// Deprecated: this is Telegram's wire encoding, not an identity — see the
-	// Payload doc comment for what that cost. Producers inside imbot's own
-	// interaction and menu packages still build it, so renderers accept it and
-	// parse it into segments. New code sets Payload.
+	// This is NOT a transitional field awaiting removal: it is the wire-format
+	// identity for platforms whose callback protocol is the flat string (Feishu
+	// delivers card-button presses this way on inbound; Tingly re-encodes to it
+	// on outbound). It is lossy whenever a segment contains ":" — see the
+	// Payload doc comment for what that cost — which is why Payload is the
+	// canonical identity and renderers should prefer setting Payload. Producers
+	// that can carry structured segments set Payload; inbound paths decoding a
+	// flat wire string set CallbackData; EffectivePayload bridges the two.
 	CallbackData string
 	// URL is the link opened by ActionOpenURL / ActionOpenMiniApp.
 	URL string
