@@ -42,6 +42,8 @@ imbot.Register(core.Platform("myplatform"), func(cfg *core.Config) (core.Bot, er
 1. Create `platform/<name>/<name>.go` embedding `*core.BaseBot`.
 2. Implement `core.Bot` (connect, disconnect, send, react, edit, delete).
 3. Add an `Adapter` that converts raw SDK events to `core.Message` and calls `b.EmitMessage(msg)`.
-4. Register the constructor in `imbot/registry.go` → `RegisterBuiltinPlatforms()`.
-5. Optionally add an `action_render.go` that renders `core.ActionSet` natively, and implement `core.MessageRestater` (see telegram/feishu for the pattern).
-6. Add a `README.md` following the pattern of existing platforms.
+4. Add the platform to the `platformDescriptors` table in `core/platforms.go` — display name, capabilities, behavior defaults, and auth metadata (`AuthType`, `Category`, and `Auth *AuthMapping` describing how a stored auth-map becomes a `core.AuthConfig`). This is the single registration site for all intrinsic platform attributes.
+5. Register the constructor in `imbot/registry.go` → `RegisterBuiltinPlatforms()`.
+6. If the platform has a settings form, add its UI fields (labels, placeholders, secret flags) to the `platformFormFields` map in `imbot/auth.go`. The intrinsic fields (`AuthType`/`Category`/`DisplayName`) are already derived from core, so do not duplicate them here.
+7. Optionally add an `action_render.go` that renders `core.ActionSet` natively, and implement `core.MessageRestater` (see telegram/feishu for the pattern).
+8. Add a `README.md` following the pattern of existing platforms.

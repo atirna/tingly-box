@@ -15,7 +15,7 @@ imbot/                       public API + multi-bot runtime
 ├── manager.go               Manager — owns bot lifecycle, fan-out event handlers, reconnect
 ├── factory.go / registry.go CreateBot / global registry + RegisterBuiltinPlatforms
 ├── menu_setup.go            per-platform native command-menu installer dispatch
-├── platform_auth.go         per-platform auth requirements (fields, required keys)
+├── auth.go                  settings-UI form fields + GetAllPlatforms/GetPlatformConfig (intrinsic auth metadata lives in core)
 │
 ├── core/                    platform-neutral vocabulary — knows no concrete SDK
 ├── markdown/                cross-platform markdown → entity conversion
@@ -37,10 +37,12 @@ rationale behind actions, payloads, capabilities, and restate.
 
 `core.Platform` constants: `telegram`, `discord`, `slack`, `feishu`, `lark`,
 `dingtalk`, `weixin`, `wecom`, `whatsapp`, and the internal test platform
-`tingly`. The single source of truth for display names, capabilities, and
-per-platform behavior is the `PlatformDescriptor` table in
-`core/platforms.go`; per-platform connection and auth detail is in each
-`platform/<name>/README.md`.
+`tingly`. The single source of truth for display names, capabilities,
+per-platform behavior, **and auth metadata** (credential type, UI category,
+and the auth-map → `AuthConfig` wiring) is the `PlatformDescriptor` table in
+`core/platforms.go`. `imbot/auth.go` holds only the settings-UI form fields
+(labels, placeholders) and derives every intrinsic field from that table.
+Per-platform connection detail is in each `platform/<name>/README.md`.
 
 | Platform | Auth | Connection | README |
 |---|---|---|---|
