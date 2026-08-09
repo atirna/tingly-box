@@ -6,60 +6,52 @@ import (
 	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
-// TestPlatformConfigDisplayNamesDerived asserts every settings-UI entry takes
-// its display name from the single source of truth in core, and that every
-// configured platform is a known platform there.
-func TestPlatformConfigDisplayNamesDerived(t *testing.T) {
-	for id, cfg := range PlatformConfigs {
-		if !core.IsValidPlatform(id) {
-			t.Errorf("PlatformConfigs has entry %q that is not a valid core platform", id)
+// TestPlatformConfigDerivesFromCore asserts the settings-API view takes its
+// intrinsic attributes (display name, auth type) from the single source of
+// truth in core. After the SSOT consolidation there is no second platform
+// table in this package, so this is now a thin guard against regression.
+func TestPlatformConfigDerivesFromCore(t *testing.T) {
+	for id := range core.PlatformNames {
+		cfg, ok := GetPlatformConfig(string(id))
+		if !ok {
+			t.Errorf("core platform %q not returned by GetPlatformConfig", id)
+			continue
 		}
-		want := core.GetPlatformName(core.Platform(id))
-		if cfg.DisplayName != want {
-			t.Errorf("PlatformConfigs[%q].DisplayName = %q, want %q (derived from core)", id, cfg.DisplayName, want)
+		if want := core.GetPlatformName(id); cfg.DisplayName != want {
+			t.Errorf("%q: DisplayName = %q, want %q", id, cfg.DisplayName, want)
 		}
-		if cfg.DisplayName == "" {
-			t.Errorf("PlatformConfigs[%q] has empty DisplayName", id)
+		if cfg.AuthType != core.GetPlatformAuthType(id) {
+			t.Errorf("%q: AuthType not derived from core", id)
 		}
-		if cfg.Platform != id {
-			t.Errorf("PlatformConfigs[%q].Platform = %q, want %q", id, cfg.Platform, id)
+		if cfg.Platform != string(id) {
+			t.Errorf("%q: Platform = %q, want %q", id, cfg.Platform, id)
 		}
 	}
 }
 
-// TestConfigurablePlatformsMatchRegistry is the key anti-drift guarantee: the
-// set of platforms with a settings/auth-config form must equal the set of
-// platforms the registry can actually instantiate. If someone adds a bot
-// creator but forgets its config form (or vice-versa), this fails.
-func TestConfigurablePlatformsMatchRegistry(t *testing.T) {
-	configured := make(map[string]bool, len(PlatformConfigs))
-	for id := range PlatformConfigs {
-		configured[id] = true
-	}
-
+// TestFormPlatformsAreCreatable is the key anti-drift guarantee carried over
+// from the dual-table era: every platform that has a settings/auth form must be
+// instantiable by the registry. (The reverse is not required — e.g. Tingly and
+// Weixin have registry creators but no traditional form, since their
+// credentials come from other flows.)
+func TestFormPlatformsAreCreatable(t *testing.T) {
 	creatable := make(map[string]bool)
 	for _, p := range Platforms() {
-		creatable[string(p)] = true
+		creatable[p] = true
 	}
-
-	for id := range configured {
+	for id := range platformFormFields {
 		if !creatable[id] {
 			t.Errorf("platform %q has a config form but no registry creator", id)
-		}
-	}
-	for id := range creatable {
-		if !configured[id] {
-			t.Errorf("platform %q has a registry creator but no config form", id)
 		}
 	}
 }
 
 // TestGetAllPlatformsPopulated ensures the accessor used by the settings API
-// returns fully-populated entries (display names filled in by init).
+// returns one fully-populated entry per core platform.
 func TestGetAllPlatformsPopulated(t *testing.T) {
 	all := GetAllPlatforms()
-	if len(all) != len(PlatformConfigs) {
-		t.Fatalf("GetAllPlatforms returned %d, want %d", len(all), len(PlatformConfigs))
+	if len(all) != len(core.PlatformNames) {
+		t.Fatalf("GetAllPlatforms returned %d, want %d (one per core platform)", len(all), len(core.PlatformNames))
 	}
 	for _, cfg := range all {
 		if cfg.DisplayName == "" {
