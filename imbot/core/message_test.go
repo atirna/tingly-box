@@ -395,6 +395,62 @@ func TestMessage_Clone(t *testing.T) {
 	}
 }
 
+// TestMessage_CloneIsDeep verifies Clone duplicates every content variant's
+// mutable map/slice fields, not just TextContent. Previously Poll/Reaction/
+// System content shared the original's pointer and SystemContent.Data was not
+// copied at all.
+func TestMessage_CloneIsDeep(t *testing.T) {
+	t.Run("system_content_data_is_independent", func(t *testing.T) {
+		orig := &Message{Content: NewSystemContent("join", map[string]interface{}{"user": "alice"})}
+		c := orig.Clone()
+
+		sc := c.Content.(*SystemContent)
+		sc.Data["user"] = "bob"
+		if orig.Content.(*SystemContent).Data["user"] != "alice" {
+			t.Error("Clone shared SystemContent.Data with original")
+		}
+	})
+
+	t.Run("media_raw_map_is_independent", func(t *testing.T) {
+		orig := &Message{Content: NewMediaContent([]MediaAttachment{{
+			Type: "image", URL: "u", Raw: map[string]interface{}{"id": "1"},
+		}}, "")}
+		c := orig.Clone()
+
+		mc := c.Content.(*MediaContent)
+		mc.Media[0].Raw["id"] = "2"
+		if orig.Content.(*MediaContent).Media[0].Raw["id"] != "1" {
+			t.Error("Clone shared MediaAttachment.Raw with original")
+		}
+	})
+
+	t.Run("poll_is_independent_pointer", func(t *testing.T) {
+		orig := &Message{Content: NewPollContent(Poll{
+			Question: "q?", Options: []PollOption{{ID: "1", Text: "a", Votes: 3}},
+		})}
+		c := orig.Clone()
+
+		cp := c.Content.(*PollContent)
+		cp.Poll.Options[0].Votes = 99
+		if orig.Content.(*PollContent).Poll.Options[0].Votes != 3 {
+			t.Error("Clone shared Poll options slice with original")
+		}
+	})
+
+	t.Run("text_entity_data_is_independent", func(t *testing.T) {
+		orig := &Message{Content: NewTextContent("hi", Entity{
+			Type: "mention", Data: map[string]interface{}{"u": "x"},
+		})}
+		c := orig.Clone()
+
+		ct := c.Content.(*TextContent)
+		ct.Entities[0].Data["u"] = "y"
+		if orig.Content.(*TextContent).Entities[0].Data["u"] != "x" {
+			t.Error("Clone shared Entity.Data with original")
+		}
+	})
+}
+
 func TestMessage_WithMetadata(t *testing.T) {
 	msg := &Message{
 		ID: "msg123",

@@ -284,48 +284,95 @@ func (m *Message) FormatMessage() string {
 	return sender + ": [Unknown message type]"
 }
 
-// Clone creates a deep copy of the message
+// Clone creates a deep copy of the message. Maps and content variants are
+// duplicated so mutating the clone (its metadata, sender raw, or any content
+// map/slice) does not touch the original.
 func (m *Message) Clone() *Message {
 	clone := *m
 
-	// Deep copy maps
-	if m.Metadata != nil {
-		clone.Metadata = make(map[string]interface{})
-		for k, v := range m.Metadata {
-			clone.Metadata[k] = v
-		}
-	}
+	// Deep copy maps.
+	clone.Metadata = cloneStringAnyMap(m.Metadata)
 
-	// Clone sender
+	// Clone sender.
 	clone.Sender = m.Sender
-	if m.Sender.Raw != nil {
-		clone.Sender.Raw = make(map[string]interface{})
-		for k, v := range m.Sender.Raw {
-			clone.Sender.Raw[k] = v
-		}
-	}
+	clone.Sender.Raw = cloneStringAnyMap(m.Sender.Raw)
 
-	// Clone content based on type
-	switch c := m.Content.(type) {
+	clone.Content = cloneContent(m.Content)
+
+	return &clone
+}
+
+// cloneContent returns an independent copy of c for every content variant, or
+// nil when c is nil. Content types added in the future must get a case here or
+// Clone will return them shared — see TestMessage_CloneIsDeep.
+func cloneContent(c Content) Content {
+	switch c := c.(type) {
+	case nil:
+		return nil
 	case *TextContent:
-		entities := make([]Entity, len(c.Entities))
-		copy(entities, c.Entities)
-		clone.Content = &TextContent{
+		return &TextContent{
 			Text:     c.Text,
-			Entities: entities,
+			Entities: cloneEntities(c.Entities),
 			Segments: cloneSegments(c.Segments),
 		}
 	case *MediaContent:
 		media := make([]MediaAttachment, len(c.Media))
-		copy(media, c.Media)
-		clone.Content = &MediaContent{
+		for i := range c.Media {
+			media[i] = c.Media[i]
+			media[i].Raw = cloneStringAnyMap(c.Media[i].Raw)
+		}
+		return &MediaContent{
 			Media:   media,
 			Caption: c.Caption,
 		}
-		// Add other content types as needed
+	case *PollContent:
+		opts := make([]PollOption, len(c.Poll.Options))
+		copy(opts, c.Poll.Options)
+		return &PollContent{
+			Poll: Poll{
+				Question:  c.Poll.Question,
+				Options:   opts,
+				Multiple:  c.Poll.Multiple,
+				Anonymous: c.Poll.Anonymous,
+				ExpiresAt: c.Poll.ExpiresAt,
+			},
+		}
+	case *ReactionContent:
+		return &ReactionContent{Reaction: c.Reaction}
+	case *SystemContent:
+		return &SystemContent{
+			EventType: c.EventType,
+			Data:      cloneStringAnyMap(c.Data),
+		}
+	default:
+		// Unknown Content implementation: nothing safe to copy, return as-is.
+		return c
 	}
+}
 
-	return &clone
+// cloneEntities deep-copies an Entity slice, duplicating each Entity.Data map.
+func cloneEntities(in []Entity) []Entity {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]Entity, len(in))
+	for i := range in {
+		out[i] = in[i]
+		out[i].Data = cloneStringAnyMap(in[i].Data)
+	}
+	return out
+}
+
+// cloneStringAnyMap returns an independent copy of m, or nil when m is nil.
+func cloneStringAnyMap(m map[string]interface{}) map[string]interface{} {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // WithMetadata adds metadata to the message
