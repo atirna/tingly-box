@@ -8,9 +8,9 @@ type CommandBuilder struct {
 	cmd Command
 }
 
-// NewCommand creates a new command builder.
+// NewCommandBuilder creates a new command builder.
 // The ID should be unique, name is the primary command name (without slash).
-func NewCommand(id, name, description string) *CommandBuilder {
+func NewCommandBuilder(id, name, description string) *CommandBuilder {
 	return &CommandBuilder{
 		cmd: Command{
 			ID:          id,

@@ -3,12 +3,13 @@ package command
 
 import (
 	"context"
-	"github.com/tingly-dev/tingly-box/imbot/core"
 	"testing"
+
+	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 func TestNewRegistry(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 	if registry == nil {
 		t.Fatal("NewRegistry returned nil")
 	}
@@ -70,7 +71,7 @@ func TestCommandValidation(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 
 	cmd := Command{
 		ID:          "test",
@@ -98,7 +99,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestRegisterDuplicate(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 
 	cmd1 := Command{
 		ID:          "test",
@@ -121,7 +122,7 @@ func TestRegisterDuplicate(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 
 	cmd := Command{
 		ID:          "test",
@@ -154,7 +155,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestMatch(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 
 	handler := func(ctx *HandlerContext, args []string) error { return nil }
 
@@ -245,7 +246,7 @@ func TestAllNames(t *testing.T) {
 func TestBuilder(t *testing.T) {
 	handler := func(ctx *HandlerContext, args []string) error { return nil }
 
-	cmd, err := NewCommand("test", "test", "test command").
+	cmd, err := NewCommandBuilder("test", "test", "test command").
 		WithAliases("t", "testing").
 		WithHandler(handler).
 		WithCategory("test").
@@ -281,7 +282,7 @@ func TestBuilderMustBuild(t *testing.T) {
 	handler := func(ctx *HandlerContext, args []string) error { return nil }
 
 	// Should not panic
-	cmd := NewCommand("test", "test", "test command").
+	cmd := NewCommandBuilder("test", "test", "test command").
 		WithHandler(handler).
 		MustBuild()
 
@@ -296,7 +297,7 @@ func TestBuilderMustBuild(t *testing.T) {
 		}
 	}()
 
-	NewCommand("", "test", "test command").MustBuild()
+	NewCommandBuilder("", "test", "test command").MustBuild()
 }
 
 func TestHandlerContext(t *testing.T) {
@@ -331,7 +332,7 @@ func TestHandlerContext(t *testing.T) {
 }
 
 func TestPrioritySorting(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 
 	commands := []Command{
 		{ID: "low", Name: "low", Description: "low", Handler: func(ctx *HandlerContext, args []string) error { return nil }, Priority: 1},
@@ -360,7 +361,7 @@ func TestPrioritySorting(t *testing.T) {
 }
 
 func TestHiddenCommands(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 
 	_ = registry.Register(Command{
 		ID:          "visible",
@@ -402,7 +403,7 @@ func TestHiddenCommands(t *testing.T) {
 }
 
 func TestBuildHelpText(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewCommandRegistry()
 
 	_ = registry.Register(Command{
 		ID:          "help",
