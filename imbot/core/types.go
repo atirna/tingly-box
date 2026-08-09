@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // Platform represents the supported messaging platforms
 type Platform string
@@ -174,32 +177,17 @@ type PlatformCapabilities struct {
 
 // SupportsFeature checks if the platform supports a specific feature
 func (p *PlatformCapabilities) SupportsFeature(feature string) bool {
-	for _, f := range p.Features {
-		if f == feature {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Features, feature)
 }
 
 // SupportsMediaType checks if the platform supports a specific media type
 func (p *PlatformCapabilities) SupportsMediaType(mediaType string) bool {
-	for _, mt := range p.MediaTypes {
-		if mt == mediaType {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.MediaTypes, mediaType)
 }
 
 // SupportsChatType checks if the platform supports a specific chat type
 func (p *PlatformCapabilities) SupportsChatType(chatType ChatType) bool {
-	for _, ct := range p.ChatTypes {
-		if ct == chatType {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.ChatTypes, chatType)
 }
 
 // SupportsInteraction checks if the platform supports native interactive elements
@@ -245,37 +233,7 @@ const (
 // 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤️‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷‍♂️ 🤷 🤷‍♀️ 😡
 
 // Provides platform-agnostic interactive element types:
-// inline keyboards (keyboard.go) and rich cards (card.go).
-//
-// Buttons built here carry their identity as a core.Payload; the keyboard
-// types remain as the legacy-compat bridge while call sites migrate to
-// core.ActionSet (see imbot/core/action.go).
-
-// ActionType represents the type of user action
-type ActionType string
-
-const (
-	ActionSelect   ActionType = "select"   // User selected an option
-	ActionConfirm  ActionType = "confirm"  // User confirmed yes/no
-	ActionCancel   ActionType = "cancel"   // User cancelled
-	ActionNavigate ActionType = "navigate" // User navigated (prev/next)
-	ActionInput    ActionType = "input"    // User provided text input
-	ActionCustom   ActionType = "custom"   // Custom action
-)
-
-// Interaction represents a platform-agnostic interactive element
-type Interaction struct {
-	ID      string         // Unique identifier for this interaction
-	Type    ActionType     // Type of action
-	Label   string         // Display label
-	Value   string         // Associated value
-	Options []Option       // For select actions
-	Meta    map[string]any // Additional data
-}
-
-// Option represents a selectable option
-type Option struct {
-	ID    string // Option ID
-	Label string // Display label
-	Value string // Associated value
-}
+// inline keyboards (keyboard.go), rich cards (card.go), and the neutral
+// ActionSet (action.go). Buttons built here carry their identity as a
+// core.Payload; the keyboard types remain as the legacy-compat bridge while
+// call sites migrate to core.ActionSet (see imbot/core/action.go).
