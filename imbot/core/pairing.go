@@ -25,14 +25,6 @@ var (
 	ErrPairLocked       = errors.New("too many failed attempts, try again later")
 )
 
-// PairingAuditor is the minimal interface used by PairingManager to emit
-// structured pairing events. LogAuditor (this package) is the production
-// implementation, backed by the regular application logger.
-type PairingAuditor interface {
-	Info(action, userID, clientIP, message string, details map[string]interface{})
-	Warn(action, userID, clientIP, message string, details map[string]interface{})
-}
-
 // PairingManagerOption configures PairingManager construction.
 type PairingManagerOption func(*PairingManager)
 
@@ -101,7 +93,6 @@ type PairingManager struct {
 	lockoutFor time.Duration
 	rng        io.Reader
 	now        func() time.Time
-	audit      PairingAuditor
 }
 
 type pairEntry struct {
@@ -116,8 +107,7 @@ type attemptState struct {
 }
 
 // NewPairingManager constructs a manager with sensible defaults.
-// auditLog may be nil; if non-nil it must implement PairingAuditor.
-func NewPairingManager(auditLog PairingAuditor, opts ...PairingManagerOption) *PairingManager {
+func NewPairingManager(opts ...PairingManagerOption) *PairingManager {
 	p := &PairingManager{
 		codes:      make(map[string]*pairEntry),
 		attempts:   make(map[string]*attemptState),
@@ -127,7 +117,6 @@ func NewPairingManager(auditLog PairingAuditor, opts ...PairingManagerOption) *P
 		lockoutFor: 10 * time.Minute,
 		rng:        rand.Reader,
 		now:        func() time.Time { return time.Now().UTC() },
-		audit:      auditLog,
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -149,12 +138,8 @@ func (p *PairingManager) Mint(botUUID string) (string, time.Time) {
 	delete(p.attempts, botUUID)
 	p.mu.Unlock()
 
-	p.auditInfo("imbot.pair.code_minted", "", "pairing code minted",
-		map[string]interface{}{
-			"bot_uuid":   botUUID,
-			"ttl":        p.ttl.String(),
-			"expires_at": expires.Format(time.RFC3339),
-		})
+	info("imbot.pair.code_minted bot_uuid=%s ttl=%s expires_at=%s",
+		botUUID, p.ttl.String(), expires.Format(time.RFC3339))
 	return code, expires
 }
 
@@ -187,12 +172,8 @@ func (p *PairingManager) Verify(botUUID, candidate string) error {
 	// Check lockout first.
 	if att, ok := p.attempts[botUUID]; ok && att != nil && now.Before(att.lockedUntil) {
 		p.mu.Unlock()
-		p.auditWarn("imbot.pair.fail", "", "verify rejected by lockout",
-			map[string]interface{}{
-				"bot_uuid":     botUUID,
-				"reason":       "locked",
-				"locked_until": att.lockedUntil.Format(time.RFC3339),
-			})
+		warn("imbot.pair.fail bot_uuid=%s reason=locked locked_until=%s",
+			botUUID, att.lockedUntil.Format(time.RFC3339))
 		return ErrPairLocked
 	}
 
@@ -263,30 +244,10 @@ func (p *PairingManager) recordFailure(botUUID, reason string) {
 	until := att.lockedUntil
 	p.mu.Unlock()
 
-	p.auditWarn("imbot.pair.fail", "", "verify failed",
-		map[string]interface{}{
-			"bot_uuid": botUUID,
-			"reason":   reason,
-			"fails":    fails,
-		})
+	warn("imbot.pair.fail bot_uuid=%s reason=%s fails=%d", botUUID, reason, fails)
 	if locked {
-		p.auditWarn("imbot.pair.locked", "", "pairing locked after repeated failures",
-			map[string]interface{}{
-				"bot_uuid":     botUUID,
-				"locked_until": until.Format(time.RFC3339),
-			})
-	}
-}
-
-func (p *PairingManager) auditInfo(action, userID, message string, details map[string]interface{}) {
-	if p.audit != nil {
-		p.audit.Info(action, userID, "", message, details)
-	}
-}
-
-func (p *PairingManager) auditWarn(action, userID, message string, details map[string]interface{}) {
-	if p.audit != nil {
-		p.audit.Warn(action, userID, "", message, details)
+		warn("imbot.pair.locked bot_uuid=%s locked_until=%s",
+			botUUID, until.Format(time.RFC3339))
 	}
 }
 

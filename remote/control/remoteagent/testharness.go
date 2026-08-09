@@ -120,7 +120,7 @@ func BootForTest(t *testing.T, manager *imbot.Manager, setting bot2.BotSetting, 
 		}
 	}
 
-	pairing := bot2.NewPairingManager(bot2.NewLogAuditor())
+	pairing := bot2.NewPairingManager()
 	dirBrowser := feature.NewDirectoryBrowser()
 
 	ctx := t.Context()

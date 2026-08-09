@@ -253,7 +253,7 @@ func NewManager(store SettingsStore, consumers ...Consumer) *Manager {
 		running:   make(map[string]*runningBot),
 		store:     store,
 		consumers: consumers,
-		pairing:   NewPairingManager(NewLogAuditor()),
+		pairing:   NewPairingManager(),
 	}
 }
 

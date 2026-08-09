@@ -9,7 +9,7 @@ import (
 )
 
 func TestPairingManager_MintProducesDistinctCodes(t *testing.T) {
-	p := NewPairingManager(nil, WithPairingCodeLength(8))
+	p := NewPairingManager(WithPairingCodeLength(8))
 	a, _ := p.Mint("bot-1")
 	b, _ := p.Mint("bot-1") // re-mint replaces previous
 	if a == b {
@@ -25,7 +25,7 @@ func TestPairingManager_MintProducesDistinctCodes(t *testing.T) {
 }
 
 func TestPairingManager_VerifySuccessIsSingleUse(t *testing.T) {
-	p := NewPairingManager(nil)
+	p := NewPairingManager()
 	code, _ := p.Mint("bot-1")
 
 	if err := p.Verify("bot-1", code); err != nil {
@@ -39,7 +39,7 @@ func TestPairingManager_VerifySuccessIsSingleUse(t *testing.T) {
 
 func TestPairingManager_VerifyExpired(t *testing.T) {
 	current := time.Now().UTC()
-	p := NewPairingManager(nil,
+	p := NewPairingManager(
 		WithPairingTTL(time.Minute),
 		WithPairingClock(func() time.Time { return current }),
 	)
@@ -58,7 +58,7 @@ func TestPairingManager_VerifyExpired(t *testing.T) {
 
 func TestPairingManager_VerifyMismatchAndLockout(t *testing.T) {
 	current := time.Now().UTC()
-	p := NewPairingManager(nil,
+	p := NewPairingManager(
 		WithPairingTTL(time.Hour),
 		WithPairingMaxFails(3),
 		WithPairingLockout(15*time.Minute),
@@ -92,7 +92,7 @@ func TestPairingManager_VerifyMismatchAndLockout(t *testing.T) {
 }
 
 func TestPairingManager_RevokeClearsState(t *testing.T) {
-	p := NewPairingManager(nil)
+	p := NewPairingManager()
 	code, _ := p.Mint("bot-1")
 	p.Revoke("bot-1")
 
@@ -105,7 +105,7 @@ func TestPairingManager_RevokeClearsState(t *testing.T) {
 }
 
 func TestPairingManager_ConcurrentMintAndVerify(t *testing.T) {
-	p := NewPairingManager(nil)
+	p := NewPairingManager()
 	const workers = 16
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
@@ -120,7 +120,7 @@ func TestPairingManager_ConcurrentMintAndVerify(t *testing.T) {
 }
 
 func TestPairingManager_MintNoBotUUID(t *testing.T) {
-	p := NewPairingManager(nil)
+	p := NewPairingManager()
 	code, exp := p.Mint("")
 	if code != "" || !exp.IsZero() {
 		t.Fatalf("Mint(\"\") should return empty values")
