@@ -7,6 +7,7 @@ package core
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -58,15 +59,7 @@ type Command struct {
 // Match checks if a name matches this command (name or alias).
 // The name should be provided without the slash prefix.
 func (c *Command) Match(name string) bool {
-	if c.Name == name {
-		return true
-	}
-	for _, alias := range c.Aliases {
-		if alias == name {
-			return true
-		}
-	}
-	return false
+	return c.Name == name || slices.Contains(c.Aliases, name)
 }
 
 // IsHidden returns true if the command should be hidden from menus.
@@ -224,17 +217,8 @@ func (r *CommandRegistry) ForPlatform(platform Platform) []*Command {
 			continue
 		}
 		// If platforms are specified, check if the requested platform is in the list
-		if len(cmd.Platforms) > 0 {
-			found := false
-			for _, p := range cmd.Platforms {
-				if p == platform {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if len(cmd.Platforms) > 0 && !slices.Contains(cmd.Platforms, platform) {
+			continue
 		}
 		result = append(result, cmd)
 	}
@@ -253,13 +237,17 @@ func (r *CommandRegistry) Count() int {
 
 // sortByPriority sorts commands by priority (higher first).
 func sortByPriority(cmds []*Command) {
-	for i := 0; i < len(cmds)-1; i++ {
-		for j := i + 1; j < len(cmds); j++ {
-			if cmds[i].Priority < cmds[j].Priority {
-				cmds[i], cmds[j] = cmds[j], cmds[i]
-			}
+	slices.SortFunc(cmds, func(a, b *Command) int {
+		// descending: b before a when b.Priority > a.Priority
+		switch {
+		case b.Priority < a.Priority:
+			return -1
+		case b.Priority > a.Priority:
+			return 1
+		default:
+			return 0
 		}
-	}
+	})
 }
 
 // BuildHelpText generates help text for a chat type.
