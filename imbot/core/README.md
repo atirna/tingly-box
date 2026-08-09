@@ -17,7 +17,8 @@ clusters: the command system (`command_*.go`), the pairing/security primitives
 | `bot.go` | The `Bot` interface, `SendMessageOptions`, `SendResult` |
 | `base.go` | `BaseBot` — status, event handlers, chunking; embedded by all platform bots |
 | `types.go` | Platform ids, chat types, parse modes, segments, capabilities |
-| `platforms.go` | `PlatformDescriptor` table — the single source of truth for per-platform display names, capabilities, reactions, and behavior defaults |
+| `platforms.go` | `PlatformDescriptor` table — the single source of truth for per-platform display names, capabilities, reactions, behavior defaults, **and auth metadata** (credential type, UI category, auth-map wiring) |
+| `auth_mapping.go` | `AuthMapping` (auth-map → `AuthConfig` wiring) + `BuildAuthConfig` / `MissingAuthKeys` / `AuthOptions` / `AuthMappingFor` |
 | `config.go` | Bot configuration and validation |
 | `errors.go` | `BotError` and typed error codes |
 | `logger.go` | Injectable per-bot `Logger` interface |

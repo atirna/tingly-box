@@ -1,17 +1,21 @@
 package core
 
 // PlatformDescriptor is the single source of truth for a platform's intrinsic
-// metadata: its display name, capabilities, and semantic-reaction mapping.
+// metadata: its display name, capabilities, semantic-reaction mapping,
+// product-level behavior defaults, and auth configuration (credential type,
+// settings-UI category, and the mapping that turns a stored auth-map into an
+// AuthConfig).
 //
-// Adding or changing a platform's name/capabilities/reactions is done in ONE
-// place — the platformDescriptors table below. GetPlatformName,
-// GetPlatformCapabilities, ResolveReaction, IsValidPlatform and the derived
-// PlatformNames map all read from it, so they can no longer drift apart.
+// Adding or changing a platform is done in ONE place — the platformDescriptors
+// table below. GetPlatformName, GetPlatformCapabilities, ResolveReaction,
+// IsValidPlatform, GetPlatformAuthType, GetPlatformCategory, AuthMappingFor and
+// the derived PlatformNames map all read from it, so they can no longer drift
+// apart.
 //
-// Note the split of concerns: this table owns runtime/protocol metadata.
-// Settings-UI metadata (auth type, form fields, category) lives with the
-// consuming package in imbot/platform_auth.go, which derives its display names from
-// GetPlatformName so those cannot drift either.
+// Note the split of concerns: this table owns runtime/protocol/auth metadata.
+// Settings-UI form rendering (labels, placeholders, secret flags) lives with
+// the consuming package in imbot/auth.go, which derives intrinsic fields from
+// this table so those cannot drift either.
 type PlatformDescriptor struct {
 	// ID is the platform identifier.
 	ID Platform
@@ -28,6 +32,18 @@ type PlatformDescriptor struct {
 	// to be switch statements scattered across the consuming packages, which
 	// meant adding a platform required finding every one of them.
 	Behavior PlatformBehavior
+
+	// AuthType is the credential category for this platform: "token", "oauth",
+	// "qr", "none". Empty means no auth config is known (the platform may still
+	// be valid; auth wiring falls back to a token-based default).
+	AuthType string
+	// Category is the settings-UI grouping: "im", "enterprise", "business".
+	Category string
+	// Auth describes how a stored auth map becomes an AuthConfig for this
+	// platform. nil for platforms whose credentials arrive from a non-form flow
+	// (e.g. Weixin's QR onboarding) or that need no credentials (Tingly); those
+	// fall back to the default token mapping in AuthMappingFor.
+	Auth *AuthMapping
 }
 
 // PlatformBehavior captures the product-level defaults that follow from a
@@ -66,6 +82,14 @@ var platformDescriptors = []PlatformDescriptor{
 	{
 		ID:          PlatformWhatsApp,
 		DisplayName: "WhatsApp",
+		AuthType:    "token",
+		Category:    "business",
+		Auth: &AuthMapping{
+			Type:         "token",
+			TokenKey:     "token",
+			AccountIDKey: "phoneNumberId",
+			RequiredKeys: []string{"token"},
+		},
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup},
 			MediaTypes:     []string{"image", "video", "audio", "document", "sticker"},
@@ -80,6 +104,9 @@ var platformDescriptors = []PlatformDescriptor{
 		ID:          PlatformTelegram,
 		Behavior:    PlatformBehavior{RequiresPairingByDefault: true},
 		DisplayName: "Telegram",
+		AuthType:    "token",
+		Category:    "im",
+		Auth:        tokenAuth,
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup, ChatTypeChannel, ChatTypeThread},
 			MediaTypes:     []string{"image", "video", "audio", "document", "sticker", "gif"},
@@ -94,6 +121,9 @@ var platformDescriptors = []PlatformDescriptor{
 		ID:          PlatformDiscord,
 		Behavior:    PlatformBehavior{RequiresPairingByDefault: true},
 		DisplayName: "Discord",
+		AuthType:    "token",
+		Category:    "im",
+		Auth:        tokenAuth,
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup, ChatTypeChannel, ChatTypeThread},
 			MediaTypes:     []string{"image", "video", "audio", "document", "gif"},
@@ -108,6 +138,9 @@ var platformDescriptors = []PlatformDescriptor{
 		ID:          PlatformSlack,
 		Behavior:    PlatformBehavior{RequiresPairingByDefault: true},
 		DisplayName: "Slack",
+		AuthType:    "token",
+		Category:    "im",
+		Auth:        tokenAuth,
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup, ChatTypeChannel, ChatTypeThread},
 			MediaTypes:     []string{"image", "video", "audio", "document"},
@@ -161,6 +194,9 @@ var platformDescriptors = []PlatformDescriptor{
 	{
 		ID:          PlatformFeishu,
 		DisplayName: "Feishu",
+		AuthType:    "oauth",
+		Category:    "enterprise",
+		Auth:        oauthClientAuth,
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup, ChatTypeChannel, ChatTypeThread},
 			MediaTypes:     []string{"image", "video", "audio", "document"},
@@ -174,6 +210,9 @@ var platformDescriptors = []PlatformDescriptor{
 	{
 		ID:          PlatformLark,
 		DisplayName: "Lark",
+		AuthType:    "oauth",
+		Category:    "enterprise",
+		Auth:        oauthClientAuth,
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup, ChatTypeChannel, ChatTypeThread},
 			MediaTypes:     []string{"image", "video", "audio", "document"},
@@ -187,6 +226,9 @@ var platformDescriptors = []PlatformDescriptor{
 	{
 		ID:          PlatformDingTalk,
 		DisplayName: "DingTalk",
+		AuthType:    "oauth",
+		Category:    "enterprise",
+		Auth:        oauthClientAuth,
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup},
 			MediaTypes:     []string{"image", "video", "audio", "document"},
@@ -206,10 +248,23 @@ var platformDescriptors = []PlatformDescriptor{
 		ID:          PlatformWeixin,
 		Behavior:    PlatformBehavior{SuppressVerbose: true},
 		DisplayName: "Weixin",
+		AuthType:    "qr",
+		Category:    "enterprise",
+		Auth: &AuthMapping{
+			Type:         "qr",
+			TokenKey:     "token",
+			AccountIDKey: "bot_id",
+			AuthDirKey:   "user_id",
+			OptionKeys:   []string{"user_id", "base_url"},
+			RequiredKeys: []string{"token", "bot_id"},
+		},
 	},
 	{
 		ID:          PlatformWecom,
 		DisplayName: "WeCom",
+		AuthType:    "oauth",
+		Category:    "enterprise",
+		Auth:        oauthClientAuth,
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup},
 			MediaTypes:     []string{"image", "video", "audio", "file"},
@@ -222,6 +277,9 @@ var platformDescriptors = []PlatformDescriptor{
 	{
 		ID:          PlatformTingly,
 		DisplayName: "Tingly",
+		AuthType:    "none",
+		Category:    "im",
+		Auth:        &AuthMapping{Type: "none", TokenKey: "token"},
 		Capabilities: &PlatformCapabilities{
 			ChatTypes:      []ChatType{ChatTypeDirect, ChatTypeGroup, ChatTypeChannel, ChatTypeThread},
 			MediaTypes:     []string{"image", "video", "audio", "document", "sticker", "gif"},
@@ -254,6 +312,15 @@ var larkReactions = map[ReactionToken]string{
 	ReactionLove:     "HEART",
 	ReactionLaugh:    "LOL",
 }
+
+// Shared AuthMapping literals so the platform table reads as data, not inline
+// wiring. They describe how a platform's stored auth-map becomes an AuthConfig.
+
+// tokenAuth maps a single "token" auth-map key to AuthConfig.Token.
+var tokenAuth = &AuthMapping{Type: "token", TokenKey: "token", RequiredKeys: []string{"token"}}
+
+// oauthClientAuth maps clientId/clientSecret to the OAuth AuthConfig fields.
+var oauthClientAuth = &AuthMapping{Type: "oauth", ClientIDKey: "clientId", ClientSecretKey: "clientSecret", RequiredKeys: []string{"clientId", "clientSecret"}}
 
 // platformByID indexes platformDescriptors for O(1) lookup.
 var platformByID = func() map[Platform]*PlatformDescriptor {
@@ -293,6 +360,24 @@ func GetPlatformName(platform Platform) string {
 func IsValidPlatform(platform string) bool {
 	_, ok := platformByID[Platform(platform)]
 	return ok
+}
+
+// GetPlatformAuthType returns the credential category for a platform
+// ("token", "oauth", "qr", "none"). Empty for unknown platforms.
+func GetPlatformAuthType(platform Platform) string {
+	if d, ok := platformByID[platform]; ok {
+		return d.AuthType
+	}
+	return ""
+}
+
+// GetPlatformCategory returns the settings-UI grouping for a platform
+// ("im", "enterprise", "business"). Empty for unknown platforms.
+func GetPlatformCategory(platform Platform) string {
+	if d, ok := platformByID[platform]; ok {
+		return d.Category
+	}
+	return ""
 }
 
 // GetPlatformCapabilities returns the capabilities for a given platform,

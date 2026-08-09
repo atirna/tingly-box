@@ -66,6 +66,10 @@ type (
 	LoggingConfig = core.LoggingConfig
 	ManagerConfig = core.ManagerConfig
 
+	// Platform descriptor types
+	PlatformDescriptor = core.PlatformDescriptor
+	AuthMapping        = core.AuthMapping
+
 	// Error types
 	BotError  = core.BotError
 	ErrorCode = core.ErrorCode
@@ -258,6 +262,38 @@ func GetPlatformCapabilities(platform string) *core.PlatformCapabilities {
 // GetPlatformName returns the human-readable name for a platform
 func GetPlatformName(platform string) string {
 	return core.GetPlatformName(Platform(platform))
+}
+
+// GetPlatformAuthType returns the credential category for a platform.
+func GetPlatformAuthType(platform string) string {
+	return core.GetPlatformAuthType(Platform(platform))
+}
+
+// GetPlatformCategory returns the settings-UI grouping for a platform.
+func GetPlatformCategory(platform string) string {
+	return core.GetPlatformCategory(Platform(platform))
+}
+
+// AuthMappingFor returns a platform's auth mapping, falling back to the
+// token-based default for unknown platforms.
+func AuthMappingFor(platform string) core.AuthMapping {
+	return core.AuthMappingForID(platform)
+}
+
+// BuildAuthConfig converts a bot's stored auth map into an AuthConfig.
+func BuildAuthConfig(platform string, auth map[string]string) AuthConfig {
+	return core.BuildAuthConfig(platform, auth)
+}
+
+// MissingAuthKeys lists the required auth keys a bot has not been given.
+func MissingAuthKeys(platform string, auth map[string]string) []string {
+	return core.MissingAuthKeys(platform, auth)
+}
+
+// AuthOptions returns the auth-map entries a platform expects in Config.Options
+// rather than in AuthConfig.
+func AuthOptions(platform string, auth map[string]string) map[string]interface{} {
+	return core.AuthOptions(platform, auth)
 }
 
 // Keyboard builder helpers
