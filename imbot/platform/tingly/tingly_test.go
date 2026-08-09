@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	itx "github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 func newReadyBot(t *testing.T) (*Bot, *InProcessTransport) {
@@ -52,7 +51,7 @@ func TestBot_SendCapturesEvent(t *testing.T) {
 func TestBot_SendWithGenericKeyboard(t *testing.T) {
 	bot, tr := newReadyBot(t)
 
-	kb := itx.InlineKeyboardMarkup{InlineKeyboard: [][]itx.InlineKeyboardButton{
+	kb := core.InlineKeyboardMarkup{InlineKeyboard: [][]core.InlineKeyboardButton{
 		{{Text: "Approve", CallbackData: "ia:1:approve"}},
 		{{Text: "Deny", CallbackData: "ia:1:deny"}},
 	}}
@@ -105,7 +104,7 @@ func TestBot_SendWithActions(t *testing.T) {
 func TestBot_SendWithLegacyKeyboardMetadata(t *testing.T) {
 	bot, tr := newReadyBot(t)
 
-	kb := itx.InlineKeyboardMarkup{InlineKeyboard: [][]itx.InlineKeyboardButton{
+	kb := core.InlineKeyboardMarkup{InlineKeyboard: [][]core.InlineKeyboardButton{
 		{{Text: "Yes", CallbackData: "yes"}},
 	}}
 	_, err := bot.SendMessage(context.Background(), "chat-1", &core.SendMessageOptions{

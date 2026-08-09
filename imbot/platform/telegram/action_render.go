@@ -5,7 +5,6 @@ import (
 
 	"github.com/go-telegram/bot/models"
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // Tier 3 escape hatch for Telegram-only button capabilities.
@@ -76,7 +75,7 @@ func (b *Bot) resolveReplyMarkup(opts *core.SendMessageOptions) *models.InlineKe
 		return &m
 	case *models.InlineKeyboardMarkup:
 		return m
-	case interaction.InlineKeyboardMarkup:
+	case core.InlineKeyboardMarkup:
 		markup := b.BuildInlineKeyboard(m.ToActionSet())
 		return &markup
 	}

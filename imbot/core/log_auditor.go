@@ -1,4 +1,4 @@
-package security
+package core
 
 import "github.com/sirupsen/logrus"
 

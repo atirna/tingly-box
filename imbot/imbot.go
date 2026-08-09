@@ -7,7 +7,6 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/tingly-dev/tingly-box/imbot/command"
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 	platformreg "github.com/tingly-dev/tingly-box/imbot/platform"
 	"github.com/tingly-dev/tingly-box/imbot/platform/telegram"
 )
@@ -84,19 +83,19 @@ type (
 
 	// Keyboard types
 	Payload              = core.Payload
-	InlineKeyboardButton = interaction.InlineKeyboardButton
-	InlineKeyboardMarkup = interaction.InlineKeyboardMarkup
-	KeyboardBuilder      = interaction.KeyboardBuilder
+	InlineKeyboardButton = core.InlineKeyboardButton
+	InlineKeyboardMarkup = core.InlineKeyboardMarkup
+	KeyboardBuilder      = core.KeyboardBuilder
 
 	// Card types
-	Card               = interaction.Card
-	CardSection        = interaction.CardSection
-	CardField          = interaction.CardField
-	CardAction         = interaction.CardAction
-	CardActionStyle    = interaction.CardActionStyle
-	CardBuilder        = interaction.CardBuilder
-	CardSectionBuilder = interaction.CardSectionBuilder
-	CardActionBuilder  = interaction.CardActionBuilder
+	Card               = core.Card
+	CardSection        = core.CardSection
+	CardField          = core.CardField
+	CardAction         = core.CardAction
+	CardActionStyle    = core.CardActionStyle
+	CardBuilder        = core.CardBuilder
+	CardSectionBuilder = core.CardSectionBuilder
+	CardActionBuilder  = core.CardActionBuilder
 
 	// Command types
 	Command         = command.Command
@@ -265,8 +264,8 @@ func GetPlatformName(platform string) string {
 // Keyboard builder helpers
 
 // NewKeyboardBuilder creates a new keyboard builder
-func NewKeyboardBuilder() *interaction.KeyboardBuilder {
-	return interaction.NewKeyboardBuilder()
+func NewKeyboardBuilder() *core.KeyboardBuilder {
+	return core.NewKeyboardBuilder()
 }
 
 // NewPayload builds a button payload from its segments.
@@ -275,30 +274,30 @@ func NewPayload(segments ...string) core.Payload {
 }
 
 // ActionButton creates a button carrying the given payload segments.
-func ActionButton(text string, segments ...string) interaction.InlineKeyboardButton {
-	return interaction.ActionButton(text, segments...)
+func ActionButton(text string, segments ...string) core.InlineKeyboardButton {
+	return core.ActionButton(text, segments...)
 }
 
 // CallbackButton creates a callback button from a pre-joined string.
 //
 // Deprecated: use ActionButton.
-func CallbackButton(text, callbackData string) interaction.InlineKeyboardButton {
-	return interaction.CallbackButton(text, callbackData)
+func CallbackButton(text, callbackData string) core.InlineKeyboardButton {
+	return core.CallbackButton(text, callbackData)
 }
 
 // FormatCallbackData formats action and data into a callback string
 func FormatCallbackData(action string, data ...string) string {
-	return interaction.FormatCallbackData(action, data...)
+	return core.FormatCallbackData(action, data...)
 }
 
 // ParseCallbackData parses a callback data string into parts
 func ParseCallbackData(data string) []string {
-	return interaction.ParseCallbackData(data)
+	return core.ParseCallbackData(data)
 }
 
 // FormatDirButton formats a directory name for a button
 func FormatDirButton(name string, maxLen int) string {
-	return interaction.FormatDirButton(name, maxLen)
+	return core.FormatDirButton(name, maxLen)
 }
 
 // Interaction types re-exported from the interaction package
@@ -306,59 +305,59 @@ func FormatDirButton(name string, maxLen int) string {
 // Interaction types
 type (
 	// ActionType represents the type of user action
-	ActionType = interaction.ActionType
+	ActionType = core.ActionType
 
 	// Interaction represents a platform-agnostic interactive element
-	Interaction = interaction.Interaction
+	Interaction = core.Interaction
 
 	// Option represents a selectable option
-	Option = interaction.Option
+	Option = core.Option
 )
 
 // Interaction constants
 const (
 	// Action types
-	ActionSelect   = interaction.ActionSelect
-	ActionConfirm  = interaction.ActionConfirm
-	ActionCancel   = interaction.ActionCancel
-	ActionNavigate = interaction.ActionNavigate
-	ActionInput    = interaction.ActionInput
-	ActionCustom   = interaction.ActionCustom
+	ActionSelect   = core.ActionSelect
+	ActionConfirm  = core.ActionConfirm
+	ActionCancel   = core.ActionCancel
+	ActionNavigate = core.ActionNavigate
+	ActionInput    = core.ActionInput
+	ActionCustom   = core.ActionCustom
 
 	// Card action styles
-	CardActionStyleDefault = interaction.CardActionStyleDefault
-	CardActionStylePrimary = interaction.CardActionStylePrimary
-	CardActionStyleDanger  = interaction.CardActionStyleDanger
+	CardActionStyleDefault = core.CardActionStyleDefault
+	CardActionStylePrimary = core.CardActionStylePrimary
+	CardActionStyleDanger  = core.CardActionStyleDanger
 )
 
 // NewCard creates a new card builder.
-func NewCard(id string) *interaction.CardBuilder {
-	return interaction.NewCard(id)
+func NewCard(id string) *core.CardBuilder {
+	return core.NewCard(id)
 }
 
 // NewCardBuilder creates a new card builder.
-func NewCardBuilder(id string) *interaction.CardBuilder {
-	return interaction.NewCardBuilder(id)
+func NewCardBuilder(id string) *core.CardBuilder {
+	return core.NewCardBuilder(id)
 }
 
 // NewCardSection creates a new card section builder.
-func NewCardSection() *interaction.CardSectionBuilder {
-	return interaction.NewCardSection()
+func NewCardSection() *core.CardSectionBuilder {
+	return core.NewCardSection()
 }
 
 // NewCardAction creates a new card action builder.
-func NewCardAction(id, label string) *interaction.CardActionBuilder {
-	return interaction.NewCardAction(id, label)
+func NewCardAction(id, label string) *core.CardActionBuilder {
+	return core.NewCardAction(id, label)
 }
 
 // CallbackCardAction creates a callback-style card action builder.
-func CallbackCardAction(id, label, value string) *interaction.CardActionBuilder {
-	return interaction.CallbackCardAction(id, label, value)
+func CallbackCardAction(id, label, value string) *core.CardActionBuilder {
+	return core.CallbackCardAction(id, label, value)
 }
 
 // URLCardAction creates a URL card action builder.
-func URLCardAction(id, label, url string) *interaction.CardActionBuilder {
-	return interaction.URLCardAction(id, label, url)
+func URLCardAction(id, label, url string) *core.CardActionBuilder {
+	return core.URLCardAction(id, label, url)
 }
 
 // Command types re-exported from internal/command package

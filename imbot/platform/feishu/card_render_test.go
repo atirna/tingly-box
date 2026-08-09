@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
+	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 func TestRenderCardRequiresID(t *testing.T) {
-	if _, err := RenderCard(interaction.Card{Text: "hi"}); err == nil {
+	if _, err := RenderCard(core.Card{Text: "hi"}); err == nil {
 		t.Fatal("expected an error for a card with no ID")
 	}
 }
@@ -19,14 +19,14 @@ func TestRenderCardRequiresID(t *testing.T) {
 // callback value. remote_control's action menu (Clear / CD / Project) is
 // unusable on Feishu if this silently produces a card with no buttons.
 func TestRenderCardActionsSurviveAsButtons(t *testing.T) {
-	card := interaction.NewCard("remote_control_action_menu").
+	card := core.NewCard("remote_control_action_menu").
 		WithTitle("Title").
 		WithText("Body").
 		AddActions(
-			interaction.CallbackCardAction("clear", "🗑 Clear", "action:clear").
-				WithStyle(interaction.CardActionStyleDanger).
+			core.CallbackCardAction("clear", "🗑 Clear", "action:clear").
+				WithStyle(core.CardActionStyleDanger).
 				Build(),
-			interaction.CallbackCardAction("bind", "📁 CD", "action:bind").Build(),
+			core.CallbackCardAction("bind", "📁 CD", "action:bind").Build(),
 		).
 		Build()
 
@@ -49,10 +49,10 @@ func TestRenderCardActionsSurviveAsButtons(t *testing.T) {
 }
 
 func TestRenderCardSectionFields(t *testing.T) {
-	card := interaction.NewCard("card").
-		AddSection(interaction.CardSection{
+	card := core.NewCard("card").
+		AddSection(core.CardSection{
 			Title:  "Session",
-			Fields: []interaction.CardField{{Label: "Project", Value: "/srv/app"}},
+			Fields: []core.CardField{{Label: "Project", Value: "/srv/app"}},
 		}).
 		Build()
 
@@ -72,17 +72,17 @@ func TestRenderCardSectionFields(t *testing.T) {
 // decision rather than copying text through.
 func TestRenderCardStyleMapping(t *testing.T) {
 	tests := []struct {
-		style interaction.CardActionStyle
+		style core.CardActionStyle
 		want  string
 	}{
-		{interaction.CardActionStyleDanger, "danger"},
-		{interaction.CardActionStylePrimary, "primary"},
-		{interaction.CardActionStyleDefault, "default"},
+		{core.CardActionStyleDanger, "danger"},
+		{core.CardActionStylePrimary, "primary"},
+		{core.CardActionStyleDefault, "default"},
 	}
 
 	for _, tt := range tests {
-		card := interaction.NewCard("card").
-			AddActions(interaction.CallbackCardAction("a", "Label", "v").WithStyle(tt.style).Build()).
+		card := core.NewCard("card").
+			AddActions(core.CallbackCardAction("a", "Label", "v").WithStyle(tt.style).Build()).
 			Build()
 
 		out, err := RenderCard(card)

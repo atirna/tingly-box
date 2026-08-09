@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	itx "github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // decodeActions extracts the outbound keyboard for the test harness.
@@ -30,9 +29,9 @@ func decodeActions(opts *core.SendMessageOptions) *Keyboard {
 	switch m := raw.(type) {
 	case *core.ActionSet:
 		return convertActionSet(m)
-	case itx.InlineKeyboardMarkup:
+	case core.InlineKeyboardMarkup:
 		return convertActionSet(m.ToActionSet())
-	case *itx.InlineKeyboardMarkup:
+	case *core.InlineKeyboardMarkup:
 		if m == nil {
 			return nil
 		}

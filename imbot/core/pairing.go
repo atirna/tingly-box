@@ -5,7 +5,7 @@
 // constant-time comparison and per-bot rate-limiting / lockout. Codes are
 // kept only in memory — a process restart deliberately invalidates any
 // outstanding codes.
-package security
+package core
 
 import (
 	"crypto/rand"

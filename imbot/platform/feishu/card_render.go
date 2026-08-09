@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
+	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 // CardRenderer converts a platform-neutral interaction.Card into the Feishu
@@ -24,12 +24,12 @@ func NewCardRenderer() *CardRenderer {
 
 // RenderCard converts a neutral card to Feishu card JSON. Convenience wrapper
 // for callers that do not need to hold a renderer.
-func RenderCard(card interaction.Card) (string, error) {
+func RenderCard(card core.Card) (string, error) {
 	return NewCardRenderer().Render(card)
 }
 
 // Render converts an interaction.Card to a Feishu card JSON string.
-func (r *CardRenderer) Render(card interaction.Card) (string, error) {
+func (r *CardRenderer) Render(card core.Card) (string, error) {
 	if card.ID == "" {
 		return "", fmt.Errorf("card ID cannot be empty")
 	}
@@ -52,7 +52,7 @@ func (r *CardRenderer) Render(card interaction.Card) (string, error) {
 }
 
 // buildCardElements converts card sections and actions to Feishu card elements
-func (r *CardRenderer) buildCardElements(card interaction.Card) []larkcard.MessageCardElement {
+func (r *CardRenderer) buildCardElements(card core.Card) []larkcard.MessageCardElement {
 	var elements []larkcard.MessageCardElement
 
 	// Add title if present
@@ -94,7 +94,7 @@ func (r *CardRenderer) buildCardElements(card interaction.Card) []larkcard.Messa
 }
 
 // buildSectionElements converts a card section to Feishu card elements
-func (r *CardRenderer) buildSectionElements(section interaction.CardSection) []larkcard.MessageCardElement {
+func (r *CardRenderer) buildSectionElements(section core.CardSection) []larkcard.MessageCardElement {
 	var elements []larkcard.MessageCardElement
 
 	// Section title
@@ -123,7 +123,7 @@ func (r *CardRenderer) buildSectionElements(section interaction.CardSection) []l
 }
 
 // buildActionButton converts a card action to Feishu button element
-func (r *CardRenderer) buildActionButton(action interaction.CardAction) larkcard.MessageCardActionElement {
+func (r *CardRenderer) buildActionButton(action core.CardAction) larkcard.MessageCardActionElement {
 	button := larkcard.NewMessageCardEmbedButton().
 		Text(larkcard.NewMessageCardPlainText().Content(action.Label))
 
@@ -146,11 +146,11 @@ func (r *CardRenderer) buildActionButton(action interaction.CardAction) larkcard
 }
 
 // mapActionStyleToButtonType maps interaction.CardActionStyle to Feishu button type
-func (r *CardRenderer) mapActionStyleToButtonType(style interaction.CardActionStyle) larkcard.MessageCardButtonType {
+func (r *CardRenderer) mapActionStyleToButtonType(style core.CardActionStyle) larkcard.MessageCardButtonType {
 	switch style {
-	case interaction.CardActionStylePrimary:
+	case core.CardActionStylePrimary:
 		return larkcard.MessageCardButtonTypePrimary
-	case interaction.CardActionStyleDanger:
+	case core.CardActionStyleDanger:
 		return larkcard.MessageCardButtonTypeDanger
 	default:
 		return larkcard.MessageCardButtonTypeDefault
@@ -158,7 +158,7 @@ func (r *CardRenderer) mapActionStyleToButtonType(style interaction.CardActionSt
 }
 
 // fieldsToMarkdown converts card fields to markdown table format
-func (r *CardRenderer) fieldsToMarkdown(fields []interaction.CardField) string {
+func (r *CardRenderer) fieldsToMarkdown(fields []core.CardField) string {
 	if len(fields) == 0 {
 		return ""
 	}

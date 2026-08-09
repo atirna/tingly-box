@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
-	"github.com/tingly-dev/tingly-box/imbot/interaction"
 )
 
 // testBot is the minimum Bot needed to render a keyboard: a callback vault.
@@ -84,9 +83,9 @@ func TestSwitchInlineButton(t *testing.T) {
 }
 
 func TestKeyboardToActionSetRoundTrip(t *testing.T) {
-	kb := interaction.NewKeyboardBuilder().
-		AddRow(interaction.CallbackButton("Yes", "yes"), interaction.CallbackButton("No", "no")).
-		AddRow(interaction.URLButton("Docs", "https://example.test"))
+	kb := core.NewKeyboardBuilder().
+		AddRow(core.CallbackButton("Yes", "yes"), core.CallbackButton("No", "no")).
+		AddRow(core.URLButton("Docs", "https://example.test"))
 
 	out := testBot().BuildInlineKeyboard(kb.BuildActions())
 	if len(out.InlineKeyboard) != 2 {
