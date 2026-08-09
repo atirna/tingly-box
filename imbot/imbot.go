@@ -259,27 +259,6 @@ func GetPlatformCapabilities(platform string) *core.PlatformCapabilities {
 	return core.GetPlatformCapabilities(Platform(platform))
 }
 
-// GetPlatformName returns the human-readable name for a platform
-func GetPlatformName(platform string) string {
-	return core.GetPlatformName(Platform(platform))
-}
-
-// GetPlatformAuthType returns the credential category for a platform.
-func GetPlatformAuthType(platform string) string {
-	return core.GetPlatformAuthType(Platform(platform))
-}
-
-// GetPlatformCategory returns the settings-UI grouping for a platform.
-func GetPlatformCategory(platform string) string {
-	return core.GetPlatformCategory(Platform(platform))
-}
-
-// AuthMappingFor returns a platform's auth mapping, falling back to the
-// token-based default for unknown platforms.
-func AuthMappingFor(platform string) core.AuthMapping {
-	return core.AuthMappingForID(platform)
-}
-
 // BuildAuthConfig converts a bot's stored auth map into an AuthConfig.
 func BuildAuthConfig(platform string, auth map[string]string) AuthConfig {
 	return core.BuildAuthConfig(platform, auth)
