@@ -5,9 +5,11 @@ import React, { useState } from 'react';
 export const EFFORT_LEVELS = [
     { value: '', label: 'By Client', description: "Pass the client's thinking config through unchanged" },
     { value: 'off', label: 'Off', description: 'Force extended thinking disabled' },
-    { value: 'low', label: 'Low', description: '~1K tokens — Fast' },
-    { value: 'medium', label: 'Medium', description: '~5K tokens — Balanced' },
+    { value: 'minimal', label: 'Minimal', description: '~1K tokens — Fastest' },
+    { value: 'low', label: 'Low', description: '~4K tokens — Fast' },
+    { value: 'medium', label: 'Medium', description: '~10K tokens — Balanced' },
     { value: 'high', label: 'High', description: '~20K tokens — Deep' },
+    { value: 'xhigh', label: 'XHigh', description: '~24K tokens — Deeper' },
     { value: 'max', label: 'Max', description: '~32K tokens — Max quality' },
 ] as const;
 
