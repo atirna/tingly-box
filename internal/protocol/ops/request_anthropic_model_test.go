@@ -96,13 +96,13 @@ func TestAnthropicModelThinkingCaps(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			caps := anthropicModelThinkingCaps(tt.model)
-			assert.Equal(t, tt.adaptive, caps.adaptive, "adaptive")
-			assert.Equal(t, tt.budget, caps.budget, "budget")
-			assert.Equal(t, len(tt.effort) > 0, caps.supportsEffort(), "supportsEffort")
+			assert.Equal(t, tt.adaptive, caps.ThinkingAdaptive, "adaptive")
+			assert.Equal(t, tt.budget, caps.ThinkingEnabled, "budget")
+			assert.Equal(t, len(tt.effort) > 0, caps.SupportsEffort(), "supportsEffort")
 			for _, level := range tt.effort {
-				assert.True(t, caps.effortLevels[level], "level %s should be supported", level)
+				assert.True(t, caps.EffortLevels[level], "level %s should be supported", level)
 			}
-			assert.False(t, caps.effortLevels["xhigh"], "no cataloged model advertises xhigh yet")
+			assert.False(t, caps.EffortLevels["xhigh"], "no cataloged model advertises xhigh yet")
 		})
 	}
 }

@@ -19,30 +19,16 @@ const ClaudeCodeVersion = "2.1.86"
 // IMPORTANT: Must stay in sync with Claude Code's FINGERPRINT_SALT constant.
 const FingerprintSalt = "59cf53e54c78"
 
-// anthropicThinkingCaps describes which thinking dialects a Claude model
-// accepts.
-type anthropicThinkingCaps struct {
-	adaptive     bool            // thinking.type=adaptive
-	budget       bool            // thinking.type=enabled + budget_tokens
-	effortLevels map[string]bool // supported output_config.effort values; empty = no effort support
-}
-
-func (c anthropicThinkingCaps) supportsEffort() bool { return len(c.effortLevels) > 0 }
-
 // anthropicModelThinkingCaps resolves a model's thinking dialect support from
 // the embedded catalog (internal/protocol/catalog/claude.models.json) — updating that
 // catalog is how new models get correct treatment. Models absent from the
 // catalog (aliases, proxy models, releases newer than the snapshot) keep the
 // conservative legacy profile: budget-based thinking only, no effort field.
-func anthropicModelThinkingCaps(model string) anthropicThinkingCaps {
+func anthropicModelThinkingCaps(model string) catalog.ClaudeThinkingCaps {
 	if caps, ok := catalog.LookupClaudeThinkingCaps(model); ok {
-		return anthropicThinkingCaps{
-			adaptive:     caps.ThinkingAdaptive,
-			budget:       caps.ThinkingEnabled,
-			effortLevels: caps.EffortLevels,
-		}
+		return caps
 	}
-	return anthropicThinkingCaps{budget: true}
+	return catalog.ClaudeThinkingCaps{ThinkingEnabled: true}
 }
 
 // anthropicEffortLadder orders Anthropic effort levels ascending, for clamping
@@ -68,8 +54,8 @@ func effortSurvives(hasEnabled, hasAdaptive bool) bool {
 // the nearest supported level at or below the requested one wins, stepping up
 // only when nothing at or below is supported. Returns "" when the model has no
 // effort support at all.
-func clampAnthropicEffort(effort anthropic.OutputConfigEffort, caps anthropicThinkingCaps) anthropic.OutputConfigEffort {
-	if effort == "" || !caps.supportsEffort() {
+func clampAnthropicEffort(effort anthropic.OutputConfigEffort, caps catalog.ClaudeThinkingCaps) anthropic.OutputConfigEffort {
+	if effort == "" || !caps.SupportsEffort() {
 		return ""
 	}
 	if effort == "minimal" { // not an Anthropic level; enters the ladder at its minimum
@@ -80,12 +66,12 @@ func clampAnthropicEffort(effort anthropic.OutputConfigEffort, caps anthropicThi
 		idx = slices.Index(anthropicEffortLadder, anthropic.OutputConfigEffortMedium)
 	}
 	for i := idx; i >= 0; i-- {
-		if caps.effortLevels[string(anthropicEffortLadder[i])] {
+		if caps.EffortLevels[string(anthropicEffortLadder[i])] {
 			return anthropicEffortLadder[i]
 		}
 	}
 	for i := idx + 1; i < len(anthropicEffortLadder); i++ {
-		if caps.effortLevels[string(anthropicEffortLadder[i])] {
+		if caps.EffortLevels[string(anthropicEffortLadder[i])] {
 			return anthropicEffortLadder[i]
 		}
 	}
@@ -112,10 +98,10 @@ func ApplyAnthropicV1ModelTransform(req *anthropic.MessageNewParams, model strin
 	}
 	caps := anthropicModelThinkingCaps(model)
 
-	if !caps.adaptive {
+	if !caps.ThinkingAdaptive {
 		req.Messages = filterThinkingBlocksInMessages(req.Messages)
 		if req.Thinking.OfAdaptive != nil {
-			if budget, ok := typ.ThinkingBudgetMapping[string(req.OutputConfig.Effort)]; ok && caps.budget {
+			if budget, ok := typ.ThinkingBudgetMapping[string(req.OutputConfig.Effort)]; ok && caps.ThinkingEnabled {
 				if req.MaxTokens > 0 && budget > req.MaxTokens {
 					budget = req.MaxTokens
 				}
@@ -126,8 +112,8 @@ func ApplyAnthropicV1ModelTransform(req *anthropic.MessageNewParams, model strin
 		}
 	}
 
-	if !caps.budget && req.Thinking.OfEnabled != nil {
-		if caps.adaptive {
+	if !caps.ThinkingEnabled && req.Thinking.OfEnabled != nil {
+		if caps.ThinkingAdaptive {
 			if req.OutputConfig.Effort == "" {
 				req.OutputConfig.Effort = anthropic.OutputConfigEffort(
 					typ.ThinkingEffortFromBudget(req.Thinking.OfEnabled.BudgetTokens))
@@ -156,10 +142,10 @@ func ApplyAnthropicBetaModelTransform(req *anthropic.BetaMessageNewParams, model
 	}
 	caps := anthropicModelThinkingCaps(model)
 
-	if !caps.adaptive {
+	if !caps.ThinkingAdaptive {
 		req.Messages = filterBetaThinkingBlocksInMessages(req.Messages)
 		if req.Thinking.OfAdaptive != nil {
-			if budget, ok := typ.ThinkingBudgetMapping[string(req.OutputConfig.Effort)]; ok && caps.budget {
+			if budget, ok := typ.ThinkingBudgetMapping[string(req.OutputConfig.Effort)]; ok && caps.ThinkingEnabled {
 				if req.MaxTokens > 0 && budget > req.MaxTokens {
 					budget = req.MaxTokens
 				}
@@ -170,8 +156,8 @@ func ApplyAnthropicBetaModelTransform(req *anthropic.BetaMessageNewParams, model
 		}
 	}
 
-	if !caps.budget && req.Thinking.OfEnabled != nil {
-		if caps.adaptive {
+	if !caps.ThinkingEnabled && req.Thinking.OfEnabled != nil {
+		if caps.ThinkingAdaptive {
 			if req.OutputConfig.Effort == "" {
 				req.OutputConfig.Effort = anthropic.BetaOutputConfigEffort(
 					typ.ThinkingEffortFromBudget(req.Thinking.OfEnabled.BudgetTokens))

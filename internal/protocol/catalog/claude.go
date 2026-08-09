@@ -59,6 +59,9 @@ type ClaudeThinkingCaps struct {
 	EffortLevels map[string]bool
 }
 
+// SupportsEffort reports whether the model accepts output_config.effort at all.
+func (c ClaudeThinkingCaps) SupportsEffort() bool { return len(c.EffortLevels) > 0 }
+
 type catalogModel struct {
 	ID        string `json:"id"`
 	Reasoning *struct {
