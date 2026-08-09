@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // BaseBot provides common functionality for all bot implementations
@@ -323,11 +324,17 @@ func (b *BaseBot) ClearHandlers() {
 	b.handlers.ready = nil
 }
 
-// ValidateTextLength validates text length against platform limit
+// ValidateTextLength validates text length against the platform's character
+// limit. The limit is counted in Unicode code points (runes), matching how the
+// platforms themselves describe their message caps (Telegram/Discord/Slack
+// limits are character counts). Counting bytes would over-reject CJK and emoji
+// text, which encode several bytes per character.
 func (b *BaseBot) ValidateTextLength(text string) error {
 	caps := GetPlatformCapabilities(b.config.Platform)
-	if caps.TextLimit > 0 && len(text) > caps.TextLimit {
-		return NewMessageTooLongError(b.config.Platform, len(text), caps.TextLimit)
+	if caps.TextLimit > 0 {
+		if n := utf8.RuneCountInString(text); n > caps.TextLimit {
+			return NewMessageTooLongError(b.config.Platform, n, caps.TextLimit)
+		}
 	}
 	return nil
 }
@@ -346,95 +353,105 @@ func (b *BaseBot) ChunkText(text string) []string {
 	return ChunkTextForPlatform(b.config.Platform, text)
 }
 
-// findBreakPoint finds a good break point for chunking
-// Avoids breaking inside code blocks (``` or `)
-func findBreakPoint(text string, limit int) int {
-	// First, check if we're inside a code block at the limit point
-	inCodeBlock := false
-	codeBlockChar := rune(0)
+// findBreakPoint returns a rune index at which to split runes so the first
+// chunk stays within limit (in runes). It tries, in order:
+//  1. not to land inside a fenced (```) or inline (`) code span — extend past
+//     the span's end when the limit falls inside one;
+//  2. to break at a newline, then at a space, within the trailing 30% of the
+//     limit, so words are not cut when there is room to avoid it;
+//  3. a hard break at limit otherwise.
+//
+// It operates on runes so a chunk boundary can never split a multi-byte
+// character (CJK, emoji). limit is a rune count.
+func findBreakPoint(runes []rune, limit int) int {
+	if limit >= len(runes) {
+		return len(runes)
+	}
 
-	for i := 0; i < limit && i < len(text); i++ {
-		if text[i] == '`' {
-			if i+2 < len(text) && text[i:i+3] == "```" {
-				if !inCodeBlock {
-					// Start of code block
-					inCodeBlock = true
-					codeBlockChar = '`'
-					i += 2
-				} else if codeBlockChar == '`' {
-					// End of code block
-					inCodeBlock = false
-					codeBlockChar = 0
-					i += 2
-				}
-			} else if !inCodeBlock {
-				// Start of inline code
-				inCodeBlock = true
-				codeBlockChar = '`'
-			} else if codeBlockChar == '`' && (i == 0 || text[i-1] != '`') {
-				// End of inline code
-				inCodeBlock = false
-				codeBlockChar = 0
+	// Track fenced/inline code span state up to the limit. A backtick is ASCII,
+	// so indexing runes here is unambiguous.
+	inCode := false
+	fenced := false
+	for i := 0; i < limit; i++ {
+		if runes[i] != '`' {
+			continue
+		}
+		if i+2 < limit && runes[i+1] == '`' && runes[i+2] == '`' {
+			if !inCode {
+				inCode, fenced = true, true
+			} else if fenced {
+				inCode, fenced = false, false
+			}
+			// advance past the fence; loop's i++ handles the rest imperfectly but
+			// state only flips on the matched triple, so re-scanning is harmless.
+			continue
+		}
+		if !fenced {
+			inCode = !inCode
+		}
+	}
+
+	// If the limit lands inside a code span, extend to just past its end (up to
+	// 50% beyond limit) so the chunk does not break the span open.
+	if inCode {
+		extend := limit * 3 / 2
+		if extend > len(runes) {
+			extend = len(runes)
+		}
+		for i := limit; i < extend; i++ {
+			if runes[i] != '`' {
+				continue
+			}
+			if fenced && i+2 < len(runes) && runes[i+1] == '`' && runes[i+2] == '`' {
+				return i + 3
+			}
+			if !fenced {
+				return i + 1
 			}
 		}
 	}
 
-	// If we're inside a code block at the limit, try to extend to find the end
-	if inCodeBlock {
-		// Look for the end of the code block (up to 50% beyond limit)
-		extendLimit := limit * 3 / 2
-		if extendLimit > len(text) {
-			extendLimit = len(text)
-		}
-		for i := limit; i < extendLimit; i++ {
-			if text[i] == '`' {
-				if i+2 < len(text) && text[i:i+3] == "```" && codeBlockChar == '`' {
-					return i + 3 // Break after code block end
-				} else if codeBlockChar == '`' {
-					return i + 1 // Break after inline code end
-				}
-			}
-		}
-		// If we can't find the end, just break at newline if possible
-	}
-
-	// Try to break at newline (within 30% to 100% of limit)
-	for i := limit - 1; i >= limit*7/10 && i >= 0; i-- {
-		if text[i] == '\n' {
+	// Prefer a newline, then a space, within the trailing 30% of the chunk.
+	lower := limit * 7 / 10
+	for i := limit - 1; i >= lower; i-- {
+		if runes[i] == '\n' {
 			return i + 1
 		}
 	}
-
-	// Try to break at space (within 70% to 100% of limit)
-	for i := limit - 1; i >= limit*7/10 && i >= 0; i-- {
-		if text[i] == ' ' {
+	for i := limit - 1; i >= lower; i-- {
+		if runes[i] == ' ' {
 			return i + 1
 		}
 	}
-
-	// Hard break at limit
 	return limit
 }
 
 // ChunkTextForPlatform splits text into chunks within the platform's message
-// size limit, using code-block-aware break points. It is the single chunking
-// implementation; BaseBot.ChunkText is a thin wrapper over it.
+// size limit, using rune-aware break points that never split a multi-byte
+// character. It is the single chunking implementation; BaseBot.ChunkText is a
+// thin wrapper over it.
 func ChunkTextForPlatform(platform Platform, text string) []string {
 	caps := GetPlatformCapabilities(platform)
-	if caps == nil || caps.TextLimit <= 0 || len(text) <= caps.TextLimit {
+	if caps == nil || caps.TextLimit <= 0 {
+		return []string{text}
+	}
+	runes := []rune(text)
+	limit := caps.TextLimit
+	if len(runes) <= limit {
 		return []string{text}
 	}
 
-	limit := caps.TextLimit
 	var chunks []string
-	remaining := text
-	for len(remaining) > limit {
-		breakPoint := findBreakPoint(remaining, limit)
-		chunks = append(chunks, remaining[:breakPoint])
-		remaining = remaining[breakPoint:]
+	for len(runes) > limit {
+		breakPoint := findBreakPoint(runes, limit)
+		if breakPoint <= 0 {
+			breakPoint = limit
+		}
+		chunks = append(chunks, string(runes[:breakPoint]))
+		runes = runes[breakPoint:]
 	}
-	if len(remaining) > 0 {
-		chunks = append(chunks, remaining)
+	if len(runes) > 0 {
+		chunks = append(chunks, string(runes))
 	}
 	return chunks
 }
