@@ -12,9 +12,10 @@ type InlineKeyboardButton struct {
 	// is not bound to any platform's wire encoding, so a segment may be as
 	// long as it needs to be and may contain any character.
 	Payload Payload `json:"payload,omitempty"`
-	// CallbackData is the flat colon-joined form.
-	//
-	// Deprecated: use Payload. See imbot/core/payload.go.
+	// CallbackData is the flat colon-joined form of Payload — the wire identity
+	// for platforms whose callback protocol uses the flat string (see
+	// Action.CallbackData). It is not a transitional field; Payload is simply
+	// the preferred, lossless form for new producers.
 	CallbackData string `json:"callback_data,omitempty"`
 	URL          string `json:"url,omitempty"`
 }
@@ -61,10 +62,11 @@ func ActionButton(text string, segments ...string) InlineKeyboardButton {
 	}
 }
 
-// CallbackButton creates a callback button from a pre-joined string.
-//
-// Deprecated: use ActionButton. Joining the segments yourself reintroduces
-// the separator collision and the 64-byte budget this seam removed.
+// CallbackButton creates a callback button from a pre-joined flat string. Use
+// it for platforms whose callback protocol carries the flat colon-joined form
+// (see Action.CallbackData); prefer ActionButton for new code, since joining
+// the segments yourself reintroduces the separator collision and 64-byte budget
+// the Payload seam removed.
 func CallbackButton(text, callbackData string) InlineKeyboardButton {
 	return InlineKeyboardButton{
 		Text:         text,
