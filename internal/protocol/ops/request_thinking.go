@@ -16,8 +16,10 @@ import (
 //   - "off": force thinking disabled. For Anthropic this sets OfDisabled;
 //     for OpenAI this clears reasoning_effort and removes any stray `thinking`
 //     extension (DeepSeek and friends reject requests that carry both).
-//   - "low"/"medium"/"high"/"max": force thinking enabled with the matching
-//     budget. "max" collapses to "high" for OpenAI which has no "max".
+//   - "minimal"/"low"/"medium"/"high"/"xhigh"/"max": force thinking enabled
+//     with the matching budget. Anthropic targets always get budget_tokens
+//     (the dialect every Claude model accepts); OpenAI targets get
+//     reasoning_effort natively — all six levels are SDK-defined.
 func ApplyThinkingEffort(req interface{}, effort string) {
 	switch effort {
 	case typ.ThinkingEffortDefault:
@@ -99,13 +101,20 @@ func stripOpenAIThinkingExtra(req *openai.ChatCompletionNewParams) {
 }
 
 // openaiReasoningEffort maps a rule effort level to a valid OpenAI
-// reasoning_effort. "max" collapses to "high" because OpenAI has no "max".
+// reasoning_effort. All six ladder levels are OpenAI-defined, so the mapping
+// is 1:1. Unknown values fall back to "medium".
 func openaiReasoningEffort(effort string) shared.ReasoningEffort {
 	switch effort {
+	case typ.ThinkingEffortMinimal:
+		return shared.ReasoningEffortMinimal
 	case typ.ThinkingEffortLow:
 		return shared.ReasoningEffortLow
-	case typ.ThinkingEffortHigh, typ.ThinkingEffortMax:
+	case typ.ThinkingEffortHigh:
 		return shared.ReasoningEffortHigh
+	case typ.ThinkingEffortXHigh:
+		return shared.ReasoningEffortXhigh
+	case typ.ThinkingEffortMax:
+		return shared.ReasoningEffortMax
 	default:
 		return shared.ReasoningEffortMedium
 	}

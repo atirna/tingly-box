@@ -159,7 +159,7 @@ func RuleFlagRegistry() []FlagSpec {
 		{
 			Key:             "thinking_effort",
 			Label:           "Thinking",
-			Description:     "Single control for extended thinking. \"By Client\" passes the client's thinking config through unchanged. \"Off\" forces thinking disabled. The level values force thinking on with the matching budget — mapped to budget_tokens for Anthropic targets (low 1K / medium 5K / high 20K / max 32K) and to reasoning_effort for OpenAI targets (\"max\" collapses to \"high\").",
+			Description:     "Single control for extended thinking. \"By Client\" passes the client's thinking config through unchanged. \"Off\" forces thinking disabled. The level values force thinking on with the matching budget — mapped to budget_tokens for Anthropic targets (minimal 1K / low 4K / medium 10K / high 20K / xhigh 24K / max 32K) and to reasoning_effort for OpenAI targets (all six levels sent natively).",
 			Type:            FlagTypeEnum,
 			Category:        FlagCategoryReasoning,
 			Shared:          true,
@@ -167,9 +167,11 @@ func RuleFlagRegistry() []FlagSpec {
 			Options: []FlagOption{
 				{Value: "", Label: "By Client"},
 				{Value: "off", Label: "Off"},
-				{Value: "low", Label: "Low (~1K tokens)"},
-				{Value: "medium", Label: "Medium (~5K tokens)"},
+				{Value: "minimal", Label: "Minimal (~1K tokens)"},
+				{Value: "low", Label: "Low (~4K tokens)"},
+				{Value: "medium", Label: "Medium (~10K tokens)"},
 				{Value: "high", Label: "High (~20K tokens)"},
+				{Value: "xhigh", Label: "XHigh (~24K tokens)"},
 				{Value: "max", Label: "Max (~32K tokens)"},
 			},
 		},

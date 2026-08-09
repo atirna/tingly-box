@@ -25,6 +25,25 @@ func TestRuleThinkingTransform_AnthropicBudget(t *testing.T) {
 	}
 }
 
+func TestRuleThinkingTransform_AnthropicNewLadderLevels(t *testing.T) {
+	// minimal and xhigh are new to this ladder; confirm both drive budget_tokens
+	// the same way the pre-existing levels do.
+	for _, level := range []string{typ.ThinkingEffortMinimal, typ.ThinkingEffortXHigh} {
+		req := &anthropic.MessageNewParams{}
+		ctx := &TransformContext{Request: req}
+
+		if err := NewRuleThinkingTransform(level).Apply(ctx); err != nil {
+			t.Fatalf("apply(%s): %v", level, err)
+		}
+		if req.Thinking.OfEnabled == nil {
+			t.Fatalf("effort %s: expected thinking enabled, got %#v", level, req.Thinking)
+		}
+		if got := req.Thinking.OfEnabled.BudgetTokens; got != typ.ThinkingBudgetMapping[level] {
+			t.Errorf("effort %s: budget = %d, want %d", level, got, typ.ThinkingBudgetMapping[level])
+		}
+	}
+}
+
 func TestRuleThinkingTransform_AnthropicOffDisables(t *testing.T) {
 	req := &anthropic.MessageNewParams{
 		Thinking: anthropic.ThinkingConfigParamOfEnabled(20480),
@@ -54,15 +73,25 @@ func TestRuleThinkingTransform_OpenAIChatEffort(t *testing.T) {
 	}
 }
 
-func TestRuleThinkingTransform_OpenAIMaxCollapsesToHigh(t *testing.T) {
-	req := &openai.ChatCompletionNewParams{}
-	ctx := &TransformContext{Request: req}
-
-	if err := NewRuleThinkingTransform(typ.ThinkingEffortMax).Apply(ctx); err != nil {
-		t.Fatalf("apply: %v", err)
+func TestRuleThinkingTransform_OpenAIFullLadderIsNative(t *testing.T) {
+	// All six ladder levels are OpenAI-defined — no collapsing.
+	cases := map[string]shared.ReasoningEffort{
+		typ.ThinkingEffortMinimal: shared.ReasoningEffortMinimal,
+		typ.ThinkingEffortLow:     shared.ReasoningEffortLow,
+		typ.ThinkingEffortMedium:  shared.ReasoningEffortMedium,
+		typ.ThinkingEffortHigh:    shared.ReasoningEffortHigh,
+		typ.ThinkingEffortXHigh:   shared.ReasoningEffortXhigh,
+		typ.ThinkingEffortMax:     shared.ReasoningEffortMax,
 	}
-	if req.ReasoningEffort != shared.ReasoningEffortHigh {
-		t.Errorf("max should collapse to high, got %q", req.ReasoningEffort)
+	for level, want := range cases {
+		req := &openai.ChatCompletionNewParams{}
+		ctx := &TransformContext{Request: req}
+		if err := NewRuleThinkingTransform(level).Apply(ctx); err != nil {
+			t.Fatalf("apply(%s): %v", level, err)
+		}
+		if req.ReasoningEffort != want {
+			t.Errorf("effort %s: reasoning_effort = %q, want %q", level, req.ReasoningEffort, want)
+		}
 	}
 }
 

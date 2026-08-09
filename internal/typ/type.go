@@ -89,27 +89,38 @@ func BuiltinScenarios() []RuleScenario {
 // ThinkingEffortLevel represents the thinking effort level for extended thinking
 type ThinkingEffortLevel = string
 
+// The ladder covers the union of levels the providers we route to actually
+// define: OpenAI reasoning_effort has none/minimal/low/medium/high/xhigh/max;
+// Gemini 3 thinking_level has minimal/low/medium/high. "none" intentionally
+// maps to our existing "off" sentinel instead of a ladder entry.
 const (
 	// ThinkingEffortDefault is the "by client" sentinel: pass the client's
 	// thinking config through unchanged. Empty string so omitempty hides it.
 	ThinkingEffortDefault ThinkingEffortLevel = ""
 	// ThinkingEffortOff is the "explicitly disabled" sentinel: strip thinking
 	// from the outbound request regardless of what the client sent.
-	ThinkingEffortOff    ThinkingEffortLevel = "off"
-	ThinkingEffortLow    ThinkingEffortLevel = "low"
-	ThinkingEffortMedium ThinkingEffortLevel = "medium"
-	ThinkingEffortHigh   ThinkingEffortLevel = "high"
-	ThinkingEffortMax    ThinkingEffortLevel = "max"
+	ThinkingEffortOff     ThinkingEffortLevel = "off"
+	ThinkingEffortMinimal ThinkingEffortLevel = "minimal"
+	ThinkingEffortLow     ThinkingEffortLevel = "low"
+	ThinkingEffortMedium  ThinkingEffortLevel = "medium"
+	ThinkingEffortHigh    ThinkingEffortLevel = "high"
+	ThinkingEffortXHigh   ThinkingEffortLevel = "xhigh"
+	ThinkingEffortMax     ThinkingEffortLevel = "max"
 )
 
-// ThinkingBudgetMapping defines budget_tokens for each effort level.
+// ThinkingBudgetMapping defines budget_tokens for each effort level, the
+// dialect every Anthropic model accepts (Claude 4.5+ additionally accepts a
+// native output_config.effort field — not handled here, see the tracking
+// follow-up in .design/rule-flags.md).
 // "off" / "" are intentionally absent — they signal disabled / pass-through,
 // not a budget value, and are handled out-of-band by the transform layer.
 var ThinkingBudgetMapping = map[ThinkingEffortLevel]int64{
-	ThinkingEffortLow:    1024,  // ~1K tokens - minimal reasoning (minimum allowed)
-	ThinkingEffortMedium: 5120,  // ~5K tokens - balanced
-	ThinkingEffortHigh:   20480, // ~20K tokens - deep reasoning
-	ThinkingEffortMax:    31999, // ~32K tokens - maximum
+	ThinkingEffortMinimal: 1024,  // ~1K tokens - Anthropic's minimum for extended thinking
+	ThinkingEffortLow:     4096,  // ~4K tokens - light reasoning (Claude Code "think")
+	ThinkingEffortMedium:  10240, // ~10K tokens - balanced (Claude Code "megathink")
+	ThinkingEffortHigh:    20480, // ~20K tokens - deep reasoning
+	ThinkingEffortXHigh:   24576, // ~24K tokens - deeper reasoning
+	ThinkingEffortMax:     31999, // ~32K tokens - maximum (Claude Code "ultrathink")
 }
 
 // ThinkingMode is retained for backward compatibility with the deprecated
@@ -160,7 +171,8 @@ type ScenarioFlags struct {
 
 	// ThinkingEffort is the unified extended-thinking control. Recognized
 	// values: "" (by client, default), "off" (force disabled), or one of
-	// "low"/"medium"/"high"/"max" (force enabled with the matching budget).
+	// "minimal"/"low"/"medium"/"high"/"xhigh"/"max" (force enabled with the
+	// matching budget).
 	ThinkingEffort ThinkingEffortLevel `json:"thinking_effort,omitempty" yaml:"thinking_effort,omitempty"`
 
 	// CustomUserAgent overrides the outbound User-Agent header for every rule
@@ -214,9 +226,9 @@ type RuleFlags struct {
 
 	// ThinkingEffort is the unified extended-thinking control. Recognized
 	// values: "" (by client, default), "off" (force disabled), or one of
-	// "low"/"medium"/"high"/"max" (force enabled with the matching budget).
-	// Maps to budget_tokens for Anthropic and reasoning_effort for OpenAI
-	// ("max" collapses to "high" for OpenAI which has no "max").
+	// "minimal"/"low"/"medium"/"high"/"xhigh"/"max" (force enabled with the
+	// matching budget). Maps to budget_tokens for Anthropic and
+	// reasoning_effort for OpenAI (both accept all six levels natively).
 	ThinkingEffort ThinkingEffortLevel `json:"thinking_effort,omitempty" yaml:"thinking_effort,omitempty"`
 
 	// CleanHeader strips x-anthropic-billing-header blocks from system messages.
