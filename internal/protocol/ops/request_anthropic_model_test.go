@@ -11,8 +11,8 @@ import (
 )
 
 func TestAnthropicModelThinkingCaps(t *testing.T) {
-	// Expectations mirror internal/data/ref/claude.models.json — the caps are
-	// catalog-driven, not hardcoded per model name.
+	// Expectations mirror internal/protocol/catalog/claude.models.json — the
+	// caps are catalog-driven, not hardcoded per model name.
 	tests := []struct {
 		name     string
 		model    string
@@ -139,6 +139,42 @@ func TestApplyAnthropicModelTransform_V1_Claude3Haiku_EnabledDisables(t *testing
 
 	assert.Nil(t, result.Thinking.OfEnabled)
 	assert.NotNil(t, result.Thinking.OfDisabled)
+}
+
+func TestApplyAnthropicModelTransform_V1_DisabledThinkingStripsStaleEffort(t *testing.T) {
+	// Regression: a client (or a stale UI selector) can send thinking=disabled
+	// together with a leftover output_config.effort. Effort only makes sense
+	// paired with active thinking, so it must be scrubbed even on a model that
+	// otherwise supports effort — not just clamped to a supported level.
+	req := &anthropic.MessageNewParams{
+		Model:        anthropic.Model("claude-opus-4-5-20251101"),
+		MaxTokens:    int64(4096),
+		Thinking:     anthropic.ThinkingConfigParamUnion{OfDisabled: &anthropic.ThinkingConfigDisabledParam{}},
+		OutputConfig: anthropic.OutputConfigParam{Effort: anthropic.OutputConfigEffortHigh},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("Hello")),
+		},
+	}
+
+	result := ApplyAnthropicV1ModelTransform(req, "claude-opus-4-5-20251101")
+
+	assert.Equal(t, anthropic.OutputConfigEffort(""), result.OutputConfig.Effort)
+}
+
+func TestApplyAnthropicModelTransform_Beta_DisabledThinkingStripsStaleEffort(t *testing.T) {
+	req := &anthropic.BetaMessageNewParams{
+		Model:        anthropic.Model("claude-opus-4-5-20251101"),
+		MaxTokens:    int64(4096),
+		Thinking:     anthropic.BetaThinkingConfigParamUnion{OfDisabled: &anthropic.BetaThinkingConfigDisabledParam{}},
+		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffortHigh},
+		Messages: []anthropic.BetaMessageParam{
+			{Role: "user", Content: []anthropic.BetaContentBlockParamUnion{{OfText: &anthropic.BetaTextBlockParam{Text: "Hello"}}}},
+		},
+	}
+
+	result := ApplyAnthropicBetaModelTransform(req, "claude-opus-4-5-20251101")
+
+	assert.Equal(t, anthropic.BetaOutputConfigEffort(""), result.OutputConfig.Effort)
 }
 
 func TestApplyAnthropicModelTransform_V1_AdaptiveWithEffort_FallsBackToBudget(t *testing.T) {
