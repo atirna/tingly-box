@@ -297,6 +297,52 @@ func TestConfig_ExpandEnvVars(t *testing.T) {
 	}
 }
 
+// TestConfig_ExpandEnvVars_UnsetIsConsistent pins down the fix for the
+// Token/Password-vs-OAuth inconsistency: an unset environment variable must
+// resolve to "" on every field, not leave a "$VAR" literal behind on Token while
+// clearing the OAuth fields. Previously Token kept "$MISSING" (because GetToken
+// errored and the assignment was skipped) and ClientID became "".
+func TestConfig_ExpandEnvVars_UnsetIsConsistent(t *testing.T) {
+	os.Unsetenv("DEFINITELY_UNSET_TOKEN")
+	os.Unsetenv("DEFINITELY_UNSET_CLIENT_ID")
+	defer func() {
+		os.Unsetenv("DEFINITELY_UNSET_TOKEN")
+		os.Unsetenv("DEFINITELY_UNSET_CLIENT_ID")
+	}()
+
+	cfg := &Config{
+		Platform: PlatformTelegram,
+		Auth: AuthConfig{
+			Type:         "oauth",
+			Token:        "$DEFINITELY_UNSET_TOKEN",
+			ClientID:     "$DEFINITELY_UNSET_CLIENT_ID",
+			ClientSecret: "$DEFINITELY_UNSET_CLIENT_ID",
+		},
+	}
+	cfg.ExpandEnvVars()
+
+	if cfg.Auth.Token != "" {
+		t.Errorf("Token = %q, want empty (unset env var should clear, not keep literal)", cfg.Auth.Token)
+	}
+	if cfg.Auth.ClientID != "" {
+		t.Errorf("ClientID = %q, want empty", cfg.Auth.ClientID)
+	}
+
+	// GetToken reports the env-var-missing error only when the field still holds
+	// a "$VAR" reference that resolves to nothing; a literal empty value returns
+	// "" with no error (required-field checking is Validate's job). After
+	// ExpandEnvVars the reference is already gone, so GetToken no longer errors.
+	if _, err := cfg.Auth.GetToken(); err != nil {
+		t.Errorf("GetToken after ExpandEnvVars: want nil error (already resolved), got %v", err)
+	}
+	if _, err := (&AuthConfig{Token: "$DEFINITELY_UNSET_TOKEN"}).GetToken(); err == nil {
+		t.Errorf("GetToken on unresolved unset reference: want error, got nil")
+	}
+	if v, err := (&AuthConfig{Token: ""}).GetToken(); err != nil || v != "" {
+		t.Errorf("GetToken on literal empty: want (%q,nil), got (%q,%v)", "", v, err)
+	}
+}
+
 func TestConfig_GetOptionString(t *testing.T) {
 	config := &Config{
 		Platform: PlatformTelegram,
