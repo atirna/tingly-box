@@ -1,4 +1,6 @@
-// Package command provides a simple, generic command management system for bots.
+// command_builder.go provides the fluent builder for defining commands that
+// are registered with CommandRegistry.
+
 package core
 
 // CommandBuilder provides a fluent API for command definition.

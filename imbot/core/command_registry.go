@@ -1,4 +1,8 @@
-// Package command provides a simple, generic command management system for bots.
+// command_registry.go implements the command system: a registry of named
+// commands with aliases, descriptions, and handlers, plus the rendering of
+// those commands into platform-native menus (e.g. Telegram command list,
+// Feishu quick actions).
+
 package core
 
 import (
