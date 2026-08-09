@@ -1,4 +1,7 @@
-// Package command provides a simple, generic command management system for bots.
+// command_context.go defines HandlerContext, the execution context handed to
+// a command handler: the bot, chat and sender ids, platform, and the request
+// context.
+
 package core
 
 import (

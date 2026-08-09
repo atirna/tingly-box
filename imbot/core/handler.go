@@ -1,3 +1,7 @@
+// handler.go defines the generic content-handler registry that platform
+// adapters use to convert raw SDK events into unified core.Content. It is
+// unrelated to the command system (see command_registry.go).
+
 package core
 
 import (

@@ -1,10 +1,9 @@
-// Package security provides reusable security primitives for imbot applications.
-//
-// PairingManager implements trust-on-first-use (TOFU) pairing: it mints
-// short, time-limited, single-use codes per bot UUID and verifies them with
-// constant-time comparison and per-bot rate-limiting / lockout. Codes are
-// kept only in memory — a process restart deliberately invalidates any
-// outstanding codes.
+// pairing.go implements the trust-on-first-use (TOFU) pairing manager used to
+// bind a bot to a single owner chat. PairingManager mints short, time-limited,
+// single-use codes per bot UUID and verifies them with constant-time
+// comparison and per-bot rate-limiting / lockout. Codes are kept only in
+// memory — a process restart deliberately invalidates any outstanding codes.
+
 package core
 
 import (
