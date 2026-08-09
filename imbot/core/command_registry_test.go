@@ -1,11 +1,9 @@
 // Package command provides a simple, generic command management system for bots.
-package command
+package core
 
 import (
 	"context"
 	"testing"
-
-	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 func TestNewRegistry(t *testing.T) {
@@ -473,14 +471,14 @@ func (m *mockBot) UUID() string                         { return "mock-uuid" }
 func (m *mockBot) Connect(ctx context.Context) error    { return nil }
 func (m *mockBot) Disconnect(ctx context.Context) error { return nil }
 func (m *mockBot) IsConnected() bool                    { return true }
-func (m *mockBot) SendMessage(ctx context.Context, target string, opts *core.SendMessageOptions) (*core.SendResult, error) {
-	return &core.SendResult{}, nil
+func (m *mockBot) SendMessage(ctx context.Context, target string, opts *SendMessageOptions) (*SendResult, error) {
+	return &SendResult{}, nil
 }
-func (m *mockBot) SendText(ctx context.Context, target string, text string) (*core.SendResult, error) {
-	return &core.SendResult{}, nil
+func (m *mockBot) SendText(ctx context.Context, target string, text string) (*SendResult, error) {
+	return &SendResult{}, nil
 }
-func (m *mockBot) SendMedia(ctx context.Context, target string, media []core.MediaAttachment) (*core.SendResult, error) {
-	return &core.SendResult{}, nil
+func (m *mockBot) SendMedia(ctx context.Context, target string, media []MediaAttachment) (*SendResult, error) {
+	return &SendResult{}, nil
 }
 func (m *mockBot) React(ctx context.Context, messageID string, emoji string) error      { return nil }
 func (m *mockBot) EditMessage(ctx context.Context, messageID string, text string) error { return nil }
@@ -488,9 +486,9 @@ func (m *mockBot) DeleteMessage(ctx context.Context, messageID string) error    
 func (m *mockBot) ChunkText(text string) []string                                       { return []string{text} }
 func (m *mockBot) ValidateTextLength(text string) error                                 { return nil }
 func (m *mockBot) GetMessageLimit() int                                                 { return 4000 }
-func (m *mockBot) Status() *core.BotStatus                                              { return &core.BotStatus{} }
-func (m *mockBot) PlatformInfo() *core.PlatformInfo                                     { return &core.PlatformInfo{} }
-func (m *mockBot) OnMessage(handler func(core.Message))                                 {}
+func (m *mockBot) Status() *BotStatus                                                   { return &BotStatus{} }
+func (m *mockBot) PlatformInfo() *PlatformInfo                                          { return &PlatformInfo{} }
+func (m *mockBot) OnMessage(handler func(Message))                                      {}
 func (m *mockBot) OnError(handler func(error))                                          {}
 func (m *mockBot) OnConnected(handler func())                                           {}
 func (m *mockBot) OnDisconnected(handler func())                                        {}

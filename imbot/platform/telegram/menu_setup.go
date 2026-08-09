@@ -4,13 +4,12 @@ import (
 	"fmt"
 
 	"github.com/go-telegram/bot/models"
-	"github.com/tingly-dev/tingly-box/imbot/command"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 // SetupMenuButton configures the menu button for a Telegram bot using the CommandRegistry.
 // This sets up both the bot command list and the menu button type.
-func SetupMenuButton(bot core.Bot, cmdRegistry *command.CommandRegistry) error {
+func SetupMenuButton(bot core.Bot, cmdRegistry *core.CommandRegistry) error {
 	// Cast to TelegramBot interface to access Telegram-specific methods
 	tgBot, ok := bot.(*Bot)
 	if !ok {

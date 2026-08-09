@@ -1,17 +1,15 @@
 // Package command provides a simple, generic command management system for bots.
-package command
+package core
 
 import (
 	"context"
-
-	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
 // HandlerContext provides context for command execution.
 // It encapsulates all information needed to handle a command.
 type HandlerContext struct {
 	// Bot is the bot instance receiving the command
-	Bot core.Bot
+	Bot Bot
 
 	// ChatID is the ID of the chat where the command was sent
 	ChatID string
@@ -20,7 +18,7 @@ type HandlerContext struct {
 	SenderID string
 
 	// Platform identifies the messaging platform
-	Platform core.Platform
+	Platform Platform
 
 	// Text is the raw message text
 	Text string
@@ -33,7 +31,7 @@ type HandlerContext struct {
 }
 
 // NewHandlerContext creates a new handler context.
-func NewHandlerContext(bot core.Bot, chatID, senderID string, platform core.Platform) *HandlerContext {
+func NewHandlerContext(bot Bot, chatID, senderID string, platform Platform) *HandlerContext {
 	return &HandlerContext{
 		Bot:      bot,
 		ChatID:   chatID,
@@ -77,7 +75,7 @@ func (c *HandlerContext) SendError(err error) error {
 }
 
 // IsPlatform checks if the message is from a specific platform.
-func (c *HandlerContext) IsPlatform(platform core.Platform) bool {
+func (c *HandlerContext) IsPlatform(platform Platform) bool {
 	return c.Platform == platform
 }
 

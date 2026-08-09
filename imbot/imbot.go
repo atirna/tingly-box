@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/go-telegram/bot/models"
-	"github.com/tingly-dev/tingly-box/imbot/command"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 	platformreg "github.com/tingly-dev/tingly-box/imbot/platform"
 	"github.com/tingly-dev/tingly-box/imbot/platform/telegram"
@@ -98,11 +97,11 @@ type (
 	CardActionBuilder  = core.CardActionBuilder
 
 	// Command types
-	Command         = command.Command
-	CommandHandler  = command.CommandHandler
-	HandlerContext  = command.HandlerContext
-	CommandRegistry = command.CommandRegistry
-	CommandBuilder  = command.CommandBuilder
+	Command         = core.Command
+	CommandHandler  = core.CommandHandler
+	HandlerContext  = core.HandlerContext
+	CommandRegistry = core.CommandRegistry
+	CommandBuilder  = core.CommandBuilder
 )
 
 // Re-export core constants
@@ -365,18 +364,18 @@ func URLCardAction(id, label, url string) *core.CardActionBuilder {
 // Command constructors
 
 // NewCommand creates a new command builder.
-func NewCommand(id, name, description string) *command.CommandBuilder {
-	return command.NewCommandBuilder(id, name, description)
+func NewCommand(id, name, description string) *core.CommandBuilder {
+	return core.NewCommandBuilder(id, name, description)
 }
 
 // NewCommandRegistry creates a new command registry.
-func NewCommandRegistry() *command.CommandRegistry {
-	return command.NewCommandRegistry()
+func NewCommandRegistry() *core.CommandRegistry {
+	return core.NewCommandRegistry()
 }
 
 // NewHandlerContext creates a new handler context.
-func NewHandlerContext(bot Bot, chatID, senderID string, platform Platform) *command.HandlerContext {
-	return command.NewHandlerContext(bot, chatID, senderID, core.Platform(platform))
+func NewHandlerContext(bot Bot, chatID, senderID string, platform Platform) *core.HandlerContext {
+	return core.NewHandlerContext(bot, chatID, senderID, core.Platform(platform))
 }
 
 // Message actions — the neutral outbound interactive payload.
