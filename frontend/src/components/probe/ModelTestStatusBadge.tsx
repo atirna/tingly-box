@@ -20,7 +20,7 @@ export const ModelTestStatusBadge: React.FC<ModelTestStatusBadgeProps> = ({ resu
     const ok = result.success;
     const color = ok ? 'success.main' : 'error.main';
     const tooltip = ok
-        ? (result.data ? formatLatency(result.data.latency_ms) : t('probe.success'))
+        ? (result.data?.latency_ms ? formatLatency(result.data.latency_ms) : t('probe.success'))
         : (result.error?.message || t('probe.failed'));
 
     return (

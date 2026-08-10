@@ -240,28 +240,29 @@ func TestResolveOpenAIProbeEndpoint_InvalidOverrideFallsBackToDefault(t *testing
 
 func TestEndpointProbeCache_HitAfterRemember(t *testing.T) {
 	c := newEndpointProbeCache()
-	assert.False(t, c.hit("p1", "gpt-4o", "responses"), "unseeded key should miss")
+	assert.False(t, c.hit("p1", "gpt-4o", "responses", "simple"), "unseeded key should miss")
 
-	c.remember("p1", "gpt-4o", "responses")
-	assert.True(t, c.hit("p1", "gpt-4o", "responses"))
+	c.remember("p1", "gpt-4o", "responses", "simple")
+	assert.True(t, c.hit("p1", "gpt-4o", "responses", "simple"))
 }
 
 func TestEndpointProbeCache_KeyIsFullyQualified(t *testing.T) {
 	c := newEndpointProbeCache()
-	c.remember("p1", "gpt-4o", "responses")
+	c.remember("p1", "gpt-4o", "responses", "simple")
 
-	assert.False(t, c.hit("p2", "gpt-4o", "responses"), "different provider must not hit")
-	assert.False(t, c.hit("p1", "gpt-4o-mini", "responses"), "different model must not hit")
-	assert.False(t, c.hit("p1", "gpt-4o", "chat"), "different endpoint must not hit")
+	assert.False(t, c.hit("p2", "gpt-4o", "responses", "simple"), "different provider must not hit")
+	assert.False(t, c.hit("p1", "gpt-4o-mini", "responses", "simple"), "different model must not hit")
+	assert.False(t, c.hit("p1", "gpt-4o", "chat", "simple"), "different endpoint must not hit")
+	assert.False(t, c.hit("p1", "gpt-4o", "responses", "streaming"), "different test mode must not hit")
 }
 
 func TestEndpointProbeCache_ExpiresAfterTTL(t *testing.T) {
 	c := newEndpointProbeCache()
-	key := endpointProbeCacheKey("p1", "gpt-4o", "responses")
+	key := endpointProbeCacheKey("p1", "gpt-4o", "responses", "simple")
 	// Backdate the entry past the TTL instead of sleeping in the test.
 	c.entries[key] = time.Now().Add(-endpointProbeCacheTTL - time.Second)
 
-	assert.False(t, c.hit("p1", "gpt-4o", "responses"), "stale entry must be treated as a miss")
+	assert.False(t, c.hit("p1", "gpt-4o", "responses", "simple"), "stale entry must be treated as a miss")
 
 	c.mu.Lock()
 	_, stillPresent := c.entries[key]
@@ -284,7 +285,7 @@ func TestProbe_CachedEndpointCheck_SkipsDispatch(t *testing.T) {
 	addProvider(t, cfg, p)
 
 	svc := NewE2EProber(cfg, nil) // nil clientPool: dispatch would panic
-	svc.endpointCache.remember("p-cache", "gpt-4o", "responses")
+	svc.endpointCache.remember("p-cache", "gpt-4o", "responses", string(E2EModeSimple))
 
 	result, err := svc.Probe(context.Background(), &E2ERequest{
 		TargetType:   E2ETargetProvider,
@@ -298,4 +299,27 @@ func TestProbe_CachedEndpointCheck_SkipsDispatch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Success)
+}
+
+// TestProbe_CachedEndpointCheck_DoesNotCrossTestModes proves a cache entry
+// recorded for one test mode does not short-circuit a probe requested under a
+// different test mode — streaming/tool checks must always dispatch for real,
+// even if a simple-mode check for the same provider+model+endpoint recently
+// succeeded. Regression test for the Probe/ProbeStream merge silently
+// widening the cache's reach across test modes.
+func TestProbe_CachedEndpointCheck_DoesNotCrossTestModes(t *testing.T) {
+	cfg := newTestConfig(t)
+	p := &typ.Provider{
+		UUID: "p-cache", Name: "OpenAI", APIBase: "https://api.openai.com/v1",
+		APIStyle: protocol.APIStyleOpenAI, Enabled: true, Models: []string{"gpt-4o"},
+	}
+	addProvider(t, cfg, p)
+
+	svc := NewE2EProber(cfg, nil) // nil clientPool: dispatch would panic if reached
+	svc.endpointCache.remember("p-cache", "gpt-4o", "responses", string(E2EModeSimple))
+
+	assert.False(t, svc.endpointCache.hit("p-cache", "gpt-4o", "responses", string(E2EModeStreaming)),
+		"a simple-mode cache entry must not satisfy a streaming-mode check")
+	assert.False(t, svc.endpointCache.hit("p-cache", "gpt-4o", "responses", string(E2EModeTool)),
+		"a simple-mode cache entry must not satisfy a tool-mode check")
 }

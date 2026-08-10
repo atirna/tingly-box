@@ -125,7 +125,7 @@ func (l *LightProber) runOpenAIEndpoint(ctx context.Context, provider *typ.Provi
 	switch {
 	case err != nil:
 		*success, *msg = false, fmt.Sprintf("Endpoint failed: %v", err)
-	case res != nil && res.Success:
+	case res != nil && res.Success && res.Content != "":
 		*success, *msg = true, okLabel
 	default:
 		*success, *msg = false, "Endpoint returned no content"

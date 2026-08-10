@@ -49,7 +49,7 @@ func (e *E2EProber) Probe(ctx context.Context, req *E2ERequest) (*E2EData, error
 	// connectivity) always dispatches for real.
 	cacheable := req.TargetType == E2ETargetProvider && req.Direct &&
 		(req.Endpoint == "chat" || req.Endpoint == "responses")
-	if cacheable && e.endpointCache.hit(provider.UUID, model, req.Endpoint) {
+	if cacheable && e.endpointCache.hit(provider.UUID, model, req.Endpoint, string(req.TestMode)) {
 		return &Result{Success: true, Message: "Verified recently (cached)"}, nil
 	}
 
@@ -59,7 +59,7 @@ func (e *E2EProber) Probe(ctx context.Context, req *E2ERequest) (*E2EData, error
 	message := E2EMessage(req.TestMode, req.Message)
 	result, err := e.probeProviderWithSDK(ctx, provider, model, message, req.TestMode, req.Endpoint)
 	if cacheable && err == nil && result != nil && result.Success {
-		e.endpointCache.remember(provider.UUID, model, req.Endpoint)
+		e.endpointCache.remember(provider.UUID, model, req.Endpoint, string(req.TestMode))
 	}
 	return result, err
 }
@@ -126,7 +126,7 @@ func (e *E2EProber) resolveProviderTarget(ctx context.Context, req *E2ERequest) 
 		if len(provider.Models) > 0 {
 			model = provider.Models[0]
 		} else {
-			return nil, "", nil, fmt.Errorf("no model specified and provider %q has no models to default to", provider.Name)
+			model = defaultModelForAPIStyle(provider.APIStyle)
 		}
 	}
 

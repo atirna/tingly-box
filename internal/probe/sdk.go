@@ -117,14 +117,17 @@ func probeOpenAIChat(ctx context.Context, oc client.OpenAIClientInterface, model
 		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.Opt("auto")}
 	}
 	url := oc.GetProvider().APIBase + "/chat/completions"
-	if mode == E2EModeSimple {
+	// Tool mode needs the structured tool_calls back out of the response, so
+	// it takes the non-streaming path alongside simple mode; only streaming
+	// mode itself needs the SSE round-trip.
+	if mode != E2EModeStreaming {
 		resp, err := oc.ChatCompletionsNew(ctx, params)
 		if err != nil {
 			return nil, err
 		}
 		b, _ := json.Marshal(resp)
 		// Tool calls only appear in the message when the request declared tools
-		// (tool mode); for simple/streaming probes the slice is empty.
+		// (tool mode); for simple probes the slice is empty.
 		var toolCalls []ToolCall
 		if len(resp.Choices) > 0 {
 			toolCalls = toolCallsFromOpenAIChat(resp.Choices[0].Message)
@@ -186,7 +189,7 @@ func probeOpenAIResponses(ctx context.Context, oc client.OpenAIClientInterface, 
 	}
 
 	url := oc.GetProvider().APIBase + "/responses"
-	if mode == E2EModeSimple {
+	if mode != E2EModeStreaming {
 		resp, err := oc.ResponsesNew(ctx, params)
 		if err != nil {
 			return nil, err
@@ -243,7 +246,7 @@ func probeAnthropicMessages(ctx context.Context, ac client.AnthropicClientInterf
 	}
 
 	url := provider.APIBase + "/v1/messages"
-	if mode == E2EModeSimple {
+	if mode != E2EModeStreaming {
 		resp, err := ac.MessagesNew(ctx, params)
 		if err != nil {
 			return nil, err

@@ -105,7 +105,7 @@ export const QuickProbeButton: React.FC<QuickProbeButtonProps> = ({ ruleUuid, ru
                                     whiteSpace: 'nowrap',
                                 }}
                             >
-                                {ok && result.data ? formatLatency(result.data.latency_ms) : t('probe.failed')}
+                                {ok && result.data?.latency_ms ? formatLatency(result.data.latency_ms) : ok ? t('probe.success') : t('probe.failed')}
                             </Typography>
                             <IconButton
                                 size="small"
