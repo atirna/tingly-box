@@ -126,7 +126,7 @@ func (e *E2EProber) resolveProviderTarget(ctx context.Context, req *E2ERequest) 
 		if len(provider.Models) > 0 {
 			model = provider.Models[0]
 		} else {
-			model = defaultModelForAPIStyle(provider.APIStyle)
+			return nil, "", nil, fmt.Errorf("no model to use: %s", req.ProviderUUID)
 		}
 	}
 
