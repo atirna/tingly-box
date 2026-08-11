@@ -41,7 +41,7 @@ type concurrencyTestFetcher struct {
 }
 
 func (*concurrencyTestFetcher) Name() string                 { return "concurrency-test" }
-func (*concurrencyTestFetcher) ProviderType() ProviderType   { return ProviderTypeOpenAI }
+func (*concurrencyTestFetcher) ProviderType() ProviderType   { return ProviderTypeAnthropic }
 func (*concurrencyTestFetcher) Validate(*typ.Provider) error { return nil }
 func (*concurrencyTestFetcher) RequiresAuth() typ.AuthType   { return "" }
 func (f *concurrencyTestFetcher) Fetch(_ context.Context, provider *typ.Provider) (*ProviderUsage, error) {
@@ -82,7 +82,7 @@ func TestRefreshBoundsConcurrency(t *testing.T) {
 		providers[i] = &typ.Provider{
 			UUID:    fmt.Sprintf("provider-%d", i),
 			Name:    fmt.Sprintf("Provider %d", i),
-			APIBase: "https://api.openai.com/v1",
+			APIBase: "https://api.anthropic.com/v1",
 			Enabled: true,
 		}
 	}
@@ -113,7 +113,10 @@ func TestInferProviderTypeAPIBaseCaseInsensitive(t *testing.T) {
 		want    ProviderType
 	}{
 		{"HTTPS://API.ANTHROPIC.COM/V1", ProviderTypeAnthropic},
-		{"https://OPENAI.Azure.com/openai", ProviderTypeOpenAI},
+		// OpenAI is intentionally unclassified (see the OpenAI-disabling
+		// commit): its legacy usage API's current requirements are unverified,
+		// so the manager skips it rather than reading it wrong.
+		{"https://OPENAI.Azure.com/openai", ""},
 		{"https://generativelanguage.GOOGLEAPIS.COM", ProviderTypeGemini},
 		{"https://openrouter.ai/api/v1", ProviderTypeOpenRouter},
 		{"https://api.minimaxi.com/v1", ProviderTypeMiniMaxCN},

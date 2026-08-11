@@ -337,8 +337,8 @@ func inferProviderType(provider *typ.Provider) ProviderType {
 		return ProviderTypeAnthropic
 	case typ.IssuerGoogle:
 		return ProviderTypeGemini
-	case typ.IssuerOpenAI:
-		return ProviderTypeOpenAI
+	//case typ.IssuerOpenAI:
+	//	return ProviderTypeOpenAI
 	case typ.IssuerCopilot:
 		return ProviderTypeCopilot
 	case typ.IssuerCursor:
@@ -363,8 +363,8 @@ func inferProviderType(provider *typ.Provider) ProviderType {
 	switch {
 	case hostIs(host, "anthropic.com"):
 		return ProviderTypeAnthropic
-	case hostIs(host, "openai.com", "openai.azure.com"):
-		return ProviderTypeOpenAI
+	//case hostIs(host, "openai.com", "openai.azure.com"):
+	//	return ProviderTypeOpenAI
 	case hostIs(host, "googleapis.com"), strings.Contains(host, "gemini"):
 		return ProviderTypeGemini
 	case strings.Contains(host, "cursor"):
