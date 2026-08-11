@@ -263,10 +263,15 @@ func (sm *StoreManager) initAPITokenStore() error {
 	if err := sm.db.AutoMigrate(&APITokenRecord{}); err != nil {
 		return err
 	}
-	sm.apiTokenStore = &APITokenStore{
+	store := &APITokenStore{
 		db:     sm.db,
 		dbPath: constant.GetDBFile(sm.baseDir),
+		cache:  make(map[string]*APITokenRecord),
 	}
+	if err := store.loadCache(); err != nil {
+		return fmt.Errorf("failed to load API token cache: %w", err)
+	}
+	sm.apiTokenStore = store
 	return nil
 }
 

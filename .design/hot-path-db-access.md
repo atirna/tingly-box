@@ -1,6 +1,8 @@
 # Hot-Path DB Access: Cache Reads, Don't Lock+Query Them
 
-Status: `ProviderStore` fixed on branch `claude/routing-pipeline-benchmark-e6aq73`. Rest of the pattern below is diagnosed but **not yet fixed** — tracked here as the holistic follow-up.
+Status: `ProviderStore` and `APITokenStore` fixed on branch
+`claude/routing-pipeline-benchmark-e6aq73`. Rest of the pattern below is
+diagnosed but **not yet fixed** — tracked here as the holistic follow-up.
 
 ## Why
 
@@ -70,6 +72,48 @@ profile's top nodes at all. The new dominant cost (~27% cum) is
 note in `pipeline_bench_test.go`) — a separate, much smaller inefficiency,
 noted here as a candidate for a future pass but out of scope of this fix.
 
+## `APITokenStore`: same shape, confirmed by benchmark before the fix
+
+`ValidateToken` is called by `AuthMiddleware.ModelAuthMiddleware` (see
+`internal/middleware/auth.go`) on every request bearing a `tb-share-`-prefixed
+multi-tenant API token — the exact same "every request, data barely ever
+changes" shape as `ProviderStore.GetByUUID`. Per the follow-up plan above, a
+benchmark was written first (`internal/middleware/auth_bench_test.go`,
+wired against a real `db.APITokenStore`, mirroring how
+`pipeline_bench_test.go` wires the real production routing pipeline) and
+profiled *before* changing anything:
+
+| Benchmark | before | after | change |
+|---|---|---|---|
+| `BenchmarkAPITokenStore_ValidateToken` (isolated store call) | 30.0 µs/op, 99 allocs | 119 ns/op, 1 alloc | **~251×** |
+| `BenchmarkModelAuthMiddleware_APIToken` (full gin middleware chain) | 103.8 µs/op, 182 allocs | 55.4 µs/op, 80 allocs | **1.87×** |
+
+The fix mirrors `ProviderStore` exactly: `APITokenStore` now keeps a
+write-through `map[string]*APITokenRecord` cache keyed by `TokenID`, guarded
+by `RWMutex`. `ValidateToken`, `GetToken`, and the now-`RLock`-only
+`ListTokens` read the cache; `CreateTokenWithTokenID`, `RevokeToken`,
+`UpdateLastUsed`, `SetTokenEnabled`, `UpdateTokenString`, and `DeleteToken`
+write SQLite first, then update (or remove) the cache entry under the same
+write lock — so a revoked token stops validating the instant `RevokeToken`
+returns, with no window where SQLite says revoked but the cache still says
+enabled. `CleanupExpiredTokens` (a bulk, predicate-based delete) just
+reloads the whole cache from SQLite afterward rather than re-deriving its
+`WHERE` clause in Go — it's a maintenance job, not hot path, so the O(n)
+reload cost doesn't matter.
+
+**Why the full-middleware number only improved 1.87× despite `ValidateToken`
+itself improving 251×**: profiling `BenchmarkModelAuthMiddleware_APIToken`
+after the fix shows the remaining cost is almost entirely
+`APITokenStore.UpdateLastUsed` — the fire-and-forget `go
+am.apiTokenStore.UpdateLastUsed(...)` call in `ModelAuthMiddleware` — which
+is a genuine SQLite **write** on every authenticated request (updating
+`last_used_at`), not a read this caching pattern touches. It doesn't block
+the response (it's backgrounded), but it's real DB load per request and
+still serializes against other cache writes under `s.mu.Lock()`. That's a
+separate finding, noted here as a candidate for a future pass (e.g.
+debouncing/batching last-used-at writes so it's not one SQLite transaction
+per request) but out of scope for this "cache the hot read path" fix.
+
 ## The pattern is systemic — audit of `internal/db/*_store.go`
 
 Every store under `internal/db/` follows the same shape: a GORM-backed SQLite
@@ -83,7 +127,7 @@ given store depends entirely on whether it's read on the **request hot path**
 | Store | Hot-path read? | Where | Risk |
 |---|---|---|---|
 | `ProviderStore` | **Yes — fixed** | `ServiceSelector.Select` resolves a provider every request | was the #1 cost, now cached |
-| `APITokenStore` | **Yes — not yet fixed** | `internal/middleware/auth.go`'s `AuthMiddleware` calls `ValidateToken` on every API-token-authenticated request | same shape: `sync.Mutex` + `gorm.First` per request. Likely the next-highest-impact fix — same recipe applies (cache by `token_id`, invalidate on `RevokeToken`/create), with the added nuance that a revoked token must stop working immediately, so the cache write on `RevokeToken` must land before the DB write's transaction is visible to concurrent readers (write-DB-then-update-cache under the same lock, as done here, satisfies that) |
+| `APITokenStore` | **Yes — fixed** | `internal/middleware/auth.go`'s `AuthMiddleware` calls `ValidateToken` on every API-token-authenticated request | see benchmark section above — `ValidateToken` itself dropped ~251×; `UpdateLastUsed`'s per-request write remains a separate, smaller follow-up |
 | `ModelStore`, `ToolConfigStore`, `ImBotSettingsStore`, `TaskStore`, `ServiceStatStore` | No (or infrequent/admin-path) | config/UI/background jobs | low priority — `RWMutex` alone (no caching) is probably sufficient if ever contended |
 | `RemoteChatStore`, `RemoteSessionStore`, `BotAccessStore`, `UsageStore` | No (IM/remote-control and usage-recording paths, not the LLM proxy hot path) | — | low priority |
 
@@ -101,10 +145,15 @@ given store depends entirely on whether it's read on the **request hot path**
 3. **Watch for bypass construction**: `StoreManager` builds several stores via
    struct literals (`&XStore{db: ..., dbPath: ...}`) instead of calling each
    store's `NewXStore` constructor. Any future cached store must get its cache
-   initialized (and loaded) in *both* places, or add a `StoreManager`-only
-   constructor path and delete the literal. This is exactly what broke
-   `TestStoreManager_StoreOperations` on the first pass here.
-4. **Re-run `internal/routing/pipeline_bench_test.go` (and add an analogous
-   benchmark for the auth middleware path before fixing `APITokenStore`)**
-   before/after — don't reason about the win from first principles, measure
-   it, the way this fix was validated.
+   initialized (and loaded) in *both* places (`internal/db/store_manager.go`'s
+   `initXStore` and the store's own `NewXStore`), or add a
+   `StoreManager`-only constructor path and delete the literal. This is
+   exactly what broke `TestStoreManager_StoreOperations` on the first pass on
+   `ProviderStore`, and would have broken `APITokenStore` the same way had
+   `initAPITokenStore` not been fixed alongside it.
+4. **Write the benchmark first, against the real production wiring, and
+   profile before touching any code** — `internal/routing/pipeline_bench_test.go`
+   for the routing pipeline, `internal/middleware/auth_bench_test.go` for the
+   auth middleware path. Both fixes here were validated this way (see the
+   before/after tables above); don't reason about the win from first
+   principles.
