@@ -120,3 +120,28 @@ func TestOpenAIReportsSpendOnce(t *testing.T) {
 		t.Errorf("Cost = %+v; want nil — the spend window already reports it", usage.Cost)
 	}
 }
+
+// The OpenAI-compatible base a provider is configured with ends in /v1, so the
+// usage path must not add a second one.
+func TestOpenAIFetcherDoesNotDoubleVersionPrefix(t *testing.T) {
+	for _, suffix := range []string{"", "/v1", "/v1/"} {
+		t.Run("base"+suffix, func(t *testing.T) {
+			var gotPath string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				_, _ = w.Write([]byte(`{"object":"list","data":[]}`))
+			}))
+			defer server.Close()
+
+			_, err := (&OpenAIFetcher{}).Fetch(context.Background(), &ai.Provider{
+				UUID: "u", Name: "OpenAI", Token: "k", APIBase: server.URL + suffix,
+			})
+			if err != nil {
+				t.Fatalf("Fetch() error: %v", err)
+			}
+			if gotPath != "/v1/usage" {
+				t.Errorf("path = %q, want /v1/usage", gotPath)
+			}
+		})
+	}
+}

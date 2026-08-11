@@ -68,18 +68,9 @@ func (f *OpenAIFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*quot
 	// Create an HTTP client with proxy support.
 	client := quota.NewHTTPClient(provider.ProxyURL, 30*time.Second)
 
-	// Build the request.
-	apiBase := provider.APIBase
-	if apiBase == "" {
-		apiBase = "https://api.openai.com"
-	}
-
-	// Remove a trailing /v1 suffix to avoid duplicating it.
-	if len(apiBase) > 3 && apiBase[len(apiBase)-3:] == "/v1" {
-		apiBase = apiBase[:len(apiBase)-3]
-	}
-
-	url := fmt.Sprintf("%s/v1/usage", apiBase)
+	// Build the request. The configured base already ends in /v1 for a normal
+	// OpenAI provider, so it comes off before the full path goes on.
+	url := apiRoot(provider.APIBase, "https://api.openai.com", "/v1") + "/v1/usage"
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

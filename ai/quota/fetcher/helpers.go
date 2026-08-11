@@ -51,6 +51,23 @@ func endpoint(override, production, path string) string {
 	return strings.TrimRight(cmp.Or(override, production), "/") + path
 }
 
+// apiRoot reduces a provider's configured APIBase to the host root a fetcher
+// can append a full path to. A provider's APIBase is the inference endpoint
+// and normally already carries the vendor's API prefix ("…/api/v1"), while a
+// usage endpoint is addressed from the root — appending the full path to an
+// unstripped base doubles the prefix and the request 404s. Longest suffixes
+// first, since "/api/v1" also ends with "/v1".
+func apiRoot(apiBase, production string, suffixes ...string) string {
+	base := strings.TrimRight(strings.TrimSpace(apiBase), "/")
+	for _, suffix := range suffixes {
+		if trimmed, ok := strings.CutSuffix(base, suffix); ok {
+			base = strings.TrimRight(trimmed, "/")
+			break
+		}
+	}
+	return cmp.Or(base, production)
+}
+
 // errorDetail renders a non-2xx upstream response body as a ": <message>"
 // suffix for an error, so "unexpected status code: N" says what N actually
 // meant instead of leaving the caller to guess between an expired token, a

@@ -58,12 +58,11 @@ func (f *OpenRouterFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*
 	token := provider.GetAccessToken()
 	client := quota.NewHTTPClient(provider.ProxyURL, 30*time.Second)
 
-	// Use provider.APIBase for testing, fallback to production URL
-	apiBase := provider.APIBase
-	if apiBase == "" {
-		apiBase = "https://openrouter.ai"
-	}
-	url := apiBase + "/api/v1/key"
+	// OpenRouter providers are configured with the inference base
+	// ("https://openrouter.ai/api/v1", or "…/api" for the Anthropic style);
+	// the key endpoint is addressed from the root, so the prefix comes off
+	// before the full path goes on.
+	url := apiRoot(provider.APIBase, "https://openrouter.ai", "/api/v1", "/api") + "/api/v1/key"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

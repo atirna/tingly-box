@@ -261,3 +261,31 @@ func TestOpenRouterMonthlySpendNeverPosesAsACap(t *testing.T) {
 		t.Errorf("first window = %q; want key_limit ahead of the uncapped one", usage.Windows[0].Key)
 	}
 }
+
+// A provider's APIBase is its inference endpoint, which for OpenRouter already
+// carries the API prefix. Appending the key path to it unstripped produced
+// /api/v1/api/v1/key, which OpenRouter answers with a 404 from its web app.
+func TestOpenRouterFetcherDoesNotDoubleAPIPrefix(t *testing.T) {
+	const response = `{"data":{"label":"k","is_free_tier":true,"usage":1}}`
+
+	for _, suffix := range []string{"", "/", "/api/v1", "/api/v1/", "/api"} {
+		t.Run("base"+suffix, func(t *testing.T) {
+			var gotPath string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				_, _ = w.Write([]byte(response))
+			}))
+			defer server.Close()
+
+			_, err := (&OpenRouterFetcher{}).Fetch(context.Background(), &ai.Provider{
+				UUID: "u", Name: "OpenRouter", Token: "k", APIBase: server.URL + suffix,
+			})
+			if err != nil {
+				t.Fatalf("Fetch() error: %v", err)
+			}
+			if gotPath != "/api/v1/key" {
+				t.Errorf("path = %q, want /api/v1/key", gotPath)
+			}
+		})
+	}
+}
