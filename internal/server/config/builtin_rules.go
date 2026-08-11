@@ -40,15 +40,17 @@ const (
 	RuleUUIDOpenCode = "builtin:opencode:default"
 
 	// RuleUUIDAgent / RuleUUIDAgentClaw are deprecated — the "agent" scenario
-	// (OpenClaw) was renamed to "custom". Live configs are renamed to
-	// RuleUUIDCustom / RuleUUIDCustomClaw by migrateAgentScenarioToCustom;
-	// these constants remain so that migration (which runs before the rename)
-	// can still address pre-rename configs.
+	// (OpenClaw) was renamed to "custom". These constants remain only as
+	// migration source keys: legacySimpleRuleUUIDs renames a live rule's UUID
+	// to RuleUUIDCustom / RuleUUIDCustomClaw, and migrateAgentScenarioToCustom
+	// (migration.go) separately renames its Scenario field.
 	RuleUUIDAgent     = "builtin:agent:default"
 	RuleUUIDAgentClaw = "builtin:agent:claw"
 
-	// Custom scenario built-in rules (modern "builtin:<scenario>:<tier>" form,
-	// target of the RuleUUIDAgent* rename above).
+	// RuleUUIDCustom / RuleUUIDCustomClaw are the migration *targets* for the
+	// RuleUUIDAgent* rename above — a UUID a pre-existing rule gets renamed
+	// to, never a template DefaultRules seeds for new installs. "custom" is a
+	// bring-your-own-request-model scenario; it intentionally starts empty.
 	RuleUUIDCustom     = "builtin:custom:default"
 	RuleUUIDCustomClaw = "builtin:custom:claw"
 

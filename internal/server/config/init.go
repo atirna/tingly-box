@@ -29,32 +29,6 @@ func init() {
 			Active: true,
 		},
 		{
-			UUID:          RuleUUIDCustom,
-			Scenario:      typ.ScenarioCustom,
-			RequestModel:  "tingly-agent",
-			ResponseModel: "",
-			Description:   "Default proxy rule in tingly-box for custom",
-			Services:      []*loadbalance.Service{},
-			LBTactic: typ.Tactic{
-				Type:   loadbalance.TacticRandom,
-				Params: typ.DefaultRandomParams(),
-			},
-			Active: true,
-		},
-		{
-			UUID:          RuleUUIDCustomClaw,
-			Scenario:      typ.ScenarioCustom,
-			RequestModel:  "tingly-claw",
-			ResponseModel: "",
-			Description:   "Built in model rule for custom - claw",
-			Services:      []*loadbalance.Service{},
-			LBTactic: typ.Tactic{
-				Type:   loadbalance.TacticRandom,
-				Params: typ.DefaultRandomParams(),
-			},
-			Active: true,
-		},
-		{
 			UUID:          RuleUUIDOpenAI,
 			Scenario:      typ.ScenarioOpenAI,
 			RequestModel:  "tingly-gpt",

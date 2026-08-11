@@ -535,6 +535,33 @@ func TestMigrateAgentScenarioToCustom_ClawRuleUpgradesFromOldestLegacyForm(t *te
 	}
 }
 
+// TestCustomScenario_SeedsNoDefaultRule locks in that "custom" is a pure
+// bring-your-own-request-model scenario: unlike openai/anthropic/codex/etc.,
+// DefaultRules must not contain a "custom" entry, so InsertDefaultRule never
+// injects an uninvited "tingly-agent"/"tingly-claw" rule into a fresh
+// install — or, on an existing config, alongside a user's own custom-named
+// rule under the scenario.
+func TestCustomScenario_SeedsNoDefaultRule(t *testing.T) {
+	for _, r := range DefaultRules {
+		if r.Scenario == typ.ScenarioCustom {
+			t.Errorf("DefaultRules must not seed a custom-scenario rule, found %+v", r)
+		}
+	}
+
+	cfg, err := NewConfig(WithConfigDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("NewConfig error: %v", err)
+	}
+	if r := cfg.GetRuleByUUID(RuleUUIDCustom); r != nil {
+		t.Errorf("fresh install should not have a builtin custom rule, found %+v", r)
+	}
+	for _, r := range cfg.Rules {
+		if r.Scenario == typ.ScenarioCustom {
+			t.Errorf("fresh install should have no custom-scenario rules at all, found %+v", r)
+		}
+	}
+}
+
 func TestNewCCProfileRules_CanonicalUUIDs(t *testing.T) {
 	separate := newCCProfileRules(typ.RuleScenario("claude_code:p3"), false)
 	wantSeparate := map[string]string{
