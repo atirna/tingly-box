@@ -104,6 +104,13 @@ type Chat struct {
 	// Bash state
 	BashCwd string `json:"bash_cwd,omitempty"`
 
+	// ContextToken is the most recent reply-context token seen from this chat
+	// (WeChat ilink). Proactive notifications reuse it so the server's prepare
+	// step succeeds without an inbound message in the same turn; without it the
+	// send fails with ret=-2 / "prepare failed". Refreshed by every inbound
+	// message; day-scale lifetime, so persisting it survives bot restarts.
+	ContextToken string `json:"context_token,omitempty"`
+
 	// CurrentAgent is which agent is driving the chat ("tingly-box" or "claude").
 	CurrentAgent string `json:"current_agent,omitempty"`
 

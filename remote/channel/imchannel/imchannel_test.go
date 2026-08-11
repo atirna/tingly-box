@@ -4,17 +4,18 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/remote/control/ask"
 	"github.com/tingly-dev/tingly-box/imbot"
 	"github.com/tingly-dev/tingly-box/remote/channel"
+	"github.com/tingly-dev/tingly-box/remote/control/ask"
 	"github.com/tingly-dev/tingly-box/remote/interaction"
 )
 
 type fakeSender struct {
-	lastTarget   string
-	lastText     string
+	lastTarget    string
+	lastText      string
 	lastParseMode imbot.ParseMode
-	err          error
+	lastMetadata  map[string]any
+	err           error
 }
 
 func (s *fakeSender) SendMessage(ctx context.Context, target string, opts *imbot.SendMessageOptions) (*imbot.SendResult, error) {
@@ -22,6 +23,7 @@ func (s *fakeSender) SendMessage(ctx context.Context, target string, opts *imbot
 	if opts != nil {
 		s.lastText = opts.Text
 		s.lastParseMode = opts.ParseMode
+		s.lastMetadata = opts.Metadata
 	}
 	if s.err != nil {
 		return nil, s.err
@@ -45,7 +47,7 @@ func (p *fakePrompter) Prompt(ctx context.Context, req ask.Request) (ask.Result,
 
 func TestSendComposesTitleAndBody(t *testing.T) {
 	s := &fakeSender{}
-	c := New("bot-1", "telegram", s, nil)
+	c := New("bot-1", "telegram", s, nil, nil)
 	err := c.Send(context.Background(), channel.Target{ChatID: "chat-1"}, interaction.Notification{
 		Title: "Claude",
 		Body:  "task done",
@@ -67,9 +69,48 @@ func TestSendComposesTitleAndBody(t *testing.T) {
 	}
 }
 
+func TestSendInjectsContextToken(t *testing.T) {
+	s := &fakeSender{}
+	// tokenLookup returns a token only for userA.
+	lookup := func(target string) string {
+		if target == "userA" {
+			return "tok-1"
+		}
+		return ""
+	}
+	c := New("bot-1", "weixin", s, nil, lookup)
+
+	// Target with a persisted token -> metadata carries context_token.
+	if err := c.Send(context.Background(), channel.Target{ChatID: "userA"}, interaction.Notification{Body: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.lastMetadata["context_token"]; got != "tok-1" {
+		t.Fatalf("userA context_token = %v, want %q", got, "tok-1")
+	}
+
+	// Target with no token -> metadata is nil (no token injected), send still succeeds.
+	if err := c.Send(context.Background(), channel.Target{ChatID: "userB"}, interaction.Notification{Body: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.lastMetadata != nil {
+		t.Fatalf("userB metadata = %v, want nil", s.lastMetadata)
+	}
+}
+
+func TestSendNoTokenLookupLeavesMetadataNil(t *testing.T) {
+	s := &fakeSender{}
+	c := New("bot-1", "telegram", s, nil, nil) // no tokenLookup
+	if err := c.Send(context.Background(), channel.Target{ChatID: "chat-1"}, interaction.Notification{Body: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.lastMetadata != nil {
+		t.Fatalf("metadata = %v, want nil when no tokenLookup", s.lastMetadata)
+	}
+}
+
 func TestPromptTranslatesPermission(t *testing.T) {
 	p := &fakePrompter{result: ask.Result{Approved: true, Reason: "ok"}}
-	c := New("bot-1", "telegram", nil, p)
+	c := New("bot-1", "telegram", nil, p, nil)
 	ix := interaction.Interaction{
 		ID:    "ix1",
 		Kind:  interaction.KindConfirm,
@@ -106,14 +147,14 @@ func TestPromptTranslatesQuestion(t *testing.T) {
 		Approved:     true,
 		UpdatedInput: map[string]interface{}{"answers": map[string]interface{}{"q1": "a"}},
 	}}
-	c := New("bot-1", "telegram", nil, p)
+	c := New("bot-1", "telegram", nil, p, nil)
 	ix := interaction.Interaction{
 		ID:   "ix2",
 		Kind: interaction.KindChoose,
 		Meta: map[string]any{
 			"tool_name": "AskUserQuestion",
-			"tool_input": map[string]interface{}{
-				"questions": []interface{}{map[string]interface{}{"question": "q1", "options": []interface{}{"a", "b"}}},
+			"tool_input": map[string]any{
+				"questions": []any{map[string]any{"question": "q1", "options": []any{"a", "b"}}},
 			},
 		},
 	}
@@ -134,7 +175,7 @@ func TestPromptTranslatesQuestion(t *testing.T) {
 
 func TestPromptCancelMappedToStatusCancelled(t *testing.T) {
 	p := &fakePrompter{result: ask.Result{Approved: false, Reason: "cancel"}}
-	c := New("bot-1", "telegram", nil, p)
+	c := New("bot-1", "telegram", nil, p, nil)
 	reply, err := c.Prompt(context.Background(), channel.Target{ChatID: "c"}, interaction.Interaction{ID: "ix3", Kind: interaction.KindConfirm})
 	if err != nil {
 		t.Fatal(err)

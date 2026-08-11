@@ -90,8 +90,14 @@ func runBotWithSettings(ctx context.Context, setting BotSetting, chatStore ChatS
 		}
 		attachedList = append(attachedList, attached)
 	}
-	handlers := make([]OnMessage, 0, len(attachedList)+2)
+	handlers := make([]OnMessage, 0, len(attachedList)+3)
 	handlers = append(handlers, DisabledChatGate(chatStore))
+	// Persist the WeChat reply-context token per chat so proactive
+	// notifications (which have no inbound message to copy from) can replay a
+	// valid context after a bot restart. Never claims the message — runs,
+	// returns false so the rest of the chain proceeds. Weixin-only; other
+	// platforms have no context_token semantics.
+	handlers = append(handlers, persistWeixinContextToken(chatStore))
 	if accessStore != nil && authorizer != nil {
 		handlers = append(handlers, AuthorizationGate(accessStore, authorizer, chatStore, setting.IsRequirePairing(), func(chatID string) (access.CapabilityName, access.ActionName) {
 			pending := prompter.GetPendingRequestsForChat(chatID)
@@ -172,7 +178,20 @@ func runBotWithSettings(ctx context.Context, setting BotSetting, chatStore ChatS
 		// host infrastructure, not a purpose — it lives exactly as long as
 		// the bot runs.
 		if channels != nil {
-			channels.Register(imchannel.New(setting.UUID, setting.Platform, bot, prompter))
+			// tokenLookup replays a persisted reply-context token (WeChat
+			// ilink) so proactive notifications pass the server's prepare step
+			// even after a restart. Other platforms simply return "".
+			tokenLookup := func(target string) string {
+				if chatStore == nil {
+					return ""
+				}
+				ch, err := chatStore.GetChat(target)
+				if err != nil || ch == nil {
+					return ""
+				}
+				return ch.ContextToken
+			}
+			channels.Register(imchannel.New(setting.UUID, setting.Platform, bot, prompter, tokenLookup))
 			defer channels.Unregister(setting.UUID)
 		}
 

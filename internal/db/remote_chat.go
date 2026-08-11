@@ -31,6 +31,9 @@ type RemoteChatRecord struct {
 
 	BashCwd string `gorm:"column:bash_cwd"`
 
+	// ContextToken mirrors bot.Chat.ContextToken (WeChat ilink reply context).
+	ContextToken string `gorm:"column:context_token"`
+
 	CurrentAgent string `gorm:"column:current_agent"`
 
 	Verbose *bool `gorm:"column:verbose"`

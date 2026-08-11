@@ -212,6 +212,44 @@ func TestUpsertRequiresChatID(t *testing.T) {
 	}
 }
 
+// TestContextTokenRoundTrip verifies the persisted reply-context token
+// (WeChat ilink) survives a write/read cycle — the property proactive
+// notifications rely on. Cross-store durability (two connections to one
+// database) is already covered by TestConcurrentStoresDoNotClobber.
+func TestContextTokenRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	store := openChatStoreAt(t, dir)
+
+	// Create the chat (UpdateChat is a no-op on a missing row), then set the token.
+	if err := store.BindProject("chat-1", "weixin", "/proj", "owner"); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if err := store.UpdateChat("chat-1", func(c *bot.Chat) {
+		c.ContextToken = "tok-from-inbound"
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err := store.GetChat("chat-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ContextToken != "tok-from-inbound" {
+		t.Errorf("ContextToken = %q, want %q", got.ContextToken, "tok-from-inbound")
+	}
+
+	// A fresh store over the same database dir sees the persisted token
+	// (restart simulation: the in-memory cache is gone, the DB row survives).
+	store2 := openChatStoreAt(t, dir)
+	got2, err := store2.GetChat("chat-1")
+	if err != nil {
+		t.Fatalf("get after reopen: %v", err)
+	}
+	if got2.ContextToken != "tok-from-inbound" {
+		t.Errorf("after reopen ContextToken = %q, want %q", got2.ContextToken, "tok-from-inbound")
+	}
+}
+
 // ---------- project-history MRU ----------
 //
 // PushProjectHistory is now a method on *bot.Chat; its unit tests moved to

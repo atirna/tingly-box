@@ -40,18 +40,26 @@ type Channel struct {
 	platform string
 	sender   Sender
 	prompter Prompter
+	// tokenLookup returns the most recent persisted reply-context token for a
+	// target, or "" if none. Used by Send so proactive notifications — which
+	// have no inbound message to copy a token from — can replay a valid
+	// context (e.g. WeChat ilink, which otherwise fails its prepare step with
+	// ret=-2). Optional: nil means no token is ever injected.
+	tokenLookup func(target string) string
 }
 
 // New constructs a Channel. id is typically the bot UUID; platform is
 // the imbot platform name ("telegram", "feishu", …); sender wraps
 // imbot.Bot for SendMessage; prompter is the IMPrompter that handles
-// interactive flows.
-func New(id, platform string, sender Sender, prompter Prompter) *Channel {
+// interactive flows. tokenLookup is optional (pass nil when the platform
+// has no reply-context token semantics).
+func New(id, platform string, sender Sender, prompter Prompter, tokenLookup func(target string) string) *Channel {
 	return &Channel{
-		id:       id,
-		platform: platform,
-		sender:   sender,
-		prompter: prompter,
+		id:          id,
+		platform:    platform,
+		sender:      sender,
+		prompter:    prompter,
+		tokenLookup: tokenLookup,
 	}
 }
 
@@ -94,8 +102,24 @@ func (c *Channel) Send(ctx context.Context, target channel.Target, msg interacti
 	_, err := c.sender.SendMessage(ctx, target.ChatID, &imbot.SendMessageOptions{
 		Text:      text,
 		ParseMode: imbot.ParseModeMarkdown,
+		Metadata:  c.tokenMetadata(target.ChatID),
 	})
 	return err
+}
+
+// tokenMetadata builds the metadata carrying the persisted reply-context
+// token for the target, if a tokenLookup is configured and yields one.
+// Returns nil when there is nothing to inject, so non-token platforms are
+// unaffected.
+func (c *Channel) tokenMetadata(target string) map[string]interface{} {
+	if c.tokenLookup == nil {
+		return nil
+	}
+	token := c.tokenLookup(target)
+	if token == "" {
+		return nil
+	}
+	return map[string]interface{}{"context_token": token}
 }
 
 // Prompt blocks until the human answers the interaction or ctx /

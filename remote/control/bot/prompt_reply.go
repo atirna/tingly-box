@@ -305,3 +305,34 @@ func ForwardReplyContext(opts *imbot.SendMessageOptions, inbound imbot.Message) 
 	}
 	opts.Metadata["context_token"] = token
 }
+
+// persistWeixinContextToken is an inbound handler that saves the WeChat
+// reply-context token onto the chat row, so a later proactive notification can
+// replay a valid context (and survive bot restarts). It mirrors
+// ForwardReplyContext, but persists instead of forwarding, and only acts for
+// WeChat — other platforms have no context_token. It never claims the message
+// (returns false) so the rest of the handler chain runs unchanged.
+func persistWeixinContextToken(chatStore ChatStoreInterface) OnMessage {
+	return func(msg imbot.Message, platform imbot.Platform, botUUID string) bool {
+		if platform != imbot.PlatformWeixin {
+			return false
+		}
+		token, _ := msg.Metadata["context_token"].(string)
+		if token == "" {
+			return false
+		}
+		target := msg.GetReplyTarget()
+		if target == "" {
+			return false
+		}
+		if err := chatStore.UpdateChat(target, func(c *Chat) {
+			c.ContextToken = token
+		}); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"bot_uuid": botUUID,
+				"target":   target,
+			}).Warn("Failed to persist weixin context token")
+		}
+		return false
+	}
+}
