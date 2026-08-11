@@ -3,6 +3,7 @@ package imbot
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -423,7 +424,7 @@ func (m *Manager) snapshotReadyHandlers() []func(Platform) {
 func (m *Manager) emitMessageHandlers(handlers []func(core.Message, Platform, string), msg core.Message, platform Platform, botUUID string, event string) {
 	for _, handler := range handlers {
 		go func(h func(core.Message, Platform, string)) {
-			defer m.recoverHandler(event)
+			defer m.recoverHandler(event, platform, botUUID)
 			h(msg, platform, botUUID)
 		}(handler)
 	}
@@ -432,7 +433,7 @@ func (m *Manager) emitMessageHandlers(handlers []func(core.Message, Platform, st
 func (m *Manager) emitErrorHandlers(handlers []func(error, Platform, string), err error, platform Platform, botUUID string, event string) {
 	for _, handler := range handlers {
 		go func(h func(error, Platform, string)) {
-			defer m.recoverHandler(event)
+			defer m.recoverHandler(event, platform, botUUID)
 			h(err, platform, botUUID)
 		}(handler)
 	}
@@ -441,15 +442,15 @@ func (m *Manager) emitErrorHandlers(handlers []func(error, Platform, string), er
 func (m *Manager) emitPlatformHandlers(handlers []func(Platform), platform Platform, event string) {
 	for _, handler := range handlers {
 		go func(h func(Platform)) {
-			defer m.recoverHandler(event)
+			defer m.recoverHandler(event, platform, "")
 			h(platform)
 		}(handler)
 	}
 }
 
-func (m *Manager) recoverHandler(event string) {
+func (m *Manager) recoverHandler(event string, platform Platform, botUUID string) {
 	if r := recover(); r != nil {
-		m.logger.Error("panic in %s handler: %v", event, r)
+		m.logger.Error("[%s/%s] panic in %s handler (contained, event dropped): %v\n%s", platform, botUUID, event, r, debug.Stack())
 	}
 }
 

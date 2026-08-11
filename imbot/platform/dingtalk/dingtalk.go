@@ -140,6 +140,7 @@ func (b *Bot) waitForReady() {
 
 // onChatBotMessage handles chat bot callback messages
 func (b *Bot) onChatBotMessage(ctx context.Context, data *chatbot.BotCallbackDataModel) ([]byte, error) {
+	defer b.RecoverCallback("chatbot message")
 	// Store webhook URL for this conversation
 	b.mu.Lock()
 	if data.SessionWebhook != "" {

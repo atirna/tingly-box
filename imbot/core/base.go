@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -133,10 +132,17 @@ func (b *BaseBot) MarkReady() {
 	b.EmitReady()
 }
 
-// MarkDisconnected marks the bot disconnected and not ready, then emits disconnected.
-func (b *BaseBot) MarkDisconnected() {
+// UpdateDisconnected flips the bot to disconnected and not ready without
+// emitting the disconnect event. Use when the state must go down but the
+// auto-reconnect that a disconnect event triggers is not wanted (RecoverLoop).
+func (b *BaseBot) UpdateDisconnected() {
 	b.UpdateConnected(false)
 	b.UpdateReady(false)
+}
+
+// MarkDisconnected marks the bot disconnected and not ready, then emits disconnected.
+func (b *BaseBot) MarkDisconnected() {
+	b.UpdateDisconnected()
 	b.EmitDisconnected()
 }
 
@@ -283,7 +289,7 @@ func (b *BaseBot) snapshotReadyHandlers() []func() {
 func (b *BaseBot) emitMessageHandlers(handlers []func(Message), msg Message, event string) {
 	for _, handler := range handlers {
 		go func(h func(Message)) {
-			defer b.recoverHandler(event)
+			defer b.RecoverCallback(event)
 			h(msg)
 		}(handler)
 	}
@@ -292,7 +298,7 @@ func (b *BaseBot) emitMessageHandlers(handlers []func(Message), msg Message, eve
 func (b *BaseBot) emitErrorHandlers(handlers []func(error), err error, event string) {
 	for _, handler := range handlers {
 		go func(h func(error)) {
-			defer b.recoverHandler(event)
+			defer b.RecoverCallback(event)
 			h(err)
 		}(handler)
 	}
@@ -301,15 +307,9 @@ func (b *BaseBot) emitErrorHandlers(handlers []func(error), err error, event str
 func (b *BaseBot) emitVoidHandlers(handlers []func(), event string) {
 	for _, handler := range handlers {
 		go func(h func()) {
-			defer b.recoverHandler(event)
+			defer b.RecoverCallback(event)
 			h()
 		}(handler)
-	}
-}
-
-func (b *BaseBot) recoverHandler(event string) {
-	if r := recover(); r != nil {
-		b.Logger().Error(fmt.Sprintf("panic in %s handler: %v", event, r))
 	}
 }
 

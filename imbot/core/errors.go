@@ -47,6 +47,23 @@ func NewPlatformError(platform Platform, message string, cause error, recoverabl
 	}
 }
 
+// NewPanicError creates the error a bot emits after containing a panic in
+// one of its receive loops. Never recoverable: the owner must close and
+// rebuild the bot rather than reconnect it in place.
+func NewPanicError(platform Platform, message string) *BotError {
+	return &BotError{
+		Code:        ErrPanic,
+		Message:     message,
+		Platform:    platform,
+		Recoverable: false,
+	}
+}
+
+// IsPanicError reports whether err is a contained-panic error (ErrPanic).
+func IsPanicError(err error) bool {
+	return GetErrorCode(err) == ErrPanic
+}
+
 // NewAuthFailedError creates a new authentication failed error
 func NewAuthFailedError(platform Platform, message string, cause error) *BotError {
 	return &BotError{

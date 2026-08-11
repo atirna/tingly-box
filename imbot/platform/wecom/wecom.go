@@ -176,6 +176,7 @@ type sdkEventHandler struct {
 }
 
 func (h *sdkEventHandler) OnMessage(ctx context.Context, msg *types.Message) error {
+	defer h.bot.RecoverCallback("message")
 	h.bot.handleIncomingMessage(ctx, msg)
 	return nil
 }
@@ -189,6 +190,7 @@ func (h *sdkEventHandler) OnEdit(ctx context.Context, msg *types.Message) error 
 }
 
 func (h *sdkEventHandler) OnEvent(ctx context.Context, event *types.Event) {
+	defer h.bot.RecoverCallback("event")
 	if event == nil {
 		return
 	}

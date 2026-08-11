@@ -336,6 +336,11 @@ func (bm *BotManager) GetStatus() []BotStatus {
 			Platform: s.Platform,
 			Running:  bm.manager.IsRunning(s.UUID),
 		}
+		// A crashed bot reads differently from one that was never started:
+		// surface the recorded exit until reconcile restarts it.
+		if exit, ok := bm.manager.LastExit(s.UUID); ok {
+			status.Error = exit.Detail
+		}
 		statuses = append(statuses, status)
 	}
 
