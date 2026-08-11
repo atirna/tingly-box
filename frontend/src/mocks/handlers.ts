@@ -883,8 +883,10 @@ const inThirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOStr
 // rendering state: an allowance, a balance, an uncapped window, a scoped limit
 // that must not answer for the account, and a quota we cannot read at all.
 const mockQuotas: Record<string, any> = {
-    // Nothing readable: the reason is recorded, no windows are invented, and
-    // the credential row shows no quota section at all.
+    // Nothing readable: the reason is recorded and no windows are invented.
+    // The credential row still renders — the reason inline, refresh still
+    // reachable — since a provider that cannot be read is exactly the one a
+    // user needs to see and retry.
     'mock-provider-anthropic': {
         provider_uuid: 'mock-provider-anthropic',
         provider_name: 'Anthropic',
@@ -1953,12 +1955,16 @@ export const handlers = [
         return HttpResponse.json({ success: true, data: result })
     }),
 
+    // Shape matches the Go handler: GetQuota / RefreshProvider answer with the
+    // usage record itself, not a {success, data} envelope (only /batch wraps).
+    // While these wrapped it, the hook read no provider_uuid and treated every
+    // single-provider read as empty, so failure states never rendered in mock.
     http.get('/api/v1/provider-quota/:uuid', ({ params }) => {
         const { uuid } = params as { uuid: string }
         if (mockQuotas[uuid]) {
-            return HttpResponse.json({ success: true, data: { ...mockQuotas[uuid], fetched_at: new Date().toISOString() } })
+            return HttpResponse.json({ ...mockQuotas[uuid], fetched_at: new Date().toISOString() })
         }
-        return HttpResponse.json({ success: false, error: 'No quota data' }, { status: 404 })
+        return HttpResponse.json({ error: 'quota not found for provider' }, { status: 404 })
     }),
 
     http.post('/api/v1/provider-quota/:uuid/refresh', async ({ params }) => {
@@ -1966,10 +1972,9 @@ export const handlers = [
         // Simulate a short delay
         await new Promise(r => setTimeout(r, 800))
         if (mockQuotas[uuid]) {
-            const refreshed = { ...mockQuotas[uuid], fetched_at: new Date().toISOString() }
-            return HttpResponse.json({ success: true, data: refreshed })
+            return HttpResponse.json({ ...mockQuotas[uuid], fetched_at: new Date().toISOString() })
         }
-        return HttpResponse.json({ success: false, error: 'No quota data' }, { status: 404 })
+        return HttpResponse.json({ error: 'quota not found for provider' }, { status: 404 })
     }),
 
     http.post('/api/v1/provider-quota/refresh', async () => {

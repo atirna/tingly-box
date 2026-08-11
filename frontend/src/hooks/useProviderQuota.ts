@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNotify } from '@/hooks/useNotify';
 import type { ProviderQuota } from '@/types/quota';
 
 interface ProviderQuotaData {
@@ -13,14 +14,14 @@ interface UseProviderQuotaOptions {
   fetchOnMount?: boolean;
 }
 
+/**
+ * Helper function to fetch from API
+ */
 /** 404 means the provider has no quota to show — not an error worth raising. */
 function isMissingQuota(error: unknown): boolean {
   return (error as { status?: number })?.status === 404;
 }
 
-/**
- * Helper function to fetch from API
- */
 async function fetchUIAPI(url: string, options: RequestInit = {}): Promise<any> {
   const basePath = window.location.origin;
   const fullUrl = `${basePath}/api/v1${url}`;
@@ -50,13 +51,26 @@ async function fetchUIAPI(url: string, options: RequestInit = {}): Promise<any> 
  *
  * Uses batch API to fetch quota for multiple providers efficiently.
  */
-export function useProviderQuota(providers: Array<{ uuid: string }>, options: UseProviderQuotaOptions = {}) {
+export function useProviderQuota(providers: Array<{ uuid: string; name?: string }>, options: UseProviderQuotaOptions = {}) {
   const { fetchOnMount = true } = options;
 
   const [quotaData, setQuotaData] = useState<ProviderQuotaData>({});
   const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
+  const notify = useNotify();
+
+  // Names are read through a ref so the fetch callbacks keep a stable identity:
+  // batchFetchQuota is a dependency of the mount effect, and re-creating it on
+  // every render would re-fetch on every render.
+  const namesRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    namesRef.current = new Map(providers.map(p => [p.uuid, p.name || p.uuid]));
+  }, [providers]);
+  const providerName = useCallback(
+    (uuid: string) => namesRef.current.get(uuid) || uuid,
+    [],
+  );
 
   // Batch fetch quota for multiple providers
   const batchFetchQuota = useCallback(async (providerUuids: string[]): Promise<void> => {
@@ -85,6 +99,9 @@ export function useProviderQuota(providers: Array<{ uuid: string }>, options: Us
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('[useProviderQuota] Batch fetch failed:', error);
+      // One notification for the batch, not one per provider: the whole call
+      // failed, so per-provider toasts would repeat a single fact N times.
+      notify.error(`Failed to load quota: ${errorMessage}`);
       // Set error for all providers in the batch
       setErrors(prev => {
         const next = new Map(prev);
@@ -96,7 +113,7 @@ export function useProviderQuota(providers: Array<{ uuid: string }>, options: Us
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [notify]);
 
   // Fetch quota for a single provider
   const fetchQuota = useCallback(async (providerUuid: string): Promise<ProviderQuota | null> => {
@@ -133,13 +150,21 @@ export function useProviderQuota(providers: Array<{ uuid: string }>, options: Us
       await fetchUIAPI(`/provider-quota/${providerUuid}/refresh`, {
         method: 'POST',
       });
-      await fetchQuota(providerUuid);
+      const quota = await fetchQuota(providerUuid);
+      // The refresh endpoint answers 200 even when the upstream refused: an
+      // unreadable provider comes back as a usage record carrying last_error.
+      // Reporting only transport failures made that case look like a success
+      // that quietly rendered nothing.
+      if (quota?.last_error) {
+        notify.warning(`${providerName(providerUuid)}: ${quota.last_error}`);
+      }
     } catch (error) {
       if (isMissingQuota(error)) {
         return;
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[useProviderQuota] Failed to refresh quota for ${providerUuid}:`, error);
+      notify.error(`Failed to refresh ${providerName(providerUuid)} quota: ${errorMessage}`);
       setErrors(prev => new Map(prev).set(providerUuid, errorMessage));
     } finally {
       setRefreshing(prev => {
@@ -148,7 +173,7 @@ export function useProviderQuota(providers: Array<{ uuid: string }>, options: Us
         return next;
       });
     }
-  }, [fetchQuota]);
+  }, [fetchQuota, notify, providerName]);
 
   // Fetch all quotas
   const fetchAllQuotas = useCallback(async () => {

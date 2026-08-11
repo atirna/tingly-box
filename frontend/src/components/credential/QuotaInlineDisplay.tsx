@@ -3,6 +3,7 @@ import { Box, Button, Stack, IconButton, Typography, CircularProgress, Tooltip }
 import { Code as CodeIcon } from '@/components/icons';
 import { Refresh as RefreshIcon } from '@/components/icons';
 import { Info as InfoIcon } from '@/components/icons';
+import { Warning as AlertIcon } from '@/components/icons';
 import { QuotaBarItem } from './QuotaBarItem';
 import { QuotaBarRow, useQuotaBars } from './QuotaBarRow';
 import { QuotaRawResponseDialog } from './QuotaRawResponseDialog';
@@ -54,8 +55,12 @@ export function QuotaInlineDisplay({
   const hiddenWindows = windows.slice(maxInlineItems);
   const fetchedAgo = formatFetchedAgo(quota?.fetched_at);
 
-  // Show nothing if there's no data at all
-  if (!hasAny && !hasRawResponse) {
+  // A provider whose quota could not be read still has something to say. It
+  // used to render nothing at all, so a failing provider simply vanished from
+  // the row and the refresh button went with it — leaving no way to retry and
+  // no reason on screen.
+  const lastError = quota?.last_error;
+  if (!hasAny && !hasRawResponse && !lastError) {
     return null;
   }
 
@@ -197,10 +202,27 @@ export function QuotaInlineDisplay({
           {resourceItems.map(item => (
             <QuotaBarItem key={item.key} window={item.window} percentLabel={item.countLabel} barColor="#22c55e" tooltipContent={item.tooltipContent} />
           ))}
-          {!hasAny && hasRawResponse && (
+          {!hasAny && hasRawResponse && !lastError && (
             <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: 'nowrap' }}>
               No quota limits reported
             </Typography>
+          )}
+          {lastError && (
+            <Tooltip title={lastError} arrow>
+              {/* Upstream reasons run long — a raw 403 envelope is a few hundred
+                  characters. The width is capped so the clipped text ends in an
+                  ellipsis inside the row instead of running past the table. */}
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0, maxWidth: 460 }}>
+                <AlertIcon sx={{ fontSize: 14, color: 'warning.main', flexShrink: 0 }} />
+                <Typography
+                  variant="caption"
+                  color="warning.main"
+                  sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {lastError}
+                </Typography>
+              </Stack>
+            </Tooltip>
           )}
         </Stack>
 
