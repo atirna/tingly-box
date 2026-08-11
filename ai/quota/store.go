@@ -18,6 +18,12 @@ import (
 
 var (
 	ErrUsageNotFound = errors.New("usage not found")
+
+	// ErrProviderUnsupported means the provider has no quota fetcher — most
+	// providers do not, and that is not a failure to report. It is a skip
+	// signal for callers, deliberately distinct from a fetch that was tried
+	// and failed: only the latter belongs in front of a user.
+	ErrProviderUnsupported = errors.New("provider does not support quota")
 )
 
 // ProviderUsageRecord is the GORM persistence model for provider usage.

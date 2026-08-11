@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -90,6 +91,9 @@ func (m *Manager) Refresh(ctx context.Context) ([]*ProviderUsage, error) {
 			defer wg.Done()
 			for provider := range jobs {
 				usage, err := m.fetchProviderQuota(ctx, provider)
+				if errors.Is(err, ErrProviderUnsupported) {
+					continue
+				}
 				if err != nil {
 					m.loggerWithError(provider, err).Warn("failed to fetch quota")
 					continue
@@ -132,6 +136,10 @@ func (m *Manager) RefreshProvider(ctx context.Context, providerUUID string) (*Pr
 }
 
 // GetQuota returns cached quota data and refreshes it when expired.
+//
+// Both ErrUsageNotFound and ErrProviderUnsupported mean "there is nothing to
+// show for this provider" and reach the caller unwrapped, so handlers can skip
+// them instead of reporting a failure.
 //
 // A not-found store lookup returns ErrUsageNotFound UNWRAPPED — callers
 // (e.g. the provider-quota HTTP handlers) compare against that sentinel
@@ -265,14 +273,16 @@ func (m *Manager) fetchProviderQuota(ctx context.Context, provider *typ.Provider
 		"provider_type": providerType,
 	})
 
-	// Verify that a fetcher is registered.
+	// Verify that a fetcher is registered. No fetcher is the ordinary case for
+	// most providers, so it is reported as a skip, not stored as a failure:
+	// persisting it put "unsupported provider type" in the record's LastError,
+	// which the UI then showed as if the provider had broken. Any such record
+	// left by an earlier version is dropped here.
 	f, ok := m.registry.Get(providerType)
 	if !ok {
-		reason := fmt.Sprintf("unsupported provider type: %q", providerType)
-		log.Debug("skipping quota fetch: " + reason)
-		usage := m.unreadable(provider, providerType, now, reason)
-		_ = m.store.Save(ctx, usage)
-		return usage, nil
+		log.Debug("skipping quota fetch: no fetcher for this provider type")
+		_ = m.store.Delete(ctx, provider.UUID)
+		return nil, ErrProviderUnsupported
 	}
 	log = log.WithField("fetcher", f.Name())
 

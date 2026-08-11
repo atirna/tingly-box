@@ -177,6 +177,67 @@ func TestUnreadableProvidersReportWhyAndNothingElse(t *testing.T) {
 	}
 }
 
+// recordingStore reports what a fetch attempt left behind.
+type recordingStore struct {
+	managerTestStore
+	saved   []*ProviderUsage
+	deleted []string
+}
+
+func (s *recordingStore) Save(_ context.Context, usage *ProviderUsage) error {
+	s.saved = append(s.saved, usage)
+	return nil
+}
+
+func (s *recordingStore) Delete(_ context.Context, uuid string) error {
+	s.deleted = append(s.deleted, uuid)
+	return nil
+}
+
+// Most providers have no quota fetcher, which is ordinary rather than broken.
+// Recording it as a usage record put "unsupported provider type" in LastError
+// and the UI showed that as a provider failure.
+func TestRefreshProviderUnsupportedIsASkipNotAnError(t *testing.T) {
+	provider := &typ.Provider{UUID: "u1", Name: "Some Gateway", AuthType: typ.AuthTypeAPIKey}
+	store := &recordingStore{}
+	m := NewManager(nil, store, managerTestProviderManager{providers: []*typ.Provider{provider}}, logrus.New())
+
+	usage, err := m.RefreshProvider(context.Background(), "u1")
+	if !errors.Is(err, ErrProviderUnsupported) {
+		t.Fatalf("RefreshProvider() error = %v, want ErrProviderUnsupported", err)
+	}
+	if usage != nil {
+		t.Errorf("usage = %+v, want nil", usage)
+	}
+	if len(store.saved) != 0 {
+		t.Errorf("saved %d records, want none", len(store.saved))
+	}
+	// Any record an earlier version wrote is cleared out on the way past.
+	if len(store.deleted) != 1 || store.deleted[0] != "u1" {
+		t.Errorf("deleted = %v, want [u1]", store.deleted)
+	}
+}
+
+// Refresh walks every enabled provider, most of which have no fetcher; those
+// must drop out quietly rather than land in the results as failures.
+func TestRefreshSkipsUnsupportedProviders(t *testing.T) {
+	store := &recordingStore{}
+	m := NewManager(nil, store, managerTestProviderManager{providers: []*typ.Provider{
+		{UUID: "u1", Name: "Some Gateway", AuthType: typ.AuthTypeAPIKey},
+	}}, logrus.New())
+
+	usages, err := m.Refresh(context.Background())
+	if err != nil {
+		t.Fatalf("Refresh() error: %v", err)
+	}
+	if len(usages) != 0 {
+		t.Errorf("Refresh() returned %d usages, want none", len(usages))
+	}
+	if len(store.saved) != 0 {
+		t.Errorf("saved %d records, want none", len(store.saved))
+	}
+}
+
 // A path segment is a user-chosen name and must never speak for a vendor.
 // Matching the whole URL read a local gateway route named "codex1" as Codex,
 // which sent that provider's token to chatgpt.com on the next refresh.

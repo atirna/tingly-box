@@ -2,6 +2,7 @@ package providerquota
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -112,7 +113,9 @@ func (h *Handler) GetQuota(c *gin.Context) {
 
 	usage, err := h.manager.GetQuota(ctx, uuid)
 	if err != nil {
-		if err == quota.ErrUsageNotFound {
+		// Both sentinels mean the provider simply has nothing to show — no
+		// data yet, or no fetcher at all. Neither is a server failure.
+		if errors.Is(err, quota.ErrUsageNotFound) || errors.Is(err, quota.ErrProviderUnsupported) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "quota not found for provider",
 			})
@@ -166,6 +169,12 @@ func (h *Handler) RefreshProvider(c *gin.Context) {
 
 	usage, err := h.manager.RefreshProvider(ctx, uuid)
 	if err != nil {
+		if errors.Is(err, quota.ErrProviderUnsupported) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "provider does not support quota",
+			})
+			return
+		}
 		h.logger.WithError(err).WithField("provider_uuid", uuid).Error("failed to refresh provider quota")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to refresh quota",
@@ -238,8 +247,8 @@ func (h *Handler) BatchGetQuota(c *gin.Context) {
 			defer wg.Done()
 			usage, err := h.manager.GetQuota(ctx, providerUUID)
 			if err != nil {
-				// 如果某个 provider 没有 quota 数据，不返回错误，只是跳过
-				if err != quota.ErrUsageNotFound {
+				// 如果某个 provider 没有 quota 数据（或不支持配额），不返回错误，只是跳过
+				if !errors.Is(err, quota.ErrUsageNotFound) && !errors.Is(err, quota.ErrProviderUnsupported) {
 					h.logger.WithError(err).WithField("provider_uuid", providerUUID).Warn("failed to get quota for provider")
 					errChan <- err
 				}
@@ -255,13 +264,13 @@ func (h *Handler) BatchGetQuota(c *gin.Context) {
 	close(errChan)
 
 	// 收集错误（如果有）
-	var errors []error
+	var fetchErrors []error
 	for err := range errChan {
-		errors = append(errors, err)
+		fetchErrors = append(fetchErrors, err)
 	}
 
 	// 如果全部失败，返回错误
-	if len(result) == 0 && len(errors) > 0 {
+	if len(result) == 0 && len(fetchErrors) > 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to get quota for any provider",
 		})

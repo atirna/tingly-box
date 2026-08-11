@@ -13,6 +13,11 @@ interface UseProviderQuotaOptions {
   fetchOnMount?: boolean;
 }
 
+/** 404 means the provider has no quota to show — not an error worth raising. */
+function isMissingQuota(error: unknown): boolean {
+  return (error as { status?: number })?.status === 404;
+}
+
 /**
  * Helper function to fetch from API
  */
@@ -32,7 +37,9 @@ async function fetchUIAPI(url: string, options: RequestInit = {}): Promise<any> 
   });
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    // The status rides along so callers can tell "this provider has no quota"
+    // (404) from a real failure, and stay quiet about the former.
+    throw Object.assign(new Error(`API error: ${response.status}`), { status: response.status });
   }
 
   return response.json();
@@ -109,6 +116,9 @@ export function useProviderQuota(providers: Array<{ uuid: string }>, options: Us
 
       return null;
     } catch (error) {
+      if (isMissingQuota(error)) {
+        return null;
+      }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[useProviderQuota] Failed to fetch quota for ${providerUuid}:`, error);
       setErrors(prev => new Map(prev).set(providerUuid, errorMessage));
@@ -125,6 +135,9 @@ export function useProviderQuota(providers: Array<{ uuid: string }>, options: Us
       });
       await fetchQuota(providerUuid);
     } catch (error) {
+      if (isMissingQuota(error)) {
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[useProviderQuota] Failed to refresh quota for ${providerUuid}:`, error);
       setErrors(prev => new Map(prev).set(providerUuid, errorMessage));
