@@ -132,17 +132,10 @@ func (b *BaseBot) MarkReady() {
 	b.EmitReady()
 }
 
-// UpdateDisconnected flips the bot to disconnected and not ready without
-// emitting the disconnect event. Use when the state must go down but the
-// auto-reconnect that a disconnect event triggers is not wanted (RecoverLoop).
-func (b *BaseBot) UpdateDisconnected() {
-	b.UpdateConnected(false)
-	b.UpdateReady(false)
-}
-
 // MarkDisconnected marks the bot disconnected and not ready, then emits disconnected.
 func (b *BaseBot) MarkDisconnected() {
-	b.UpdateDisconnected()
+	b.UpdateConnected(false)
+	b.UpdateReady(false)
 	b.EmitDisconnected()
 }
 

@@ -242,10 +242,6 @@ func runBotWithSettings(ctx context.Context, setting BotSetting, chatStore ChatS
 	case <-ctx.Done():
 		return nil
 	case err := <-fatal:
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"uuid":     setting.UUID,
-			"platform": setting.Platform,
-		}).Error("Bot receive loop panicked; closing bot for clean restart")
 		return err
 	}
 }
@@ -261,26 +257,10 @@ func buildAuthConfig(setting BotSetting) imbot.AuthConfig {
 	return imbot.BuildAuthConfig(setting.Platform, setting.Auth)
 }
 
-// ExitReason classifies why a bot's goroutine last exited.
-type ExitReason string
-
-const (
-	ExitError ExitReason = "error" // runBotWithSettings returned an error
-	ExitPanic ExitReason = "panic" // contained panic (goroutine or receive loop)
-)
-
-// ExitInfo records a bot's last abnormal exit so the host can tell a crashed
-// bot from one that was never started. Cleared on the next successful Start.
-type ExitInfo struct {
-	Reason ExitReason
-	Detail string
-}
-
 // Manager manages the lifecycle of running bot instances
 type Manager struct {
 	mu        sync.RWMutex
 	running   map[string]*runningBot // uuid -> runningBot
-	lastExit  map[string]ExitInfo    // uuid -> last abnormal exit (crash visibility)
 	store     SettingsStore
 	consumers []Consumer        // Supply each bot's inbound behavior, in dispatch order (the decoupling seam)
 	pairing   *PairingManager   // Pairing-code (TOFU) manager
@@ -311,7 +291,6 @@ type Manager struct {
 func NewManager(store SettingsStore, consumers ...Consumer) *Manager {
 	return &Manager{
 		running:   make(map[string]*runningBot),
-		lastExit:  make(map[string]ExitInfo),
 		store:     store,
 		consumers: consumers,
 		pairing:   NewPairingManager(),
@@ -482,7 +461,6 @@ func (m *Manager) Start(parentCtx context.Context, uuid string) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	doneChan := make(chan struct{})
 	m.running[uuid] = &runningBot{cancel: cancel, doneChan: doneChan}
-	delete(m.lastExit, uuid)
 
 	// Start bot in goroutine
 	pairing := m.pairing
@@ -532,17 +510,15 @@ func (m *Manager) runBotSupervised(
 				"panic":    fmt.Sprintf("%v", r),
 				"stack":    stack,
 			}).Error("Bot goroutine panicked; isolated from main process")
-			m.recordExit(uuid, ExitPanic, fmt.Sprintf("%v", r))
 		}
 	}()
 
 	if err := runBotWithSettings(ctx, s, chatStore, consumers, pairing, channels, accessStore, authorizer); err != nil {
-		logrus.WithError(err).WithField("uuid", uuid).Warn("Bot stopped with error")
-		reason := ExitError
 		if imbot.IsPanicError(err) {
-			reason = ExitPanic
+			logrus.WithError(err).WithField("uuid", uuid).Error("Bot receive loop panicked; closed for clean restart by reconcile")
+		} else {
+			logrus.WithError(err).WithField("uuid", uuid).Warn("Bot stopped with error")
 		}
-		m.recordExit(uuid, reason, err.Error())
 	}
 	logrus.WithField("uuid", uuid).Info("Bot stopped")
 }
@@ -660,18 +636,6 @@ func (m *Manager) Sync(ctx context.Context) error {
 
 	// Stop bots that are running but should not be (disabled or mount off).
 	m.mu.Lock()
-	// Crash records are only meaningful for bots that could still be
-	// restarted; drop them for bots no longer enabled so a deleted or
-	// disabled bot doesn't pin its record for the process lifetime.
-	enabled := make(map[string]bool, len(settings))
-	for _, setting := range settings {
-		enabled[setting.UUID] = true
-	}
-	for uuid := range m.lastExit {
-		if !enabled[uuid] {
-			delete(m.lastExit, uuid)
-		}
-	}
 	for uuid := range m.running {
 		if !shouldRun[uuid] {
 			logrus.WithField("uuid", uuid).Info("Stopping bot during sync (disabled or no active mount)")
@@ -692,21 +656,4 @@ func (m *Manager) removeRunning(uuid string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.running, uuid)
-}
-
-// recordExit stores why a bot's goroutine exited abnormally.
-func (m *Manager) recordExit(uuid string, reason ExitReason, detail string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.lastExit[uuid] = ExitInfo{Reason: reason, Detail: detail}
-}
-
-// LastExit reports a bot's last abnormal exit, if any, since its last
-// successful Start. Lets the host and status surfaces distinguish "crashed,
-// waiting for reconcile restart" from "never started / stopped on purpose".
-func (m *Manager) LastExit(uuid string) (ExitInfo, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	info, ok := m.lastExit[uuid]
-	return info, ok
 }

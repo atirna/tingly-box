@@ -58,27 +58,30 @@ well-defined lifecycle seam that a future subprocess boundary can cut along.
         │
         ▼
  periodic reconcile (module/imbot Sync)        restarts a FRESH instance;
-        interval doubles as crash backoff      Start clears LastExit,
-                                               Sync prunes disabled bots'
+        interval doubles as crash backoff
 ```
 
 Key properties:
 
 - **No second lifecycle.** A crashed bot is closed exactly like a stopped
-  bot; the only additions are the reason record and the reconcile restart.
-  In-place reconnect remains reserved for genuine network disconnects.
+  bot; the only addition is the reconcile restart. In-place reconnect
+  remains reserved for genuine network disconnects.
 - **`cancel` is owned by the supervisor.** `runBotSupervised` defers
   `cancel()` so every exit path — including a panic that bypasses the
   normal `<-ctx.Done()` return — tears down the imbot manager and its
   platform connections. Before this, a panic exit removed the bot from the
   running map while its connections kept running as orphans, and the next
   restart doubled them up.
-- **Crashes are visible.** A fatal exit is the run function's *return
-  value*, classified once by the supervisor into
-  `bot.Manager.LastExit(uuid)` (cleared on the next successful start,
-  pruned by Sync for disabled bots); `GetStatus` surfaces it in the
-  existing `error` field, and `RecoverLoop` also sets the imbot-level
-  status error, so a crashed-awaiting-restart bot never reads as healthy.
+- **Crash visibility lives in the logs, deliberately.** RecoverLoop logs
+  the panic with `[platform/uuid]` and the full stack; the supervisor logs
+  the fatal exit at Error level. An in-memory "last crash" record for the
+  status API was built and then REMOVED: its entire consumer chain was
+  dead — the only status reader (POST /imbot-admin/reload) runs Sync
+  first, which restarts the crashed bot and would have erased the record
+  the same request then reads, and the CLI client decodes only
+  uuid/running anyway. If the UI ever needs crash state, build it against
+  a real reader, with a timestamped record that survives restart —
+  clearing on restart is exactly what made the first attempt useless.
 - **Known gap:** the CLI standalone runner
   (`internal/command/remote.go` `runBotWithSettingsInternal`) is a
   parallel copy of the run lifecycle and gets none of this convergence —
@@ -99,9 +102,10 @@ failure mode. This scope was an explicit decision, not an omission.
   recover + stack log + running-map cleanup. A dying bot touches neither
   the process nor its sibling bots.
 - **Handler dispatch** (`imbot/manager.go`, `imbot/core/base.go`): every
-  OnMessage/OnError/... handler runs on its own goroutine behind
-  `recoverHandler`, at both the manager and BaseBot level. A panicking
-  consumer (remote_agent, notify, prompt router) drops one event only.
+  OnMessage/OnError/... handler runs on its own goroutine behind a recover
+  (`RecoverCallback` at the BaseBot level, `recoverHandler` at the manager
+  level). A panicking consumer (remote_agent, notify, prompt router) drops
+  one event only.
 
 ## Boundary coverage (imbot/core/safego.go)
 

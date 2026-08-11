@@ -37,9 +37,10 @@ func (b *BaseBot) RecoverCallback(name string) {
 func (b *BaseBot) RecoverLoop(name string) {
 	if r := recover(); r != nil {
 		b.logPanic(name, "closing bot", r)
-		err := NewPanicError(b.config.Platform, fmt.Sprintf("panic in %s: %v", name, r))
-		b.SetError(err)
-		b.UpdateDisconnected()
-		b.EmitError(err)
+		// State down WITHOUT the disconnect event: disconnect means
+		// "reconnect in place", wrong for a bot whose state is suspect.
+		b.UpdateConnected(false)
+		b.UpdateReady(false)
+		b.EmitError(NewPanicError(b.config.Platform, fmt.Sprintf("panic in %s: %v", name, r)))
 	}
 }

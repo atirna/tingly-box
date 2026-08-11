@@ -344,25 +344,16 @@ func TestManager_LoopPanicClosesBotAndReconcileRestarts(t *testing.T) {
 
 	// Inject the exact signal core.RecoverLoop emits after containing a
 	// receive-loop panic.
-	emitter, ok := b.(interface{ EmitError(error) })
-	require.True(t, ok, "bot does not expose EmitError")
-	emitter.EmitError(core.NewPanicError("tingly", "panic in test loop: boom"))
+	b.(*tingly.Bot).EmitError(core.NewPanicError("tingly", "panic in test loop: boom"))
 
 	// The bot must close fully — not linger reconnecting.
 	require.Eventually(t, func() bool { return !m.IsRunning(uuid) }, 5*time.Second, 20*time.Millisecond,
 		"bot still running after contained loop panic")
 
-	exit, found := m.LastExit(uuid)
-	require.True(t, found, "crash not recorded in LastExit")
-	require.Equal(t, bot.ExitPanic, exit.Reason)
-
-	// Reconcile restarts the crashed bot as a fresh instance and clears the
-	// crash record.
+	// Reconcile restarts the crashed bot as a fresh instance.
 	require.NoError(t, m.Sync(parentCtx))
 	require.Eventually(t, func() bool { return m.IsRunning(uuid) }, 5*time.Second, 20*time.Millisecond,
 		"Sync did not restart the crashed bot")
-	_, found = m.LastExit(uuid)
-	require.False(t, found, "LastExit not cleared by restart")
 
 	m.Stop(uuid)
 	require.True(t, m.WaitForStop(uuid, 5*time.Second))
