@@ -90,6 +90,14 @@ export const SCENARIOS: ScenarioDescriptor[] = [
         hideable: true,
     },
     {
+        id: 'custom',
+        labelKey: 'layout.nav.useCustom',
+        descKey: 'scenarioOverview.descriptions.custom',
+        path: '/agent/custom',
+        icon: (size) => <IconExtension sx={{ fontSize: size }} />,
+        hideable: true,
+    },
+    {
         id: 'openai',
         labelKey: 'layout.nav.useOpenAI',
         descKey: 'scenarioOverview.descriptions.openai',
@@ -119,14 +127,6 @@ export const SCENARIOS: ScenarioDescriptor[] = [
         descKey: 'scenarioOverview.descriptions.imagegen',
         path: '/agent/imagegen',
         icon: (size) => <IconPhoto sx={{ fontSize: size }} />,
-        hideable: true,
-    },
-    {
-        id: 'custom',
-        labelKey: 'layout.nav.useCustom',
-        descKey: 'scenarioOverview.descriptions.custom',
-        path: '/agent/custom',
-        icon: (size) => <IconExtension sx={{ fontSize: size }} />,
         hideable: true,
     },
     {

@@ -429,10 +429,6 @@ func canonicalRuleUUID(rule *typ.Rule) (string, bool) {
 func ensureCurrentBuiltinRules(c *Config) {
 	needsSave := false
 
-	if _, ok := c.seedBuiltinRuleIfMissing(RuleUUIDBuiltinCodex, nil); ok {
-		needsSave = true
-	}
-
 	desktopRefServices := c.referenceServicesFor(typ.ScenarioClaudeCode, typ.ScenarioCodex)
 	for _, uuid := range []string{
 		RuleUUIDBuiltinClaudeDesktopSonnet46,

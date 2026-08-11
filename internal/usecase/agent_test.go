@@ -186,9 +186,28 @@ func TestAgentUseCase_ResolveRouting(t *testing.T) {
 	})
 
 	t.Run("rule without services is still found", func(t *testing.T) {
+		// Codex has no built-in default rule (unlike Claude Code/OpenCode
+		// above), so create one explicitly here rather than relying on seeding.
+		provider := &typ.Provider{
+			UUID: serverconfig.GenerateUUID(), Name: "codex-provider",
+			APIBase: "https://api.example.com", APIStyle: "openai",
+			AuthType: typ.AuthTypeAPIKey, Token: "sk-test", Enabled: true,
+		}
+		if err := cfg.AddProvider(provider); err != nil {
+			t.Fatalf("AddProvider: %v", err)
+		}
+		ruleUC := NewRuleUseCase(cfg)
+		if _, err := ruleUC.Create(CreateRuleRequest{
+			Scenario:     typ.ScenarioCodex,
+			RequestModel: "tingly-codex",
+			Services:     []*loadbalance.Service{{Provider: provider.UUID, Model: "codex-model", Weight: 1, Active: true}},
+		}); err != nil {
+			t.Fatalf("RuleUseCase.Create: %v", err)
+		}
+
 		rule := cfg.GetRuleByRequestModelAndScenario("tingly-codex", typ.ScenarioCodex)
 		if rule == nil {
-			t.Fatal("expected migrated Codex rule")
+			t.Fatal("expected the codex rule just created")
 		}
 		rule.Services = nil
 		if err := cfg.UpdateRule(rule.UUID, *rule); err != nil {

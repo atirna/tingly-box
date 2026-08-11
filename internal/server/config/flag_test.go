@@ -155,11 +155,16 @@ func TestProfileScenarioFlagWriteInheritsBaseConfig(t *testing.T) {
 // TestBuiltInRulesSessionAffinity verifies the built-in Claude Code / Desktop /
 // Codex rules seed session_affinity to the 30-min default, while other built-in
 // rules leave it disabled.
+// Codex intentionally has no entry in DefaultRules (see
+// TestCustomScenario_SeedsNoDefaultRule's sibling reasoning for "custom" —
+// Codex still gets SessionAffinity defaulted on any rule, built-in or
+// user-created, via defaultBuiltinRuleFlagsOnce; see
+// TestDefaultBuiltinRuleFlagsOnce_SeedsRuleFlags), so it's excluded from the
+// DefaultRules-only assertion below.
 func TestBuiltInRulesSessionAffinity(t *testing.T) {
 	wantOn := map[typ.RuleScenario]bool{
 		typ.ScenarioClaudeCode:    true,
 		typ.ScenarioClaudeDesktop: true,
-		typ.ScenarioCodex:         true,
 	}
 
 	sawScenario := map[typ.RuleScenario]bool{}

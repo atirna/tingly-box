@@ -8,9 +8,11 @@ import (
 var DefaultRules []typ.Rule
 
 // defaultSessionAffinitySeconds is the 30-minute session-affinity TTL seeded on
-// the built-in Claude Code / Claude Desktop / Codex rules. session_affinity is
-// rule-only (no scenario-level inheritance); these seeds + migrate20260610 are
-// the sole source of the default. Other scenarios are off unless set per-rule.
+// the built-in Claude Code / Claude Desktop rules below, and applied to every
+// Claude Code / Claude Desktop / Codex rule (built-in or user-created) by
+// migrate20260610 (defaultBuiltinRuleFlagsOnce). session_affinity is rule-only
+// (no scenario-level inheritance); those are the sole sources of the default.
+// Other scenarios are off unless set per-rule.
 const defaultSessionAffinitySeconds = 1800
 
 func init() {
@@ -39,21 +41,6 @@ func init() {
 				Type:   loadbalance.TacticRandom,
 				Params: typ.DefaultRandomParams(),
 			},
-			Active: true,
-		},
-		{
-			UUID:          RuleUUIDCodex,
-			Scenario:      typ.ScenarioCodex,
-			RequestModel:  "tingly-codex",
-			ResponseModel: "",
-			Description:   "Default proxy rule for Codex",
-			Services:      []*loadbalance.Service{},
-			LBTactic: typ.Tactic{
-				Type:   loadbalance.TacticRandom,
-				Params: typ.DefaultRandomParams(),
-			},
-			// 30-min session affinity improves cache hit rate for Codex sessions.
-			Flags:  typ.RuleFlags{SessionAffinity: defaultSessionAffinitySeconds},
 			Active: true,
 		},
 		ccRule(RuleUUIDCC, "tingly/cc", "Default proxy rule for Claude Code", true),

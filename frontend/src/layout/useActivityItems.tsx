@@ -106,6 +106,9 @@ export function useActivityItems(): ActivityItem[] {
             { id: 'pi', nav: { path: '/agent/pi', label: t('layout.nav.usePi', { defaultValue: 'Pi' }), icon: <Pi size={20} /> } },
             { id: 'xcode', nav: { path: '/agent/xcode', label: t('layout.nav.useXcode', { defaultValue: 'Xcode' }), icon: <Xcode size={20} /> } },
             { id: 'vscode', nav: { path: '/agent/vscode', label: t('layout.nav.useVSCode', { defaultValue: 'VS Code' }), icon: <VSCode size={20} /> } },
+            // "custom" (bring-your-own-request-model) closes out the coding
+            // tools group, right after the named integrations it's a fallback for.
+            { id: 'custom', nav: { path: '/agent/custom', label: t('layout.nav.useCustom', { defaultValue: 'Custom' }), icon: <IconExtension sx={{ fontSize: 20 }} /> } },
         ]);
         const sdkTools = visible([
             { id: 'openai', nav: { path: '/agent/openai', label: t('layout.nav.useOpenAI', { defaultValue: 'OpenAI' }), icon: <OpenAI size={20} /> } },
@@ -114,7 +117,6 @@ export function useActivityItems(): ActivityItem[] {
             { id: 'imagegen', nav: { path: '/agent/imagegen', label: t('layout.nav.useImageGen', { defaultValue: 'Image Gen' }), icon: <IconPhoto sx={{ fontSize: 20 }} /> } },
         ]);
         const agentTools = visible([
-            { id: 'custom', nav: { path: '/agent/custom', label: t('layout.nav.useCustom', { defaultValue: 'Custom' }), icon: <IconExtension sx={{ fontSize: 20 }} /> } },
             { id: 'team', nav: { path: '/agent/team', label: t('layout.nav.useTeam', { defaultValue: 'Team' }), icon: <IconUsers sx={{ fontSize: 20 }} /> } },
         ]);
 

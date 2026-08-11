@@ -78,14 +78,14 @@ func TestMigrationHelpers(t *testing.T) {
 func TestSeedBuiltinRuleIfMissing(t *testing.T) {
 	c := &Config{}
 
-	newRule, ok := c.seedBuiltinRuleIfMissing(RuleUUIDBuiltinCodex, []*loadbalance.Service{svc("p1")})
+	newRule, ok := c.seedBuiltinRuleIfMissing(RuleUUIDBuiltinOpenAI, []*loadbalance.Service{svc("p1")})
 	if !ok {
-		t.Fatal("expected missing Codex rule to be seeded")
+		t.Fatal("expected missing OpenAI rule to be seeded")
 	}
-	if newRule.UUID != RuleUUIDCodex {
-		t.Fatalf("seeded rule UUID = %q, want %q", newRule.UUID, RuleUUIDCodex)
+	if newRule.UUID != RuleUUIDOpenAI {
+		t.Fatalf("seeded rule UUID = %q, want %q", newRule.UUID, RuleUUIDOpenAI)
 	}
-	if len(c.Rules) != 1 || c.Rules[0].UUID != RuleUUIDCodex {
+	if len(c.Rules) != 1 || c.Rules[0].UUID != RuleUUIDOpenAI {
 		t.Fatalf("config rules after seed = %+v", c.Rules)
 	}
 	if len(c.Rules[0].Services) != 1 || c.Rules[0].Services[0].Provider != "p1" {
@@ -104,8 +104,8 @@ func TestSeedBuiltinRuleIfMissing(t *testing.T) {
 		t.Fatalf("seeded services should be cloned, got %+v (returned %+v)", seeded, newRule)
 	}
 
-	if _, ok := c.seedBuiltinRuleIfMissing(RuleUUIDBuiltinCodex, nil); ok {
-		t.Fatal("existing Codex rule should not be seeded twice")
+	if _, ok := c.seedBuiltinRuleIfMissing(RuleUUIDBuiltinOpenAI, nil); ok {
+		t.Fatal("existing OpenAI rule should not be seeded twice")
 	}
 	if len(c.Rules) != 2 {
 		t.Fatalf("rule count after duplicate seed = %d, want 2", len(c.Rules))
