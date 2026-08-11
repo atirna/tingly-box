@@ -113,9 +113,14 @@ func (e *quotaError) Error() string {
 
 // NewHTTPClient creates an HTTP client with optional proxy support.
 // proxyURL accepts formats such as "http://localhost:7890" or "socks5://localhost:1080".
+//
+// Every client is wrapped in loggingTransport: quota calls run unattended on a
+// ticker, so without a request trace a failing provider leaves nothing behind
+// but a status code on its usage record.
 func NewHTTPClient(proxyURL string, timeout time.Duration) *http.Client {
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout:   timeout,
+		Transport: &loggingTransport{},
 	}
 
 	if proxyURL == "" {
@@ -153,7 +158,7 @@ func NewHTTPClient(proxyURL string, timeout time.Duration) *http.Client {
 		return client
 	}
 
-	client.Transport = transport
+	client.Transport = &loggingTransport{base: transport}
 	logrus.Debugf("Using proxy: %s", proxyURL)
 	return client
 }

@@ -227,6 +227,22 @@ without introducing a non-standard marker.
 
 ---
 
+## 5.5 Quota reads need only the token
+
+The quota fetcher (`ai/quota/fetcher/kimi_code.go`) calls
+`GET https://api.kimi.com/coding/v1/usages` with the OAuth access token, an
+`Accept` header, and an explicitly empty `User-Agent`. Unlike the inference
+endpoints, this one does **not** check the kimi-cli fingerprint headers — do
+not add `X-Msh-*` here on the strength of a 403.
+
+A **403 `permission_denied`** from this endpoint is an entitlement answer, not
+a client-shape answer: it is what a lapsed or unsubscribed Kimi Code plan
+reports. The fetcher carries the upstream body into the error text (and the
+quota transport logs it in full, see `ai/quota/httplog.go`), so the account
+reason is readable instead of a bare status code.
+
+---
+
 ## 6. API base and style
 
 ```go
@@ -275,4 +291,5 @@ All constants and endpoint URLs were verified against
 | Auth handler | `internal/server/module/oauth/handler.go` | device ID generation, `pollForDeviceCodeToken`, `createProviderFromToken` |
 | Background refresh | `internal/server/background/oauth_refresher.go` | reattaches device ID on token refresh |
 | Round tripper | `internal/client/kimi_round_tripper.go` | inference headers + body normalization |
+| Quota fetcher | `ai/quota/fetcher/kimi_code.go` | `/usages` read; bearer token only, no `X-Msh-*` (§5.5) |
 | Round tripper test | `internal/client/kimi_round_tripper_test.go` | normalization unit tests |

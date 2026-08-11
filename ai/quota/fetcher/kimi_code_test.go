@@ -302,6 +302,24 @@ func kimiCodeTestProvider() *ai.Provider {
 	}
 }
 
+func TestKimiCodeFetcherStatusErrorCarriesUpstreamMessage(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "{\"error\":\n\"forbidden client\"}", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	_, err := (&KimiCodeFetcher{baseURL: server.URL}).Fetch(context.Background(), kimiCodeTestProvider())
+	if err == nil {
+		t.Fatal("Fetch() error = nil, want status error")
+	}
+	want := `unexpected status code: 403: {"error": "forbidden client"}`
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestKimiCodeSemantics(t *testing.T) {
 	t.Parallel()
 

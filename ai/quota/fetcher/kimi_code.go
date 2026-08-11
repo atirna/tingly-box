@@ -213,7 +213,11 @@ func (f *KimiCodeFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*qu
 	req.Header.Set("Authorization", "Bearer "+provider.GetAccessToken())
 	req.Header.Set("Accept", "application/json")
 	// An explicitly empty User-Agent suppresses net/http's default Go user
-	// agent. The managed usage endpoint only needs auth and content negotiation.
+	// agent. The managed usage endpoint only needs auth and content
+	// negotiation — unlike the inference endpoints it does not check the
+	// kimi-cli fingerprint headers, and a 403 here reports the account's
+	// entitlement (an expired plan reads as permission_denied), not the shape
+	// of the client.
 	req.Header.Set("User-Agent", "")
 
 	client := quota.NewHTTPClient(provider.ProxyURL, 30*time.Second)
@@ -223,13 +227,15 @@ func (f *KimiCodeFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*qu
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		// A bare status code cannot tell an expired token from an expired
+		// plan. Carry the upstream message into the error users see.
+		return nil, fmt.Errorf("unexpected status code: %d%s", resp.StatusCode, errorDetail(body))
 	}
 
 	var apiResp kimiCodeUsageResponse

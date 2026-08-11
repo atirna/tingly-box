@@ -254,17 +254,29 @@ func (m *Manager) fetchProviderQuota(ctx context.Context, provider *typ.Provider
 	providerType := inferProviderType(provider)
 	now := time.Now()
 
+	// Log here rather than in the callers: a quota read is reached from the
+	// background ticker, the manual refresh endpoint, and cache expiry, and
+	// every one of those used to fail silently into a stored LastError.
+	log := m.logger.WithFields(logrus.Fields{
+		"provider_uuid": provider.UUID,
+		"provider_name": provider.Name,
+		"provider_type": providerType,
+	})
+
 	// Verify that a fetcher is registered.
 	f, ok := m.registry.Get(providerType)
 	if !ok {
-		usage := m.unreadable(provider, providerType, now,
-			fmt.Sprintf("unsupported provider type: %q", providerType))
+		reason := fmt.Sprintf("unsupported provider type: %q", providerType)
+		log.Debug("skipping quota fetch: " + reason)
+		usage := m.unreadable(provider, providerType, now, reason)
 		_ = m.store.Save(ctx, usage)
 		return usage, nil
 	}
+	log = log.WithField("fetcher", f.Name())
 
 	// Validate the provider configuration.
 	if err := f.Validate(provider); err != nil {
+		log.WithError(err).Warn("quota fetch skipped: provider failed validation")
 		usage := m.unreadable(provider, providerType, now,
 			fmt.Sprintf("validation failed: %v", err))
 		_ = m.store.Save(ctx, usage)
@@ -272,14 +284,29 @@ func (m *Manager) fetchProviderQuota(ctx context.Context, provider *typ.Provider
 	}
 
 	// Fetch quota data.
+	start := time.Now()
 	usage, err := f.Fetch(ctx, provider)
+	elapsed := time.Since(start)
 	if err != nil {
+		log.WithFields(logrus.Fields{
+			"duration_ms": elapsed.Milliseconds(),
+			"error":       err.Error(),
+		}).Warn("quota fetch failed")
 		usage = m.unreadable(provider, providerType, now, err.Error())
+	} else {
+		fields := logrus.Fields{
+			"duration_ms": elapsed.Milliseconds(),
+			"windows":     len(usage.Windows),
+		}
+		if pct, ok := usage.Pct(); ok {
+			fields["used_percent"] = pct
+		}
+		log.WithFields(fields).Debug("quota fetched")
 	}
 
 	// Persist the result.
 	if saveErr := m.store.Save(ctx, usage); saveErr != nil {
-		m.logger.WithError(saveErr).Error("failed to save quota")
+		log.WithError(saveErr).Error("failed to save quota")
 	}
 
 	return usage, nil
