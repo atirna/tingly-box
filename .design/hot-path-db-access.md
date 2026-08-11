@@ -109,10 +109,33 @@ am.apiTokenStore.UpdateLastUsed(...)` call in `ModelAuthMiddleware` — which
 is a genuine SQLite **write** on every authenticated request (updating
 `last_used_at`), not a read this caching pattern touches. It doesn't block
 the response (it's backgrounded), but it's real DB load per request and
-still serializes against other cache writes under `s.mu.Lock()`. That's a
-separate finding, noted here as a candidate for a future pass (e.g.
-debouncing/batching last-used-at writes so it's not one SQLite transaction
-per request) but out of scope for this "cache the hot read path" fix.
+still serialized against other cache writes under `s.mu.Lock()`.
+
+### `UpdateLastUsed`: debounce the write instead of caching a read
+
+`last_used_at` is only ever consumed for "when was this token last used"
+display in the token admin UI — nothing in the codebase reads it at
+per-request precision. So instead of caching (there's no read to cache; this
+*is* the write), `UpdateLastUsed` now coalesces: it persists at most once per
+`defaultLastUsedDebounce` (1 minute) per token, checked cheaply under
+`RLock` against the cached `LastUsedAt` before ever taking the write lock or
+touching SQLite; a call inside the window is a no-op. A token idle for over
+a minute still gets a fresh write on its next use, same as before — only the
+common case (bursty/sustained traffic on the same token) collapses from "one
+SQLite UPDATE per request" to "one per debounce window."
+
+| Benchmark | cached only | + debounced `UpdateLastUsed` | additional change |
+|---|---|---|---|
+| `BenchmarkModelAuthMiddleware_APIToken` | 55.4 µs/op, 80 allocs | 1.39 µs/op, 10 allocs | **~40×** (≈75× vs. the original 103.8 µs/op baseline) |
+
+No TTL cache or background flusher was introduced — the debounce state
+*is* the existing per-token cache entry's `LastUsedAt` field, so there's
+nothing extra to keep in sync or expire. `internal/db/api_token_store_test.go`
+covers all three cases: first call persists, a second call inside the window
+is a no-op (checked against the DB row, not just the cache, so a caching bug
+that skipped the write but claimed success can't hide), and a call after the
+window (simulated by rewriting the cached `LastUsedAt` into the past — no
+`time.Sleep` in the test) persists again.
 
 ## The pattern is systemic — audit of `internal/db/*_store.go`
 
@@ -127,7 +150,7 @@ given store depends entirely on whether it's read on the **request hot path**
 | Store | Hot-path read? | Where | Risk |
 |---|---|---|---|
 | `ProviderStore` | **Yes — fixed** | `ServiceSelector.Select` resolves a provider every request | was the #1 cost, now cached |
-| `APITokenStore` | **Yes — fixed** | `internal/middleware/auth.go`'s `AuthMiddleware` calls `ValidateToken` on every API-token-authenticated request | see benchmark section above — `ValidateToken` itself dropped ~251×; `UpdateLastUsed`'s per-request write remains a separate, smaller follow-up |
+| `APITokenStore` | **Yes — fixed** | `internal/middleware/auth.go`'s `AuthMiddleware` calls `ValidateToken` (cached read) and `UpdateLastUsed` (debounced write) on every API-token-authenticated request | see benchmark sections above — `ValidateToken` dropped ~251×, `UpdateLastUsed`'s debounce took the full middleware path a further ~40× |
 | `ModelStore`, `ToolConfigStore`, `ImBotSettingsStore`, `TaskStore`, `ServiceStatStore` | No (or infrequent/admin-path) | config/UI/background jobs | low priority — `RWMutex` alone (no caching) is probably sufficient if ever contended |
 | `RemoteChatStore`, `RemoteSessionStore`, `BotAccessStore`, `UsageStore` | No (IM/remote-control and usage-recording paths, not the LLM proxy hot path) | — | low priority |
 

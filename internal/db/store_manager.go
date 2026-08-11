@@ -264,9 +264,10 @@ func (sm *StoreManager) initAPITokenStore() error {
 		return err
 	}
 	store := &APITokenStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-		cache:  make(map[string]*APITokenRecord),
+		db:               sm.db,
+		dbPath:           constant.GetDBFile(sm.baseDir),
+		cache:            make(map[string]*APITokenRecord),
+		lastUsedDebounce: defaultLastUsedDebounce,
 	}
 	if err := store.loadCache(); err != nil {
 		return fmt.Errorf("failed to load API token cache: %w", err)

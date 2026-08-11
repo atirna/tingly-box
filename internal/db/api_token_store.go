@@ -36,6 +36,13 @@ func (APITokenRecord) TableName() string {
 	return "api_tokens"
 }
 
+// defaultLastUsedDebounce is how often UpdateLastUsed will actually persist
+// a new last_used_at. A busy token can see many requests per second; the
+// column exists for "when was this last used" display in the token admin
+// UI, which needs freshness on the order of minutes, not per-request
+// precision. See UpdateLastUsed.
+const defaultLastUsedDebounce = time.Minute
+
 // APITokenStore manages API tokens for multi-tenant authentication.
 //
 // ValidateToken sits on the request hot path (called from every
@@ -55,6 +62,11 @@ type APITokenStore struct {
 	dbPath string
 	mu     sync.RWMutex
 	cache  map[string]*APITokenRecord
+
+	// lastUsedDebounce is the minimum interval between persisted
+	// last_used_at writes for the same token; see UpdateLastUsed. Only
+	// overridden by tests, hence unexported with no constructor param.
+	lastUsedDebounce time.Duration
 }
 
 // NewAPITokenStore creates or loads an API token store using SQLite database.
@@ -81,9 +93,10 @@ func NewAPITokenStore(baseDir string) (*APITokenStore, error) {
 	logrus.Debugf("SQLite database opened successfully for API token store")
 
 	store := &APITokenStore{
-		db:     db,
-		dbPath: dbPath,
-		cache:  make(map[string]*APITokenRecord),
+		db:               db,
+		dbPath:           dbPath,
+		cache:            make(map[string]*APITokenRecord),
+		lastUsedDebounce: defaultLastUsedDebounce,
 	}
 
 	// Auto-migrate schema
@@ -291,12 +304,47 @@ func (s *APITokenStore) GetToken(tokenID string) (*APITokenRecord, error) {
 	return &clone, nil
 }
 
-// UpdateLastUsed updates the last_used_at timestamp for a token
+// debounceWindow returns lastUsedDebounce, falling back to the package
+// default for stores built via a struct literal that never set it (e.g.
+// StoreManager's init* helpers before this field existed, or a future one
+// added the same way — see the "watch for bypass construction" note in
+// .design/hot-path-db-access.md).
+func (s *APITokenStore) debounceWindow() time.Duration {
+	if s.lastUsedDebounce > 0 {
+		return s.lastUsedDebounce
+	}
+	return defaultLastUsedDebounce
+}
+
+// UpdateLastUsed updates the last_used_at timestamp for a token.
+//
+// Called on every authenticated request (see AuthMiddleware.ModelAuthMiddleware
+// in internal/middleware/auth.go), but the column is only ever read for "last
+// used" display in the token admin UI, which doesn't need per-request
+// precision. Writes within debounceWindow() of the last persisted value are
+// coalesced away — cheap under the read lock, so a hot token pays almost
+// nothing between flushes instead of one SQLite UPDATE per request.
 func (s *APITokenStore) UpdateLastUsed(tokenID string) error {
+	now := time.Now()
+	window := s.debounceWindow()
+
+	s.mu.RLock()
+	if record, ok := s.cache[tokenID]; ok && record.LastUsedAt != nil && now.Sub(*record.LastUsedAt) < window {
+		s.mu.RUnlock()
+		return nil
+	}
+	s.mu.RUnlock()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now()
+	// Re-check under the write lock: another goroutine may have already
+	// flushed while this one was waiting.
+	record, ok := s.cache[tokenID]
+	if ok && record.LastUsedAt != nil && now.Sub(*record.LastUsedAt) < window {
+		return nil
+	}
+
 	result := s.db.Model(&APITokenRecord{}).
 		Where("token_id = ?", tokenID).
 		Update("last_used_at", now)
@@ -305,7 +353,7 @@ func (s *APITokenStore) UpdateLastUsed(tokenID string) error {
 		return fmt.Errorf("failed to update last used: %w", result.Error)
 	}
 
-	if record, ok := s.cache[tokenID]; ok {
+	if ok {
 		record.LastUsedAt = &now
 	}
 
