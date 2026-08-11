@@ -24,6 +24,18 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
+// benchService and benchRequest are thin aliases over routing's exported
+// test fixtures (ServiceForTest/OpenAIRequestForTest) — kept as local
+// wrappers only to fix the benchmark's request model/weight/active shape
+// once, not to reimplement the fixtures themselves.
+func benchService(provider, model string) *loadbalance.Service {
+	return routing.ServiceForTest(provider, model, true)
+}
+
+func benchRequest() *openai.ChatCompletionNewParams {
+	return routing.OpenAIRequestForTest("bench-model")
+}
+
 // benchSelector wires the real production pipeline. cfg's rule list is left
 // empty on purpose — Select() takes the *typ.Rule directly via
 // SelectionContext, so benchmarks build rules in-memory without paying for
@@ -49,19 +61,6 @@ func benchProvider(b *testing.B, appConfig *config.AppConfig, uuid string) {
 	p := &typ.Provider{UUID: uuid, Name: uuid, APIBase: "http://bench.invalid", Enabled: true}
 	if err := appConfig.GetGlobalConfig().AddProvider(p); err != nil {
 		b.Fatal(err)
-	}
-}
-
-func benchService(provider, model string) *loadbalance.Service {
-	return &loadbalance.Service{Provider: provider, Model: model, Weight: 1, Active: true}
-}
-
-func benchRequest() *openai.ChatCompletionNewParams {
-	return &openai.ChatCompletionNewParams{
-		Model: "bench-model",
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage("benchmark probe request"),
-		},
 	}
 }
 
