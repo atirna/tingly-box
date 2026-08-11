@@ -44,7 +44,7 @@ well-defined lifecycle seam that a future subprocess boundary can cut along.
 
 ```
  receive-loop panic (L3 RecoverLoop)
-        │  EmitError(ErrPanic)                imbot/core/safego.go
+        │  EmitError(ErrPanic)                imbot/core/base.go RecoverLoop
         ▼
  host OnError handler → fatal chan             runBotWithSettings
         │  the run's select returns the error; defers unwind:
@@ -107,7 +107,7 @@ failure mode. This scope was an explicit decision, not an omission.
   level). A panicking consumer (remote_agent, notify, prompt router) drops
   one event only.
 
-## Boundary coverage (imbot/core/safego.go)
+## Boundary coverage (BaseBot.RecoverCallback / RecoverLoop)
 
 All registered platforms are enumerated — this table IS the mechanism, so
 a new platform must add its row (review checklist item 6):
@@ -168,7 +168,7 @@ subprocess boundary would cut.
 
 ## Tests
 
-- `imbot/core/safego_test.go` — RecoverCallback containment; RecoverLoop
+- `imbot/core/base_test.go` — RecoverCallback containment; RecoverLoop
   emits ErrPanic (not disconnect) and flips connection state.
 - `remote/control/bot/manager_lifecycle_test.go`
   (`TestManager_LoopPanicClosesBotAndReconcileRestarts`) — the convergent
