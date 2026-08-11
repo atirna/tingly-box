@@ -176,3 +176,38 @@ func TestUnreadableProvidersReportWhyAndNothingElse(t *testing.T) {
 		t.Errorf("ExpiresAt = %v; want the ttl applied to now", usage.ExpiresAt)
 	}
 }
+
+// A path segment is a user-chosen name and must never speak for a vendor.
+// Matching the whole URL read a local gateway route named "codex1" as Codex,
+// which sent that provider's token to chatgpt.com on the next refresh.
+func TestInferProviderTypeIgnoresPathAndLocalHosts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		apiBase string
+		want    ProviderType
+	}{
+		{"local gateway route named codex", "http://localhost:12581/tingly/codex1", ""},
+		{"loopback ip", "http://127.0.0.1:12581/tingly/gemini", ""},
+		{"private lan", "http://192.168.1.10:8080/v1/cursor", ""},
+		{"container hostname", "http://tingly-box:12581/tingly/codex1", ""},
+		{"mdns", "http://mac.local:12581/copilot/v1", ""},
+		{"vendor name only in the path", "https://gateway.example.com/proxy/openrouter.ai/api/v1", ""},
+		{"lookalike domain", "https://api.openai.com.evil.test/v1", ""},
+		{"scheme-less base", "api.anthropic.com/v1", ProviderTypeAnthropic},
+		{"subdomain of a vendor", "https://eu.api.anthropic.com/v1", ProviderTypeAnthropic},
+		{"kimi coding needs its path", "https://api.kimi.com/coding/v1", ProviderTypeKimiCode},
+		{"kimi without the coding path", "https://api.kimi.com/v1", ""},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := inferProviderType(&typ.Provider{APIBase: tt.apiBase}); got != tt.want {
+				t.Fatalf("inferProviderType(%q) = %q, want %q", tt.apiBase, got, tt.want)
+			}
+		})
+	}
+}

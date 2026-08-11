@@ -3,6 +3,8 @@ package quota
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -337,39 +339,92 @@ func inferProviderType(provider *typ.Provider) ProviderType {
 		return ProviderTypeKimiCode
 	}
 
-	// Fallback: infer from APIBase domain
-	apiBase := strings.ToLower(provider.APIBase)
+	// Fallback: infer from the APIBase host.
+	//
+	// The host, never the whole URL. Matching the URL made any path segment
+	// speak for the vendor: a local gateway at
+	// http://localhost:12581/tingly/codex1 was read as Codex — and the Codex
+	// fetcher would then take that provider's token to chatgpt.com. Paths are
+	// user-chosen names; only the host says who answers.
+	host, path := apiBaseHostPath(provider.APIBase)
+	if host == "" || isLocalAPIHost(host) {
+		return ""
+	}
 	switch {
-	case strings.Contains(apiBase, "anthropic.com"):
+	case hostIs(host, "anthropic.com"):
 		return ProviderTypeAnthropic
-	case strings.Contains(apiBase, "openai.com"), strings.Contains(apiBase, "openai.azure.com"):
+	case hostIs(host, "openai.com", "openai.azure.com"):
 		return ProviderTypeOpenAI
-	case strings.Contains(apiBase, "googleapis.com"), strings.Contains(apiBase, "gemini"):
+	case hostIs(host, "googleapis.com"), strings.Contains(host, "gemini"):
 		return ProviderTypeGemini
-	case strings.Contains(apiBase, "cursor"):
+	case strings.Contains(host, "cursor"):
 		return ProviderTypeCursor
-	case strings.Contains(apiBase, "copilot"):
+	case strings.Contains(host, "copilot"):
 		return ProviderTypeCopilot
-	case strings.Contains(apiBase, "vertex"):
+	case strings.Contains(host, "vertex"):
 		return ProviderTypeVertexAI
-	case strings.Contains(apiBase, "zai.app"):
+	case hostIs(host, "zai.app"):
 		return ProviderTypeZai
-	case strings.Contains(apiBase, "bigmodel.cn"):
+	case hostIs(host, "bigmodel.cn"):
 		return ProviderTypeGLM
-	case strings.Contains(apiBase, "moonshot.cn"):
+	case hostIs(host, "moonshot.cn"):
 		return ProviderTypeKimiK2
-	case strings.Contains(apiBase, "api.kimi.com/coding"):
+	// Kimi's coding product shares a host with the rest of kimi.com, so this
+	// one pair genuinely needs the path to tell them apart.
+	case hostIs(host, "kimi.com") && strings.HasPrefix(path, "/coding"):
 		return ProviderTypeKimiCode
-	case strings.Contains(apiBase, "openrouter.ai"):
+	case hostIs(host, "openrouter.ai"):
 		return ProviderTypeOpenRouter
-	case strings.Contains(apiBase, "minimaxi.com"):
+	case hostIs(host, "minimaxi.com"):
 		return ProviderTypeMiniMaxCN
-	case strings.Contains(apiBase, "minimax"):
+	case strings.Contains(host, "minimax"):
 		return ProviderTypeMiniMax
-	case strings.Contains(apiBase, "chatgpt.com"), strings.Contains(apiBase, "codex"):
+	case hostIs(host, "chatgpt.com"), strings.Contains(host, "codex"):
 		return ProviderTypeCodex
 	}
 	return ""
+}
+
+// apiBaseHostPath splits a configured API base into its lowercased host and
+// path. A base without a scheme ("api.openai.com/v1") is still understood.
+func apiBaseHostPath(apiBase string) (host, path string) {
+	trimmed := strings.TrimSpace(apiBase)
+	if trimmed == "" {
+		return "", ""
+	}
+	if !strings.Contains(trimmed, "://") {
+		trimmed = "http://" + trimmed
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", ""
+	}
+	return strings.ToLower(parsed.Hostname()), strings.ToLower(parsed.Path)
+}
+
+// hostIs reports whether host is one of the domains, or a subdomain of one.
+// Suffix matching, not substring: "notopenai.com.evil.test" is not OpenAI.
+func hostIs(host string, domains ...string) bool {
+	for _, domain := range domains {
+		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLocalAPIHost reports whether the host is this machine or a private
+// network. A provider pointing there is a local gateway — frequently
+// tingly-box itself — and no vendor heuristic may claim it.
+func isLocalAPIHost(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast()
+	}
+	// A bare name with no dot is a LAN or container hostname, not a vendor.
+	return !strings.Contains(host, ".")
 }
 
 // Summary contains aggregate quota statistics.
