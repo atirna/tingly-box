@@ -203,10 +203,15 @@ func (sm *StoreManager) initProviderStore() error {
 	if err := sm.db.AutoMigrate(&ProviderRecord{}); err != nil {
 		return err
 	}
-	sm.providerStore = &ProviderStore{
+	store := &ProviderStore{
 		db:     sm.db,
 		dbPath: constant.GetDBFile(sm.baseDir),
+		cache:  make(map[string]*ProviderRecord),
 	}
+	if err := store.loadCache(); err != nil {
+		return fmt.Errorf("failed to load provider cache: %w", err)
+	}
+	sm.providerStore = store
 	return nil
 }
 

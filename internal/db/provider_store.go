@@ -278,11 +278,30 @@ func updateRecordFromProvider(record *ProviderRecord, p *typ.Provider) {
 	}
 }
 
-// ProviderStore manages providers as complete units (configuration + credentials)
+// ProviderStore manages providers as complete units (configuration + credentials).
+//
+// Providers are read on the request hot path (ServiceSelector.Select resolves
+// one per routed request — see internal/routing/selector.go) but change
+// rarely (admin CRUD only). A pprof of BenchmarkSelect_Plain showed
+// GetByUUID's SQLite round-trip (cgo call + gorm scan), serialized behind a
+// plain sync.Mutex that blocked concurrent readers too, accounting for ~47%
+// of Select()'s CPU time. ProviderStore now keeps every record mirrored in
+// an in-memory cache: all reads are served from the cache under an RWMutex
+// (concurrent, lock-free-ish, no SQLite call), while writes go to SQLite
+// first (for durability) and then update the cache — SQLite remains the
+// source of truth, the cache is just a write-through mirror of it.
 type ProviderStore struct {
 	db     *gorm.DB
 	dbPath string
-	mu     sync.Mutex
+	mu     sync.RWMutex
+
+	// cache mirrors the providers table, keyed by UUID. order preserves
+	// insertion order (List/ListOAuth/ListEnabled otherwise depend on
+	// SQLite's implicit rowid order, which callers such as the provider
+	// table UI rely on for a stable listing) since Go map iteration is
+	// randomized.
+	cache map[string]*ProviderRecord
+	order []string
 }
 
 // NewProviderStore creates or loads a provider store using SQLite database.
@@ -312,15 +331,35 @@ func NewProviderStore(baseDir string) (*ProviderStore, error) {
 	store := &ProviderStore{
 		db:     db,
 		dbPath: dbPath,
+		cache:  make(map[string]*ProviderRecord),
 	}
 
 	// Auto-migrate schema
 	if err := db.AutoMigrate(&ProviderRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate provider database: %w", err)
 	}
+
+	if err := store.loadCache(); err != nil {
+		return nil, fmt.Errorf("failed to load provider cache: %w", err)
+	}
 	logrus.Debugf("Provider store initialization completed")
 
 	return store, nil
+}
+
+// loadCache populates the in-memory mirror from SQLite. Called once at
+// construction, before the store is shared with any other goroutine.
+func (ps *ProviderStore) loadCache() error {
+	var records []ProviderRecord
+	if err := ps.db.Find(&records).Error; err != nil {
+		return err
+	}
+	for i := range records {
+		r := records[i]
+		ps.cache[r.UUID] = &r
+		ps.order = append(ps.order, r.UUID)
+	}
+	return nil
 }
 
 // Save saves a provider (create or update)
@@ -335,25 +374,22 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	var existing ProviderRecord
-	err := ps.db.Where("uuid = ?", provider.UUID).First(&existing).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if existing, ok := ps.cache[provider.UUID]; ok {
+		// Update existing record
+		updateRecordFromProvider(existing, provider)
+		if err := ps.db.Save(existing).Error; err != nil {
+			return fmt.Errorf("failed to update provider record: %w", err)
+		}
+		logrus.Debugf("Updated provider: %s (%s)", provider.Name, provider.UUID)
+	} else {
 		// Create new record
 		record := toRecord(provider)
 		if err := ps.db.Create(record).Error; err != nil {
 			return fmt.Errorf("failed to create provider record: %w", err)
 		}
+		ps.cache[provider.UUID] = record
+		ps.order = append(ps.order, provider.UUID)
 		logrus.Debugf("Created new provider: %s (%s)", provider.Name, provider.UUID)
-	} else if err != nil {
-		return fmt.Errorf("failed to query existing provider: %w", err)
-	} else {
-		// Update existing record
-		updateRecordFromProvider(&existing, provider)
-		if err := ps.db.Save(&existing).Error; err != nil {
-			return fmt.Errorf("failed to update provider record: %w", err)
-		}
-		logrus.Debugf("Updated provider: %s (%s)", provider.Name, provider.UUID)
 	}
 
 	return nil
@@ -361,15 +397,12 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 
 // GetByUUID returns a provider by UUID
 func (ps *ProviderStore) GetByUUID(uuid string) (*typ.Provider, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var record ProviderRecord
-	if err := ps.db.Where("uuid = ?", uuid).First(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("provider with UUID '%s' not found", uuid)
-		}
-		return nil, fmt.Errorf("failed to get provider: %w", err)
+	record, ok := ps.cache[uuid]
+	if !ok {
+		return nil, fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
 	return record.toProvider(), nil
@@ -377,33 +410,26 @@ func (ps *ProviderStore) GetByUUID(uuid string) (*typ.Provider, error) {
 
 // GetByName returns a provider by name
 func (ps *ProviderStore) GetByName(name string) (*typ.Provider, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var record ProviderRecord
-	if err := ps.db.Where("name = ?", name).First(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("provider with name '%s' not found", name)
+	for _, uuid := range ps.order {
+		if record := ps.cache[uuid]; record.Name == name {
+			return record.toProvider(), nil
 		}
-		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
 
-	return record.toProvider(), nil
+	return nil, fmt.Errorf("provider with name '%s' not found", name)
 }
 
 // List returns all providers
 func (ps *ProviderStore) List() ([]*typ.Provider, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var records []ProviderRecord
-	if err := ps.db.Find(&records).Error; err != nil {
-		return nil, fmt.Errorf("failed to list providers: %w", err)
-	}
-
-	providers := make([]*typ.Provider, 0, len(records))
-	for _, record := range records {
-		providers = append(providers, record.toProvider())
+	providers := make([]*typ.Provider, 0, len(ps.order))
+	for _, uuid := range ps.order {
+		providers = append(providers, ps.cache[uuid].toProvider())
 	}
 
 	return providers, nil
@@ -411,17 +437,15 @@ func (ps *ProviderStore) List() ([]*typ.Provider, error) {
 
 // ListOAuth returns all OAuth-enabled providers
 func (ps *ProviderStore) ListOAuth() ([]*typ.Provider, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var records []ProviderRecord
-	if err := ps.db.Where("auth_type = ?", typ.AuthTypeOAuth).Find(&records).Error; err != nil {
-		return nil, fmt.Errorf("failed to list oauth providers: %w", err)
-	}
-
-	providers := make([]*typ.Provider, 0, len(records))
-	for _, record := range records {
-		providers = append(providers, record.toProvider())
+	providers := make([]*typ.Provider, 0)
+	for _, uuid := range ps.order {
+		record := ps.cache[uuid]
+		if record.AuthType == string(typ.AuthTypeOAuth) {
+			providers = append(providers, record.toProvider())
+		}
 	}
 
 	return providers, nil
@@ -432,6 +456,10 @@ func (ps *ProviderStore) Delete(uuid string) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
+	if _, ok := ps.cache[uuid]; !ok {
+		return fmt.Errorf("provider with UUID '%s' not found", uuid)
+	}
+
 	result := ps.db.Where("uuid = ?", uuid).Delete(&ProviderRecord{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete provider: %w", result.Error)
@@ -440,34 +468,33 @@ func (ps *ProviderStore) Delete(uuid string) error {
 		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
+	delete(ps.cache, uuid)
+	for i, id := range ps.order {
+		if id == uuid {
+			ps.order = append(ps.order[:i], ps.order[i+1:]...)
+			break
+		}
+	}
+
 	logrus.Debugf("Deleted provider: %s", uuid)
 	return nil
 }
 
 // Exists checks if a provider exists by UUID
 func (ps *ProviderStore) Exists(uuid string) bool {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var count int64
-	if err := ps.db.Model(&ProviderRecord{}).Where("uuid = ?", uuid).Count(&count).Error; err != nil {
-		return false
-	}
-
-	return count > 0
+	_, ok := ps.cache[uuid]
+	return ok
 }
 
 // Count returns the total number of providers
 func (ps *ProviderStore) Count() (int64, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var count int64
-	if err := ps.db.Model(&ProviderRecord{}).Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("failed to count providers: %w", err)
-	}
-
-	return count, nil
+	return int64(len(ps.cache)), nil
 }
 
 // UpdateCredential updates only the credential fields of a provider
@@ -475,12 +502,9 @@ func (ps *ProviderStore) UpdateCredential(uuid string, token string, oauthDetail
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	var record ProviderRecord
-	if err := ps.db.Where("uuid = ?", uuid).First(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("provider with UUID '%s' not found", uuid)
-		}
-		return fmt.Errorf("failed to get provider: %w", err)
+	record, ok := ps.cache[uuid]
+	if !ok {
+		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
 	// Update credential fields based on auth type
@@ -500,7 +524,7 @@ func (ps *ProviderStore) UpdateCredential(uuid string, token string, oauthDetail
 
 	record.UpdatedAt = time.Now()
 
-	if err := ps.db.Save(&record).Error; err != nil {
+	if err := ps.db.Save(record).Error; err != nil {
 		return fmt.Errorf("failed to update provider credential: %w", err)
 	}
 
@@ -515,12 +539,9 @@ func (ps *ProviderStore) UpdateCredentialBundle(uuid string, bundle *typ.Credent
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	var record ProviderRecord
-	if err := ps.db.Where("uuid = ?", uuid).First(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("provider with UUID '%s' not found", uuid)
-		}
-		return fmt.Errorf("failed to get provider: %w", err)
+	record, ok := ps.cache[uuid]
+	if !ok {
+		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
 	if bundle != nil {
@@ -531,7 +552,7 @@ func (ps *ProviderStore) UpdateCredentialBundle(uuid string, bundle *typ.Credent
 	}
 	record.UpdatedAt = time.Now()
 
-	if err := ps.db.Save(&record).Error; err != nil {
+	if err := ps.db.Save(record).Error; err != nil {
 		return fmt.Errorf("failed to update provider credential bundle: %w", err)
 	}
 
@@ -541,12 +562,12 @@ func (ps *ProviderStore) UpdateCredentialBundle(uuid string, bundle *typ.Credent
 
 // GetAccessToken returns the access token for a provider (convenience method)
 func (ps *ProviderStore) GetAccessToken(uuid string) (string, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var record ProviderRecord
-	if err := ps.db.Where("uuid = ?", uuid).First(&record).Error; err != nil {
-		return "", fmt.Errorf("failed to get provider: %w", err)
+	record, ok := ps.cache[uuid]
+	if !ok {
+		return "", fmt.Errorf("failed to get provider: provider with UUID '%s' not found", uuid)
 	}
 
 	return record.Token, nil
@@ -556,6 +577,11 @@ func (ps *ProviderStore) GetAccessToken(uuid string) (string, error) {
 func (ps *ProviderStore) UpdateOAuthAccessToken(uuid, accessToken string) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+
+	record, ok := ps.cache[uuid]
+	if !ok {
+		return fmt.Errorf("provider with UUID '%s' not found", uuid)
+	}
 
 	result := ps.db.Model(&ProviderRecord{}).
 		Where("uuid = ?", uuid).
@@ -568,21 +594,21 @@ func (ps *ProviderStore) UpdateOAuthAccessToken(uuid, accessToken string) error 
 		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
+	record.Token = accessToken
+	record.UpdatedAt = time.Now()
+
 	logrus.Debugf("Updated OAuth access token for provider: %s", uuid)
 	return nil
 }
 
 // IsOAuthExpired checks if the OAuth token for a provider is expired
 func (ps *ProviderStore) IsOAuthExpired(uuid string) (bool, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var record ProviderRecord
-	if err := ps.db.Where("uuid = ?", uuid).First(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, fmt.Errorf("provider with UUID '%s' not found", uuid)
-		}
-		return false, fmt.Errorf("failed to get provider: %w", err)
+	record, ok := ps.cache[uuid]
+	if !ok {
+		return false, fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
 	if record.AuthType != string(typ.AuthTypeOAuth) || record.OAuthExpiresAt == "" {
@@ -600,17 +626,15 @@ func (ps *ProviderStore) IsOAuthExpired(uuid string) (bool, error) {
 
 // ListEnabled returns all enabled providers
 func (ps *ProviderStore) ListEnabled() ([]*typ.Provider, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
-	var records []ProviderRecord
-	if err := ps.db.Where("enabled = ?", true).Find(&records).Error; err != nil {
-		return nil, fmt.Errorf("failed to list enabled providers: %w", err)
-	}
-
-	providers := make([]*typ.Provider, 0, len(records))
-	for _, record := range records {
-		providers = append(providers, record.toProvider())
+	providers := make([]*typ.Provider, 0)
+	for _, uuid := range ps.order {
+		record := ps.cache[uuid]
+		if record.Enabled {
+			providers = append(providers, record.toProvider())
+		}
 	}
 
 	return providers, nil
