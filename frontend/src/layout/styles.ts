@@ -125,12 +125,13 @@ export const activityRailSx: SxProps<Theme> = {
     borderColor: 'divider',
 };
 
-/** Edge-mounted expand handle on the ActivityBar's right border — only shown
- *  when the Sidebar is collapsed. Straddles the border so it reads as a handle
- *  attached to the rail. */
+/** Expand handle on the ActivityBar — only shown when the Sidebar is collapsed.
+ *  Sits at the right edge of the logo cell (just under the top divider), so it
+ *  vertically aligns with the collapse button in the Sidebar header: the two
+ *  controls form a symmetric pair at the same height. */
 export const activityExpandHandleSx: SxProps<Theme> = {
     position: 'absolute',
-    top: '50%',
+    top: headerHeight / 2,
     right: -13,
     transform: 'translateY(-50%)',
     width: 26,
@@ -142,6 +143,10 @@ export const activityExpandHandleSx: SxProps<Theme> = {
     color: 'text.secondary',
     zIndex: Z_INDEX.main,
     '&:hover': {
+        // Keep an opaque paper background — the handle straddles the rail
+        // border, so MUI's default translucent hover overlay would show the
+        // content behind it and read as the button going transparent.
+        backgroundColor: 'background.paper',
         color: 'primary.main',
         borderColor: 'primary.main',
     },

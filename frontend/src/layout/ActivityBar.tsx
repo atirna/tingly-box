@@ -1,5 +1,4 @@
-import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport, tablerMui } from '@/components/icons';
-import { IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
+import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport, ChevronRight as IconChevronRight } from '@/components/icons';
 import { Box, Divider, IconButton, ListItemButton, ListItemIcon, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
@@ -24,8 +23,6 @@ import { useSidebarCollapsed } from './useSidebarCollapsed';
 import type { ActivityItem } from './types';
 import type { ThemeMode } from '@/theme';
 import { getThemeOptions } from '@/theme/options';
-
-const IconExpandSidebar = tablerMui(IconLayoutSidebarLeftExpand);
 
 interface ActivityBarProps {
     activityItems: ActivityItem[];
@@ -86,8 +83,9 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         <Box
             sx={{ width: activityBarWidth, ...activityRailSx }}
         >
-            {/* Edge expand handle — only when the Sidebar is collapsed. Straddles
-                the rail's right border so it reads as a handle attached to it. */}
+            {/* Expand handle — only when the Sidebar is collapsed. Sits at the
+                logo divider's right end so it aligns with the collapse button in
+                the Sidebar header (the two form a symmetric pair). */}
             {sidebarCollapsed && (
                 <Tooltip title={t('layout.sidebar.expand')} placement="right" arrow>
                     <IconButton
@@ -95,7 +93,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                         aria-label={t('layout.sidebar.expand')}
                         sx={activityExpandHandleSx}
                     >
-                        <IconExpandSidebar sx={{ fontSize: 16 }} />
+                        <IconChevronRight sx={{ fontSize: 18 }} />
                     </IconButton>
                 </Tooltip>
             )}
