@@ -89,10 +89,11 @@ func BenchmarkUsageStore_RecordUsage(b *testing.B) {
 	}
 }
 
-// BenchmarkStatsAndUsage_Combined runs both writes back to back, mirroring
-// trackUsageWithTokenUsage's per-request sequence (updateServiceStats then
-// recordDetailedUsageWithTokenUsage) so the combined per-request SQLite cost
-// on the client-visible latency path can be read off directly.
+// BenchmarkStatsAndUsage_Combined runs both writes back to back via two
+// separate stores (each with its own *gorm.DB and its own implicit
+// transaction) -- this was the only shape available before
+// RecordRequestOutcome and stays here as the "before" baseline for
+// BenchmarkStatsAndUsage_RecordRequestOutcome below to be compared against.
 func BenchmarkStatsAndUsage_Combined(b *testing.B) {
 	statsStore, err := NewStatsStore(b.TempDir())
 	if err != nil {
@@ -130,6 +131,50 @@ func BenchmarkStatsAndUsage_Combined(b *testing.B) {
 			LatencyMs:    120,
 		}
 		if err := usageStore.RecordUsage(record); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkStatsAndUsage_RecordRequestOutcome exercises RecordRequestOutcome
+// with both stores wired exactly as production does -- sharing one *gorm.DB
+// via StoreManager, the precondition for the two writes to land in a single
+// SQLite transaction/commit instead of BenchmarkStatsAndUsage_Combined's two.
+func BenchmarkStatsAndUsage_RecordRequestOutcome(b *testing.B) {
+	sm, err := NewStoreManager(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = sm.Close() })
+
+	statsStore, usageStore := sm.Stats(), sm.Usage()
+
+	service := &loadbalance.Service{
+		Provider: "bench-provider",
+		Model:    "bench-model",
+		Weight:   1,
+		Active:   true,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		service.RecordUsage(10, 20)
+		record := &UsageRecord{
+			ProviderUUID: "bench-provider",
+			ProviderName: "bench-provider",
+			Model:        "bench-model",
+			Scenario:     "openai",
+			RuleUUID:     "bench-rule",
+			UserID:       DefaultAdminUserID,
+			RequestModel: "bench-model",
+			Timestamp:    time.Now(),
+			InputTokens:  10,
+			OutputTokens: 20,
+			Status:       "success",
+			LatencyMs:    120,
+		}
+		if err := RecordRequestOutcome(statsStore, usageStore, service, record); err != nil {
 			b.Fatal(err)
 		}
 	}

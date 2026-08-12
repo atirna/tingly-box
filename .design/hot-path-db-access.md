@@ -1,8 +1,9 @@
 # Hot-Path DB Access: Cache Reads, Don't Lock+Query Them
 
-Status: `ProviderStore` and `APITokenStore` fixed on branch
-`claude/routing-pipeline-benchmark-e6aq73`. Rest of the pattern below is
-diagnosed but **not yet fixed** — tracked here as the holistic follow-up.
+Status: `ProviderStore` and `APITokenStore` (read-cache fixes) and
+`StatsStore`/`UsageStore` (transaction-merge fix) shipped on branch
+`claude/routing-pipeline-benchmark-e6aq73`. Batched/debounced stats+usage
+writes remain open — tracked here as the holistic follow-up.
 
 ## Why
 
@@ -137,6 +138,102 @@ that skipped the write but claimed success can't hide), and a call after the
 window (simulated by rewriting the cached `LastUsedAt` into the past — no
 `time.Sleep` in the test) persists again.
 
+## `StatsStore` + `UsageStore`: write-heavy hot path, a different fix shape
+
+A follow-up audit of every `internal/db/*_store.go` (below) turned up two
+stores that ARE on the request hot path despite looking like background
+bookkeeping: `StatsStore.UpdateFromService` and `UsageStore.RecordUsage`.
+Both are called synchronously, once per completed LLM request (streaming and
+non-streaming, success and error paths), from
+`ProtocolHandler.trackUsageWithTokenUsage` / `trackUsageFromContext`
+(`internal/protocolserver/usage_tracking.go`) — and, unlike `ProviderStore`
+and `APITokenStore`, both are genuine per-request **writes** with no prior
+read: there's a real row to persist every time, so the read-cache pattern
+above doesn't apply. Benchmarked in `internal/db/stats_usage_bench_test.go`:
+
+| Benchmark | Result |
+|---|---|
+| `BenchmarkStatsStore_UpdateFromService` (upsert) | ~80 µs/op, 129 allocs |
+| `BenchmarkUsageStore_RecordUsage` (insert) | ~307 µs/op, 117 allocs |
+| `BenchmarkStatsAndUsage_Combined` (both, back to back, separate stores) | ~440 µs/op, 246 allocs |
+
+pprof showed both dominated by gorm's implicit transaction wrapper
+(`BEGIN`/`COMMIT`) around each write, with `UsageStore.RecordUsage` costing
+~4× `StatsStore.UpdateFromService` because `usage_records` has 6 indexed
+columns to maintain per insert against `service_stats`' single composite
+primary key.
+
+**Two directions were considered and one was rejected on evidence:**
+
+- **`PRAGMA synchronous=NORMAL`** (skip the fsync SQLite issues after each
+  `COMMIT` under the default `FULL`) — investigated, implemented, benchmarked,
+  and **reverted**: `PRAGMA synchronous` read back as `1` (NORMAL) both
+  before and after the change. The driver, `mattn/go-sqlite3`, is compiled
+  with `-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1` and additionally forces
+  `synchronous=NORMAL` itself whenever `_journal_mode=WAL` is requested
+  (every store here already sets that) — see the driver's `sqlite3.go`
+  around `case "WAL": ... synchronousMode = "NORMAL"`. So every store was
+  already running at NORMAL; explicitly setting it was a no-op. (Confirmed
+  the pragma itself is real and matters when it isn't already the effective
+  default: an isolated raw-driver benchmark forcing `FULL` vs `NORMAL`
+  explicitly showed 373 µs/op vs 26 µs/op — 14× — but that headroom was
+  never available here.) Lesson: always read back the actual `PRAGMA` value
+  before crediting a DSN change with a win, and don't trust a driver's
+  surface-level defaults without checking what it does internally.
+
+- **Merge the two writes into one transaction** (`db.RecordRequestOutcome`,
+  `internal/db/record_outcome.go`) — implemented. `StatsStore.UpdateFromService`
+  and `UsageStore.RecordUsage` were split into a pure record-builder
+  (`buildStatsRecordFromService`, `prepareUsageRecord`) and the DB write, so
+  `RecordRequestOutcome` can build both records and `tx.Save`/`tx.Create`
+  them inside one `gorm.DB.Transaction(...)` call when both stores share the
+  same underlying `*gorm.DB` (always true in production — `StoreManager`
+  wires every store to one shared connection; a `db != db` fallback exists
+  for the never-exercised-in-production case of independently constructed
+  stores). `usage_tracking.go`'s `updateServiceStats` and
+  `recordDetailedUsage[WithTokenUsage]` now build-and-return instead of
+  persisting inline; a new `persistRequestOutcome` calls
+  `db.RecordRequestOutcome` once per request instead of two independent
+  store calls.
+
+  | Benchmark | separate transactions | merged transaction | change |
+  |---|---|---|---|
+  | `BenchmarkStatsAndUsage_Combined` vs. `_RecordRequestOutcome` | ~440 µs/op, 246 allocs | ~420 µs/op, 235 allocs | **~4–8%** (noisy across runs), 11 fewer allocs/op |
+
+  Confirmed via pprof that the merge is real (`gorm.(*DB).Commit` appears
+  once per call, not twice), but the win is modest: most of the ~440 µs
+  isn't transaction-wrapper overhead, it's the two per-row statements
+  themselves (`INSERT` + `UPDATE`, each its own cgo call into SQLite plus
+  gorm's reflection/scan machinery) — removing one `COMMIT` doesn't remove
+  either statement. Don't expect "halve the commits" to mean "halve the
+  latency" when per-statement cost dominates per-transaction cost, as it
+  does here. Kept anyway: the win is real (not regression, ~4–8% lower
+  latency on the client-visible path, fewer allocations) and it adds a
+  genuine correctness improvement beyond performance —
+  `TestRecordRequestOutcome_AtomicRollback` (`internal/db/record_outcome_test.go`)
+  proves the stats and usage rows for one request can no longer partially
+  persist (previously two independent best-effort writes; a stats-store
+  failure and a usage-store success, or vice versa, could silently
+  disagree — now they're all-or-nothing).
+
+**Still open** (option 1 from the original discussion, not attempted here):
+batching/debouncing multiple requests' stats and usage writes into fewer,
+larger transactions (e.g. an in-memory buffer flushed by a ticker or a
+bounded channel + background writer) — the actual lever for the remaining
+per-statement cost, since it amortizes the cgo/gorm overhead across N rows
+instead of paying it per request. Marked complex/deferred in the original
+discussion; the numbers above suggest it's the only remaining direction with
+real headroom on this path, at the cost of async durability (a crash loses
+whatever's still buffered) and added complexity (buffer, flush trigger,
+backpressure if the writer falls behind).
+
+**Also fixed in passing**: `NewUsageStore` never created the `db`
+subdirectory `constant.GetDBFile` expects (every other `NewXStore`
+constructor in this package does). Never hit in production because
+`StoreManager` builds `UsageStore` directly over its own already-open
+`*gorm.DB` — `NewUsageStore` had zero callers anywhere in the codebase until
+`stats_usage_bench_test.go` became its first, which is how this surfaced.
+
 ## The pattern is systemic — audit of `internal/db/*_store.go`
 
 Every store under `internal/db/` follows the same shape: a GORM-backed SQLite
@@ -144,15 +241,21 @@ table, one `sync.Mutex` (not `RWMutex`) per store, and every method —
 including pure reads — takes the exclusive lock and issues a query. Only
 `provider_model.go` (`ModelStore`) and `usage_record.go`/`store_manager.go`
 already used `RWMutex`, and none of them cache. Whether this matters for a
-given store depends entirely on whether it's read on the **request hot path**
-(every inbound request) versus an **admin/UI path** (occasional, human-paced):
+given store depends entirely on whether it's read (or written) on the
+**request hot path** (every inbound request) versus an **admin/UI path**
+(occasional, human-paced) or the lower-QPS **IM-bot/remote-control message
+path**:
 
-| Store | Hot-path read? | Where | Risk |
+| Store | Hot-path? | Where | Status |
 |---|---|---|---|
-| `ProviderStore` | **Yes — fixed** | `ServiceSelector.Select` resolves a provider every request | was the #1 cost, now cached |
-| `APITokenStore` | **Yes — fixed** | `internal/middleware/auth.go`'s `AuthMiddleware` calls `ValidateToken` (cached read) and `UpdateLastUsed` (debounced write) on every API-token-authenticated request | see benchmark sections above — `ValidateToken` dropped ~251×, `UpdateLastUsed`'s debounce took the full middleware path a further ~40× |
-| `ModelStore`, `ToolConfigStore`, `ImBotSettingsStore`, `TaskStore`, `ServiceStatStore` | No (or infrequent/admin-path) | config/UI/background jobs | low priority — `RWMutex` alone (no caching) is probably sufficient if ever contended |
-| `RemoteChatStore`, `RemoteSessionStore`, `BotAccessStore`, `UsageStore` | No (IM/remote-control and usage-recording paths, not the LLM proxy hot path) | — | low priority |
+| `ProviderStore` | **Yes (read)** | `ServiceSelector.Select` resolves a provider every request | **Fixed** — read cache |
+| `APITokenStore` | **Yes (read + write)** | `AuthMiddleware.ModelAuthMiddleware` validates every API-token request and updates `last_used_at` | **Fixed** — read cache + debounced write |
+| `StatsStore`, `UsageStore` | **Yes (write)** | `usage_tracking.go` persists stats + a usage row every completed request | **Partially fixed** — merged transaction; batching still open |
+| `ImBotSettingsStore` | No | Bot lifecycle events (start/stop) and admin REST/CLI only | Not touched — genuinely low frequency |
+| `ModelStore` | No | Admin "list/refresh models" REST endpoints, OAuth completion, CLI | Not touched — already `RWMutex`, admin-paced |
+| `TaskStore` | **Dead code** | Zero callers anywhere in the repo; the real task subsystem uses `internal/task/store.go` instead | Not touched — flag for a separate cleanup ticket |
+| `ToolConfigStore` | **Effectively unreachable** | The one method on the request-adjacent MCP-tool-config path (`Config.GetToolConfig`) is a different, in-memory-only implementation on `Config.ToolConfigs` that never touches this store | Not touched — flag for a separate cleanup ticket |
+| `RemoteChatStore`, `RemoteSessionStore`, `BotAccessStore` | IM-bot message path (several round trips per inbound chat message) | `remote/control/remoteagent/handler_message.go` et al. | Not touched — real per-message traffic, but QPS is chat-message-rate, not LLM-API-rate, and none has an app-level mutex at all today (rely on gorm/SQLite's own WAL concurrency) |
 
 ## Recommended approach for future stores
 

@@ -133,17 +133,32 @@ func (ss *StatsStore) Get(provider, model string) (loadbalance.ServiceStats, boo
 
 // UpdateFromService stores the current stats from a service into the store.
 func (ss *StatsStore) UpdateFromService(service *loadbalance.Service) error {
-	if service == nil {
+	record := buildStatsRecordFromService(service)
+	if record == nil {
 		return nil
 	}
 
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
+	return ss.db.Save(record).Error
+}
+
+// buildStatsRecordFromService builds the ServiceStatsRecord UpdateFromService
+// persists, without touching the database. Split out so RecordRequestOutcome
+// (record_outcome.go) can build it and save it in the same transaction as a
+// UsageStore write, instead of paying for two independent commits on the
+// request hot path -- see .design/hot-path-db-access.md. Still mutates
+// service.Stats via InitializeStats/GetStats, same as before extraction.
+func buildStatsRecordFromService(service *loadbalance.Service) *ServiceStatsRecord {
+	if service == nil {
+		return nil
+	}
+
 	service.InitializeStats()
 	stat := service.Stats.GetStats()
 
-	record := ServiceStatsRecord{
+	record := &ServiceStatsRecord{
 		Provider:             service.Provider,
 		Model:                service.Model,
 		ServiceID:            stat.ServiceID,
@@ -172,7 +187,7 @@ func (ss *StatsStore) UpdateFromService(service *loadbalance.Service) error {
 		record.WindowStart = time.Now()
 	}
 
-	return ss.db.Save(&record).Error
+	return record
 }
 
 // RecordUsage records usage for a service and persists the updated stats.

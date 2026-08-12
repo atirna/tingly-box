@@ -284,6 +284,16 @@ func (us *UsageStore) RecordUsage(record *UsageRecord) error {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 
+	prepareUsageRecord(record)
+
+	return us.db.Create(record).Error
+}
+
+// prepareUsageRecord fills in RecordUsage's defaults without touching the
+// database. Split out so RecordRequestOutcome (record_outcome.go) can
+// prepare it and create it in the same transaction as a StatsStore write --
+// see .design/hot-path-db-access.md.
+func prepareUsageRecord(record *UsageRecord) {
 	if record.Timestamp.IsZero() {
 		record.Timestamp = time.Now()
 	}
@@ -292,8 +302,6 @@ func (us *UsageStore) RecordUsage(record *UsageRecord) error {
 	if record.Status == "" {
 		record.Status = "success"
 	}
-
-	return us.db.Create(record).Error
 }
 
 // RenameRuleUUID re-attributes historical usage records from oldUUID to

@@ -110,8 +110,8 @@ func (ph *ProtocolHandler) trackUsageFromContext(c *gin.Context, inputTokens, ou
 		TPS:          tps,
 	}
 
-	// 1. Update service stats with comprehensive metrics
-	ph.updateServiceStats(rule, provider, model, metrics)
+	// 1. Update in-memory service stats with comprehensive metrics
+	service := ph.updateServiceStats(rule, provider, model, metrics)
 
 	// 2. Record to OTel (primary path for metrics)
 	if ph.deps.TokenTracker != nil {
@@ -138,8 +138,9 @@ func (ph *ProtocolHandler) trackUsageFromContext(c *gin.Context, inputTokens, ou
 		})
 	}
 
-	// 3. Record detailed usage (for analytics/dashboard)
-	ph.recordDetailedUsage(c, rule, provider, model, requestModel, scenario, inputTokens, outputTokens, streamed, status, errorCode, latencyMs)
+	// 3. Persist service stats and detailed usage together in one transaction
+	usageRecord := ph.recordDetailedUsage(c, rule, provider, model, requestModel, scenario, inputTokens, outputTokens, streamed, status, errorCode, latencyMs)
+	ph.persistRequestOutcome(service, usageRecord)
 
 	// 4. Report to health monitor for service health tracking
 	ph.ReportHealthStatus(provider, model, err, errorCode)
@@ -227,8 +228,8 @@ func (ph *ProtocolHandler) trackUsageWithTokenUsage(c *gin.Context, usage *proto
 		TPS:          tps,
 	}
 
-	// 1. Update service stats with comprehensive metrics
-	ph.updateServiceStats(rule, provider, model, metrics)
+	// 1. Update in-memory service stats with comprehensive metrics
+	service := ph.updateServiceStats(rule, provider, model, metrics)
 
 	// 2. Record to OTel with comprehensive usage data
 	if ph.deps.TokenTracker != nil {
@@ -253,8 +254,9 @@ func (ph *ProtocolHandler) trackUsageWithTokenUsage(c *gin.Context, usage *proto
 		})
 	}
 
-	// 3. Record detailed usage with comprehensive token data
-	ph.recordDetailedUsageWithTokenUsage(c, rule, provider, model, requestModel, scenario, usage, streamed, status, errorCode, latencyMs)
+	// 3. Persist service stats and detailed usage together in one transaction
+	usageRecord := ph.recordDetailedUsageWithTokenUsage(c, rule, provider, model, requestModel, scenario, usage, streamed, status, errorCode, latencyMs)
+	ph.persistRequestOutcome(service, usageRecord)
 
 	// 4. Report to health monitor for service health tracking
 	ph.ReportHealthStatus(provider, model, err, errorCode)
@@ -337,22 +339,11 @@ func isRateLimitError(err error) bool {
 		strings.Contains(errStr, "1302")
 }
 
-// recordDetailedUsage writes a detailed usage record to the database.
-// This maintains the detailed analytics tracking for the dashboard.
-func (ph *ProtocolHandler) recordDetailedUsage(c *gin.Context, rule *typ.Rule, provider *typ.Provider, model, requestModel, scenario string, inputTokens, outputTokens int, streamed bool, status, errorCode string, latencyMs int) {
-	if ph.deps.Config == nil {
-		return
-	}
-
-	sm := ph.deps.Config.StoreManager()
-	if sm == nil {
-		return
-	}
-	usageStore := sm.Usage()
-	if usageStore == nil {
-		return
-	}
-
+// recordDetailedUsage builds the detailed usage record for the analytics
+// dashboard. Building is separate from persisting (see persistRequestOutcome)
+// so it can be saved together with the matching StatsStore update in one
+// SQLite transaction instead of two -- see .design/hot-path-db-access.md.
+func (ph *ProtocolHandler) recordDetailedUsage(c *gin.Context, rule *typ.Rule, provider *typ.Provider, model, requestModel, scenario string, inputTokens, outputTokens int, streamed bool, status, errorCode string, latencyMs int) *db.UsageRecord {
 	ttftMs := CalculateTTFT(c)
 
 	record := &db.UsageRecord{
@@ -376,22 +367,15 @@ func (ph *ProtocolHandler) recordDetailedUsage(c *gin.Context, rule *typ.Rule, p
 		record.RuleUUID = rule.UUID
 	}
 
-	_ = usageStore.RecordUsage(record)
+	return record
 }
 
-// recordDetailedUsageWithTokenUsage writes a detailed usage record with comprehensive token data.
-func (ph *ProtocolHandler) recordDetailedUsageWithTokenUsage(c *gin.Context, rule *typ.Rule, provider *typ.Provider, model, requestModel, scenario string, usage *protocol.TokenUsage, streamed bool, status, errorCode string, latencyMs int) {
-	if ph.deps.Config == nil || usage == nil {
-		return
-	}
-
-	sm := ph.deps.Config.StoreManager()
-	if sm == nil {
-		return
-	}
-	usageStore := sm.Usage()
-	if usageStore == nil {
-		return
+// recordDetailedUsageWithTokenUsage builds a detailed usage record with
+// comprehensive token data. Building is separate from persisting (see
+// persistRequestOutcome) for the same reason as recordDetailedUsage.
+func (ph *ProtocolHandler) recordDetailedUsageWithTokenUsage(c *gin.Context, rule *typ.Rule, provider *typ.Provider, model, requestModel, scenario string, usage *protocol.TokenUsage, streamed bool, status, errorCode string, latencyMs int) *db.UsageRecord {
+	if usage == nil {
+		return nil
 	}
 
 	ttftMs := CalculateTTFT(c)
@@ -420,14 +404,17 @@ func (ph *ProtocolHandler) recordDetailedUsageWithTokenUsage(c *gin.Context, rul
 		record.RuleUUID = rule.UUID
 	}
 
-	_ = usageStore.RecordUsage(record)
+	return record
 }
 
-// updateServiceStats updates the service-level statistics for load balancing.
-// This function records comprehensive metrics including tokens, latency, TTFT, cache, and TPS.
-func (ph *ProtocolHandler) updateServiceStats(rule *typ.Rule, provider *typ.Provider, model string, metrics MetricsData) {
-	if rule == nil || provider == nil || ph.deps.Config == nil {
-		return
+// updateServiceStats updates the in-memory service-level statistics for load
+// balancing (tokens, latency, TTFT, cache, TPS) and returns the matched
+// service. Updating is separate from persisting (see persistRequestOutcome)
+// so the caller can save it together with the matching usage record in one
+// SQLite transaction instead of two -- see .design/hot-path-db-access.md.
+func (ph *ProtocolHandler) updateServiceStats(rule *typ.Rule, provider *typ.Provider, model string, metrics MetricsData) *loadbalance.Service {
+	if rule == nil || provider == nil {
+		return nil
 	}
 
 	// Find the matching service in the rule and update its stats
@@ -455,16 +442,27 @@ func (ph *ProtocolHandler) updateServiceStats(rule *typ.Rule, provider *typ.Prov
 				service.Stats.RecordTokenSpeed(metrics.TPS, 100)
 			}
 
-			// Persist to stats store
-			sm := ph.deps.Config.StoreManager()
-			if sm != nil {
-				if statsStore := sm.Stats(); statsStore != nil {
-					_ = statsStore.UpdateFromService(service)
-				}
-			}
-			return
+			return service
 		}
 	}
+	return nil
+}
+
+// persistRequestOutcome saves service and usage (either may be nil) via
+// db.RecordRequestOutcome, which commits both to SQLite in a single
+// transaction when both stores share one *gorm.DB (always true in
+// production, see StoreManager) instead of updateServiceStats and
+// recordDetailedUsage[WithTokenUsage] each committing their own -- see
+// .design/hot-path-db-access.md for the pprof/benchmark evidence.
+func (ph *ProtocolHandler) persistRequestOutcome(service *loadbalance.Service, usage *db.UsageRecord) {
+	if ph.deps.Config == nil {
+		return
+	}
+	sm := ph.deps.Config.StoreManager()
+	if sm == nil {
+		return
+	}
+	_ = db.RecordRequestOutcome(sm.Stats(), sm.Usage(), service, usage)
 }
 
 // reportHealthStatus reports the health status of a service based on request outcome.
