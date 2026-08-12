@@ -375,11 +375,16 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 	defer ps.mu.Unlock()
 
 	if existing, ok := ps.cache[provider.UUID]; ok {
-		// Update existing record
-		updateRecordFromProvider(existing, provider)
-		if err := ps.db.Save(existing).Error; err != nil {
+		// Update a copy first -- only replace the cached record once the
+		// SQLite write actually succeeds, so a failed Save can't leave the
+		// cache holding data that was never persisted (see UpdateOAuthAccessToken
+		// below for the same write-then-cache ordering).
+		updated := *existing
+		updateRecordFromProvider(&updated, provider)
+		if err := ps.db.Save(&updated).Error; err != nil {
 			return fmt.Errorf("failed to update provider record: %w", err)
 		}
+		ps.cache[provider.UUID] = &updated
 		logrus.Debugf("Updated provider: %s (%s)", provider.Name, provider.UUID)
 	} else {
 		// Create new record
@@ -502,32 +507,37 @@ func (ps *ProviderStore) UpdateCredential(uuid string, token string, oauthDetail
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	record, ok := ps.cache[uuid]
+	existing, ok := ps.cache[uuid]
 	if !ok {
 		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
+	// Update a copy first -- see Save's comment on why the cache is only
+	// replaced after the SQLite write succeeds.
+	updated := *existing
+
 	// Update credential fields based on auth type
-	if record.AuthType == string(typ.AuthTypeOAuth) && oauthDetail != nil {
-		record.Token = oauthDetail.AccessToken
-		record.OAuthProviderType = string(oauthDetail.GetIssuer())
-		record.OAuthUserID = oauthDetail.UserID
-		record.OAuthRefreshToken = oauthDetail.RefreshToken
-		record.OAuthExpiresAt = oauthDetail.ExpiresAt
+	if updated.AuthType == string(typ.AuthTypeOAuth) && oauthDetail != nil {
+		updated.Token = oauthDetail.AccessToken
+		updated.OAuthProviderType = string(oauthDetail.GetIssuer())
+		updated.OAuthUserID = oauthDetail.UserID
+		updated.OAuthRefreshToken = oauthDetail.RefreshToken
+		updated.OAuthExpiresAt = oauthDetail.ExpiresAt
 		if oauthDetail.ExtraFields != nil {
 			extraJSON, _ := json.Marshal(oauthDetail.ExtraFields)
-			record.OAuthExtraFields = string(extraJSON)
+			updated.OAuthExtraFields = string(extraJSON)
 		}
 	} else {
-		record.Token = token
+		updated.Token = token
 	}
 
-	record.UpdatedAt = time.Now()
+	updated.UpdatedAt = time.Now()
 
-	if err := ps.db.Save(record).Error; err != nil {
+	if err := ps.db.Save(&updated).Error; err != nil {
 		return fmt.Errorf("failed to update provider credential: %w", err)
 	}
 
+	ps.cache[uuid] = &updated
 	logrus.Debugf("Updated credential for provider: %s", uuid)
 	return nil
 }
@@ -539,23 +549,27 @@ func (ps *ProviderStore) UpdateCredentialBundle(uuid string, bundle *typ.Credent
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	record, ok := ps.cache[uuid]
+	existing, ok := ps.cache[uuid]
 	if !ok {
 		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
+	// Update a copy first -- see Save's comment on why the cache is only
+	// replaced after the SQLite write succeeds.
+	updated := *existing
 	if bundle != nil {
 		credJSON, _ := json.Marshal(bundle)
-		record.Credential = string(credJSON)
+		updated.Credential = string(credJSON)
 	} else {
-		record.Credential = ""
+		updated.Credential = ""
 	}
-	record.UpdatedAt = time.Now()
+	updated.UpdatedAt = time.Now()
 
-	if err := ps.db.Save(record).Error; err != nil {
+	if err := ps.db.Save(&updated).Error; err != nil {
 		return fmt.Errorf("failed to update provider credential bundle: %w", err)
 	}
 
+	ps.cache[uuid] = &updated
 	logrus.Debugf("Updated credential bundle for provider: %s", uuid)
 	return nil
 }

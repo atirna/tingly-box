@@ -25,7 +25,7 @@ import (
 // which is never mixed with StoreManager-built stores in production today.
 func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, service *loadbalance.Service, usage *UsageRecord) error {
 	if statsStore == nil {
-		if usageStore == nil {
+		if usageStore == nil || usage == nil {
 			return nil
 		}
 		return usageStore.RecordUsage(usage)
@@ -36,7 +36,10 @@ func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, servic
 
 	if statsStore.db != usageStore.db {
 		statsErr := statsStore.UpdateFromService(service)
-		usageErr := usageStore.RecordUsage(usage)
+		var usageErr error
+		if usage != nil {
+			usageErr = usageStore.RecordUsage(usage)
+		}
 		if statsErr != nil {
 			return statsErr
 		}

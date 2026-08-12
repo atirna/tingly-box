@@ -54,6 +54,36 @@ func TestRecordRequestOutcome_NilUsageStore(t *testing.T) {
 	assert.True(t, found)
 }
 
+// TestRecordRequestOutcome_NilStatsStore_NilUsage covers the branch where
+// statsStore is nil and usage is also nil: RecordUsage(nil) errors ("record
+// cannot be nil"), so this must short-circuit before calling it rather than
+// surfacing that as a spurious failure for a legitimate no-op call.
+func TestRecordRequestOutcome_NilStatsStore_NilUsage(t *testing.T) {
+	sm, err := NewStoreManager(t.TempDir())
+	require.NoError(t, err)
+	defer sm.Close()
+
+	assert.NoError(t, RecordRequestOutcome(nil, sm.Usage(), nil, nil))
+}
+
+// TestRecordRequestOutcome_DifferentDB_NilUsage covers the same "nil usage
+// must not reach UsageStore.RecordUsage" requirement on the statsStore.db !=
+// usageStore.db fallback path (stores backed by independently constructed
+// *gorm.DBs, e.g. built via NewStatsStore/NewUsageStore directly rather than
+// StoreManager).
+func TestRecordRequestOutcome_DifferentDB_NilUsage(t *testing.T) {
+	statsStore, err := NewStatsStore(t.TempDir())
+	require.NoError(t, err)
+	usageStore, err := NewUsageStore(t.TempDir())
+	require.NoError(t, err)
+
+	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
+	assert.NoError(t, RecordRequestOutcome(statsStore, usageStore, service, nil))
+
+	_, found := statsStore.Get("p1", "m1")
+	assert.True(t, found)
+}
+
 // TestRecordRequestOutcome_AtomicRollback confirms the stats write and the
 // usage write share one transaction: a usage row that fails to persist (a
 // deliberate primary-key collision here) must roll back the stats write from
