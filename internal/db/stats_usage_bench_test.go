@@ -1,28 +1,20 @@
 package db
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 )
 
-// newUsageStoreForBench works around NewUsageStore never being called in
-// production (StoreManager builds UsageStore directly over its own already-open
-// *gorm.DB instead) -- as its first-ever caller, this benchmark tripped a
-// latent bug: NewUsageStore never creates the "db" subdirectory GetDBFile
-// expects, unlike every other NewXStore constructor in this package. Worked
-// around here rather than fixed, since it's an unrelated pre-existing issue.
+// newUsageStoreForBench builds a UsageStore for a fresh temp dir.
+// NewUsageStore is never called in production (StoreManager builds
+// UsageStore directly over its own already-open *gorm.DB instead), so this
+// benchmark suite is its only real caller -- see NewUsageStore's directory
+// setup, which this relies on.
 func newUsageStoreForBench(b *testing.B) *UsageStore {
 	b.Helper()
-	dir := b.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, constant.DBDirName), 0700); err != nil {
-		b.Fatal(err)
-	}
-	store, err := NewUsageStore(dir)
+	store, err := NewUsageStore(b.TempDir())
 	if err != nil {
 		b.Fatal(err)
 	}

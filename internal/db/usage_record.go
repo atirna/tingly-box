@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -155,6 +156,17 @@ func NewUsageStore(baseDir string) (*UsageStore, error) {
 	}
 
 	dbPath := constant.GetDBFile(baseDir)
+	// Ensure the db subdirectory exists -- unlike every other NewXStore
+	// constructor in this package, this was missing until now, so the first
+	// real caller (a benchmark, see stats_usage_bench_test.go) failed with
+	// "unable to open database file" on a fresh directory. Production never
+	// hit this: StoreManager builds UsageStore directly over its own
+	// already-open *gorm.DB, whose NewStoreManagerWithConfig creates this
+	// directory itself before opening anything.
+	dbDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dbDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create db directory: %w", err)
+	}
 	logrus.Printf("Opening SQLite database for usage store: %s", dbPath)
 	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
