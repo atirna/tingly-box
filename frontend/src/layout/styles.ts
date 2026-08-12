@@ -116,12 +116,35 @@ export const activityIconsScrollSx: SxProps<Theme> = {
 };
 
 export const activityRailSx: SxProps<Theme> = {
+    position: 'relative',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
     bgcolor: 'background.paper',
     borderRight: '1px solid',
     borderColor: 'divider',
+};
+
+/** Edge-mounted expand handle on the ActivityBar's right border — only shown
+ *  when the Sidebar is collapsed. Straddles the border so it reads as a handle
+ *  attached to the rail. */
+export const activityExpandHandleSx: SxProps<Theme> = {
+    position: 'absolute',
+    top: '50%',
+    right: -13,
+    transform: 'translateY(-50%)',
+    width: 26,
+    height: 26,
+    minHeight: 26,
+    border: '1px solid',
+    borderColor: 'divider',
+    bgcolor: 'background.paper',
+    color: 'text.secondary',
+    zIndex: Z_INDEX.main,
+    '&:hover': {
+        color: 'primary.main',
+        borderColor: 'primary.main',
+    },
 };
 
 /** The logo / brand cell at the top of the ActivityBar (fixed at headerHeight). */

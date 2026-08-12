@@ -1,5 +1,6 @@
 import { Box, Drawer, IconButton, Popover, Tooltip, Stack } from '@mui/material';
-import { Menu as IconMenu, Create as IconPencil } from '@/components/icons';
+import { Menu as IconMenu, Create as IconPencil, tablerMui } from '@/components/icons';
+import { IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -13,6 +14,8 @@ import { useActivityItems } from './useActivityItems.tsx';
 import { SidebarCollapsedProvider, useSidebarCollapsed } from './useSidebarCollapsed';
 import type { ActivityItem, LayoutProps } from './types';
 import { FloatingStatusIndicators } from '../components/FloatingStatusIndicators';
+
+const IconCollapseSidebar = tablerMui(IconLayoutSidebarLeftCollapse);
 
 const MobileNavigationBar = ({ onMenuClick }: { onMenuClick: () => void }) => (
     <Box
@@ -38,7 +41,7 @@ const LayoutInner = ({ children }: LayoutProps) => {
     const [easterEggAnchorEl, setEasterEggAnchorEl] = useState<HTMLElement | null>(null);
 
     const activityItems = useActivityItems();
-    const { collapsed: sidebarCollapsed } = useSidebarCollapsed();
+    const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapsed();
 
     const isActive = (path: string) => location.pathname === path;
     const isChildActive = (children?: ActivityItem['children']) =>
@@ -97,26 +100,44 @@ const LayoutInner = ({ children }: LayoutProps) => {
         if (targetPath) navigate(targetPath);
     };
 
-    // The scenario activity exposes a quick link to manage which agents are
-    // visible (the overview page hosts the show/hide controls).
-    const sidebarHeaderAction = activeActivity === 'scenario' ? (
-        <Stack direction="row" spacing={0.5} sx={{
-            alignItems: "center"
-        }}>
-            <Tooltip title={t('scenarioOverview.editTooltip', { defaultValue: 'Manage visible agents' })} arrow placement="right">
-                <IconButton
-                    size="small"
-                    onClick={() => navigate('/agent')}
-                    sx={{
-                        color: 'text.secondary',
-                        '&:hover': { color: 'primary.main' },
-                    }}
-                >
-                    <IconPencil sx={{ fontSize: 16 }} />
-                </IconButton>
-            </Tooltip>
+    // Sidebar header actions: the collapse toggle always sits in the header
+    // (it owns the Sidebar, so it lives on it). The scenario activity also
+    // exposes a quick link to manage which agents are visible.
+    const collapseButton = (
+        <Tooltip title={t('layout.sidebar.collapse')} arrow placement="bottom">
+            <IconButton
+                size="small"
+                onClick={toggleSidebar}
+                aria-label={t('layout.sidebar.collapse')}
+                sx={{
+                    color: 'text.secondary',
+                    '&:hover': { color: 'primary.main' },
+                }}
+            >
+                <IconCollapseSidebar sx={{ fontSize: 18 }} />
+            </IconButton>
+        </Tooltip>
+    );
+
+    const sidebarHeaderAction = (
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+            {activeActivity === 'scenario' && (
+                <Tooltip title={t('scenarioOverview.editTooltip', { defaultValue: 'Manage visible agents' })} arrow placement="bottom">
+                    <IconButton
+                        size="small"
+                        onClick={() => navigate('/agent')}
+                        sx={{
+                            color: 'text.secondary',
+                            '&:hover': { color: 'primary.main' },
+                        }}
+                    >
+                        <IconPencil sx={{ fontSize: 16 }} />
+                    </IconButton>
+                </Tooltip>
+            )}
+            {collapseButton}
         </Stack>
-    ) : undefined;
+    );
 
     const navigationContent = (
         <Box sx={{ display: 'flex', height: '100%' }}>

@@ -1,7 +1,6 @@
-import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport } from '@/components/icons';
-import { tablerMui } from '@/components/icons';
-import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
-import { Box, Divider, ListItemButton, ListItemIcon, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
+import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport, tablerMui } from '@/components/icons';
+import { IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
+import { Box, Divider, IconButton, ListItemButton, ListItemIcon, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +13,7 @@ import {
 import {
     activityBottomClusterSx,
     activityBottomItemSx,
+    activityExpandHandleSx,
     activityIconsScrollSx,
     activityItemSx,
     activityLogoButtonSx,
@@ -25,7 +25,6 @@ import type { ActivityItem } from './types';
 import type { ThemeMode } from '@/theme';
 import { getThemeOptions } from '@/theme/options';
 
-const IconCollapseSidebar = tablerMui(IconLayoutSidebarLeftCollapse);
 const IconExpandSidebar = tablerMui(IconLayoutSidebarLeftExpand);
 
 interface ActivityBarProps {
@@ -87,6 +86,19 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         <Box
             sx={{ width: activityBarWidth, ...activityRailSx }}
         >
+            {/* Edge expand handle — only when the Sidebar is collapsed. Straddles
+                the rail's right border so it reads as a handle attached to it. */}
+            {sidebarCollapsed && (
+                <Tooltip title={t('layout.sidebar.expand')} placement="right" arrow>
+                    <IconButton
+                        onClick={toggleSidebar}
+                        aria-label={t('layout.sidebar.expand')}
+                        sx={activityExpandHandleSx}
+                    >
+                        <IconExpandSidebar sx={{ fontSize: 16 }} />
+                    </IconButton>
+                </Tooltip>
+            )}
             {/* Logo */}
             <Box sx={activityLogoCellSx}>
                 <Tooltip title={`Tingly-Box v${currentVersion}`} placement="right" arrow>
@@ -306,24 +318,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                         <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.1, fontSize: '0.65rem' }}>
                             {currentThemeOption?.label ?? 'Light'}
                         </Typography>
-                    </ListItemButton>
-                </Tooltip>
-            </Box>
-
-            {/* Collapse sidebar toggle - shows the secondary list when expanded,
-                hides it (keeping this icon rail) when collapsed. */}
-            <Box sx={activityBottomClusterSx}>
-                <Tooltip title={t(sidebarCollapsed ? 'layout.sidebar.expand' : 'layout.sidebar.collapse')} placement="right" arrow>
-                    <ListItemButton
-                        onClick={toggleSidebar}
-                        aria-label={t(sidebarCollapsed ? 'layout.sidebar.expand' : 'layout.sidebar.collapse')}
-                        sx={activityBottomItemSx({
-                            '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
-                        })}
-                    >
-                        <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
-                            {sidebarCollapsed ? <IconExpandSidebar sx={{ fontSize: 22 }} /> : <IconCollapseSidebar sx={{ fontSize: 22 }} />}
-                        </ListItemIcon>
                     </ListItemButton>
                 </Tooltip>
             </Box>
