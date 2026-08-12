@@ -18,6 +18,16 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 	url := strings.ToLower(providerURL)
 	modelLower := strings.ToLower(model)
 
+	// prompt_cache_options / prompt_cache_breakpoint are OpenAI gpt-5.6+
+	// fields, not part of the long-stable Chat Completions schema every
+	// OpenAI-compatible vendor cloned. Most vendors — including Azure OpenAI
+	// — don't implement them, and strict-schema gateways reject the whole
+	// request over an unknown field. Default to stripping; only vendors
+	// confirmed to accept them opt in below.
+	if !supportsExplicitPromptCache(url) {
+		stripOpenAIPromptCacheFields(req)
+	}
+
 	switch {
 	case strings.Contains(url, "api.deepseek.com"),
 		strings.Contains(url, "api.moonshot.cn"),
@@ -36,8 +46,77 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 
 	case strings.Contains(url, "poe.com") && strings.Contains(modelLower, "gemini"):
 		return applyGeminiPoeTransform(req, providerURL, model, config)
+
+	case strings.Contains(url, "api.openai.com"):
+		return applyOpenAITransform(req, config)
 	}
 
+	return applyDefaultTransform(req, config)
+}
+
+// supportsExplicitPromptCache reports whether providerURL is confirmed to
+// accept OpenAI's gpt-5.6+ explicit prompt-cache fields. Extend this
+// allowlist only once a vendor has been verified to accept the fields —
+// the default (stripped) is the safe outcome for an unverified vendor.
+func supportsExplicitPromptCache(url string) bool {
+	return strings.Contains(url, "api.openai.com")
+}
+
+// stripOpenAIPromptCacheFields removes the gpt-5.6+ explicit prompt-cache
+// fields from a request. It's the default for every vendor not on the
+// supportsExplicitPromptCache allowlist: the fields are pure caching hints,
+// so dropping them changes nothing about message/tool semantics — vendors
+// with their own automatic prefix caching (DeepSeek, Moonshot, most
+// self-hosted OpenAI-compatible backends) still get cache hits without them.
+func stripOpenAIPromptCacheFields(req *openai.ChatCompletionNewParams) {
+	req.PromptCacheOptions = openai.ChatCompletionNewParamsPromptCacheOptions{}
+
+	for i := range req.Messages {
+		msg := &req.Messages[i]
+		switch {
+		case msg.OfDeveloper != nil:
+			stripTextPartBreakpoints(msg.OfDeveloper.Content.OfArrayOfContentParts)
+		case msg.OfSystem != nil:
+			stripTextPartBreakpoints(msg.OfSystem.Content.OfArrayOfContentParts)
+		case msg.OfUser != nil:
+			for j := range msg.OfUser.Content.OfArrayOfContentParts {
+				part := &msg.OfUser.Content.OfArrayOfContentParts[j]
+				switch {
+				case part.OfText != nil:
+					part.OfText.PromptCacheBreakpoint = openai.ChatCompletionContentPartTextPromptCacheBreakpointParam{}
+				case part.OfImageURL != nil:
+					part.OfImageURL.PromptCacheBreakpoint = openai.ChatCompletionContentPartImagePromptCacheBreakpointParam{}
+				case part.OfInputAudio != nil:
+					part.OfInputAudio.PromptCacheBreakpoint = openai.ChatCompletionContentPartInputAudioPromptCacheBreakpointParam{}
+				case part.OfFile != nil:
+					part.OfFile.PromptCacheBreakpoint = openai.ChatCompletionContentPartFilePromptCacheBreakpointParam{}
+				}
+			}
+		case msg.OfAssistant != nil:
+			for j := range msg.OfAssistant.Content.OfArrayOfContentParts {
+				part := &msg.OfAssistant.Content.OfArrayOfContentParts[j]
+				if part.OfText != nil {
+					part.OfText.PromptCacheBreakpoint = openai.ChatCompletionContentPartTextPromptCacheBreakpointParam{}
+				}
+			}
+		case msg.OfTool != nil:
+			stripTextPartBreakpoints(msg.OfTool.Content.OfArrayOfContentParts)
+		}
+	}
+}
+
+func stripTextPartBreakpoints(parts []openai.ChatCompletionContentPartTextParam) {
+	for i := range parts {
+		parts[i].PromptCacheBreakpoint = openai.ChatCompletionContentPartTextPromptCacheBreakpointParam{}
+	}
+}
+
+// applyOpenAITransform is the vendor entry point for api.openai.com. It has
+// no cache-related work to do — the request already carries the correct
+// prompt_cache_options / prompt_cache_breakpoint fields from the shared
+// Anthropic→OpenAI conversion, and official OpenAI is the one vendor
+// confirmed to accept them as-is.
+func applyOpenAITransform(req *openai.ChatCompletionNewParams, config *protocol.OpenAIConfig) *openai.ChatCompletionNewParams {
 	return applyDefaultTransform(req, config)
 }
 

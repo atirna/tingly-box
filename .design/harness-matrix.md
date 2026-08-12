@@ -213,23 +213,25 @@ go test -tags e2e ./internal/protocoltest/... -run TestContentShapes
 executor (`ExecuteAll*`) so the CLI can run it directly — including idempotence
 and the rule-flag suite, which would otherwise be go-test-only.
 
-| `--mode` | single (A→B) | transitive (A→B→C) | idempotent (`g(f(A))==A`) | flags (per-rule) | content_shapes (§10.1) | cache_controls (§10.2) |
-|----------|:---:|:---:|:---:|:---:|:---:|:---:|
-| `default` *(no flag)* | ✅ | — | ✅ | — | — | — |
-| `all` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `single` | ✅ | — | — | — | — | — |
-| `transitive` | — | ✅ | — | — | — | — |
-| `idempotent` | — | — | ✅ | — | — | — |
-| `flags` | — | — | — | ✅ | — | — |
-| `content_shapes` | — | — | — | — | ✅ | — |
-| `cache_controls` | — | — | — | — | — | ✅ |
+| `--mode` | single (A→B) | transitive (A→B→C) | idempotent (`g(f(A))==A`) | flags (per-rule) | content_shapes (§10.1) | cache_controls (§10.2) | vendor (§10.3) |
+|----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `default` *(no flag)* | ✅ | — | ✅ | — | — | — | — |
+| `all` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `single` | ✅ | — | — | — | — | — | — |
+| `transitive` | — | ✅ | — | — | — | — | — |
+| `idempotent` | — | — | ✅ | — | — | — | — |
+| `flags` | — | — | — | ✅ | — | — | — |
+| `content_shapes` | — | — | — | — | ✅ | — | — |
+| `cache_controls` | — | — | — | — | — | ✅ | — |
+| `vendor` | — | — | — | — | — | — | ✅ |
 
 This mode → section mapping is declared in one place: the `matrixSections`
 registry in `cli/harness/matrix.go`. Each entry names the section, lists the
 `--mode` values that include it, marks whether it is http-only (`flags`,
-`content_shapes`, and `cache_controls` drive raw requests directly), and points
-at its `ExecuteAll*` executor. Adding a section = one registry entry + extending
-the `--mode` enum (see §8 for why this replaced a hand-maintained if-chain).
+`content_shapes`, `cache_controls`, and `vendor` drive raw requests directly),
+and points at its `ExecuteAll*` executor. Adding a section = one registry
+entry + extending the `--mode` enum (see §8 for why this replaced a
+hand-maintained if-chain).
 
 ```bash
 # Default: single-hop + idempotent round-trips. Two-hop and flags are OFF by
@@ -247,6 +249,7 @@ go run ./cli/harness matrix --mode=idempotent
 go run ./cli/harness matrix --mode=flags     # per-rule flag behavior
 go run ./cli/harness matrix --mode=content_shapes  # request content-shape regression
 go run ./cli/harness matrix --mode=cache_controls  # single-hop + ABA cache/no-cache
+go run ./cli/harness matrix --mode=vendor          # vendor-dispatch (ApplyProviderTransforms) against real vendor APIBase
 
 # Filter by scenario / source / target
 go run ./cli/harness matrix --scenario text --source anthropic_v1
@@ -266,6 +269,9 @@ The `cache_controls` section is documented in §10.2 below;
 `ExecuteAllCacheControls` reports one result per protocol path and stream mode.
 Each result verifies both the positive cache request and the negative no-cache
 request against the final provider capture.
+
+The `vendor` section is documented in §10.3 below; `ExecuteAllVendorTransforms`
+reports one result per vendor fixture and stream mode.
 
 Other CLI flags (`--batch`, `--record-dir`, `--mcp`, `-v`) are documented in
 [`cli/harness/README.md`](../cli/harness/README.md); `--batch` and
@@ -602,4 +608,59 @@ Run it with:
 ```bash
 go test ./internal/protocoltest -run TestCacheControls -count=1
 go run ./cli/harness matrix --mode=cache_controls
+```
+
+Every provider `cache_controls.go` dispatches to is a generic httptest URL —
+right for protocol-shape fidelity, but invisible to `ApplyProviderTransforms`
+(`internal/protocol/ops/request_openai_extensions.go`), which keys its
+behavior off the destination's *real* `APIBase` (`api.openai.com`,
+`api.deepseek.com`, ...). Concretely: OpenAI's gpt-5.6+ explicit
+`prompt_cache_options` / `prompt_cache_breakpoint` fields are not part of the
+Chat Completions schema most OpenAI-compatible vendors cloned, and several —
+including Azure OpenAI — reject them outright when their schema validation is
+strict. `ApplyProviderTransforms` therefore strips those fields by default and
+only re-adds them for an allowlisted vendor (`supportsExplicitPromptCache`,
+currently just `api.openai.com`). `cache_controls.go`'s generic destination is
+correctly off that allowlist, so it can only prove the fields are stripped for
+an unrecognized vendor — never that they survive for a recognized one. §10.3
+closes that gap.
+
+### 10.3 Vendor-dispatch suite (`vendor_transforms.go`)
+
+This section builds virtual providers whose `APIBase` genuinely matches a
+vendor discriminator (`vendorFixture.apiBase`, e.g. `api.openai.com`), and
+dispatches to them through `newVendorHostProxy` — a local forward proxy that
+relays whatever `Provider.ProxyURL` sends it to the real `VirtualServer`
+(preserving method/path/query/headers/streaming). Pairing the fake-but-real
+`APIBase` with a `ProxyURL` that resolves it locally means the *same*
+`Provider.APIBase` string production dials reaches `ApplyProviderTransforms`'s
+matcher, while the bytes never leave the process — no production code changes,
+no real network egress to the vendor's actual host.
+
+Each fixture in `vendorFixtures` declares `wantsExplicitPromptCache`; the case
+sends a cached and a no-cache Anthropic v1 → OpenAI Chat request and asserts
+the final provider capture matches (reusing `assertCapturedCacheState` from
+§10.2 — same assertion, different provider identity). Today the fixture table
+only exercises the prompt-cache allowlist (`openai_official`,
+`generic_openai_compatible`, `deepseek`); extending it to other
+vendor-specific transforms (DeepSeek's `reasoning_content` flip, Gemini's
+`thinking_config` mapping, tool-schema filtering, ...) means adding fields to
+`vendorFixture` and assertions in `runVendorTransformCase` — the
+routing/relay plumbing is already generic.
+
+**Provider UUID must be unique per (fixture, streaming mode).**
+`GetGlobalTransportPool` is a process-global cache keyed on provider UUID +
+model, not `APIBase`/`ProxyURL`. Two concurrently-running cases that share a
+UUID can race on the pool's invalidate-on-`AddProvider` step and end up
+dialing through each other's (possibly already-closed) relay — this is what
+"final provider received no chat request" flakes under `--mode=all`/`--mode=vendor`
+mean if you see them after adding a fixture. `setupVendorRoute` stamps
+`streamMode(streaming)` onto the UUID for exactly this reason; keep doing that
+for any new fixture dimension.
+
+Run it with:
+
+```bash
+go test ./internal/protocoltest -run TestVendorTransforms -count=1
+go run ./cli/harness matrix --mode=vendor
 ```

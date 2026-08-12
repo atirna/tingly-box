@@ -197,7 +197,28 @@ func countCacheMarkers(t flagTB, value any, markerKey, discriminator, wantValue 
 	return count
 }
 
-func assertCapturedCacheState(t flagTB, env *TestEnv, target protocol.APIType, cached bool, label string) {
+// cacheSurvivesPath reports whether explicit/implicit prompt-cache fields can
+// survive every hop in a request's path. Every virtual provider this suite
+// dispatches to is a generic httptest URL, never api.openai.com, so it is
+// never on ApplyProviderTransforms's explicit-prompt-cache allowlist:
+// whichever hop's outbound wire shape is OpenAI Chat gets its
+// prompt_cache_options / prompt_cache_breakpoint stripped by
+// ops.stripOpenAIPromptCacheFields before it leaves the gateway — including,
+// for an ABA path, at the intermediate hop, so nothing survives to be
+// re-added downstream even if the tail hop's own shape isn't Chat. That's
+// the intended default-deny behavior (see supportsExplicitPromptCache), not
+// a bug this suite should paper over — a dedicated vendor-transform suite
+// (protocoltest vendor category) exercises the allowlisted case.
+func cacheSurvivesPath(hops ...protocol.APIType) bool {
+	for _, hop := range hops {
+		if hop == protocol.TypeOpenAIChat {
+			return false
+		}
+	}
+	return true
+}
+
+func assertCapturedCacheState(t flagTB, env *TestEnv, target protocol.APIType, wantCached bool, label string) {
 	t.Helper()
 	endpoint := cacheControlEndpoint(target)
 	if endpoint == "" {
@@ -221,7 +242,7 @@ func assertCapturedCacheState(t flagTB, env *TestEnv, target protocol.APIType, c
 
 	gotMarkers := countCacheMarkers(t, body, markerKey, discriminator, wantValue)
 	wantMarkers := 0
-	if cached {
+	if wantCached {
 		wantMarkers = cacheControlExpectedMarkers
 	}
 	if gotMarkers != wantMarkers {
@@ -246,14 +267,14 @@ func assertCapturedCacheState(t flagTB, env *TestEnv, target protocol.APIType, c
 		return
 	}
 	rawOptions, hasOptions := body["prompt_cache_options"]
-	if hasOptions != cached {
+	if hasOptions != wantCached {
 		t.Errorf("%s: final prompt_cache_options presence = %v, want %v; body=%s",
-			label, hasOptions, cached, truncate(string(captured.Body), 1200))
+			label, hasOptions, wantCached, truncate(string(captured.Body), 1200))
 	}
 	options, _ := rawOptions.(map[string]any)
 	mode, _ := options["mode"].(string)
 	wantMode := ""
-	if cached {
+	if wantCached {
 		wantMode = "explicit"
 	}
 	if mode != wantMode {
@@ -262,7 +283,7 @@ func assertCapturedCacheState(t flagTB, env *TestEnv, target protocol.APIType, c
 	}
 }
 
-func assertCapturedAutomaticCacheState(t flagTB, env *TestEnv, target protocol.APIType, label string) {
+func assertCapturedAutomaticCacheState(t flagTB, env *TestEnv, target protocol.APIType, wantImplicit bool, label string) {
 	t.Helper()
 	endpoint := cacheControlEndpoint(target)
 	if endpoint == "" {
@@ -276,6 +297,13 @@ func assertCapturedAutomaticCacheState(t flagTB, env *TestEnv, target protocol.A
 
 	if endpoint == EndpointAnthropic {
 		raw, ok := body["cache_control"]
+		if !wantImplicit {
+			if ok {
+				t.Errorf("%s: final Anthropic body has top-level cache_control, want stripped; body=%s",
+					label, truncate(string(captured.Body), 1200))
+			}
+			return
+		}
 		if !ok {
 			t.Errorf("%s: final Anthropic body has no top-level cache_control; body=%s",
 				label, truncate(string(captured.Body), 1200))
@@ -295,10 +323,21 @@ func assertCapturedAutomaticCacheState(t flagTB, env *TestEnv, target protocol.A
 		return
 	}
 
-	options, _ := body["prompt_cache_options"].(map[string]any)
-	if got, _ := options["mode"].(string); got != "implicit" {
-		t.Errorf("%s: final prompt_cache_options.mode = %q, want implicit; body=%s",
-			label, got, truncate(string(captured.Body), 1200))
+	// See cacheSurvivesPath: whichever hop's outbound wire shape is OpenAI
+	// Chat has prompt_cache_options stripped entirely — including the
+	// automatic/implicit mode — before it leaves the gateway.
+	wantMode := ""
+	if wantImplicit {
+		wantMode = "implicit"
+	}
+	options, hasOptions := body["prompt_cache_options"].(map[string]any)
+	if wantMode == "" && hasOptions {
+		t.Errorf("%s: final prompt_cache_options present, want stripped; body=%s",
+			label, truncate(string(captured.Body), 1200))
+	}
+	if got, _ := options["mode"].(string); got != wantMode {
+		t.Errorf("%s: final prompt_cache_options.mode = %q, want %q; body=%s",
+			label, got, wantMode, truncate(string(captured.Body), 1200))
 	}
 	if explicit := countCacheMarkers(t, body, "prompt_cache_breakpoint", "mode", "explicit"); explicit != 0 {
 		t.Errorf("%s: final OpenAI body contains %d explicit cache marker(s); body=%s",
@@ -319,12 +358,12 @@ func runSingleCacheControlCase(t flagTB, env *TestEnv, pair ProtocolPair, stream
 		label := fmt.Sprintf("single/%s→%s/%s/%s",
 			pair.Source, pair.Target, cacheStateName(cached), streamMode(streaming))
 		sendCacheControlBody(t, env, pair.Source, pair.Target, s.Name, model, streaming, cached)
-		assertCapturedCacheState(t, env, pair.Target, cached, label)
+		assertCapturedCacheState(t, env, pair.Target, cached && cacheSurvivesPath(pair.Target), label)
 	}
 	label := fmt.Sprintf("single/%s→%s/automatic/%s",
 		pair.Source, pair.Target, streamMode(streaming))
 	sendAutomaticCacheControlBody(t, env, pair.Source, pair.Target, s.Name, model, streaming)
-	assertCapturedAutomaticCacheState(t, env, pair.Target, label)
+	assertCapturedAutomaticCacheState(t, env, pair.Target, cacheSurvivesPath(pair.Target), label)
 }
 
 func runABACacheControlCase(t flagTB, env *TestEnv, ic IdempotentCase, streaming bool) {
@@ -347,12 +386,12 @@ func runABACacheControlCase(t flagTB, env *TestEnv, ic IdempotentCase, streaming
 		label := fmt.Sprintf("aba/%s→%s→%s/%s/%s",
 			ic.Source, ic.Mid, ic.Baseline, cacheStateName(cached), streamMode(streaming))
 		sendCacheControlBody(t, env, ic.Source, ic.Mid, s.Name, headModel, streaming, cached)
-		assertCapturedCacheState(t, env, ic.Baseline, cached, label)
+		assertCapturedCacheState(t, env, ic.Baseline, cached && cacheSurvivesPath(ic.Mid, ic.Baseline), label)
 	}
 	label := fmt.Sprintf("aba/%s→%s→%s/automatic/%s",
 		ic.Source, ic.Mid, ic.Baseline, streamMode(streaming))
 	sendAutomaticCacheControlBody(t, env, ic.Source, ic.Mid, s.Name, headModel, streaming)
-	assertCapturedAutomaticCacheState(t, env, ic.Baseline, label)
+	assertCapturedAutomaticCacheState(t, env, ic.Baseline, cacheSurvivesPath(ic.Mid, ic.Baseline), label)
 }
 
 func cacheStateName(cached bool) string {
