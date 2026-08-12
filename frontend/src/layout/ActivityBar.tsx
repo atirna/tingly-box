@@ -7,13 +7,17 @@ import { useVersion as useAppVersion } from '../contexts/VersionContext';
 import { useThemeMode } from '../contexts/ThemeContext';
 import {
     activityBarWidth,
-    activityContainerPaddingY,
-    activityItemPaddingX,
-    activityItemRadius,
-    activityItemSx,
     footerHeight,
-    headerHeight,
 } from './constants';
+import {
+    activityBottomClusterSx,
+    activityBottomItemSx,
+    activityIconsScrollSx,
+    activityItemSx,
+    activityLogoButtonSx,
+    activityLogoCellSx,
+    activityRailSx,
+} from './styles';
 import type { ActivityItem } from './types';
 import type { ThemeMode } from '@/theme';
 import { getThemeOptions } from '@/theme/options';
@@ -74,44 +78,17 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
     return (
         <Box
-            sx={{
-                width: activityBarWidth,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                bgcolor: 'background.paper',
-                borderRight: '1px solid',
-                borderColor: 'divider',
-            }}
+            sx={{ width: activityBarWidth, ...activityRailSx }}
         >
             {/* Logo */}
-            <Box
-                sx={{
-                    height: headerHeight,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderBottom: '1px solid',
-                    borderColor: 'divider',
-                }}
-            >
+            <Box sx={activityLogoCellSx}>
                 <Tooltip title={`Tingly-Box v${currentVersion}`} placement="right" arrow>
                     <Box
                         component="a"
                         href="https://github.com/tingly-dev/tingly-box"
                         target="_blank"
                         rel="noopener noreferrer"
-                        sx={{
-                            width: 36,
-                            height: 36,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            textDecoration: 'none',
-                            cursor: 'pointer',
-                            transition: 'opacity 0.18s ease-out',
-                            '&:hover': { opacity: 0.82 },
-                        }}
+                        sx={activityLogoButtonSx}
                     >
                         <Box
                             component="img"
@@ -124,7 +101,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             </Box>
 
             {/* Activity Icons */}
-            <Box sx={{ flex: 1, py: activityContainerPaddingY, overflowY: 'auto' }}>
+            <Box sx={activityIconsScrollSx}>
                 {activityItems.map((item) => {
                     const isActiveItem = activeActivity === item.key;
                     const shortLabel = item.label.length > 12 ? item.label.slice(0, 7) + '…' : item.label;
@@ -267,37 +244,16 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             </Box>
 
             {/* Feedback button - bottom-left, above language icon */}
-            <Box
-                sx={{
-                    py: 0.5,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                }}
-            >
+            <Box sx={activityBottomClusterSx}>
                 <Tooltip title={t('layout.activityBar.feedbackTooltip')} placement="right" arrow>
                     <ListItemButton
                         component="a"
                         href="https://github.com/tingly-dev/tingly-box/issues/new/choose"
                         target="_blank"
                         rel="noopener noreferrer"
-                        sx={{
-                            minHeight: 48,
-                            mx: 0.5,
-                            px: activityItemPaddingX,
-                            py: 0.75,
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 0.25,
-                            position: 'relative',
-                            color: 'text.secondary',
-                            borderRadius: activityItemRadius,
-                            cursor: 'pointer',
+                        sx={activityBottomItemSx({
                             '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
-                        }}
+                        })}
                     >
                         <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
                             <IconMessageReport sx={{ fontSize: 22 }} />
@@ -310,84 +266,42 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             </Box>
 
             {/* Language button - bottom-left, above user icon */}
-                <Box
-                    sx={{
-                        py: 0.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                    }}
-                >
-                    <Tooltip title={t('system.language.title')} placement="right" arrow>
-                        <ListItemButton
-                            onClick={handleLanguageMenuClick}
-                            sx={{
-                                minHeight: 48,
-                                mx: 0.5,
-                                px: activityItemPaddingX,
-                                py: 0.75,
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 0.25,
-                                position: 'relative',
-                                color: 'text.secondary',
-                                borderRadius: activityItemRadius,
-                                cursor: 'pointer',
-                                '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
-                            }}
-                        >
-                            <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
-                                <IconLanguage sx={{ fontSize: 22 }} />
-                            </ListItemIcon>
-                            <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.1, fontSize: '0.65rem' }}>
-                                {i18n.language === 'zh' ? '中文' : 'EN'}
-                            </Typography>
-                        </ListItemButton>
-                    </Tooltip>
-                </Box>
+            <Box sx={activityBottomClusterSx}>
+                <Tooltip title={t('system.language.title')} placement="right" arrow>
+                    <ListItemButton
+                        onClick={handleLanguageMenuClick}
+                        sx={activityBottomItemSx({
+                            '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
+                        })}
+                    >
+                        <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
+                            <IconLanguage sx={{ fontSize: 22 }} />
+                        </ListItemIcon>
+                        <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.1, fontSize: '0.65rem' }}>
+                            {i18n.language === 'zh' ? '中文' : 'EN'}
+                        </Typography>
+                    </ListItemButton>
+                </Tooltip>
+            </Box>
 
             {/* Theme button - bottom-left, above language icon */}
-                <Box
-                    sx={{
-                        py: 0.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                    }}
-                >
-                    <Tooltip title={t('layout.activityBar.theme')} placement="right" arrow>
-                        <ListItemButton
-                            onClick={handleThemeMenuClick}
-                            sx={{
-                                minHeight: 48,
-                                mx: 0.5,
-                                px: activityItemPaddingX,
-                                py: 0.75,
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 0.25,
-                                position: 'relative',
-                                color: 'text.secondary',
-                                borderRadius: activityItemRadius,
-                                cursor: 'pointer',
-                                '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
-                            }}
-                        >
-                            <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
-                                {renderCurrentThemeIcon({ size: 22 })}
-                            </ListItemIcon>
-                            <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.1, fontSize: '0.65rem' }}>
-                                {currentThemeOption?.label ?? 'Light'}
-                            </Typography>
-                        </ListItemButton>
-                    </Tooltip>
-                </Box>
+            <Box sx={activityBottomClusterSx}>
+                <Tooltip title={t('layout.activityBar.theme')} placement="right" arrow>
+                    <ListItemButton
+                        onClick={handleThemeMenuClick}
+                        sx={activityBottomItemSx({
+                            '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
+                        })}
+                    >
+                        <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
+                            {renderCurrentThemeIcon({ size: 22 })}
+                        </ListItemIcon>
+                        <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.1, fontSize: '0.65rem' }}>
+                            {currentThemeOption?.label ?? 'Light'}
+                        </Typography>
+                    </ListItemButton>
+                </Tooltip>
+            </Box>
 
             {/* Bottom: User icon */}
             <Box
@@ -408,21 +322,9 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                 <Tooltip title={t('layout.activityBar.click')} placement="right" arrow>
                     <ListItemButton
                         onClick={onUserClick}
-                        sx={{
-                            minHeight: 48,
-                            mx: 0.5,
-                            px: activityItemPaddingX,
-                            py: 0.75,
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 0.25,
-                            position: 'relative',
-                            color: 'text.secondary',
-                            borderRadius: activityItemRadius,
-                            cursor: 'pointer',
+                        sx={activityBottomItemSx({
                             '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-                        }}
+                        })}
                     >
                         <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
                             <IconUser sx={{ fontSize: 20 }} />

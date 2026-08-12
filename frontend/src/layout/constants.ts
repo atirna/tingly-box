@@ -1,28 +1,17 @@
+// Pure numeric sizing for the layout chrome. Style *objects* live in
+// `./styles.ts`; this file only holds numbers so the two concerns stay split.
 export const activityBarWidth = 88;
 export const sidebarWidth = 200;
 export const headerHeight = 60;
 export const footerHeight = 60;
 
-// --- Activity Bar Item Styles ---
-export const activityItemMinHeight = 64;
+// --- Activity Bar Item sizing ---
+export const activityItemMinHeight = 48;
 export const activityItemGap = 0.5;
 export const activityItemRadius = 1.25;
 export const activityItemPaddingX = 1;
 export const activityItemPaddingY = 1.25;
 export const activityContainerPaddingY = 1;
 
-export const activityItemSx = (extra?: Record<string, unknown>) => ({
-    minHeight: activityItemMinHeight,
-    mx: 0.5,
-    px: activityItemPaddingX,
-    py: activityItemPaddingY,
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: activityItemGap,
-    position: 'relative' as const,
-    color: 'text.secondary',
-    borderRadius: activityItemRadius,
-    cursor: 'pointer',
-    ...extra,
-});
+// --- Activity Bar bottom-row button sizing (language / theme / feedback / user) ---
+export const activityBottomItemMinHeight = 48;

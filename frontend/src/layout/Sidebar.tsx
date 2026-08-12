@@ -21,32 +21,21 @@ import { Link as RouterLink, useLocation } from 'react-router-dom';
 import { api } from '@/services/api';
 import { useProfileContext } from '@/contexts/ProfileContext';
 import { useVersion } from '@/contexts/VersionContext';
-import { footerHeight, headerHeight, sidebarWidth } from './constants';
+import { footerHeight, sidebarWidth } from './constants';
+import {
+    NAV_ROW_SX,
+    navRowTextSlotProps,
+    sidebarContainerSx,
+    sidebarHeaderSx,
+    sidebarListScrollSx,
+} from './styles';
 import type { NavItem } from './types';
 import { VersionDisplay } from '@/components/VersionDisplay';
 import { UpdatePanelDialog } from '@/components/UpdatePanelDialog';
 
-// Shared sizing for the sidebar's nav-style rows, kept alongside the one
-// place that uses it — every row is the same height whether or not it
-// happens to carry a subtitle.
-const NAV_ROW_SX = {
-    minHeight: 52,
-    borderRadius: 1.25,
-    py: 1.25,
-    px: 2,
-} as const;
-
-const navRowTextSlotProps = (active: boolean) => ({
-    primary: { noWrap: true, variant: 'body2' as const, sx: { fontWeight: 500, lineHeight: 1.3, fontSize: '0.875rem' } },
-    secondary: {
-        variant: 'caption' as const,
-        sx: {
-            fontSize: '0.6875rem',
-            lineHeight: 1.2,
-            color: active ? 'rgba(255,255,255,0.7)' : 'text.secondary',
-        },
-    },
-});
+// Shared sizing for the sidebar's nav-style rows now lives in ./styles
+// (NAV_ROW_SX / navRowTextSlotProps), so every row is the same height whether
+// or not it carries a subtitle.
 
 interface SidebarProps {
     sidebarItems: NavItem[];
@@ -101,50 +90,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ sidebarItems, activeActivityLa
 
     return (
         <Box
-            sx={{
-                width: sidebarWidth,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                bgcolor: 'background.paper',
-                borderRight: '1px solid',
-                borderColor: 'divider',
-                overflow: 'hidden',
-            }}
+            sx={{ width: sidebarWidth, ...sidebarContainerSx }}
         >
             {/* Header */}
-            <Box
-                sx={{
-                    height: headerHeight,
-                    px: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 1,
-                    borderBottom: '1px solid',
-                    borderColor: 'divider',
-                }}
-            >
+            <Box sx={sidebarHeaderSx}>
                 <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
                     {activeActivityLabel}
                 </Typography>
                 {headerAction}
             </Box>
             {/* Nav Items */}
-            <List
-                sx={{
-                    flex: 1,
-                    py: 1,
-                    overflowY: 'auto',
-                    '&::-webkit-scrollbar': { width: 6 },
-                    '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
-                    '&::-webkit-scrollbar-thumb': {
-                        backgroundColor: 'grey.300',
-                        borderRadius: 1,
-                        '&:hover': { backgroundColor: 'grey.400' },
-                    },
-                }}
-            >
+            <List sx={sidebarListScrollSx}>
                 {sidebarItems.map((item, index) => {
                     if (item.type === 'divider') {
                         return <Divider key={`divider-${index}`} sx={{ mx: 2, my: 1 }} />;
@@ -161,7 +117,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ sidebarItems, activeActivityLa
                                     : { component: RouterLink, to: item.path, onClick: onClose }
                                 )}
                                 sx={{
-                                    mx: 1.5,
                                     ...NAV_ROW_SX,
                                     color: 'text.secondary',
                                     position: 'relative',

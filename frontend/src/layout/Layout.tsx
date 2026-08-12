@@ -6,54 +6,22 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useVersion as useAppVersion } from '../contexts/VersionContext';
 import { Z_INDEX } from '../constants/zIndex';
 import { activityBarWidth, sidebarWidth } from './constants';
+import { mobileContentSx, mobileMenuButtonSx, mobileNavigationBarSx } from './styles';
 import { ActivityBar } from './ActivityBar.tsx';
 import { Sidebar } from './Sidebar';
 import { useActivityItems } from './useActivityItems.tsx';
 import type { ActivityItem, LayoutProps } from './types';
 import { FloatingStatusIndicators } from '../components/FloatingStatusIndicators';
 
-const mobileContentSx = {
-    flex: 1,
-    px: { xs: 2, md: 3 },
-    pt: { xs: 9, md: 3 },
-    pb: 3,
-    overflowY: 'auto',
-    scrollBehavior: 'smooth',
-    '&::-webkit-scrollbar': { width: 8 },
-    '&::-webkit-scrollbar-track': { backgroundColor: 'grey.100', borderRadius: 1 },
-    '&::-webkit-scrollbar-thumb': {
-        backgroundColor: 'grey.300',
-        borderRadius: 1,
-        '&:hover': { backgroundColor: 'grey.400' },
-    },
-} as const;
-
 const MobileNavigationBar = ({ onMenuClick }: { onMenuClick: () => void }) => (
     <Box
-        sx={{
-            display: { xs: 'flex', md: 'none' },
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 56,
-            zIndex: Z_INDEX.mobileToggle,
-            alignItems: 'center',
-            px: 1,
-            bgcolor: 'background.paper',
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-        }}
+        sx={mobileNavigationBarSx}
     >
         <IconButton
             color="primary"
             aria-label="Open navigation menu"
             onClick={onMenuClick}
-            sx={{
-                width: 44,
-                height: 44,
-                '&:hover': { bgcolor: 'action.hover' },
-            }}
+            sx={mobileMenuButtonSx}
         >
             <IconMenu sx={{ fontSize: 24 }} />
         </IconButton>
