@@ -58,14 +58,7 @@ const PasteDetectDialog: React.FC<PasteDetectDialogProps> = ({open, onClose, onP
                     <IconButton aria-label="Close Paste and detect" onClick={onClose} size="small"><Close/></IconButton>
                 </Stack>
             </DialogTitle>
-            <DialogContent
-                dividers
-                sx={{
-                    pt: 2,
-                    flex: 1,
-                    overflowY: 'hidden', // Panel handles its own scrolling
-                }}
-            >
+            <DialogContent dividers sx={{pt: 2}}>
                 <PasteDetectPanel
                     onPick={onPick}
                     onManualFill={() => onPick(emptyForm())}

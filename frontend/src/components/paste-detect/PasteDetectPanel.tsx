@@ -95,8 +95,8 @@ const PasteDetectPanel: React.FC<PasteDetectPanelProps> = ({onPick, onManualFill
             <TextField
                 fullWidth
                 multiline
-                minRows={6}
-                maxRows={14}
+                minRows={4}
+                maxRows={8}
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder={PLACEHOLDER}
@@ -146,7 +146,7 @@ const PasteDetectPanel: React.FC<PasteDetectPanelProps> = ({onPick, onManualFill
                             </Typography>
 
                             <Stack direction={{xs: 'column', md: 'row'}} spacing={2}>
-                                <Paper variant="outlined" sx={{flex: 1, p: 1.5, minWidth: 0}}>
+                                <Paper variant="outlined" sx={{flex: 1, p: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', maxHeight: 260}}>
                                     <Stack
                                         direction="row"
                                         spacing={1}
@@ -169,7 +169,7 @@ const PasteDetectPanel: React.FC<PasteDetectPanelProps> = ({onPick, onManualFill
                                             {t('onboarding.paste.noURL', {defaultValue: 'No URLs detected.'})}
                                         </Typography>
                                     ) : (
-                                        <List dense disablePadding>
+                                        <List dense disablePadding sx={{overflowY: 'auto', flex: 1, minHeight: 0, mr: -0.5, pr: 0.5}}>
                                             {urls!.map(u => (
                                                 <ListItemButton
                                                     key={u}
@@ -193,7 +193,7 @@ const PasteDetectPanel: React.FC<PasteDetectPanelProps> = ({onPick, onManualFill
                                     )}
                                 </Paper>
 
-                                <Paper variant="outlined" sx={{flex: 1, p: 1.5, minWidth: 0}}>
+                                <Paper variant="outlined" sx={{flex: 1, p: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', maxHeight: 260}}>
                                     <Stack
                                         direction="row"
                                         spacing={1}
@@ -216,7 +216,7 @@ const PasteDetectPanel: React.FC<PasteDetectPanelProps> = ({onPick, onManualFill
                                             {t('onboarding.paste.noToken', {defaultValue: 'No tokens detected.'})}
                                         </Typography>
                                     ) : (
-                                        <List dense disablePadding>
+                                        <List dense disablePadding sx={{overflowY: 'auto', flex: 1, minHeight: 0, mr: -0.5, pr: 0.5}}>
                                             {tokens!.map(tok => (
                                                 <ListItemButton
                                                     key={tok.value}
