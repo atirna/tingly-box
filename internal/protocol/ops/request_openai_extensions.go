@@ -46,11 +46,14 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 
 	case strings.Contains(url, "poe.com") && strings.Contains(modelLower, "gemini"):
 		return applyGeminiPoeTransform(req, providerURL, model, config)
-
-	case strings.Contains(url, "api.openai.com"):
-		return applyOpenAITransform(req, config)
 	}
 
+	// api.openai.com falls through to here too: it has no vendor-specific
+	// request shaping beyond applyDefaultTransform's thinking fallback — the
+	// request already carries the correct prompt_cache_options /
+	// prompt_cache_breakpoint fields from the shared Anthropic→OpenAI
+	// conversion, and it's the one vendor supportsExplicitPromptCache
+	// confirms accepts them as-is.
 	return applyDefaultTransform(req, config)
 }
 
@@ -109,15 +112,6 @@ func stripTextPartBreakpoints(parts []openai.ChatCompletionContentPartTextParam)
 	for i := range parts {
 		parts[i].PromptCacheBreakpoint = openai.ChatCompletionContentPartTextPromptCacheBreakpointParam{}
 	}
-}
-
-// applyOpenAITransform is the vendor entry point for api.openai.com. It has
-// no cache-related work to do — the request already carries the correct
-// prompt_cache_options / prompt_cache_breakpoint fields from the shared
-// Anthropic→OpenAI conversion, and official OpenAI is the one vendor
-// confirmed to accept them as-is.
-func applyOpenAITransform(req *openai.ChatCompletionNewParams, config *protocol.OpenAIConfig) *openai.ChatCompletionNewParams {
-	return applyDefaultTransform(req, config)
 }
 
 // ApplyCursorCompatContentNormalization flattens rich content in messages for

@@ -2,8 +2,8 @@ package protocoltest
 
 import (
 	"fmt"
-	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
@@ -81,53 +81,10 @@ func newVendorHostProxy(t flagTB, target string) string {
 		t.Fatalf("newVendorHostProxy: parse target %q: %v", target, err)
 	}
 
-	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		out := *r.URL
-		out.Scheme = targetURL.Scheme
-		out.Host = targetURL.Host
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy.FlushInterval = -1 // flush every write immediately — the cache_controls SSE cases need it
 
-		outReq, err := http.NewRequestWithContext(r.Context(), r.Method, out.String(), r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		outReq.Header = r.Header.Clone()
-		outReq.ContentLength = r.ContentLength
-
-		resp, err := http.DefaultTransport.RoundTrip(outReq)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-
-		for k, vv := range resp.Header {
-			for _, v := range vv {
-				w.Header().Add(k, v)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-
-		flusher, canFlush := w.(http.Flusher)
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := resp.Body.Read(buf)
-			if n > 0 {
-				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-					return
-				}
-				if canFlush {
-					flusher.Flush()
-				}
-			}
-			if readErr != nil {
-				// EOF is the normal end of a response body; anything else
-				// (client disconnect, upstream reset) just ends the relay —
-				// there's no caller here to report it to.
-				return
-			}
-		}
-	}))
+	relay := httptest.NewServer(proxy)
 	t.Cleanup(relay.Close)
 	return relay.URL
 }
