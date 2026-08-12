@@ -8,10 +8,6 @@ import (
 )
 
 // newUsageStoreForBench builds a UsageStore for a fresh temp dir.
-// NewUsageStore is never called in production (StoreManager builds
-// UsageStore directly over its own already-open *gorm.DB instead), so this
-// benchmark suite is its only real caller -- see NewUsageStore's directory
-// setup, which this relies on.
 func newUsageStoreForBench(b *testing.B) *UsageStore {
 	b.Helper()
 	store, err := NewUsageStore(b.TempDir())
@@ -21,16 +17,9 @@ func newUsageStoreForBench(b *testing.B) *UsageStore {
 	return store
 }
 
-// Benchmarks for the two stores that internal/protocolserver/usage_tracking.go
-// writes to synchronously, once per completed LLM request (both streaming and
-// non-streaming, success and error paths), before the response is handed back
-// to the client -- see ProtocolHandler.trackUsageWithTokenUsage, which calls
-// updateServiceStats (-> StatsStore.UpdateFromService) and
-// recordDetailedUsageWithTokenUsage (-> UsageStore.RecordUsage) inline in the
-// request goroutine. Unlike ProviderStore.GetByUUID or
-// APITokenStore.ValidateToken, these are writes, not reads that can be
-// served from a cache -- there's a real row to persist every request. See
-// .design/hot-path-db-access.md for the read-path fixes this follows up on.
+// Benchmarks for StatsStore/UsageStore, both written synchronously once per
+// completed LLM request by ProtocolHandler.trackUsageWithTokenUsage -- see
+// .design/hot-path-db-access.md.
 //
 // Run: go test ./internal/db/... -bench 'StatsStore|UsageStore' -benchmem -run '^$'
 
@@ -89,11 +78,9 @@ func BenchmarkUsageStore_RecordUsage(b *testing.B) {
 	}
 }
 
-// BenchmarkStatsAndUsage_Combined runs both writes back to back via two
-// separate stores (each with its own *gorm.DB and its own implicit
-// transaction) -- this was the only shape available before
-// RecordRequestOutcome and stays here as the "before" baseline for
-// BenchmarkStatsAndUsage_RecordRequestOutcome below to be compared against.
+// BenchmarkStatsAndUsage_Combined runs both writes via two separate stores
+// (two independent transactions) -- the "before" baseline for
+// BenchmarkStatsAndUsage_RecordRequestOutcome below.
 func BenchmarkStatsAndUsage_Combined(b *testing.B) {
 	statsStore, err := NewStatsStore(b.TempDir())
 	if err != nil {
@@ -136,10 +123,8 @@ func BenchmarkStatsAndUsage_Combined(b *testing.B) {
 	}
 }
 
-// BenchmarkStatsAndUsage_RecordRequestOutcome exercises RecordRequestOutcome
-// with both stores wired exactly as production does -- sharing one *gorm.DB
-// via StoreManager, the precondition for the two writes to land in a single
-// SQLite transaction/commit instead of BenchmarkStatsAndUsage_Combined's two.
+// BenchmarkStatsAndUsage_RecordRequestOutcome wires both stores through
+// StoreManager (shared *gorm.DB), so the two writes land in one transaction.
 func BenchmarkStatsAndUsage_RecordRequestOutcome(b *testing.B) {
 	sm, err := NewStoreManager(b.TempDir())
 	if err != nil {

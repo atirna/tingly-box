@@ -700,10 +700,9 @@ func TestProviderCredentialBundleRoundTrip(t *testing.T) {
 	}
 }
 
-// TestProviderStore_FailedWriteDoesNotCorruptCache covers Save, UpdateCredential,
-// and UpdateCredentialBundle: each must not let a failed SQLite write leave the
-// in-memory cache holding data that was never persisted. Forces the write to
-// fail by closing the underlying *sql.DB after seeding a provider.
+// TestProviderStore_FailedWriteDoesNotCorruptCache checks that Save,
+// UpdateCredential, and UpdateCredentialBundle don't leave the cache holding
+// unpersisted data when the SQLite write fails (forced by closing the DB).
 func TestProviderStore_FailedWriteDoesNotCorruptCache(t *testing.T) {
 	seed := func(t *testing.T) *ProviderStore {
 		t.Helper()

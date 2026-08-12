@@ -54,10 +54,8 @@ func TestRecordRequestOutcome_NilUsageStore(t *testing.T) {
 	assert.True(t, found)
 }
 
-// TestRecordRequestOutcome_NilStatsStore_NilUsage covers the branch where
-// statsStore is nil and usage is also nil: RecordUsage(nil) errors ("record
-// cannot be nil"), so this must short-circuit before calling it rather than
-// surfacing that as a spurious failure for a legitimate no-op call.
+// TestRecordRequestOutcome_NilStatsStore_NilUsage: with usage nil too, this
+// must short-circuit rather than call RecordUsage(nil), which errors.
 func TestRecordRequestOutcome_NilStatsStore_NilUsage(t *testing.T) {
 	sm, err := NewStoreManager(t.TempDir())
 	require.NoError(t, err)
@@ -66,10 +64,8 @@ func TestRecordRequestOutcome_NilStatsStore_NilUsage(t *testing.T) {
 	assert.NoError(t, RecordRequestOutcome(nil, sm.Usage(), nil, nil))
 }
 
-// TestRecordRequestOutcome_AtomicRollback confirms the stats write and the
-// usage write share one transaction: a usage row that fails to persist (a
-// deliberate primary-key collision here) must roll back the stats write from
-// the same call too, not leave it half-committed.
+// TestRecordRequestOutcome_AtomicRollback: a usage write that fails (a
+// deliberate primary-key collision) must roll back the stats write too.
 func TestRecordRequestOutcome_AtomicRollback(t *testing.T) {
 	sm, err := NewStoreManager(t.TempDir())
 	require.NoError(t, err)

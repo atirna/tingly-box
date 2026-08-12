@@ -66,9 +66,7 @@ func TestAPITokenStore_UpdateLastUsed_DebouncesWithinWindow(t *testing.T) {
 	first, err := store.GetToken("token-1")
 	assert.NoError(t, err)
 
-	// A second call inside the debounce window must not move last_used_at —
-	// this is what turns "one SQLite write per request" into "one write per
-	// debounce window per token".
+	// A second call inside the debounce window must not move last_used_at.
 	assert.NoError(t, store.UpdateLastUsed("token-1"))
 	second, err := store.GetToken("token-1")
 	assert.NoError(t, err)

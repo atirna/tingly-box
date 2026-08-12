@@ -37,26 +37,15 @@ func (APITokenRecord) TableName() string {
 }
 
 // defaultLastUsedDebounce is how often UpdateLastUsed will actually persist
-// a new last_used_at. A busy token can see many requests per second; the
-// column exists for "when was this last used" display in the token admin
-// UI, which needs freshness on the order of minutes, not per-request
-// precision. See UpdateLastUsed.
+// a new last_used_at — the column only needs display-level freshness, not
+// per-request precision. See UpdateLastUsed.
 const defaultLastUsedDebounce = time.Minute
 
 // APITokenStore manages API tokens for multi-tenant authentication.
 //
-// ValidateToken sits on the request hot path (called from every
-// "tb-share-"-prefixed request by AuthMiddleware.ModelAuthMiddleware, see
-// internal/middleware/auth.go) but token records change only on admin CRUD
-// (create/revoke/rename). Benchmarking it the way
-// internal/routing/pipeline_bench_test.go benchmarks ServiceSelector.Select
-// (see internal/middleware/auth_bench_test.go and
-// .design/hot-path-db-access.md) showed the same shape as
-// db.ProviderStore.GetByUUID had: a SQLite round-trip serialized behind a
-// plain sync.Mutex that blocked concurrent readers too. cache mirrors the
-// api_tokens table by TokenID the same way ProviderStore mirrors providers:
-// reads are served from the cache under RWMutex, writes hit SQLite first
-// (durability) and then update the cache entry.
+// ValidateToken is on the request hot path (every "tb-share-"-prefixed
+// request, see internal/middleware/auth.go), so cache mirrors the
+// api_tokens table by TokenID the same way ProviderStore mirrors providers.
 type APITokenStore struct {
 	db     *gorm.DB
 	dbPath string
@@ -64,8 +53,7 @@ type APITokenStore struct {
 	cache  map[string]*APITokenRecord
 
 	// lastUsedDebounce is the minimum interval between persisted
-	// last_used_at writes for the same token; see UpdateLastUsed. Only
-	// overridden by tests, hence unexported with no constructor param.
+	// last_used_at writes for the same token; see UpdateLastUsed.
 	lastUsedDebounce time.Duration
 }
 
@@ -101,11 +89,9 @@ func NewAPITokenStore(baseDir string) (*APITokenStore, error) {
 	return store, nil
 }
 
-// newAPITokenStoreOverDB finishes setting up an APITokenStore (schema
-// migration + cache load) over an already-open *gorm.DB, whether that
-// connection is NewAPITokenStore's own or StoreManager's shared one. See
-// newProviderStoreOverDB in provider_store.go for why both construction
-// paths funnel through one function instead of duplicating this wiring.
+// newAPITokenStoreOverDB finishes setting up an APITokenStore (migrate +
+// cache load) over an already-open *gorm.DB, shared by NewAPITokenStore and
+// StoreManager.initAPITokenStore -- see newProviderStoreOverDB.
 func newAPITokenStoreOverDB(db *gorm.DB, dbPath string) (*APITokenStore, error) {
 	if err := db.AutoMigrate(&APITokenRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate API token database: %w", err)
@@ -130,10 +116,9 @@ func newAPITokenStoreOverDB(db *gorm.DB, dbPath string) (*APITokenStore, error) 
 }
 
 // loadCache (re)populates the in-memory mirror from SQLite. Called at
-// construction, before the store is shared with any other goroutine, and
-// from CleanupExpiredTokens (under s.mu already held) since a bulk delete's
-// predicate is simplest to just re-derive from the DB rather than
-// duplicating in Go.
+// construction and from CleanupExpiredTokens (under s.mu already held),
+// where re-deriving a bulk delete's predicate against the cache isn't
+// worth it.
 func (s *APITokenStore) loadCache() error {
 	var records []APITokenRecord
 	if err := s.db.Find(&records).Error; err != nil {
@@ -314,10 +299,7 @@ func (s *APITokenStore) GetToken(tokenID string) (*APITokenRecord, error) {
 }
 
 // debounceWindow returns lastUsedDebounce, falling back to the package
-// default for stores built via a struct literal that never set it (e.g.
-// StoreManager's init* helpers before this field existed, or a future one
-// added the same way — see the "watch for bypass construction" note in
-// .design/hot-path-db-access.md).
+// default for any store built without going through newAPITokenStoreOverDB.
 func (s *APITokenStore) debounceWindow() time.Duration {
 	if s.lastUsedDebounce > 0 {
 		return s.lastUsedDebounce
@@ -325,14 +307,10 @@ func (s *APITokenStore) debounceWindow() time.Duration {
 	return defaultLastUsedDebounce
 }
 
-// UpdateLastUsed updates the last_used_at timestamp for a token.
-//
-// Called on every authenticated request (see AuthMiddleware.ModelAuthMiddleware
-// in internal/middleware/auth.go), but the column is only ever read for "last
-// used" display in the token admin UI, which doesn't need per-request
-// precision. Writes within debounceWindow() of the last persisted value are
-// coalesced away — cheap under the read lock, so a hot token pays almost
-// nothing between flushes instead of one SQLite UPDATE per request.
+// UpdateLastUsed updates the last_used_at timestamp for a token. Called on
+// every authenticated request, so writes within debounceWindow() of the
+// last persisted value are coalesced away instead of costing one SQLite
+// UPDATE per request.
 func (s *APITokenStore) UpdateLastUsed(tokenID string) error {
 	now := time.Now()
 	window := s.debounceWindow()

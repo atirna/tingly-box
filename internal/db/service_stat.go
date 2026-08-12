@@ -145,11 +145,9 @@ func (ss *StatsStore) UpdateFromService(service *loadbalance.Service) error {
 }
 
 // buildStatsRecordFromService builds the ServiceStatsRecord UpdateFromService
-// persists, without touching the database. Split out so RecordRequestOutcome
-// (record_outcome.go) can build it and save it in the same transaction as a
-// UsageStore write, instead of paying for two independent commits on the
-// request hot path -- see .design/hot-path-db-access.md. Still mutates
-// service.Stats via InitializeStats/GetStats, same as before extraction.
+// persists, without touching the database -- split out so
+// RecordRequestOutcome can save it in the same transaction as a UsageStore
+// write. Still mutates service.Stats via InitializeStats/GetStats.
 func buildStatsRecordFromService(service *loadbalance.Service) *ServiceStatsRecord {
 	if service == nil {
 		return nil

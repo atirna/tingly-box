@@ -280,27 +280,18 @@ func updateRecordFromProvider(record *ProviderRecord, p *typ.Provider) {
 
 // ProviderStore manages providers as complete units (configuration + credentials).
 //
-// Providers are read on the request hot path (ServiceSelector.Select resolves
-// one per routed request — see internal/routing/selector.go) but change
-// rarely (admin CRUD only). A pprof of BenchmarkSelect_Plain showed
-// GetByUUID's SQLite round-trip (cgo call + gorm scan), serialized behind a
-// plain sync.Mutex that blocked concurrent readers too, accounting for ~47%
-// of Select()'s CPU time. ProviderStore now keeps every record mirrored in
-// an in-memory cache: all reads are served from the cache under an RWMutex
-// (concurrent, lock-free-ish, no SQLite call), while writes go to SQLite
-// first (for durability) and then update the cache — SQLite remains the
-// source of truth, the cache is just a write-through mirror of it.
+// Reads are served from an in-memory cache (write-through: SQLite is still
+// the source of truth) instead of hitting SQLite per call — GetByUUID is on
+// the request hot path (see internal/routing/selector.go) and used to
+// account for ~47% of Select()'s CPU time.
 type ProviderStore struct {
 	db     *gorm.DB
 	dbPath string
 	mu     sync.RWMutex
 
-	// cache mirrors the providers table, keyed by UUID. order preserves
-	// insertion order (List/ListOAuth/ListEnabled otherwise depend on
-	// SQLite's implicit rowid order, which callers such as the provider
-	// table UI rely on for a stable listing) since Go map iteration is
-	// randomized.
 	cache map[string]*ProviderRecord
+	// order preserves insertion order for List/ListOAuth/ListEnabled, since
+	// map iteration is randomized in Go.
 	order []string
 }
 
@@ -337,15 +328,10 @@ func NewProviderStore(baseDir string) (*ProviderStore, error) {
 	return store, nil
 }
 
-// newProviderStoreOverDB finishes setting up a ProviderStore (schema
-// migration + cache load) over an already-open *gorm.DB, whether that
-// connection is NewProviderStore's own or StoreManager's shared one. Having
-// both construction paths funnel through this single function is what makes
-// the cache-init wiring impossible to duplicate-and-drift between them --
-// see StoreManager.initProviderStore, and the "watch for bypass
-// construction" note in .design/hot-path-db-access.md, which is exactly the
-// class of bug this consolidation closes off for any future field added to
-// ProviderStore's construction.
+// newProviderStoreOverDB finishes setting up a ProviderStore (migrate +
+// cache load) over an already-open *gorm.DB, shared by NewProviderStore and
+// StoreManager.initProviderStore so the cache-init wiring can't drift
+// between them.
 func newProviderStoreOverDB(db *gorm.DB, dbPath string) (*ProviderStore, error) {
 	if err := db.AutoMigrate(&ProviderRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate provider database: %w", err)
@@ -411,14 +397,9 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 	return nil
 }
 
-// writeThroughLocked applies mutate to a copy of the cached record for uuid,
-// persists the copy to SQLite, and only swaps it into ps.cache once that
-// write succeeds -- so a failed write can never leave the cache holding data
-// that was never persisted (in contrast to mutating the cached pointer
-// in-place before the write, which a failed Save can't undo). Shared by
-// Save's update path, UpdateCredential, and UpdateCredentialBundle, which
-// otherwise each duplicated this exact clone-mutate-save-swap shape.
-// Callers must hold ps.mu.Lock().
+// writeThroughLocked mutates a copy of the cached record for uuid, persists
+// it, and only then swaps it into ps.cache -- so a failed write can't leave
+// the cache holding unpersisted data. Callers must hold ps.mu.Lock().
 func (ps *ProviderStore) writeThroughLocked(uuid string, mutate func(*ProviderRecord)) (*ProviderRecord, error) {
 	existing, ok := ps.cache[uuid]
 	if !ok {

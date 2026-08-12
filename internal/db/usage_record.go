@@ -156,13 +156,7 @@ func NewUsageStore(baseDir string) (*UsageStore, error) {
 	}
 
 	dbPath := constant.GetDBFile(baseDir)
-	// Ensure the db subdirectory exists -- unlike every other NewXStore
-	// constructor in this package, this was missing until now, so the first
-	// real caller (a benchmark, see stats_usage_bench_test.go) failed with
-	// "unable to open database file" on a fresh directory. Production never
-	// hit this: StoreManager builds UsageStore directly over its own
-	// already-open *gorm.DB, whose NewStoreManagerWithConfig creates this
-	// directory itself before opening anything.
+	// Ensure the db subdirectory exists (matches every other NewXStore constructor).
 	dbDir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dbDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create db directory: %w", err)
@@ -290,9 +284,8 @@ func (us *UsageStore) RecordUsage(record *UsageRecord) error {
 }
 
 // prepareUsageRecord fills in RecordUsage's defaults without touching the
-// database. Split out so RecordRequestOutcome (record_outcome.go) can
-// prepare it and create it in the same transaction as a StatsStore write --
-// see .design/hot-path-db-access.md.
+// database -- split out so RecordRequestOutcome can create it in the same
+// transaction as a StatsStore write.
 func prepareUsageRecord(record *UsageRecord) {
 	if record.Timestamp.IsZero() {
 		record.Timestamp = time.Now()

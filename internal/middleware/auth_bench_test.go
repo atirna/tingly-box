@@ -13,13 +13,7 @@ import (
 
 // Benchmarks for AuthMiddleware.ModelAuthMiddleware's multi-tenant
 // "tb-share-" API-token path, wired against a real db.APITokenStore
-// (SQLite-backed, exactly as internal/server/server.go constructs it)
-// instead of a mock. Mirrors internal/routing/pipeline_bench_test.go's
-// approach — benchmark the production wiring and read pprof, rather than
-// reason about the DB-lock cost from first principles — for
-// APITokenStore.ValidateToken, which internal/db/provider_store.go's
-// GetByUUID turned out to share its lock+query-on-every-read shape with
-// (see .design/hot-path-db-access.md).
+// (SQLite-backed) instead of a mock. See .design/hot-path-db-access.md.
 //
 // Run: go test ./internal/middleware/... -bench . -benchmem -run '^$'
 
@@ -39,9 +33,7 @@ func benchAPITokenStore(b *testing.B) (*db.APITokenStore, string) {
 }
 
 // BenchmarkAPITokenStore_ValidateToken isolates the store call the auth
-// middleware makes on every "tb-share-"-prefixed request, the same way
-// pipeline_bench_test.go's BenchmarkHealthFilter_Filter isolates a single
-// routing stage from the full pipeline benchmark.
+// middleware makes on every "tb-share-"-prefixed request.
 func BenchmarkAPITokenStore_ValidateToken(b *testing.B) {
 	store, token := benchAPITokenStore(b)
 	b.ReportAllocs()
@@ -54,11 +46,8 @@ func BenchmarkAPITokenStore_ValidateToken(b *testing.B) {
 }
 
 // BenchmarkModelAuthMiddleware_APIToken exercises the full production gin
-// middleware chain for a multi-tenant "tb-share-" request. UpdateLastUsed's
-// fire-and-forget write (see ModelAuthMiddleware in auth.go) runs on its own
-// goroutine exactly as in production, so this also reflects the write-lock
-// contention a real deployment would see between concurrent validations and
-// last-used updates.
+// middleware chain for a multi-tenant "tb-share-" request, including
+// UpdateLastUsed's fire-and-forget write on its own goroutine.
 func BenchmarkModelAuthMiddleware_APIToken(b *testing.B) {
 	gin.SetMode(gin.TestMode)
 	store, token := benchAPITokenStore(b)

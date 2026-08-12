@@ -9,19 +9,13 @@ import (
 )
 
 // RecordRequestOutcome persists a service's updated stats (StatsStore) and a
-// usage audit row (UsageStore) together, in a single SQLite transaction,
-// instead of each store committing independently -- halving the per-request
-// COMMIT count on the path ProtocolHandler.trackUsageWithTokenUsage /
-// trackUsageFromContext take before responding to the client. See
-// .design/hot-path-db-access.md, which also has the pprof/benchmark
-// evidence this follows up on (BenchmarkStatsAndUsage_Combined).
+// usage audit row (UsageStore) together in one SQLite transaction, instead
+// of each store committing independently. Assumes both stores share the
+// same *gorm.DB, true of every production call site (StoreManager wires
+// every store to one shared connection). See .design/hot-path-db-access.md.
 //
 // service and/or usage may be nil (only one side has something to persist);
-// statsStore and/or usageStore may be nil (store not initialized). Both
-// stores are assumed to share the same *gorm.DB, true of every production
-// call site -- StoreManager wires every store to one shared connection (see
-// its initProviderStore/initAPITokenStore-style init* helpers) -- so the
-// transaction below always covers both writes there.
+// statsStore and/or usageStore may be nil (store not initialized).
 func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, service *loadbalance.Service, usage *UsageRecord) error {
 	if statsStore == nil {
 		if usageStore == nil || usage == nil {
@@ -33,18 +27,13 @@ func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, servic
 		return statsStore.UpdateFromService(service)
 	}
 
-	// Build both records before taking any lock: buildStatsRecordFromService
-	// only mutates the caller's *loadbalance.Service and prepareUsageRecord
-	// only mutates its own argument, neither touches store state, so there's
-	// no reason to hold statsStore.mu/usageStore.mu for this in-memory work.
+	// Build both records before taking any lock -- neither builder touches
+	// store state, only its own argument.
 	statsRecord := buildStatsRecordFromService(service)
 	if usage != nil {
 		prepareUsageRecord(usage)
 	}
 
-	// Lock order (stats then usage) is arbitrary but fixed, matching the only
-	// other place these two stores could ever be locked together -- nowhere
-	// else today, so there's no existing convention to conflict with.
 	statsStore.mu.Lock()
 	defer statsStore.mu.Unlock()
 	usageStore.mu.Lock()

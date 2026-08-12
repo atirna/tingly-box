@@ -340,9 +340,8 @@ func isRateLimitError(err error) bool {
 }
 
 // recordDetailedUsage builds the detailed usage record for the analytics
-// dashboard. Building is separate from persisting (see persistRequestOutcome)
-// so it can be saved together with the matching StatsStore update in one
-// SQLite transaction instead of two -- see .design/hot-path-db-access.md.
+// dashboard; persistRequestOutcome saves it together with the matching
+// StatsStore update.
 func (ph *ProtocolHandler) recordDetailedUsage(c *gin.Context, rule *typ.Rule, provider *typ.Provider, model, requestModel, scenario string, inputTokens, outputTokens int, streamed bool, status, errorCode string, latencyMs int) *db.UsageRecord {
 	ttftMs := CalculateTTFT(c)
 
@@ -370,9 +369,8 @@ func (ph *ProtocolHandler) recordDetailedUsage(c *gin.Context, rule *typ.Rule, p
 	return record
 }
 
-// recordDetailedUsageWithTokenUsage builds a detailed usage record with
-// comprehensive token data. Building is separate from persisting (see
-// persistRequestOutcome) for the same reason as recordDetailedUsage.
+// recordDetailedUsageWithTokenUsage is recordDetailedUsage with comprehensive
+// token data (cache/system tokens).
 func (ph *ProtocolHandler) recordDetailedUsageWithTokenUsage(c *gin.Context, rule *typ.Rule, provider *typ.Provider, model, requestModel, scenario string, usage *protocol.TokenUsage, streamed bool, status, errorCode string, latencyMs int) *db.UsageRecord {
 	if usage == nil {
 		return nil
@@ -407,11 +405,9 @@ func (ph *ProtocolHandler) recordDetailedUsageWithTokenUsage(c *gin.Context, rul
 	return record
 }
 
-// updateServiceStats updates the in-memory service-level statistics for load
-// balancing (tokens, latency, TTFT, cache, TPS) and returns the matched
-// service. Updating is separate from persisting (see persistRequestOutcome)
-// so the caller can save it together with the matching usage record in one
-// SQLite transaction instead of two -- see .design/hot-path-db-access.md.
+// updateServiceStats updates the in-memory service-level stats (tokens,
+// latency, TTFT, cache, TPS) and returns the matched service for
+// persistRequestOutcome to save.
 func (ph *ProtocolHandler) updateServiceStats(rule *typ.Rule, provider *typ.Provider, model string, metrics MetricsData) *loadbalance.Service {
 	if rule == nil || provider == nil {
 		return nil
@@ -449,11 +445,7 @@ func (ph *ProtocolHandler) updateServiceStats(rule *typ.Rule, provider *typ.Prov
 }
 
 // persistRequestOutcome saves service and usage (either may be nil) via
-// db.RecordRequestOutcome, which commits both to SQLite in a single
-// transaction when both stores share one *gorm.DB (always true in
-// production, see StoreManager) instead of updateServiceStats and
-// recordDetailedUsage[WithTokenUsage] each committing their own -- see
-// .design/hot-path-db-access.md for the pprof/benchmark evidence.
+// db.RecordRequestOutcome, which commits both in a single transaction.
 func (ph *ProtocolHandler) persistRequestOutcome(service *loadbalance.Service, usage *db.UsageRecord) {
 	if ph.deps.Config == nil {
 		return
