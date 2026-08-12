@@ -67,7 +67,9 @@ export default {
       "separate": "分离",
       "unified": "统一",
       "createProfileTooltip": "创建一个新的 Claude Code 配置文件，自定义设置",
-      "sloganTooltip": "致，所有独立开发者、开发团队和智能应用。"
+      "sloganTooltip": "致，所有独立开发者、开发团队和智能应用。",
+      "collapse": "收起侧边栏",
+      "expand": "展开侧边栏"
     },
     "activityBar": {
       "disconnected": "已断开",

@@ -65,7 +65,9 @@ export default {
       "separate": "Separate",
       "unified": "Unified",
       "createProfileTooltip": "Create a new Claude Code profile with custom settings",
-      "sloganTooltip": "For all Solo Builders, Dev Teams and Agents."
+      "sloganTooltip": "For all Solo Builders, Dev Teams and Agents.",
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar"
     },
     "activityBar": {
       "disconnected": "Disconnected",

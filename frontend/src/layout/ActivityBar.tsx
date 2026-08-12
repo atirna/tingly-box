@@ -1,4 +1,6 @@
 import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport } from '@/components/icons';
+import { tablerMui } from '@/components/icons';
+import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
 import { Box, Divider, ListItemButton, ListItemIcon, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
@@ -18,9 +20,13 @@ import {
     activityLogoCellSx,
     activityRailSx,
 } from './styles';
+import { useSidebarCollapsed } from './useSidebarCollapsed';
 import type { ActivityItem } from './types';
 import type { ThemeMode } from '@/theme';
 import { getThemeOptions } from '@/theme/options';
+
+const IconCollapseSidebar = tablerMui(IconLayoutSidebarLeftCollapse);
+const IconExpandSidebar = tablerMui(IconLayoutSidebarLeftExpand);
 
 interface ActivityBarProps {
     activityItems: ActivityItem[];
@@ -48,6 +54,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     const currentThemeOption = themeOptions.find((option) => option.value === themeMode);
     const renderCurrentThemeIcon = currentThemeOption?.renderIcon ?? themeOptions[0].renderIcon;
     const isOnboardingActive = location.pathname === '/onboarding';
+    const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapsed();
 
     const handleLanguageMenuClick = (event: React.MouseEvent<HTMLElement>) => {
         setLanguageMenuAnchorEl(event.currentTarget);
@@ -299,6 +306,24 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                         <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.1, fontSize: '0.65rem' }}>
                             {currentThemeOption?.label ?? 'Light'}
                         </Typography>
+                    </ListItemButton>
+                </Tooltip>
+            </Box>
+
+            {/* Collapse sidebar toggle - shows the secondary list when expanded,
+                hides it (keeping this icon rail) when collapsed. */}
+            <Box sx={activityBottomClusterSx}>
+                <Tooltip title={t(sidebarCollapsed ? 'layout.sidebar.expand' : 'layout.sidebar.collapse')} placement="right" arrow>
+                    <ListItemButton
+                        onClick={toggleSidebar}
+                        aria-label={t(sidebarCollapsed ? 'layout.sidebar.expand' : 'layout.sidebar.collapse')}
+                        sx={activityBottomItemSx({
+                            '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
+                        })}
+                    >
+                        <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
+                            {sidebarCollapsed ? <IconExpandSidebar sx={{ fontSize: 22 }} /> : <IconCollapseSidebar sx={{ fontSize: 22 }} />}
+                        </ListItemIcon>
                     </ListItemButton>
                 </Tooltip>
             </Box>

@@ -10,6 +10,7 @@ import { mobileContentSx, mobileMenuButtonSx, mobileNavigationBarSx } from './st
 import { ActivityBar } from './ActivityBar.tsx';
 import { Sidebar } from './Sidebar';
 import { useActivityItems } from './useActivityItems.tsx';
+import { SidebarCollapsedProvider, useSidebarCollapsed } from './useSidebarCollapsed';
 import type { ActivityItem, LayoutProps } from './types';
 import { FloatingStatusIndicators } from '../components/FloatingStatusIndicators';
 
@@ -28,7 +29,7 @@ const MobileNavigationBar = ({ onMenuClick }: { onMenuClick: () => void }) => (
     </Box>
 );
 
-const Layout = ({ children }: LayoutProps) => {
+const LayoutInner = ({ children }: LayoutProps) => {
     const { t } = useTranslation();
     const location = useLocation();
     const navigate = useNavigate();
@@ -37,6 +38,7 @@ const Layout = ({ children }: LayoutProps) => {
     const [easterEggAnchorEl, setEasterEggAnchorEl] = useState<HTMLElement | null>(null);
 
     const activityItems = useActivityItems();
+    const { collapsed: sidebarCollapsed } = useSidebarCollapsed();
 
     const isActive = (path: string) => location.pathname === path;
     const isChildActive = (children?: ActivityItem['children']) =>
@@ -125,7 +127,7 @@ const Layout = ({ children }: LayoutProps) => {
                 onUserClick={(e) => setEasterEggAnchorEl(e.currentTarget)}
                 onStandaloneNavigate={() => setMobileOpen(false)}
             />
-            {sidebarItems.length > 0 && (
+            {sidebarItems.length > 0 && !sidebarCollapsed && (
                 <Sidebar
                     sidebarItems={sidebarItems}
                     activeActivityLabel={activeActivityLabel}
@@ -189,5 +191,14 @@ const Layout = ({ children }: LayoutProps) => {
         </Box>
     );
 };
+
+// The collapse state is shared between ActivityBar (toggle) and the Sidebar
+// slot here, so the provider is mounted at the Layout boundary — both children
+// consume the same context.
+const Layout = ({ children }: LayoutProps) => (
+    <SidebarCollapsedProvider>
+        <LayoutInner>{children}</LayoutInner>
+    </SidebarCollapsedProvider>
+);
 
 export default Layout;
