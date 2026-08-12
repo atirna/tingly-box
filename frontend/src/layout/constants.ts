@@ -6,7 +6,7 @@ export const headerHeight = 60;
 export const footerHeight = 60;
 
 // --- Activity Bar Item sizing ---
-export const activityItemMinHeight = 48;
+export const activityItemMinHeight = 52;
 export const activityItemGap = 0.5;
 export const activityItemRadius = 1.25;
 export const activityItemPaddingX = 1;

@@ -152,12 +152,14 @@ export const activityLogoButtonSx: SxProps<Theme> = {
 
 /** Shared sizing for the sidebar's nav-style rows, kept here so every row is
  *  the same height whether or not it happens to carry a subtitle. `mx` is part
- *  of the row geometry (inset from the rail edge), so it lives here too. */
+ *  of the row geometry (inset from the rail edge), so it lives here too.
+ *  minHeight is sized to comfortably fit two text lines (primary 14px +
+ *  secondary 11px ≈ 31px) with breathing room above and below. */
 export const NAV_ROW_SX = {
     mx: 1,
-    minHeight: 40,
+    minHeight: 52,
     borderRadius: 1.25,
-    py: 0.75,
+    py: 1,
     px: 2,
 } as const;
 
