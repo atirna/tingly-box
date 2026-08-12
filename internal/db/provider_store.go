@@ -328,21 +328,37 @@ func NewProviderStore(baseDir string) (*ProviderStore, error) {
 	}
 	logrus.Debugf("SQLite database opened successfully for provider store")
 
+	store, err := newProviderStoreOverDB(db, dbPath)
+	if err != nil {
+		return nil, err
+	}
+	logrus.Debugf("Provider store initialization completed")
+
+	return store, nil
+}
+
+// newProviderStoreOverDB finishes setting up a ProviderStore (schema
+// migration + cache load) over an already-open *gorm.DB, whether that
+// connection is NewProviderStore's own or StoreManager's shared one. Having
+// both construction paths funnel through this single function is what makes
+// the cache-init wiring impossible to duplicate-and-drift between them --
+// see StoreManager.initProviderStore, and the "watch for bypass
+// construction" note in .design/hot-path-db-access.md, which is exactly the
+// class of bug this consolidation closes off for any future field added to
+// ProviderStore's construction.
+func newProviderStoreOverDB(db *gorm.DB, dbPath string) (*ProviderStore, error) {
+	if err := db.AutoMigrate(&ProviderRecord{}); err != nil {
+		return nil, fmt.Errorf("failed to migrate provider database: %w", err)
+	}
+
 	store := &ProviderStore{
 		db:     db,
 		dbPath: dbPath,
 		cache:  make(map[string]*ProviderRecord),
 	}
-
-	// Auto-migrate schema
-	if err := db.AutoMigrate(&ProviderRecord{}); err != nil {
-		return nil, fmt.Errorf("failed to migrate provider database: %w", err)
-	}
-
 	if err := store.loadCache(); err != nil {
 		return nil, fmt.Errorf("failed to load provider cache: %w", err)
 	}
-	logrus.Debugf("Provider store initialization completed")
 
 	return store, nil
 }
@@ -374,17 +390,12 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	if existing, ok := ps.cache[provider.UUID]; ok {
-		// Update a copy first -- only replace the cached record once the
-		// SQLite write actually succeeds, so a failed Save can't leave the
-		// cache holding data that was never persisted (see UpdateOAuthAccessToken
-		// below for the same write-then-cache ordering).
-		updated := *existing
-		updateRecordFromProvider(&updated, provider)
-		if err := ps.db.Save(&updated).Error; err != nil {
+	if _, ok := ps.cache[provider.UUID]; ok {
+		if _, err := ps.writeThroughLocked(provider.UUID, func(r *ProviderRecord) {
+			updateRecordFromProvider(r, provider)
+		}); err != nil {
 			return fmt.Errorf("failed to update provider record: %w", err)
 		}
-		ps.cache[provider.UUID] = &updated
 		logrus.Debugf("Updated provider: %s (%s)", provider.Name, provider.UUID)
 	} else {
 		// Create new record
@@ -398,6 +409,31 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 	}
 
 	return nil
+}
+
+// writeThroughLocked applies mutate to a copy of the cached record for uuid,
+// persists the copy to SQLite, and only swaps it into ps.cache once that
+// write succeeds -- so a failed write can never leave the cache holding data
+// that was never persisted (in contrast to mutating the cached pointer
+// in-place before the write, which a failed Save can't undo). Shared by
+// Save's update path, UpdateCredential, and UpdateCredentialBundle, which
+// otherwise each duplicated this exact clone-mutate-save-swap shape.
+// Callers must hold ps.mu.Lock().
+func (ps *ProviderStore) writeThroughLocked(uuid string, mutate func(*ProviderRecord)) (*ProviderRecord, error) {
+	existing, ok := ps.cache[uuid]
+	if !ok {
+		return nil, fmt.Errorf("provider with UUID '%s' not found", uuid)
+	}
+
+	updated := *existing
+	mutate(&updated)
+
+	if err := ps.db.Save(&updated).Error; err != nil {
+		return nil, err
+	}
+
+	ps.cache[uuid] = &updated
+	return &updated, nil
 }
 
 // GetByUUID returns a provider by UUID
@@ -445,7 +481,7 @@ func (ps *ProviderStore) ListOAuth() ([]*typ.Provider, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
-	providers := make([]*typ.Provider, 0)
+	providers := make([]*typ.Provider, 0, len(ps.order))
 	for _, uuid := range ps.order {
 		record := ps.cache[uuid]
 		if record.AuthType == string(typ.AuthTypeOAuth) {
@@ -507,37 +543,26 @@ func (ps *ProviderStore) UpdateCredential(uuid string, token string, oauthDetail
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	existing, ok := ps.cache[uuid]
-	if !ok {
-		return fmt.Errorf("provider with UUID '%s' not found", uuid)
-	}
-
-	// Update a copy first -- see Save's comment on why the cache is only
-	// replaced after the SQLite write succeeds.
-	updated := *existing
-
-	// Update credential fields based on auth type
-	if updated.AuthType == string(typ.AuthTypeOAuth) && oauthDetail != nil {
-		updated.Token = oauthDetail.AccessToken
-		updated.OAuthProviderType = string(oauthDetail.GetIssuer())
-		updated.OAuthUserID = oauthDetail.UserID
-		updated.OAuthRefreshToken = oauthDetail.RefreshToken
-		updated.OAuthExpiresAt = oauthDetail.ExpiresAt
-		if oauthDetail.ExtraFields != nil {
-			extraJSON, _ := json.Marshal(oauthDetail.ExtraFields)
-			updated.OAuthExtraFields = string(extraJSON)
+	_, err := ps.writeThroughLocked(uuid, func(r *ProviderRecord) {
+		if r.AuthType == string(typ.AuthTypeOAuth) && oauthDetail != nil {
+			r.Token = oauthDetail.AccessToken
+			r.OAuthProviderType = string(oauthDetail.GetIssuer())
+			r.OAuthUserID = oauthDetail.UserID
+			r.OAuthRefreshToken = oauthDetail.RefreshToken
+			r.OAuthExpiresAt = oauthDetail.ExpiresAt
+			if oauthDetail.ExtraFields != nil {
+				extraJSON, _ := json.Marshal(oauthDetail.ExtraFields)
+				r.OAuthExtraFields = string(extraJSON)
+			}
+		} else {
+			r.Token = token
 		}
-	} else {
-		updated.Token = token
-	}
-
-	updated.UpdatedAt = time.Now()
-
-	if err := ps.db.Save(&updated).Error; err != nil {
+		r.UpdatedAt = time.Now()
+	})
+	if err != nil {
 		return fmt.Errorf("failed to update provider credential: %w", err)
 	}
 
-	ps.cache[uuid] = &updated
 	logrus.Debugf("Updated credential for provider: %s", uuid)
 	return nil
 }
@@ -549,27 +574,19 @@ func (ps *ProviderStore) UpdateCredentialBundle(uuid string, bundle *typ.Credent
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	existing, ok := ps.cache[uuid]
-	if !ok {
-		return fmt.Errorf("provider with UUID '%s' not found", uuid)
-	}
-
-	// Update a copy first -- see Save's comment on why the cache is only
-	// replaced after the SQLite write succeeds.
-	updated := *existing
-	if bundle != nil {
-		credJSON, _ := json.Marshal(bundle)
-		updated.Credential = string(credJSON)
-	} else {
-		updated.Credential = ""
-	}
-	updated.UpdatedAt = time.Now()
-
-	if err := ps.db.Save(&updated).Error; err != nil {
+	_, err := ps.writeThroughLocked(uuid, func(r *ProviderRecord) {
+		if bundle != nil {
+			credJSON, _ := json.Marshal(bundle)
+			r.Credential = string(credJSON)
+		} else {
+			r.Credential = ""
+		}
+		r.UpdatedAt = time.Now()
+	})
+	if err != nil {
 		return fmt.Errorf("failed to update provider credential bundle: %w", err)
 	}
 
-	ps.cache[uuid] = &updated
 	logrus.Debugf("Updated credential bundle for provider: %s", uuid)
 	return nil
 }
@@ -643,7 +660,7 @@ func (ps *ProviderStore) ListEnabled() ([]*typ.Provider, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
-	providers := make([]*typ.Provider, 0)
+	providers := make([]*typ.Provider, 0, len(ps.order))
 	for _, uuid := range ps.order {
 		record := ps.cache[uuid]
 		if record.Enabled {

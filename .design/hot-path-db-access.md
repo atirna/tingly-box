@@ -185,16 +185,18 @@ primary key.
   `internal/db/record_outcome.go`) — implemented. `StatsStore.UpdateFromService`
   and `UsageStore.RecordUsage` were split into a pure record-builder
   (`buildStatsRecordFromService`, `prepareUsageRecord`) and the DB write, so
-  `RecordRequestOutcome` can build both records and `tx.Save`/`tx.Create`
-  them inside one `gorm.DB.Transaction(...)` call when both stores share the
-  same underlying `*gorm.DB` (always true in production — `StoreManager`
-  wires every store to one shared connection; a `db != db` fallback exists
-  for the never-exercised-in-production case of independently constructed
-  stores). `usage_tracking.go`'s `updateServiceStats` and
-  `recordDetailedUsage[WithTokenUsage]` now build-and-return instead of
-  persisting inline; a new `persistRequestOutcome` calls
-  `db.RecordRequestOutcome` once per request instead of two independent
-  store calls.
+  `RecordRequestOutcome` can build both records (outside any lock — neither
+  builder touches store state) and `tx.Save`/`tx.Create` them inside one
+  `gorm.DB.Transaction(...)` call. This assumes both stores share the same
+  underlying `*gorm.DB`, which every production call site guarantees
+  (`StoreManager` wires every store to one shared connection) — an earlier
+  version carried a fallback for mismatched-DB stores, removed in a
+  follow-up simplify pass once review converged on it being speculative
+  generality for a path with no real caller (see below). `usage_tracking.go`'s
+  `updateServiceStats` and `recordDetailedUsage[WithTokenUsage]` now
+  build-and-return instead of persisting inline; a new `persistRequestOutcome`
+  calls `db.RecordRequestOutcome` once per request instead of two
+  independent store calls.
 
   | Benchmark | separate transactions | merged transaction | change |
   |---|---|---|---|
@@ -276,7 +278,14 @@ path**:
    `StoreManager`-only constructor path and delete the literal. This is
    exactly what broke `TestStoreManager_StoreOperations` on the first pass on
    `ProviderStore`, and would have broken `APITokenStore` the same way had
-   `initAPITokenStore` not been fixed alongside it.
+   `initAPITokenStore` not been fixed alongside it. A follow-up simplify pass
+   closed this off structurally rather than relying on remembering to update
+   both places by hand: `ProviderStore`/`APITokenStore` each now have a
+   `newXStoreOverDB(db *gorm.DB, dbPath string)` that does the post-open setup
+   (migrate + cache init + `loadCache`), called by both `NewXStore` (which
+   opens its own connection) and `StoreManager.initXStore` (which reuses the
+   shared one) — one code path for "how to finish building this store," not
+   two copies that can drift.
 4. **Write the benchmark first, against the real production wiring, and
    profile before touching any code** — `internal/routing/pipeline_bench_test.go`
    for the routing pipeline, `internal/middleware/auth_bench_test.go` for the

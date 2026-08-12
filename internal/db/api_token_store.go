@@ -92,14 +92,21 @@ func NewAPITokenStore(baseDir string) (*APITokenStore, error) {
 	}
 	logrus.Debugf("SQLite database opened successfully for API token store")
 
-	store := &APITokenStore{
-		db:               db,
-		dbPath:           dbPath,
-		cache:            make(map[string]*APITokenRecord),
-		lastUsedDebounce: defaultLastUsedDebounce,
+	store, err := newAPITokenStoreOverDB(db, dbPath)
+	if err != nil {
+		return nil, err
 	}
 
-	// Auto-migrate schema
+	logrus.Debugf("API token store initialization completed")
+	return store, nil
+}
+
+// newAPITokenStoreOverDB finishes setting up an APITokenStore (schema
+// migration + cache load) over an already-open *gorm.DB, whether that
+// connection is NewAPITokenStore's own or StoreManager's shared one. See
+// newProviderStoreOverDB in provider_store.go for why both construction
+// paths funnel through one function instead of duplicating this wiring.
+func newAPITokenStoreOverDB(db *gorm.DB, dbPath string) (*APITokenStore, error) {
 	if err := db.AutoMigrate(&APITokenRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate API token database: %w", err)
 	}
@@ -109,11 +116,16 @@ func NewAPITokenStore(baseDir string) (*APITokenStore, error) {
 		return nil, fmt.Errorf("failed to align API token schema: %w", err)
 	}
 
+	store := &APITokenStore{
+		db:               db,
+		dbPath:           dbPath,
+		cache:            make(map[string]*APITokenRecord),
+		lastUsedDebounce: defaultLastUsedDebounce,
+	}
 	if err := store.loadCache(); err != nil {
 		return nil, fmt.Errorf("failed to load API token cache: %w", err)
 	}
 
-	logrus.Debugf("API token store initialization completed")
 	return store, nil
 }
 
@@ -228,11 +240,6 @@ func (s *APITokenStore) RevokeToken(tokenID, reason string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	record, ok := s.cache[tokenID]
-	if !ok {
-		return fmt.Errorf("token with ID '%s' not found", tokenID)
-	}
-
 	now := time.Now()
 	result := s.db.Model(&APITokenRecord{}).
 		Where("token_id = ?", tokenID).
@@ -249,9 +256,11 @@ func (s *APITokenStore) RevokeToken(tokenID, reason string) error {
 		return fmt.Errorf("token with ID '%s' not found", tokenID)
 	}
 
-	record.Enabled = false
-	record.RevokedAt = &now
-	record.RevokeReason = reason
+	if record, ok := s.cache[tokenID]; ok {
+		record.Enabled = false
+		record.RevokedAt = &now
+		record.RevokeReason = reason
+	}
 
 	logrus.Debugf("Revoked API token: %s, reason: %s", tokenID, reason)
 	return nil

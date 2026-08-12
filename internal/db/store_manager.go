@@ -200,16 +200,9 @@ func (sm *StoreManager) initUsageStore() error {
 
 // initProviderStore initializes the ProviderStore.
 func (sm *StoreManager) initProviderStore() error {
-	if err := sm.db.AutoMigrate(&ProviderRecord{}); err != nil {
+	store, err := newProviderStoreOverDB(sm.db, constant.GetDBFile(sm.baseDir))
+	if err != nil {
 		return err
-	}
-	store := &ProviderStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-		cache:  make(map[string]*ProviderRecord),
-	}
-	if err := store.loadCache(); err != nil {
-		return fmt.Errorf("failed to load provider cache: %w", err)
 	}
 	sm.providerStore = store
 	return nil
@@ -260,17 +253,9 @@ func (sm *StoreManager) initModelStore() error {
 
 // initAPITokenStore initializes the APITokenStore.
 func (sm *StoreManager) initAPITokenStore() error {
-	if err := sm.db.AutoMigrate(&APITokenRecord{}); err != nil {
+	store, err := newAPITokenStoreOverDB(sm.db, constant.GetDBFile(sm.baseDir))
+	if err != nil {
 		return err
-	}
-	store := &APITokenStore{
-		db:               sm.db,
-		dbPath:           constant.GetDBFile(sm.baseDir),
-		cache:            make(map[string]*APITokenRecord),
-		lastUsedDebounce: defaultLastUsedDebounce,
-	}
-	if err := store.loadCache(); err != nil {
-		return fmt.Errorf("failed to load API token cache: %w", err)
 	}
 	sm.apiTokenStore = store
 	return nil

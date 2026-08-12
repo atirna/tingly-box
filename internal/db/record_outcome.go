@@ -18,11 +18,10 @@ import (
 //
 // service and/or usage may be nil (only one side has something to persist);
 // statsStore and/or usageStore may be nil (store not initialized). Both
-// stores share the same *gorm.DB in production -- StoreManager wires every
-// store to one shared connection -- so this is always able to combine the
-// two writes there. The db != db fallback exists only for direct NewXStore
-// construction (outside StoreManager, e.g. a future standalone tool),
-// which is never mixed with StoreManager-built stores in production today.
+// stores are assumed to share the same *gorm.DB, true of every production
+// call site -- StoreManager wires every store to one shared connection (see
+// its initProviderStore/initAPITokenStore-style init* helpers) -- so the
+// transaction below always covers both writes there.
 func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, service *loadbalance.Service, usage *UsageRecord) error {
 	if statsStore == nil {
 		if usageStore == nil || usage == nil {
@@ -34,16 +33,13 @@ func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, servic
 		return statsStore.UpdateFromService(service)
 	}
 
-	if statsStore.db != usageStore.db {
-		statsErr := statsStore.UpdateFromService(service)
-		var usageErr error
-		if usage != nil {
-			usageErr = usageStore.RecordUsage(usage)
-		}
-		if statsErr != nil {
-			return statsErr
-		}
-		return usageErr
+	// Build both records before taking any lock: buildStatsRecordFromService
+	// only mutates the caller's *loadbalance.Service and prepareUsageRecord
+	// only mutates its own argument, neither touches store state, so there's
+	// no reason to hold statsStore.mu/usageStore.mu for this in-memory work.
+	statsRecord := buildStatsRecordFromService(service)
+	if usage != nil {
+		prepareUsageRecord(usage)
 	}
 
 	// Lock order (stats then usage) is arbitrary but fixed, matching the only
@@ -53,11 +49,6 @@ func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, servic
 	defer statsStore.mu.Unlock()
 	usageStore.mu.Lock()
 	defer usageStore.mu.Unlock()
-
-	statsRecord := buildStatsRecordFromService(service)
-	if usage != nil {
-		prepareUsageRecord(usage)
-	}
 
 	return statsStore.db.Transaction(func(tx *gorm.DB) error {
 		if statsRecord != nil {
