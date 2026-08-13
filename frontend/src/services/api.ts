@@ -3,6 +3,7 @@
 import TinglyService from "@/bindings";
 import type {components} from '@/client';
 import type {BotChat, BotSettings} from '@/types/bot';
+import type {CreatePeerRequest, Peer, UpdatePeerRequest} from '@/types/peer';
 import {getApiBaseUrl} from '../utils/protocol';
 import {
     controlApi,
@@ -1643,6 +1644,21 @@ export const api = {
             return {error: error.message};
         }
     },
+
+    // Peers — external tools registered on tingly-box (.design/peer.md).
+    // Control-plane CRUD + token rotation; raw paths in the botAccessAPI
+    // style until the SDK codegen exposes the peer schemas. The plaintext
+    // tb-peer- token appears exactly once, in create/rotate responses.
+    listPeers: (): Promise<{peers: Peer[]}> =>
+        botAccessAPI('/api/v1/peers'),
+    createPeer: (body: CreatePeerRequest): Promise<{peer: Peer; token: string}> =>
+        botAccessAPI('/api/v1/peers', {method: 'POST', body: JSON.stringify(body)}),
+    updatePeer: (uuid: string, body: UpdatePeerRequest): Promise<{peer: Peer}> =>
+        botAccessAPI(`/api/v1/peers/${encodeURIComponent(uuid)}`, {method: 'PUT', body: JSON.stringify(body)}),
+    deletePeer: (uuid: string): Promise<{ok: boolean}> =>
+        botAccessAPI(`/api/v1/peers/${encodeURIComponent(uuid)}`, {method: 'DELETE'}),
+    rotatePeerToken: (uuid: string): Promise<{token: string}> =>
+        botAccessAPI(`/api/v1/peers/${encodeURIComponent(uuid)}/token`, {method: 'POST'}),
 
     // Send a one-way notification to a running bot's chat
     // (POST /api/v1/bots/:bot/notify). Placeholder until codegen regenerates
