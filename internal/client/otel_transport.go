@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/tingly-dev/tingly-box/ai"
+	"github.com/tingly-dev/tingly-box/internal/typ"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -33,9 +36,17 @@ func newPropagatingTransport(base http.RoundTripper) http.RoundTripper {
 	return &propagatingTransport{base: base}
 }
 
-// Unwrap exposes the underlying transport so tests can assert the shape of
-// the provider-specific chain beneath the protocol-neutral wrapper.
-func (t *propagatingTransport) Unwrap() http.RoundTripper { return t.base }
+// newPooledBaseTransport is the base transport for providers that take a connection
+// straight from the pool (as opposed to the ref-counted session-bound path in
+// createSessionBoundTransport). Both are trace seams, and having exactly two
+// of them is why the wrapper is its own layer rather than folded into either:
+// the pool hands back a concrete *http.Transport that callers configure and
+// assert on, so it cannot wrap on its own behalf.
+func newPooledBaseTransport(provider *typ.Provider, model string, sessionID typ.SessionID) http.RoundTripper {
+	return newPropagatingTransport(
+		GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID),
+	)
+}
 
 func (t *propagatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !trace.SpanContextFromContext(req.Context()).IsValid() {

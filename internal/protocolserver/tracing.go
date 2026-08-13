@@ -20,6 +20,16 @@ import (
 	pkgotel "github.com/tingly-dev/tingly-box/pkg/otel"
 )
 
+// This file is the single home for the gateway's span code: the request
+// middleware below, the routing and failover attempt spans, and the traced
+// selection wrappers handlers call. It lives in protocolserver rather than
+// internal/middleware because that package holds what server and
+// protocolserver share (auth, access log, CORS, gzip, timeouts), while the
+// gateway's own middlewares — legacyScenarioAlias, profileAlias, context and
+// this one — belong to the routes they are registered on. Moving it would
+// also need internal/middleware to reach back for GetTrackingContext, which
+// protocolserver already imports the other way around.
+
 // tracingMiddleware owns the lifecycle of the per-request root span. It is
 // the only place that starts and ends it: trackUsage* fires more than once
 // per request (failover setup failures, MCP loop iterations), so span

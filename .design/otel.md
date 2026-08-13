@@ -126,9 +126,23 @@ import 环。追踪元数据簇已被 `SetTrackingContext`/`GetTrackingContext` 
 **打点集中在一处,不散落到 handler**:routing span 一度是 6 个 handler 里各一对手工括号
 （`endRouting := ph.startRoutingSpan(c)` … `endRouting(err)`）——新增端点就得有人记得补,
 是典型的"细碎"型可维护性债。现在 handler 调用 `ph.selectService` / `selectServiceForEmbeddings`
-/ `selectServiceForImageGeneration` 这三个带打点的包装方法,span 只在 `tracing_middleware.go`
+/ `selectServiceForImageGeneration` 这三个带打点的包装方法,span 只在 `tracing.go`
 出现一次。业务文件里剩余的 span 接触点只有两处不可再收的:failover 循环内的 attempt span
 （本就一处）、`usage_tracking.go` 的 token 用量镜像（与其余记账步骤并列）。
+
+**span 代码归 protocolserver,不进 `internal/middleware`**:后者装的是 server 与
+protocolserver **共用**的那些（auth / access log / CORS / gzip / IO 超时），而网关自己的
+中间件（legacyScenarioAlias / profileAlias / context / tracing）历来跟着它们注册的路由走。
+搬过去还要让 middleware 反向引用 `GetTrackingContext`，而 protocolserver 已经正向依赖
+middleware——会成环。文件名从 `tracing_middleware.go` 改为 `tracing.go`，因为它装的
+不只是中间件。
+
+**上游 transport 的包裹为什么是独立一层**:连接池 `GetTransport` 返回具体的
+`*http.Transport`，调用方（含 `pool_test.go`）会读它的 `Proxy` 等字段配置连接行为，
+所以池不能替自己包裹；而基础 transport 恰好有两种形状——池直连、以及带引用计数的
+session-bound。因此打点层是这两处的公共下沿，`newPooledBaseTransport` 收敛了池直连那
+三处逐字重复的构造。**关闭不需要新开关**:`otel.Config.Enabled=false` 时不建 provider，
+请求上下文里没有 span，transport 首行判断即原样透传。
 
 **attempt / routing span 不换入 `c.Request` 的 context**：ambient span 必须始终是 root，token usage 才会落在 root 上（GenAI 约定要求）。代价是 upstream span 与 attempt span 是兄弟而非父子——视图侧按**时间包含关系**做嵌套展示，比改动语义更便宜且更稳。
 

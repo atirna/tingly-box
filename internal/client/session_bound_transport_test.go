@@ -632,7 +632,7 @@ func unwrapPropagating(t *testing.T, rt http.RoundTripper) http.RoundTripper {
 	if !ok {
 		t.Fatalf("Expected propagatingTransport at the top of the chain, got %T", rt)
 	}
-	return pt.Unwrap()
+	return pt.base
 }
 
 // TestTransportPoolWithSessionBound tests integration between
