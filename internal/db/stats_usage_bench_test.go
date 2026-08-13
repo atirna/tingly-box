@@ -19,7 +19,7 @@ func newUsageStoreForBench(b *testing.B) *UsageStore {
 
 // Benchmarks for StatsStore/UsageStore, both written synchronously once per
 // completed LLM request by ProtocolHandler.trackUsageWithTokenUsage -- see
-// .design/hot-path-db-access.md.
+// .design/db.md.
 //
 // Run: go test ./internal/db/... -bench 'StatsStore|UsageStore' -benchmem -run '^$'
 
