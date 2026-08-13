@@ -1531,6 +1531,8 @@ export default {
     "model": {
       "label": "选择模型",
       "configured": "已配置",
+      "skipped": "已跳过",
+      "skip": "跳过",
       "choose": "选择模型",
       "change": "更换",
       "tooltip": "在下方的模型规则中选择 {{agent}} 使用的模型。",

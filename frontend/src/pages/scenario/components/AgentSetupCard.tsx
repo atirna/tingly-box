@@ -60,6 +60,9 @@ export interface AgentSetupCardProps {
 const COLLAPSED_KEY = (agentKey: string) => `setup-card-collapsed-${agentKey}`;
 const INSTALL_DONE_KEY = (agentKey: string) => `setup-card-step2-done-${agentKey}`;
 const APPLY_DONE_KEY = (agentKey: string) => `setup-card-step3-done-${agentKey}`;
+// Step 2 (model) can be skipped, mirroring Step 4's skip. Skipping marks the
+// step done so the wizard advances, without claiming a model was configured.
+const MODEL_SKIPPED_KEY = (agentKey: string) => `setup-card-step2-skipped-${agentKey}`;
 const TOTAL_STEPS = 4;
 
 /** True iff at least one rule has a service with both a non-empty provider and model. */
@@ -133,6 +136,9 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
     const [applyDone, setApplyDone] = useState(
         () => localStorage.getItem(APPLY_DONE_KEY(agentKey)) === 'true'
     );
+    const [modelSkipped, setModelSkipped] = useState(
+        () => localStorage.getItem(MODEL_SKIPPED_KEY(agentKey)) === 'true'
+    );
     const [hasProvider, setHasProvider] = useState(false);
     const [providerCount, setProviderCount] = useState(0);
     const [providerLoading, setProviderLoading] = useState(true);
@@ -167,7 +173,11 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
     }, []);
 
     const providerDone = hasProvider;
-    const modelDone = hasModelSelected;
+    const modelSelected = hasModelSelected;
+    // The step counts as done either when a model is really configured (the
+    // provider actually routes a model on some rule) or when the user chose to
+    // skip it. "Configured" vs "skipped" stays distinct on the row itself.
+    const modelDone = modelSelected || modelSkipped;
     const allDone = providerDone && modelDone && installDone && applyDone;
     const doneCount = [providerDone, modelDone, installDone, applyDone].filter(Boolean).length;
 
@@ -207,6 +217,22 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
         setInstallDone(true);
     };
 
+    const markModelSkipped = () => {
+        localStorage.setItem(MODEL_SKIPPED_KEY(agentKey), 'true');
+        setModelSkipped(true);
+    };
+
+    // Re-entry after a skip: opening the model picker drops the skipped mark
+    // (progress still stands on the already-selected model / provider), so the
+    // row flips back to the real "configured" state as soon as a model is set.
+    const handleChooseModel = () => {
+        if (modelSkipped) {
+            localStorage.removeItem(MODEL_SKIPPED_KEY(agentKey));
+            setModelSkipped(false);
+        }
+        onSelectModel?.();
+    };
+
     const handleApplyWithStatusLine = async () => {
         if (!onApplyWithStatusLine) return;
         const result = await onApplyWithStatusLine();
@@ -221,9 +247,11 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
         localStorage.removeItem(COLLAPSED_KEY(agentKey));
         localStorage.removeItem(INSTALL_DONE_KEY(agentKey));
         localStorage.removeItem(APPLY_DONE_KEY(agentKey));
+        localStorage.removeItem(MODEL_SKIPPED_KEY(agentKey));
         setCollapsed(false);
         setInstallDone(false);
         setApplyDone(false);
+        setModelSkipped(false);
         setApplyResult(null);
         setCopied(false);
         setCopiedMirror(false);
@@ -283,11 +311,24 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
                 </Stack>
             }
             rightAction={
-                <Tooltip title={collapsed ? t('agentSetup.expand') : t('agentSetup.collapse')}>
-                    <IconButton size="small" onClick={toggleCollapsed}>
-                        {collapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
-                    </IconButton>
-                </Tooltip>
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                    {/* Reset is always reachable from the header (not buried at the
+                        bottom of an expanded card), so it works whether the card is
+                        open, closed, or mid-flow. */}
+                    <Button
+                        size="small"
+                        variant="text"
+                        onClick={handleReset}
+                        sx={{ py: 0, textTransform: 'none', color: 'text.secondary', minWidth: 0, fontSize: '0.75rem' }}
+                    >
+                        {t('agentSetup.resetProgress')}
+                    </Button>
+                    <Tooltip title={collapsed ? t('agentSetup.expand') : t('agentSetup.collapse')}>
+                        <IconButton size="small" onClick={toggleCollapsed}>
+                            {collapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
+                        </IconButton>
+                    </Tooltip>
+                </Stack>
             }
         >
             <Collapse in={!collapsed} unmountOnExit={false}>
@@ -349,10 +390,15 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
                                 }}>
                                 {t('agentSetup.model.label')}
                             </Typography>
-                            {modelDone && (
+                            {modelSelected && (
                                 <Typography variant="body2" sx={{
                                     color: "text.secondary"
                                 }}>{t('agentSetup.model.configured')}</Typography>
+                            )}
+                            {modelSkipped && !modelSelected && (
+                                <Typography variant="body2" sx={{
+                                    color: "text.secondary"
+                                }}>{t('agentSetup.model.skipped')}</Typography>
                             )}
                             {onSelectModel && (
                                 <Tooltip title={modelDone ? '' : t('agentSetup.model.tooltip', { agent: agentName })}>
@@ -361,13 +407,20 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
                                             size="small"
                                             variant={modelDone ? 'text' : 'contained'}
                                             disabled={!modelDone && !providerDone}
-                                            onClick={onSelectModel}
+                                            onClick={handleChooseModel}
                                             sx={modelDone ? { py: 0, textTransform: 'none', minWidth: 0 } : { py: 0.25 }}
                                         >
-                                            {modelDone ? t('agentSetup.model.change') : t('agentSetup.model.choose')}
+                                            {modelSelected ? t('agentSetup.model.change') : t('agentSetup.model.choose')}
                                         </Button>
                                     </span>
                                 </Tooltip>
+                            )}
+                            {firstIncomplete === 1 && (
+                                <Button variant="text" size="small"
+                                    onClick={(e) => { e.stopPropagation(); markModelSkipped(); }}
+                                    sx={{ py: 0, textTransform: 'none', color: 'text.disabled', minWidth: 0 }}>
+                                    {t('agentSetup.model.skip')}
+                                </Button>
                             )}
                         </Stack>
                     </Box>
@@ -583,15 +636,6 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
                             </Stack>
                         </Collapse>
                     </Box>
-
-                    {/* Reset link — only visible when something has been manually completed */}
-                    {(installDone || applyDone) && (
-                        <Box sx={{ pt: 0.5, pl: 1.5 }}>
-                            <Button size="small" variant="text" onClick={handleReset} sx={{ py: 0, textTransform: 'none', color: 'text.disabled', fontSize: '0.75rem' }}>
-                                {t('agentSetup.resetProgress')}
-                            </Button>
-                        </Box>
-                    )}
                 </Stack>
             </Collapse>
         </UnifiedCard>

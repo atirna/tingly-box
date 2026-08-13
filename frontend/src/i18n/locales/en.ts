@@ -1531,6 +1531,8 @@ export default {
     "model": {
       "label": "Select a Model",
       "configured": "Configured",
+      "skipped": "Skipped",
+      "skip": "Skip",
       "choose": "Choose Model",
       "change": "Change",
       "tooltip": "Choose which model {{agent}} will use in the Model Rules section below."
