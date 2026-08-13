@@ -18,12 +18,14 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 	url := strings.ToLower(providerURL)
 	modelLower := strings.ToLower(model)
 
-	// prompt_cache_options / prompt_cache_breakpoint are OpenAI gpt-5.6+
-	// fields, not part of the long-stable Chat Completions schema every
-	// OpenAI-compatible vendor cloned. Most vendors — including Azure OpenAI
-	// — don't implement them, and strict-schema gateways reject the whole
-	// request over an unknown field. Default to stripping; only vendors
-	// confirmed to accept them opt in below.
+	// prompt_cache_options / prompt_cache_retention / prompt_cache_breakpoint
+	// are OpenAI-specific fields, not part of the long-stable Chat Completions
+	// schema every OpenAI-compatible vendor cloned. Most vendors don't
+	// implement them, and strict-schema gateways reject the whole request over
+	// an unknown field — Azure OpenAI ignores them, NVIDIA NIM 400s on the
+	// top-level ones ("Unsupported parameter(s): `prompt_cache_options`",
+	// #1548). Default to stripping; only vendors confirmed to accept them opt
+	// in below.
 	if !supportsExplicitPromptCache(url) {
 		stripOpenAIPromptCacheFields(req)
 	}
@@ -35,11 +37,6 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 		strings.Contains(url, "api.kimi.com/coding/v1"),
 		strings.Contains(url, "opencode.ai/zen/go") && strings.Contains(modelLower, "deepseek"):
 		return applyDeepSeekTransform(req, providerURL, model, config)
-
-	case strings.Contains(url, "integrate.api.nvidia.com"):
-		// NVIDIA NIM rejects prompt-cache fields that Claude Code sends:
-		// "Unsupported parameter(s): `prompt_cache_options`". Strip them.
-		return applyDefaultTransform(stripPromptCacheForNVIDIA(req), config)
 
 	case strings.Contains(url, "generativelanguage.googleapis.com") && strings.Contains(modelLower, "gemini"):
 		return applyGeminiTransform(req, providerURL, model, config)
@@ -65,14 +62,20 @@ func supportsExplicitPromptCache(url string) bool {
 	return strings.Contains(url, "api.openai.com")
 }
 
-// stripOpenAIPromptCacheFields removes the gpt-5.6+ explicit prompt-cache
-// fields from a request. It's the default for every vendor not on the
+// stripOpenAIPromptCacheFields removes the OpenAI-specific prompt-cache
+// fields from a request — the top-level prompt_cache_options and
+// prompt_cache_retention, and the per-content-part prompt_cache_breakpoint
+// markers. It's the default for every vendor not on the
 // supportsExplicitPromptCache allowlist: the fields are pure caching hints,
 // so dropping them changes nothing about message/tool semantics — vendors
 // with their own automatic prefix caching (DeepSeek, Moonshot, most
 // self-hosted OpenAI-compatible backends) still get cache hits without them.
+// All the fields carry omitzero, so zeroing them omits the keys from the
+// marshaled request without a JSON round-trip (which would drop per-message
+// extra fields such as x_thinking / reasoning_content).
 func stripOpenAIPromptCacheFields(req *openai.ChatCompletionNewParams) {
 	req.PromptCacheOptions = openai.ChatCompletionNewParamsPromptCacheOptions{}
+	req.PromptCacheRetention = ""
 
 	for i := range req.Messages {
 		msg := &req.Messages[i]

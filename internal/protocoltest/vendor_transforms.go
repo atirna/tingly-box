@@ -56,6 +56,10 @@ var vendorFixtures = []vendorFixture{
 	{name: "openai_official", apiBase: "http://api.openai.com", wantsExplicitPromptCache: true},
 	{name: "generic_openai_compatible", apiBase: "http://example-llm-provider.test", wantsExplicitPromptCache: false},
 	{name: "deepseek", apiBase: "http://api.deepseek.com", wantsExplicitPromptCache: false},
+	// NVIDIA NIM rejects the whole request over top-level prompt-cache
+	// fields (400 "Unsupported parameter(s): `prompt_cache_options`",
+	// #1548) — the vendor that motivated default-deny in the first place.
+	{name: "nvidia_nim", apiBase: "http://integrate.api.nvidia.com", wantsExplicitPromptCache: false},
 }
 
 func vendorTransformScenario() Scenario {

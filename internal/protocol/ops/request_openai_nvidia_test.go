@@ -10,6 +10,12 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 )
 
+// NVIDIA NIM 400s on the top-level prompt-cache fields Claude Code sends
+// ("Unsupported parameter(s): `prompt_cache_options`", #1548). There is no
+// NIM-specific transform anymore: NIM is simply not on the
+// supportsExplicitPromptCache allowlist, so the default
+// stripOpenAIPromptCacheFields path covers it. These tests pin the #1548
+// regression end-to-end through ApplyProviderTransforms.
 const nvidiaNIMURL = "https://integrate.api.nvidia.com/v1"
 
 // TestNVIDIAStripPromptCacheTopLevel proves that the top-level
