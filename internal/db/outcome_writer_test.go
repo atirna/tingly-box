@@ -11,20 +11,27 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 )
 
-// waitForUsageTotal polls until the usage table reports want rows (the
-// writer flushes asynchronously) or the timeout elapses.
-func waitForUsageTotal(t *testing.T, sm *StoreManager, want int64) {
+// reopenStoreManager closes sm and opens a fresh one over the same directory,
+// so assertions see only what actually reached disk.
+func reopenStoreManager(t *testing.T, sm *StoreManager, dir string) *StoreManager {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		_, total, err := sm.Usage().GetRecords(time.Time{}, time.Time{}, nil, 1, 0)
-		require.NoError(t, err)
-		if total == want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("usage table never reached %d rows", want)
+	require.NoError(t, sm.Close())
+	reopened, err := NewStoreManager(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = reopened.Close() })
+	return reopened
+}
+
+// usageRowCount returns how many usage rows are persisted.
+func usageRowCount(t *testing.T, sm *StoreManager) int64 {
+	t.Helper()
+	_, total, err := sm.Usage().GetRecords(time.Time{}, time.Time{}, nil, 1, 0)
+	require.NoError(t, err)
+	return total
+}
+
+func anOutcome(provider string) *UsageRecord {
+	return &UsageRecord{ProviderUUID: provider, ProviderName: provider, Model: "m1", Scenario: "openai"}
 }
 
 func TestRecordOutcome_PersistsViaWriter(t *testing.T) {
@@ -33,12 +40,12 @@ func TestRecordOutcome_PersistsViaWriter(t *testing.T) {
 	defer sm.Close()
 
 	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
-	usage := &UsageRecord{ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai"}
+	require.NoError(t, sm.RecordOutcome(service, anOutcome("p1")))
 
-	require.NoError(t, sm.RecordOutcome(service, usage))
+	// The write is async: it lands on the next flush.
+	require.Eventually(t, func() bool { return usageRowCount(t, sm) == 1 },
+		5*time.Second, 10*time.Millisecond, "usage row never reached the table")
 
-	// The write is async: it lands on the next flush tick.
-	waitForUsageTotal(t, sm, 1)
 	_, found := sm.Stats().Get("p1", "m1")
 	assert.True(t, found)
 }
@@ -48,73 +55,52 @@ func TestRecordOutcome_CloseFlushesBufferedOutcomes(t *testing.T) {
 	sm, err := NewStoreManager(dir)
 	require.NoError(t, err)
 
-	// Enqueue fewer outcomes than a full batch, then close immediately —
-	// well inside the flush interval — so persistence can only have come
-	// from Close's final drain+flush.
+	// Enqueue fewer outcomes than a full batch, then close immediately — well
+	// inside the flush interval — so persistence can only have come from
+	// Close's final drain.
 	for i := 0; i < 10; i++ {
-		service := &loadbalance.Service{Provider: fmt.Sprintf("p%d", i), Model: "m", Active: true}
-		usage := &UsageRecord{ProviderUUID: service.Provider, ProviderName: service.Provider, Model: "m", Scenario: "openai"}
-		require.NoError(t, sm.RecordOutcome(service, usage))
+		provider := fmt.Sprintf("p%d", i)
+		require.NoError(t, sm.RecordOutcome(
+			&loadbalance.Service{Provider: provider, Model: "m1", Active: true},
+			anOutcome(provider)))
 	}
-	require.NoError(t, sm.Close())
 
-	reopened, err := NewStoreManager(dir)
-	require.NoError(t, err)
-	defer reopened.Close()
-
-	_, total, err := reopened.Usage().GetRecords(time.Time{}, time.Time{}, nil, 100, 0)
-	require.NoError(t, err)
-	assert.EqualValues(t, 10, total)
+	reopened := reopenStoreManager(t, sm, dir)
+	assert.EqualValues(t, 10, usageRowCount(t, reopened))
 	for i := 0; i < 10; i++ {
-		_, found := reopened.Stats().Get(fmt.Sprintf("p%d", i), "m")
+		_, found := reopened.Stats().Get(fmt.Sprintf("p%d", i), "m1")
 		assert.True(t, found, "stats row for p%d must survive close", i)
 	}
 }
 
-// TestRecordOutcome_StatsDedupeKeepsNewestSnapshot: multiple outcomes for
-// the same provider:model within one batch save only the newest cumulative
-// snapshot, while every usage row is kept.
-func TestRecordOutcome_StatsDedupeKeepsNewestSnapshot(t *testing.T) {
+// TestRecordOutcome_StatsCoalesceToNewestSnapshot: stats rows are cumulative
+// snapshots, so repeated outcomes for one service collapse to the newest
+// while every usage row is kept.
+func TestRecordOutcome_StatsCoalesceToNewestSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	sm, err := NewStoreManager(dir)
 	require.NoError(t, err)
 
 	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
 	for i := 0; i < 5; i++ {
-		// RecordUsage advances the service's in-memory counters; each
-		// enqueued snapshot is therefore strictly newer.
+		// RecordUsage advances the in-memory counters, so each snapshot is
+		// strictly newer than the last.
 		service.RecordUsage(10, 20)
-		usage := &UsageRecord{ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai"}
-		require.NoError(t, sm.RecordOutcome(service, usage))
+		require.NoError(t, sm.RecordOutcome(service, anOutcome("p1")))
 	}
-	require.NoError(t, sm.Close())
 
-	reopened, err := NewStoreManager(dir)
-	require.NoError(t, err)
-	defer reopened.Close()
-
+	reopened := reopenStoreManager(t, sm, dir)
 	stats, found := reopened.Stats().Get("p1", "m1")
 	require.True(t, found)
 	assert.EqualValues(t, 5, stats.RequestCount, "persisted stats must be the newest snapshot")
-
-	_, total, err := reopened.Usage().GetRecords(time.Time{}, time.Time{}, nil, 10, 0)
-	require.NoError(t, err)
-	assert.EqualValues(t, 5, total, "every usage row must be kept")
+	assert.EqualValues(t, 5, usageRowCount(t, reopened), "every usage row must be kept")
 }
 
-// TestRecordOutcome_QueueFullKeepsUsageAndDropsStats: when the queue
-// saturates, older stats snapshots are still buffered ahead of the caller,
-// so committing the caller's snapshot synchronously would let the flusher
-// overwrite it with older cumulative counters. The snapshot is dropped
-// instead — the next outcome supersedes it.
-//
-// What this pins is the cost of that rule: overflow may cost a stats
-// snapshot, but never a usage audit row, and the surviving snapshot is
-// still a recent one. The ordering property itself is about intermediate
-// visibility (a reader between the synchronous commit and the flush would
-// have seen the counter jump forward and then back), which both the old
-// and new code converge away from by the final flush.
-func TestRecordOutcome_QueueFullKeepsUsageAndDropsStats(t *testing.T) {
+// TestRecordOutcome_UsageQueueFullStillPersistsEverything: saturating the
+// usage queue must cost nothing. Usage rows are written synchronously on
+// overflow, and stats snapshots never queue at all — they coalesce into the
+// stats store — so neither can be lost.
+func TestRecordOutcome_UsageQueueFullStillPersistsEverything(t *testing.T) {
 	dir := t.TempDir()
 	sm, err := NewStoreManager(dir)
 	require.NoError(t, err)
@@ -125,34 +111,73 @@ func TestRecordOutcome_QueueFullKeepsUsageAndDropsStats(t *testing.T) {
 	// It can still absorb one in-flight batch before blocking, so saturation
 	// needs the queue plus a batch, plus one more to overflow.
 	sm.Stats().mu.Lock()
-	total := outcomeQueueSize + outcomeMaxBatch + 1
+	total := usageQueueSize + outcomeMaxBatch + 1
 	for i := 0; i < total; i++ {
 		service.RecordUsage(10, 20)
-		require.NoError(t, sm.RecordOutcome(service, &UsageRecord{
-			ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai",
-		}))
+		require.NoError(t, sm.RecordOutcome(service, anOutcome("p1")))
 	}
+	// Self-check: if this ever stops saturating, the test would silently stop
+	// covering the overflow path.
+	require.Len(t, sm.outcomeWriter.usageCh, usageQueueSize, "test must actually saturate the usage queue")
 	sm.Stats().mu.Unlock()
 
-	// Close drains and flushes everything still buffered.
-	require.NoError(t, sm.Close())
+	reopened := reopenStoreManager(t, sm, dir)
+	assert.EqualValues(t, total, usageRowCount(t, reopened),
+		"no usage audit row may be dropped when the queue saturates")
 
-	reopened, err := NewStoreManager(dir)
-	require.NoError(t, err)
-	defer reopened.Close()
-
-	_, usageTotal, err := reopened.Usage().GetRecords(time.Time{}, time.Time{}, nil, 1, 0)
-	require.NoError(t, err)
-	assert.EqualValues(t, total, usageTotal, "no usage audit row may be dropped when the queue saturates")
-
-	// The surviving snapshot is the newest one the flusher received: at most
-	// the outcomes that overflowed are missing, so it is still recent rather
-	// than an arbitrarily stale value.
 	stats, found := reopened.Stats().Get("p1", "m1")
 	require.True(t, found)
-	assert.LessOrEqual(t, stats.RequestCount, int64(total))
-	assert.Greater(t, stats.RequestCount, int64(outcomeQueueSize),
-		"the persisted snapshot must be a recent one, not a stale cumulative value")
+	assert.EqualValues(t, total, stats.RequestCount,
+		"stats coalesce rather than queue, so saturation cannot lose a snapshot")
+}
+
+// TestRecordOutcome_ClearStatsIsNotResurrectedByPendingSnapshot: clearing
+// stats must stick even when snapshots are still buffered. Before the stats
+// dirty-set moved under the stats lock, a snapshot taken before the clear
+// was committed a moment later and the cleared counters came back.
+func TestRecordOutcome_ClearStatsSticksAgainstBufferedSnapshots(t *testing.T) {
+	dir := t.TempDir()
+	sm, err := NewStoreManager(dir)
+	require.NoError(t, err)
+
+	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
+	service.RecordUsage(10, 20)
+	require.NoError(t, sm.RecordOutcome(service, anOutcome("p1")))
+
+	// Clear while the snapshot is still buffered (well inside the flush
+	// interval).
+	require.NoError(t, sm.Stats().ClearAll())
+	_, found := sm.Stats().Get("p1", "m1")
+	assert.False(t, found, "cleared stats must not still be readable from the pending set")
+
+	reopened := reopenStoreManager(t, sm, dir)
+	_, found = reopened.Stats().Get("p1", "m1")
+	assert.False(t, found, "a snapshot buffered before the clear must not resurrect the row")
+
+	// The usage audit rows are unaffected by clearing stats.
+	assert.EqualValues(t, 1, usageRowCount(t, reopened))
+}
+
+// TestStatsStore_ClearServiceDropsOnlyItsPendingSnapshot is the per-service
+// counterpart to the ClearAll case above.
+func TestStatsStore_ClearServiceDropsOnlyItsPendingSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	sm, err := NewStoreManager(dir)
+	require.NoError(t, err)
+
+	for _, provider := range []string{"p1", "p2"} {
+		svc := &loadbalance.Service{Provider: provider, Model: "m1", Active: true}
+		svc.RecordUsage(10, 20)
+		require.NoError(t, sm.RecordOutcome(svc, anOutcome(provider)))
+	}
+
+	require.NoError(t, sm.Stats().ClearService("p1", "m1"))
+
+	reopened := reopenStoreManager(t, sm, dir)
+	_, found := reopened.Stats().Get("p1", "m1")
+	assert.False(t, found, "cleared service must stay cleared")
+	_, found = reopened.Stats().Get("p2", "m1")
+	assert.True(t, found, "clearing one service must not drop another's pending snapshot")
 }
 
 func TestRecordOutcome_AfterCloseFallsBackSafely(t *testing.T) {
@@ -160,7 +185,7 @@ func TestRecordOutcome_AfterCloseFallsBackSafely(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, sm.Close())
 
-	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
 	// Stores are nil after Close; RecordOutcome must not panic.
-	assert.NoError(t, sm.RecordOutcome(service, &UsageRecord{ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai"}))
+	assert.NoError(t, sm.RecordOutcome(
+		&loadbalance.Service{Provider: "p1", Model: "m1", Active: true}, anOutcome("p1")))
 }

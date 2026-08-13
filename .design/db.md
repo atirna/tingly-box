@@ -212,19 +212,54 @@ Two directions were considered:
 **Batching (shipped)**: `StoreManager.RecordOutcome`
 (`internal/db/outcome_writer.go`) is now the production entry point.
 Records are built on the request goroutine (the stats record snapshots
-live counters; the usage timestamp is completion time), then enqueued to a
-flusher that commits up to 128 outcomes per transaction at most 1s apart.
-Stats rows dedupe within a batch to the newest snapshot per
-provider:model; usage rows are all kept. Bounded queue (1024), no drops:
-full-or-closed degrades to the synchronous `RecordRequestOutcome`.
+live counters; the usage timestamp is completion time); only the SQLite
+write is deferred.
+
+The two record kinds are buffered **differently, because their semantics
+are opposite** — conflating them in one queue is what previously forced a
+"drop the caller's stats snapshot on overflow" rule and a tri-state
+enqueue result:
+
+- A **stats row is a cumulative snapshot** keyed by provider:model, so a
+  newer one fully supersedes an older one. These coalesce into
+  `StatsStore.pending`: enqueue is O(1), never fails, and needs no
+  ordering. It lives on the store (under its own `pendingMu`, lock order
+  `mu` → `pendingMu`) rather than inside the writer, so every reader and
+  mutator of `service_stats` sees one view — see the consistency note
+  below.
+- A **usage row is an append-only audit record** that must not be lost or
+  merged, so those go through a bounded queue (1024). On overflow
+  `RecordOutcome` inserts that one row itself; it is an independent
+  INSERT, so there is nothing to order it against.
+
+The flusher commits up to 128 usage rows plus all pending snapshots per
+transaction, at most 1s apart, via `commitOutcomesLocked` — the single
+place that encodes the stats→usage lock order and the shared-`*gorm.DB`
+assumption (`RecordRequestOutcome` delegates to it too).
 `StoreManager.Close` drains and flushes before closing the connection, so
 the crash-loss window is the flush interval (1s) — the accepted trade.
 
+**Consistency with in-flight snapshots.** Because `pending` lives under
+the stats lock, buffering can't be observed as lost or resurrected data:
+`ClearAll`/`ClearService` drop pending rows in the same critical section
+that deletes them (clicking "clear stats" no longer has the counters come
+back a second later), `HydrateRules` overlays pending over the table (a
+config hot-reload no longer re-seeds in-memory counters from a stale row),
+and `Get` prefers pending. The flusher takes and commits snapshots under
+one acquisition of `mu`, so a clear can never interleave between the two.
+`markPending` deliberately takes only `pendingMu`, so the request path
+never waits on a flush transaction.
+
 | Benchmark | Result |
 |---|---|
-| `BenchmarkStatsAndUsage_Combined` (pre-merge baseline) | ~332 µs/op, 246 allocs |
-| `BenchmarkStatsAndUsage_RecordRequestOutcome` (merged txn) | ~300 µs/op, 235 allocs |
-| `BenchmarkStatsAndUsage_RecordOutcomeBatched` (shipped) | **~25 µs/op, 33 allocs** |
+| `BenchmarkStatsAndUsage_Combined` (pre-merge baseline) | ~398 µs/op, 246 allocs |
+| `BenchmarkStatsAndUsage_RecordRequestOutcome` (merged txn) | ~383 µs/op, 246 allocs |
+| `BenchmarkStatsAndUsage_RecordOutcomeBatched` (shipped) | **~28 µs/op, 30 allocs** |
+
+(Absolute numbers vary with the machine and disk; run all three together
+to compare. The batched benchmark closes the writer before stopping the
+timer, so it measures throughput including the commits, not just enqueue
+latency.)
 
 **Fixed in passing**: `NewUsageStore` never created the `db` subdirectory
 `constant.GetDBFile` expects (every other `NewXStore` constructor does).
@@ -314,21 +349,27 @@ Ranked by expected value; each is independent.
 7. **Server shutdown order**: `StoreManager.Close` runs before
    `httpServer.Shutdown`, so in-flight requests can hit closed stores
    (clean errors, but still backwards).
-8. **Two known consistency windows from outcome batching** (accepted for
-   the ~12× hot-path win; close them if they ever start to matter):
-   - *Config hot-reload can regress in-memory stats by ≤1 flush interval.*
-     `HydrateRules` re-seeds `service.Stats` from `service_stats` on every
-     config reload; outcomes still buffered in the writer aren't in the
-     table yet, so the rebuilt counters can be up to 1s behind the traffic
-     the old rule objects had already counted. Self-correcting window
-     counters, no user-visible effect today. Fix if needed: flush the
-     writer before `RefreshStatsFromStore` (a `StoreManager` method that
-     calls `outcomeWriter`'s flush synchronously).
-   - *Admin "clear stats" can be resurrected by a pending flush.*
-     `ClearAllStats`/`ClearServiceStats` deletes rows, but a snapshot
-     buffered before the clear re-Saves the old cumulative counts up to 1s
-     later. Same fix shape: flush (or drop matching buffered outcomes)
-     before the delete. Note any future reader that needs
-     read-your-writes on `usage_records`/`service_stats` (e.g. real-time
-     quota enforcement) must NOT read the tables directly — add an
-     explicit writer flush or read the in-memory stats instead.
+8. **No versioned migration mechanism.** Boot-time schema fixups exist in
+   four ad-hoc flavors — `dropDeprecatedTables`' hardcoded list
+   (`store_manager.go`), `HasColumn`-probe-then-`DropColumn`
+   (`ensureUsageRecordSchema`), table rebuild (`ensureUsageDailySchema`),
+   column rename (`ensureAPITokenSchema`) — and because nothing records
+   what has been applied, no entry can ever be retired; the list only
+   grows. A `schema_migrations(id, applied_at)` table plus an
+   `applyOnce(db, id, fn)` helper in `open.go` would let each fixup run
+   exactly once and become deletable once a floor version is declared.
+   The `HasColumn` probes would then be belt-and-suspenders rather than
+   the mechanism.
+9. **`outcomeWriter` and `internal/obs`'s `BatchProcessor` are the same
+   shape** (bounded channel, max-batch trigger, timed flush, drain on
+   close). Making `BatchProcessor` generic (`BatchProcessor[T]`, exporter
+   over `[]T`) would let the writer reuse it; the two-store transaction
+   fits its `Export` signature unchanged. Not done here because it changes
+   a package outside this work; worth folding together next time either
+   one is touched.
+
+Note for any future reader that needs read-your-writes on
+`usage_records`: a usage row can be up to one flush interval behind. Stats
+are not affected — `StatsStore` reads through its pending set. Either add
+an explicit writer flush or read the in-memory `service.Stats`, rather
+than assuming the tables are current.

@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/data"
 	"github.com/tingly-dev/tingly-box/internal/db"
+	guardrailsutils "github.com/tingly-dev/tingly-box/internal/guardrails/utils"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/pkg/auth"
@@ -102,6 +102,11 @@ type Config struct {
 	providerStore      *db.ProviderStore
 	imbotSettingsStore *db.ImBotSettingsStore
 	templateManager    *data.TemplateManager
+
+	// credentialStore backs the guardrails protected-credential database,
+	// which is a separate file from tingly.db. Built lazily by
+	// CredentialStore.
+	credentialStore *guardrailsutils.ProtectedCredentialStore
 
 	// Provider lifecycle hooks
 	providerUpdateHooks []ProviderUpdateHook
@@ -366,7 +371,7 @@ func NewConfig(opts ...ConfigOption) (*Config, error) {
 	// Initialize provider model manager over the store manager's ModelStore,
 	// so the process keeps one connection to tingly.db instead of a second
 	// pool (with its own AutoMigrate run) against the same file.
-	cfg.modelManager = data.NewProviderModelManagerWithStore(storeManager.Model())
+	cfg.modelManager = data.NewModelListManager(storeManager.Model())
 
 	if err := cfg.RefreshStatsFromStore(); err != nil {
 		return nil, err
@@ -469,25 +474,22 @@ func (c *Config) StoreManager() *db.StoreManager {
 	return c.storeManager
 }
 
-// CloseStores releases every database handle the config owns: the shared
-// store-manager connection and the provider-model store. The long-lived
-// server closes the store manager from Stop; short-lived embedders (tests,
-// harness environments) call this so each instance does not leak SQLite
-// descriptors for the process lifetime. Safe to call more than once.
+// CloseStores releases the database handle the config owns. Every store,
+// including the model store the ModelListManager wraps, runs on the store
+// manager's one connection, so closing it is the whole job. The long-lived
+// server closes it from Stop; short-lived embedders (tests, harness
+// environments) call this so each instance does not leak a SQLite descriptor
+// and the outcome writer's flusher for the process lifetime. Safe to call
+// more than once.
 func (c *Config) CloseStores() error {
 	c.mu.Lock()
 	storeManager := c.storeManager
-	modelManager := c.modelManager
 	c.mu.Unlock()
 
-	var errs []error
-	if storeManager != nil {
-		errs = append(errs, storeManager.Close())
+	if storeManager == nil {
+		return nil
 	}
-	if modelManager != nil {
-		errs = append(errs, modelManager.Close())
-	}
-	return errors.Join(errs...)
+	return storeManager.Close()
 }
 
 func (c *Config) CreateDefaultConfig() error {

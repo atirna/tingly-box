@@ -3,7 +3,6 @@ package db
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -96,32 +95,20 @@ const (
 //	*StoreManager - Initialized store manager
 //	error - Error if any store fails to initialize
 func NewStoreManager(baseDir string) (*StoreManager, error) {
-	config := StoreManagerConfig{
-		BaseDir:     baseDir,
-		BusyTimeout: 5000,
-	}
-	return NewStoreManagerWithConfig(config)
+	return NewStoreManagerWithConfig(StoreManagerConfig{BaseDir: baseDir})
 }
 
 // NewStoreManagerWithConfig creates a StoreManager with custom configuration.
+// A zero BusyTimeout takes OpenSQLite's default.
 func NewStoreManagerWithConfig(config StoreManagerConfig) (*StoreManager, error) {
 	if config.BaseDir == "" {
 		return nil, errors.New("base directory cannot be empty")
 	}
 
-	// Create base directory if it doesn't exist
-	if err := os.MkdirAll(config.BaseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create base directory: %w", err)
-	}
-
-	// Set default busy timeout
-	if config.BusyTimeout <= 0 {
-		config.BusyTimeout = 5000
-	}
-
-	// Open shared database connection
+	// Open shared database connection. OpenSQLite creates baseDir/db, and
+	// baseDir with it.
 	dbPath := constant.GetDBFile(config.BaseDir)
-	db, err := openSQLite(dbPath, config.BusyTimeout)
+	db, err := OpenSQLite(dbPath, config.BusyTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -146,33 +133,36 @@ func NewStoreManagerWithConfig(config StoreManagerConfig) (*StoreManager, error)
 	return sm, nil
 }
 
-// initStores initializes all individual stores.
+// initStores initializes all individual stores over the shared connection.
+// Each newXStore runs that store's schema migration; errors are collected so
+// one bad store doesn't hide the rest.
 func (sm *StoreManager) initStores() error {
+	conn := borrowedConn(sm.db)
 	var errs []error
+	var err error
 
-	// Initialize each store with its schema migration
-	if err := sm.initStatsStore(); err != nil {
+	if sm.statsStore, err = newStatsStore(conn); err != nil {
 		errs = append(errs, fmt.Errorf("stats store: %w", err))
 	}
-	if err := sm.initUsageStore(); err != nil {
+	if sm.usageStore, err = newUsageStore(conn); err != nil {
 		errs = append(errs, fmt.Errorf("usage store: %w", err))
 	}
-	if err := sm.initProviderStore(); err != nil {
+	if sm.providerStore, err = newProviderStore(conn); err != nil {
 		errs = append(errs, fmt.Errorf("provider store: %w", err))
 	}
-	if err := sm.initImBotSettingsStore(); err != nil {
+	if sm.imbotSettingsStore, err = newImBotSettingsStore(conn); err != nil {
 		errs = append(errs, fmt.Errorf("imbot settings store: %w", err))
 	}
-	if err := sm.dropDeprecatedTables(); err != nil {
+	if err = sm.dropDeprecatedTables(); err != nil {
 		errs = append(errs, fmt.Errorf("drop deprecated tables: %w", err))
 	}
-	if err := sm.initModelStore(); err != nil {
+	if sm.modelStore, err = newModelStore(conn); err != nil {
 		errs = append(errs, fmt.Errorf("model store: %w", err))
 	}
-	if err := sm.initAPITokenStore(); err != nil {
+	if sm.apiTokenStore, err = newAPITokenStore(conn); err != nil {
 		errs = append(errs, fmt.Errorf("api token store: %w", err))
 	}
-	if err := sm.initRemoteStores(); err != nil {
+	if err = sm.initRemoteStores(); err != nil {
 		errs = append(errs, fmt.Errorf("remote stores: %w", err))
 	}
 
@@ -184,46 +174,6 @@ func (sm *StoreManager) initStores() error {
 	// failed store init never leaves a flusher goroutine behind.
 	sm.outcomeWriter = newOutcomeWriter(sm.statsStore, sm.usageStore)
 
-	return nil
-}
-
-// initStatsStore initializes the StatsStore.
-func (sm *StoreManager) initStatsStore() error {
-	store, err := newStatsStore(borrowedConn(sm.db))
-	if err != nil {
-		return err
-	}
-	sm.statsStore = store
-	return nil
-}
-
-// initUsageStore initializes the UsageStore.
-func (sm *StoreManager) initUsageStore() error {
-	store, err := newUsageStore(borrowedConn(sm.db))
-	if err != nil {
-		return err
-	}
-	sm.usageStore = store
-	return nil
-}
-
-// initProviderStore initializes the ProviderStore.
-func (sm *StoreManager) initProviderStore() error {
-	store, err := newProviderStore(borrowedConn(sm.db))
-	if err != nil {
-		return err
-	}
-	sm.providerStore = store
-	return nil
-}
-
-// initImBotSettingsStore initializes the ImBotSettingsStore.
-func (sm *StoreManager) initImBotSettingsStore() error {
-	store, err := newImBotSettingsStore(borrowedConn(sm.db))
-	if err != nil {
-		return err
-	}
-	sm.imbotSettingsStore = store
 	return nil
 }
 
@@ -246,26 +196,6 @@ func (sm *StoreManager) dropDeprecatedTables() error {
 			return fmt.Errorf("drop %s: %w", table, err)
 		}
 	}
-	return nil
-}
-
-// initModelStore initializes the ModelStore.
-func (sm *StoreManager) initModelStore() error {
-	store, err := newModelStore(borrowedConn(sm.db))
-	if err != nil {
-		return err
-	}
-	sm.modelStore = store
-	return nil
-}
-
-// initAPITokenStore initializes the APITokenStore.
-func (sm *StoreManager) initAPITokenStore() error {
-	store, err := newAPITokenStore(borrowedConn(sm.db))
-	if err != nil {
-		return err
-	}
-	sm.apiTokenStore = store
 	return nil
 }
 

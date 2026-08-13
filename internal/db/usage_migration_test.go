@@ -18,7 +18,7 @@ import (
 func openLegacyUsageDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	conn, err := openSQLite(filepath.Join(t.TempDir(), "legacy.db"), 0)
+	conn, err := OpenSQLite(filepath.Join(t.TempDir(), "legacy.db"), 0)
 	require.NoError(t, err)
 	require.NoError(t, conn.AutoMigrate(&UsageRecord{}))
 

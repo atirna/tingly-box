@@ -3,16 +3,13 @@ package utils
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
+	tinglydb "github.com/tingly-dev/tingly-box/internal/db"
 	guardrailscore "github.com/tingly-dev/tingly-box/internal/guardrails/core"
 )
 
@@ -201,26 +198,20 @@ func (s *ProtectedCredentialStore) ensureDB() (*gorm.DB, error) {
 	if s.path == "" {
 		return nil, fmt.Errorf("protected credential store path is empty")
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return nil, fmt.Errorf("create protected credential db dir: %w", err)
-	}
-
-	// Same connection options as the tingly.db stores (internal/db): WAL and
-	// a busy timeout, so concurrent writers back off instead of failing with
-	// SQLITE_BUSY immediately. This was the one SQLite open in the codebase
-	// with no options at all.
-	dsn := s.path + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	// guardrails.db is a separate file (separate security domain) but not a
+	// separate set of connection options: db.OpenSQLite owns those, and
+	// creates the directory. Before this it was the one SQLite open in the
+	// codebase with no options at all, so concurrent writers failed with
+	// SQLITE_BUSY immediately instead of backing off.
+	conn, err := tinglydb.OpenSQLite(s.path, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open protected credential db: %w", err)
 	}
-	if err := db.AutoMigrate(&protectedCredentialRecord{}); err != nil {
+	if err := conn.AutoMigrate(&protectedCredentialRecord{}); err != nil {
 		return nil, fmt.Errorf("migrate protected credential db: %w", err)
 	}
 
-	s.db = db
+	s.db = conn
 	return s.db, nil
 }
 

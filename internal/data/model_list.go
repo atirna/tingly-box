@@ -2,8 +2,6 @@ package data
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
 	"time"
 
 	"github.com/tingly-dev/tingly-box/internal/db"
@@ -19,37 +17,13 @@ type ModelListManager struct {
 	modelStore *db.ModelStore
 }
 
-// NewProviderModelManager creates a provider model manager over its own
-// database connection. Inside the server process prefer
-// NewProviderModelManagerWithStore with the StoreManager's ModelStore, so
-// the process keeps a single connection to tingly.db.
-func NewProviderModelManager(configDir string) (*ModelListManager, error) {
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create models directory: %w", err)
-	}
-
-	modelStore, err := db.NewModelStore(configDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize model store: %w", err)
-	}
-
-	return &ModelListManager{modelStore: modelStore}, nil
-}
-
-// NewProviderModelManagerWithStore wraps an existing ModelStore (usually the
-// StoreManager's) instead of opening a second connection to the same
-// database file.
-func NewProviderModelManagerWithStore(store *db.ModelStore) *ModelListManager {
+// NewModelListManager wraps the StoreManager's ModelStore. There is
+// deliberately no constructor that opens its own connection: this manager
+// used to do exactly that, giving the process a second connection pool (and
+// a second AutoMigrate) against the same tingly.db that StoreManager had
+// just opened.
+func NewModelListManager(store *db.ModelStore) *ModelListManager {
 	return &ModelListManager{modelStore: store}
-}
-
-// Close releases the underlying model store's database connection when the
-// store owns one; for a store borrowed from StoreManager it is a no-op.
-func (mm *ModelListManager) Close() error {
-	if mm == nil || mm.modelStore == nil {
-		return nil
-	}
-	return mm.modelStore.Close()
 }
 
 // SaveModels saves models for a provider by UUID to the database.

@@ -160,54 +160,60 @@ func ensureUsageRecordSchema(db *gorm.DB) error {
 		}
 	}
 	// Legacy layout: the two cache measures lived in
-	// cache_creation_input_tokens / cache_read_input_tokens. Today's model
-	// keeps them just as separate -- writes in cache_write_tokens, reads in
-	// cache_input_tokens -- so each legacy column maps to exactly one
-	// current column.
+	// cache_read_input_tokens / cache_creation_input_tokens. Today's model
+	// keeps them just as separate -- reads in cache_input_tokens, writes in
+	// cache_write_tokens -- so each legacy column maps to exactly one
+	// current column, and mapping them the other way would book cache writes
+	// as cache reads before dropping the evidence.
 	//
-	// An earlier version of this summed BOTH into cache_input_tokens, which
-	// under today's semantics books cache writes as cache reads and then
-	// drops the evidence. That never reached production (only NewUsageStore
-	// called it, and nothing calls that outside tests); it runs on every
-	// boot now that migrateUsageTables owns it, so the mapping has to be
-	// right. The columns AutoMigrate just added are guaranteed present --
-	// migrateUsageTables runs AutoMigrate first.
-	//
-	// Each legacy column is handled independently: a partially migrated DB
-	// can carry one without the other, and the previous version's SQL
-	// referenced both whenever either existed.
-	for _, m := range []struct{ legacy, current string }{
-		{"cache_read_input_tokens", "cache_input_tokens"},
-		{"cache_creation_input_tokens", "cache_write_tokens"},
-	} {
-		if !db.Migrator().HasColumn(&UsageRecord{}, m.legacy) {
-			continue
-		}
-		// WHERE current = 0 leaves already-migrated rows alone.
-		if err := db.Exec(fmt.Sprintf(
-			`UPDATE usage_records SET %s = COALESCE(%s, 0) WHERE %s = 0`,
-			m.current, m.legacy, m.current)).Error; err != nil {
-			return err
-		}
-		if err := db.Migrator().DropColumn(&UsageRecord{}, m.legacy); err != nil {
-			return err
-		}
+	// Each is handled independently because a partially migrated database can
+	// carry one without the other. The current columns are guaranteed present:
+	// migrateUsageTables runs AutoMigrate first. The WHERE clauses leave
+	// already-migrated rows alone.
+	if err := migrateLegacyColumn(db, "cache_read_input_tokens",
+		`UPDATE usage_records SET cache_input_tokens = COALESCE(cache_read_input_tokens, 0) WHERE cache_input_tokens = 0`); err != nil {
+		return err
+	}
+	if err := migrateLegacyColumn(db, "cache_creation_input_tokens",
+		`UPDATE usage_records SET cache_write_tokens = COALESCE(cache_creation_input_tokens, 0) WHERE cache_write_tokens = 0`); err != nil {
+		return err
 	}
 
-	// Migrate empty user_id to default admin user
-	// This ensures backward compatibility after multi-tenant support was added
-	// Records created before multi-tenant have empty user_id, which should be
-	// associated with the default admin user
-	if err := db.Exec(`
-		UPDATE usage_records
-		SET user_id = ?
-		WHERE user_id = '' OR user_id IS NULL
-	`, DefaultAdminUserID).Error; err != nil {
-		logrus.WithError(err).Warn("Failed to migrate empty user_id to default admin user")
-		// Don't fail initialization for this migration, it's not critical
+	// Attribute pre-multi-tenant rows (empty user_id) to the default admin
+	// user. New rows are stamped at write time by prepareUsageRecord, so this
+	// only ever has legacy rows to fix — probe for one first rather than
+	// opening a write transaction against the whole table on every boot.
+	var legacy int64
+	if err := db.Model(&UsageRecord{}).
+		Where("user_id = '' OR user_id IS NULL").
+		Limit(1).Count(&legacy).Error; err != nil {
+		logrus.WithError(err).Warn("Failed to check for usage rows with no user_id")
+		return nil
+	}
+	if legacy > 0 {
+		if err := db.Exec(`
+			UPDATE usage_records
+			SET user_id = ?
+			WHERE user_id = '' OR user_id IS NULL
+		`, DefaultAdminUserID).Error; err != nil {
+			logrus.WithError(err).Warn("Failed to migrate empty user_id to default admin user")
+			// Don't fail initialization for this migration, it's not critical
+		}
 	}
 
 	return nil
+}
+
+// migrateLegacyColumn copies a legacy column's data into its replacement via
+// copySQL and then drops it. A no-op once the column is gone.
+func migrateLegacyColumn(db *gorm.DB, legacy, copySQL string) error {
+	if !db.Migrator().HasColumn(&UsageRecord{}, legacy) {
+		return nil
+	}
+	if err := db.Exec(copySQL).Error; err != nil {
+		return err
+	}
+	return db.Migrator().DropColumn(&UsageRecord{}, legacy)
 }
 
 // ensureUsageDailySchema rebuilds the usage_daily table when it predates the
@@ -256,6 +262,14 @@ func prepareUsageRecord(record *UsageRecord) {
 	record.TotalTokens = record.InputTokens + record.OutputTokens
 	if record.Status == "" {
 		record.Status = "success"
+	}
+	// A request with no authenticated user (the default single-user
+	// deployment) belongs to the admin user. Stamping it here rather than
+	// leaving it empty is what keeps the boot-time backfill a one-shot
+	// migration for legacy rows: otherwise every row written since the last
+	// restart needed rewriting at the next one.
+	if record.UserID == "" {
+		record.UserID = DefaultAdminUserID
 	}
 }
 

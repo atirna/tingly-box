@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 	"github.com/tingly-dev/tingly-box/ai/quota"
 	"github.com/tingly-dev/tingly-box/ai/quota/fetcher"
 	"github.com/tingly-dev/tingly-box/internal/client"
-	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/data"
 	"github.com/tingly-dev/tingly-box/internal/db"
 	"github.com/tingly-dev/tingly-box/internal/guardrails"
@@ -627,24 +627,23 @@ func (s *Server) setupConfigWatcher() {
 
 // initQuotaManager initializes the provider quota manager
 func initQuotaManager(cfg *config.Config) (*quota.Manager, error) {
-	// Create quota store. Borrow the StoreManager's shared connection to
-	// tingly.db rather than opening (and leaking — nothing closed it) a
+	// Create quota store over the StoreManager's shared connection to
+	// tingly.db, rather than opening (and leaking — nothing closed it) a
 	// second connection pool against the same file.
-	var store quota.Store
-	if sm := cfg.StoreManager(); sm != nil && sm.DB() != nil {
-		gormStore, err := quota.NewGormStoreOverDB(sm.DB(), logrus.StandardLogger())
-		if err != nil {
-			return nil, err
-		}
-		store = gormStore
-	} else {
-		// No store manager (some embedders/tests): fall back to a dedicated
-		// connection the quota store owns.
-		gormStore, err := quota.NewGormStore(constant.GetDBFile(cfg.ConfigDir), logrus.StandardLogger())
-		if err != nil {
-			return nil, err
-		}
-		store = gormStore
+	//
+	// There is no fallback on purpose: every Server is built from a
+	// config.NewConfig, which fails outright if the StoreManager cannot be
+	// created, so a missing one means something is wrong rather than
+	// something to route around. Opening a private connection here would
+	// resolve a relative path against the process CWD — a stray second
+	// database, which is the failure this all exists to prevent.
+	sm := cfg.StoreManager()
+	if sm == nil || sm.DB() == nil {
+		return nil, errors.New("quota manager requires an initialized store manager")
+	}
+	store, err := quota.NewGormStoreOverDB(sm.DB(), logrus.StandardLogger())
+	if err != nil {
+		return nil, err
 	}
 
 	// Create quota manager with default config

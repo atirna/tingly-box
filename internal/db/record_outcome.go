@@ -3,8 +3,6 @@ package db
 import (
 	"fmt"
 
-	"gorm.io/gorm"
-
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 )
 
@@ -39,17 +37,8 @@ func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, servic
 	usageStore.mu.Lock()
 	defer usageStore.mu.Unlock()
 
-	return statsStore.db.Transaction(func(tx *gorm.DB) error {
-		if statsRecord != nil {
-			if err := tx.Save(statsRecord).Error; err != nil {
-				return fmt.Errorf("failed to save service stats: %w", err)
-			}
-		}
-		if usage != nil {
-			if err := tx.Create(usage).Error; err != nil {
-				return fmt.Errorf("failed to create usage record: %w", err)
-			}
-		}
-		return nil
-	})
+	if err := commitOutcomesLocked(statsStore, usageStore, oneOf(statsRecord), oneOf(usage)); err != nil {
+		return fmt.Errorf("failed to record request outcome: %w", err)
+	}
+	return nil
 }

@@ -69,7 +69,7 @@ func NewGuardrailsHandler(deps GuardrailsDeps) *GuardrailsHandler {
 }
 
 func (h *GuardrailsHandler) credentialStore() (*guardrailsutils.ProtectedCredentialStore, error) {
-	return config.CredentialStore(h.deps.Config.ConfigDir)
+	return h.deps.Config.CredentialStore()
 }
 
 // Config/builtin handler payloads.

@@ -17,27 +17,26 @@ import (
 // NewXStore constructors use the default.
 const defaultBusyTimeoutMs = 5000
 
-// sqliteDSN builds the canonical DSN for tingly's SQLite databases: WAL
-// journaling (which also forces synchronous=NORMAL in mattn/go-sqlite3),
-// foreign keys on, and a busy timeout so concurrent connections back off
-// instead of failing with SQLITE_BUSY.
+// OpenSQLite opens a GORM handle on dbPath with the canonical options for
+// tingly's SQLite databases — WAL journaling (which also forces
+// synchronous=NORMAL in mattn/go-sqlite3), foreign keys on, and a busy
+// timeout so concurrent connections back off instead of failing with
+// SQLITE_BUSY — creating the parent directory first. A busyTimeoutMs of 0
+// takes the default.
 //
-// This used to be copy-pasted as a string literal in every store
-// constructor; keep this the only place the option set is spelled out.
-func sqliteDSN(dbPath string, busyTimeoutMs int) string {
+// This is the only place the option set is spelled out. It is exported for
+// databases outside this package that are nonetheless tingly's own (the
+// guardrails credential store); everything on tingly.db should go through
+// StoreManager instead.
+func OpenSQLite(dbPath string, busyTimeoutMs int) (*gorm.DB, error) {
 	if busyTimeoutMs <= 0 {
 		busyTimeoutMs = defaultBusyTimeoutMs
 	}
-	return fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=WAL&_foreign_keys=1", dbPath, busyTimeoutMs)
-}
-
-// openSQLite opens a GORM handle on dbPath with the canonical DSN options,
-// creating the parent directory first.
-func openSQLite(dbPath string, busyTimeoutMs int) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
 		return nil, fmt.Errorf("failed to create db directory: %w", err)
 	}
-	db, err := gorm.Open(sqlite.Open(sqliteDSN(dbPath, busyTimeoutMs)), &gorm.Config{
+	dsn := fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=WAL&_foreign_keys=1", dbPath, busyTimeoutMs)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
@@ -46,14 +45,14 @@ func openSQLite(dbPath string, busyTimeoutMs int) (*gorm.DB, error) {
 	return db, nil
 }
 
-// openTinglyDB opens the shared tingly.db under baseDir. Standalone NewXStore
-// constructors use this; StoreManager opens the same file itself so it can
+// openTinglyDB opens the shared tingly.db under baseDir for the standalone
+// NewXStore constructors. StoreManager opens the same file itself so it can
 // thread its configurable busy timeout through.
+//
+// Creating baseDir is left to OpenSQLite, which creates baseDir/db and so
+// baseDir along with it.
 func openTinglyDB(baseDir string) (*gorm.DB, error) {
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create store directory: %w", err)
-	}
-	return openSQLite(constant.GetDBFile(baseDir), defaultBusyTimeoutMs)
+	return OpenSQLite(constant.GetDBFile(baseDir), defaultBusyTimeoutMs)
 }
 
 // storeConn is the connection half every store embeds: the *gorm.DB it runs
