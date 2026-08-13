@@ -5,10 +5,28 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 )
 
-// applyDeepSeekTransform converts x_thinking field to reasoning_content for DeepSeek/Moonshot
-// This is required by DeepSeek's and Moonshot's reasoning models
-// The base conversion preserves thinking content in "x_thinking" field
+// deepSeekEffortTiers is DeepSeek's own reasoning_effort tier map, built
+// fresh so it can diverge from kimiEffortTiers without touching the shared
+// transform (they hold equal but independent maps — not the same map value,
+// which sharing a Go map reference would make them, silently coupling any
+// future edit to one into the other).
+var deepSeekEffortTiers = lowHighMaxEffortTiers()
+
+// applyDeepSeekTransform applies DeepSeek's request shaping: the
+// reasoning_content message conversion shared with Moonshot/Kimi (see
+// convertThinkingToReasoningContent), plus DeepSeek's own reasoning_effort
+// forwarding through deepSeekEffortTiers.
 func applyDeepSeekTransform(req *openai.ChatCompletionNewParams, providerURL, model string, config *protocol.OpenAIConfig) *openai.ChatCompletionNewParams {
+	applyReasoningEffortTier(req, config, deepSeekEffortTiers)
+	convertThinkingToReasoningContent(req)
+	return req
+}
+
+// convertThinkingToReasoningContent converts the x_thinking field to
+// reasoning_content on assistant messages. Required by both DeepSeek's and
+// Moonshot/Kimi's reasoning models, so it's shared by applyDeepSeekTransform
+// and applyKimiTransform.
+func convertThinkingToReasoningContent(req *openai.ChatCompletionNewParams) {
 	for i := range req.Messages {
 		if req.Messages[i].OfAssistant != nil {
 			// Read/write extra fields on OfAssistant (variant level) for consistency.
@@ -18,8 +36,8 @@ func applyDeepSeekTransform(req *openai.ChatCompletionNewParams, providerURL, mo
 			}
 
 			// Extract x_thinking and convert to reasoning_content
-			if thinking, hasThinking := msgMap["x_thinking"]; hasThinking {
-				if thinkingStr, ok := thinking.(string); ok {
+			if val, hasThinking := msgMap["x_thinking"]; hasThinking {
+				if thinkingStr, ok := val.(string); ok {
 					msgMap["reasoning_content"] = thinkingStr
 				}
 				delete(msgMap, "x_thinking")
@@ -34,5 +52,4 @@ func applyDeepSeekTransform(req *openai.ChatCompletionNewParams, providerURL, mo
 			req.Messages[i].OfAssistant.SetExtraFields(msgMap)
 		}
 	}
-	return req
 }
