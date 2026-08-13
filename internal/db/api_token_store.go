@@ -37,9 +37,11 @@ func (APITokenRecord) TableName() string {
 }
 
 // defaultLastUsedDebounce is how often UpdateLastUsed will actually persist
-// a new last_used_at — the column only needs display-level freshness, not
-// per-request precision. See UpdateLastUsed.
-const defaultLastUsedDebounce = time.Minute
+// a new last_used_at. Both frontend renderers of this field show minute- or
+// second-level absolute timestamps a human reads occasionally (an admin
+// token table), not a live/polled value -- nothing in the codebase depends
+// on it being fresher than "roughly recent". See UpdateLastUsed.
+const defaultLastUsedDebounce = 10 * time.Minute
 
 // APITokenStore manages API tokens for multi-tenant authentication.
 //
