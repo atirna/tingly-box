@@ -6548,6 +6548,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "force_upstream",
+            "in": "query",
+            "description": "Attempt the upstream models endpoint even when normally skipped",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -9013,6 +9022,11 @@
             "type": "string",
             "description": "Field test_mode"
           },
+          "thinking": {
+            "type": "string",
+            "description": "Field thinking",
+            "example": "medium"
+          },
           "token": {
             "type": "string",
             "description": "Field token"
@@ -9027,7 +9041,7 @@
         "type": "object",
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/ProbeResult"
+            "$ref": "#/components/schemas/Result"
           },
           "error": {
             "$ref": "#/components/schemas/errorDetail"
@@ -11933,135 +11947,6 @@
           "verdict"
         ]
       },
-      "ProbeResult": {
-        "type": "object",
-        "properties": {
-          "applied_flags": {
-            "type": "string",
-            "description": "Field applied_flags"
-          },
-          "completion_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field completion_tokens"
-          },
-          "content": {
-            "type": "string",
-            "description": "Field content"
-          },
-          "error_message": {
-            "type": "string",
-            "description": "Field error_message"
-          },
-          "latency_ms": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field latency_ms"
-          },
-          "matched_rule": {
-            "type": "string",
-            "description": "Field matched_rule"
-          },
-          "matched_rule_desc": {
-            "type": "string",
-            "description": "Field matched_rule_desc"
-          },
-          "matched_smart_rule": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field matched_smart_rule"
-          },
-          "message": {
-            "type": "string",
-            "description": "Field message"
-          },
-          "models_count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field models_count"
-          },
-          "prompt_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field prompt_tokens"
-          },
-          "request_url": {
-            "type": "string",
-            "description": "Field request_url"
-          },
-          "routing_source": {
-            "type": "string",
-            "description": "Field routing_source"
-          },
-          "selected_model": {
-            "type": "string",
-            "description": "Field selected_model"
-          },
-          "selected_provider": {
-            "type": "string",
-            "description": "Field selected_provider"
-          },
-          "selected_provider_uuid": {
-            "type": "string",
-            "description": "Field selected_provider_uuid"
-          },
-          "stream": {
-            "type": "boolean",
-            "description": "Field stream"
-          },
-          "success": {
-            "type": "boolean",
-            "description": "Field success"
-          },
-          "tool_calls": {
-            "type": "array",
-            "description": "Field tool_calls",
-            "items": {
-              "$ref": "#/components/schemas/ProbeToolCall"
-            }
-          },
-          "total_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field total_tokens"
-          },
-          "upstream_api": {
-            "type": "string",
-            "description": "Field upstream_api"
-          },
-          "upstream_url": {
-            "type": "string",
-            "description": "Field upstream_url"
-          }
-        },
-        "required": [
-          "success",
-          "latency_ms"
-        ]
-      },
-      "ProbeToolCall": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Field id"
-          },
-          "input": {
-            "type": "object",
-            "description": "Field input",
-            "additionalProperties": {}
-          },
-          "name": {
-            "type": "string",
-            "description": "Field name"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "input"
-        ]
-      },
       "ProfileClaudeConfigData": {
         "type": "object",
         "properties": {
@@ -12795,6 +12680,95 @@
           "restoredFiles",
           "preRestoreBackups",
           "message"
+        ]
+      },
+      "Result": {
+        "type": "object",
+        "properties": {
+          "applied_flags": {
+            "type": "string",
+            "description": "Field applied_flags"
+          },
+          "content": {
+            "type": "string",
+            "description": "Field content"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Field error_message"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field latency_ms"
+          },
+          "matched_rule": {
+            "type": "string",
+            "description": "Field matched_rule"
+          },
+          "matched_rule_desc": {
+            "type": "string",
+            "description": "Field matched_rule_desc"
+          },
+          "matched_smart_rule": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field matched_smart_rule"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "request_url": {
+            "type": "string",
+            "description": "Field request_url"
+          },
+          "routing_source": {
+            "type": "string",
+            "description": "Field routing_source"
+          },
+          "selected_model": {
+            "type": "string",
+            "description": "Field selected_model"
+          },
+          "selected_provider": {
+            "type": "string",
+            "description": "Field selected_provider"
+          },
+          "selected_provider_uuid": {
+            "type": "string",
+            "description": "Field selected_provider_uuid"
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Field stream"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          },
+          "tool_calls": {
+            "type": "array",
+            "description": "Field tool_calls",
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            }
+          },
+          "upstream_api": {
+            "type": "string",
+            "description": "Field upstream_api"
+          },
+          "upstream_url": {
+            "type": "string",
+            "description": "Field upstream_url"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/TokenUsage"
+          }
+        },
+        "required": [
+          "success",
+          "latency_ms"
         ]
       },
       "Route": {
@@ -14427,6 +14401,68 @@
         "required": [
           "token",
           "type"
+        ]
+      },
+      "TokenUsage": {
+        "type": "object",
+        "properties": {
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field cache_read_tokens"
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field cache_write_tokens"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field input_tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field output_tokens"
+          },
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field reasoning_tokens"
+          },
+          "system_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field system_tokens"
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens"
+        ]
+      },
+      "ToolCall": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Field id"
+          },
+          "input": {
+            "type": "object",
+            "description": "Field input",
+            "additionalProperties": {}
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "input"
         ]
       },
       "TraceDetailResponse": {
