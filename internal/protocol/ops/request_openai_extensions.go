@@ -9,35 +9,37 @@ import (
 )
 
 // ApplyProviderTransforms applies provider-specific transformations to an
-// OpenAI Chat request. The dispatch is a flat strings.Contains chain — short,
-// explicit, and parallel to the per-shape dispatch in VendorTransform.
+// OpenAI Chat request. The dispatch matches the provider URL's host (and,
+// where a vendor's quirk is scoped to one path on a shared host, a path
+// prefix too) — short, explicit, and parallel to the per-shape dispatch in
+// VendorTransform.
 //
 // New providers are added as new cases here; aliases (e.g. multiple URLs that
 // share a vendor's quirks) sit in the same case body.
 func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, model string, config *protocol.OpenAIConfig) *openai.ChatCompletionNewParams {
-	url := strings.ToLower(providerURL)
+	host, path := splitProviderHostPath(providerURL)
 	modelLower := strings.ToLower(model)
 
 	// See stripOpenAIPromptCacheFields for why: most OpenAI-compatible
 	// vendors reject these fields outright (#1548), so default to stripping.
-	if !supportsExplicitPromptCache(url) {
+	if !supportsExplicitPromptCache(host) {
 		stripOpenAIPromptCacheFields(req)
 	}
 
 	switch {
-	case strings.Contains(url, "api.deepseek.com"),
-		strings.Contains(url, "opencode.ai/zen/go") && strings.Contains(modelLower, "deepseek"):
+	case host == "api.deepseek.com",
+		host == "opencode.ai" && strings.HasPrefix(path, "/zen/go") && strings.Contains(modelLower, "deepseek"):
 		return applyDeepSeekTransform(req, providerURL, model, config)
 
-	case strings.Contains(url, "api.moonshot.cn"),
-		strings.Contains(url, "api.moonshot.ai"),
-		strings.Contains(url, "api.kimi.com/coding/v1"):
+	case host == "api.moonshot.cn",
+		host == "api.moonshot.ai",
+		host == "api.kimi.com" && strings.HasPrefix(path, "/coding/v1"):
 		return applyKimiTransform(req, providerURL, model, config)
 
-	case strings.Contains(url, "generativelanguage.googleapis.com") && strings.Contains(modelLower, "gemini"):
+	case host == "generativelanguage.googleapis.com" && strings.Contains(modelLower, "gemini"):
 		return applyGeminiTransform(req, providerURL, model, config)
 
-	case strings.Contains(url, "poe.com") && strings.Contains(modelLower, "gemini"):
+	case host == "poe.com" && strings.Contains(modelLower, "gemini"):
 		return applyGeminiPoeTransform(req, providerURL, model, config)
 	}
 
@@ -46,12 +48,49 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 	return applyDefaultTransform(req, config)
 }
 
-// supportsExplicitPromptCache reports whether providerURL is confirmed to
-// accept OpenAI's gpt-5.6+ explicit prompt-cache fields. Extend this
+// splitProviderHostPath splits a provider base URL into its lowercased host
+// (userinfo and port stripped) and path, without requiring a URL scheme.
+// Provider.APIBase is sometimes stored without one (e.g. "api.deepseek.com"
+// rather than "https://api.deepseek.com"), which net/url.Parse treats as a
+// bare relative path rather than a host, so it can't be used here.
+//
+// This also fixes a correctness gap the old strings.Contains(url, "...")
+// dispatch had: matching anywhere in the full URL text meant a base URL that
+// merely mentioned a vendor's hostname in its path or query — e.g. a proxy
+// at "https://gateway.example.com/relay?target=api.deepseek.com" — was
+// mistaken for that vendor. Matching the parsed host exactly closes that.
+func splitProviderHostPath(providerURL string) (host, path string) {
+	rest := strings.ToLower(strings.TrimSpace(providerURL))
+	if idx := strings.Index(rest, "://"); idx >= 0 {
+		rest = rest[idx+3:]
+	}
+	if idx := strings.IndexAny(rest, "/?#"); idx >= 0 {
+		host, path = rest[:idx], rest[idx:]
+	} else {
+		host = rest
+	}
+	if idx := strings.IndexByte(host, '@'); idx >= 0 { // strip userinfo@
+		host = host[idx+1:]
+	}
+	if strings.HasPrefix(host, "[") {
+		// Bracketed IPv6 literal, e.g. "[::1]:8080" — keep through the
+		// closing bracket. A plain IndexByte(':') would truncate at the
+		// first colon inside the address itself.
+		if end := strings.IndexByte(host, ']'); end >= 0 {
+			host = host[:end+1]
+		}
+	} else if idx := strings.IndexByte(host, ':'); idx >= 0 { // strip :port
+		host = host[:idx]
+	}
+	return host, path
+}
+
+// supportsExplicitPromptCache reports whether the provider host is confirmed
+// to accept OpenAI's gpt-5.6+ explicit prompt-cache fields. Extend this
 // allowlist only once a vendor has been verified to accept the fields —
 // the default (stripped) is the safe outcome for an unverified vendor.
-func supportsExplicitPromptCache(url string) bool {
-	return strings.Contains(url, "api.openai.com")
+func supportsExplicitPromptCache(host string) bool {
+	return host == "api.openai.com"
 }
 
 // stripOpenAIPromptCacheFields removes the OpenAI-only prompt-cache fields
