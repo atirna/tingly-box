@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -155,6 +156,11 @@ func NewUsageStore(baseDir string) (*UsageStore, error) {
 	}
 
 	dbPath := constant.GetDBFile(baseDir)
+	// Ensure the db subdirectory exists (matches every other NewXStore constructor).
+	dbDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dbDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create db directory: %w", err)
+	}
 	logrus.Printf("Opening SQLite database for usage store: %s", dbPath)
 	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
@@ -272,6 +278,15 @@ func (us *UsageStore) RecordUsage(record *UsageRecord) error {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 
+	prepareUsageRecord(record)
+
+	return us.db.Create(record).Error
+}
+
+// prepareUsageRecord fills in RecordUsage's defaults without touching the
+// database -- split out so RecordRequestOutcome can create it in the same
+// transaction as a StatsStore write.
+func prepareUsageRecord(record *UsageRecord) {
 	if record.Timestamp.IsZero() {
 		record.Timestamp = time.Now()
 	}
@@ -280,8 +295,6 @@ func (us *UsageStore) RecordUsage(record *UsageRecord) error {
 	if record.Status == "" {
 		record.Status = "success"
 	}
-
-	return us.db.Create(record).Error
 }
 
 // RenameRuleUUID re-attributes historical usage records from oldUUID to
