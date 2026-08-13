@@ -20,7 +20,16 @@ type StoreManager struct {
 	baseDir string
 	db      *gorm.DB // Shared DB instance for all stores
 
-	// Individual stores
+	storeSet
+}
+
+// storeSet groups every store StoreManager owns. Keeping them in one struct
+// lets Close reset them all with a single zero-value assignment, so the
+// store list is spelled out only here and in initialized() — previously it
+// was hand-enumerated in four places (fields, initStores, Close,
+// HealthCheck) and the copies had already drifted (HealthCheck was missing
+// botAccessStore).
+type storeSet struct {
 	statsStore         *StatsStore
 	usageStore         *UsageStore
 	providerStore      *ProviderStore
@@ -30,6 +39,23 @@ type StoreManager struct {
 	remoteChatStore    *RemoteChatStore
 	remoteSessionStore *RemoteSessionStore
 	botAccessStore     *BotAccessStore
+}
+
+// initialized reports, per health-report name, whether each store is set.
+// Returning bools (not the stores themselves) avoids the typed-nil-in-
+// interface trap a map[string]any would reintroduce.
+func (s *storeSet) initialized() map[string]bool {
+	return map[string]bool{
+		"stats":          s.statsStore != nil,
+		"usage":          s.usageStore != nil,
+		"provider":       s.providerStore != nil,
+		"imbotSettings":  s.imbotSettingsStore != nil,
+		"model":          s.modelStore != nil,
+		"apiToken":       s.apiTokenStore != nil,
+		"remoteChats":    s.remoteChatStore != nil,
+		"remoteSessions": s.remoteSessionStore != nil,
+		"botAccess":      s.botAccessStore != nil,
+	}
 }
 
 // StoreManagerConfig holds configuration for StoreManager initialization.
@@ -377,15 +403,7 @@ func (sm *StoreManager) Close() error {
 	}
 
 	// Clear all store references
-	sm.statsStore = nil
-	sm.usageStore = nil
-	sm.providerStore = nil
-	sm.imbotSettingsStore = nil
-	sm.modelStore = nil
-	sm.apiTokenStore = nil
-	sm.remoteChatStore = nil
-	sm.remoteSessionStore = nil
-	sm.botAccessStore = nil
+	sm.storeSet = storeSet{}
 	sm.db = nil
 
 	logrus.Info("StoreManager: Closed all stores")
@@ -398,47 +416,33 @@ func (sm *StoreManager) HealthCheck() (*HealthStatus, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	// Check each store. Keep in sync with the fields, initStores and Close —
-	// the set of stores is unfortunately spelled out in four places.
-	stores := map[string]interface{}{
-		"stats":          sm.statsStore,
-		"usage":          sm.usageStore,
-		"provider":       sm.providerStore,
-		"imbotSettings":  sm.imbotSettingsStore,
-		"model":          sm.modelStore,
-		"apiToken":       sm.apiTokenStore,
-		"remoteChats":    sm.remoteChatStore,
-		"remoteSessions": sm.remoteSessionStore,
-		"botAccess":      sm.botAccessStore,
-	}
+	stores := sm.initialized()
 
 	status := &HealthStatus{
 		TotalStores: len(stores),
 		StoreStatus: make(map[string]string),
 	}
 
-	for name, store := range stores {
-		if store == nil {
+	// Every store runs on the one shared connection, so ping it once instead
+	// of once per store (the previous version issued ten identical pings).
+	dbOK := false
+	if sm.db != nil {
+		if sqlDB, err := sm.db.DB(); err == nil && sqlDB.Ping() == nil {
+			dbOK = true
+		}
+	}
+
+	for name, inited := range stores {
+		switch {
+		case !inited || sm.db == nil:
 			status.StoreStatus[name] = HealthStatusNotInit
 			status.UnhealthyStores++
-		} else {
-			// Try to ping the database
-			if sm.db != nil {
-				sqlDB, err := sm.db.DB()
-				if err != nil {
-					status.StoreStatus[name] = HealthStatusError
-					status.UnhealthyStores++
-				} else if err := sqlDB.Ping(); err != nil {
-					status.StoreStatus[name] = HealthStatusError
-					status.UnhealthyStores++
-				} else {
-					status.StoreStatus[name] = HealthStatusOK
-					status.HealthyStores++
-				}
-			} else {
-				status.StoreStatus[name] = HealthStatusNotInit
-				status.UnhealthyStores++
-			}
+		case !dbOK:
+			status.StoreStatus[name] = HealthStatusError
+			status.UnhealthyStores++
+		default:
+			status.StoreStatus[name] = HealthStatusOK
+			status.HealthyStores++
 		}
 	}
 

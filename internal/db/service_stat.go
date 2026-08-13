@@ -216,6 +216,11 @@ func (ss *StatsStore) HydrateRules(rules []typ.Rule) error {
 		statsMap[key] = record
 	}
 
+	// Collect rows for services with no stored stats and insert them in one
+	// batch at the end. HydrateRules runs on every config load/hot-reload,
+	// and the previous per-row Create inside the loop was an N+1 insert over
+	// rules x services on first boot or after adding a rule.
+	var missing []*ServiceStatsRecord
 	for i := range rules {
 		rule := &rules[i]
 		for j := range rule.Services {
@@ -224,41 +229,20 @@ func (ss *StatsStore) HydrateRules(rules []typ.Rule) error {
 
 			if record, ok := statsMap[key]; ok {
 				service.Stats = record.toServiceStats()
-			} else {
-				service.InitializeStats()
-				statCopy := service.Stats.GetStats()
-				record := &ServiceStatsRecord{
-					Provider:             service.Provider,
-					Model:                service.Model,
-					ServiceID:            statCopy.ServiceID,
-					RequestCount:         statCopy.RequestCount,
-					LastUsed:             statCopy.LastUsed,
-					WindowStart:          statCopy.WindowStart,
-					WindowRequestCount:   statCopy.WindowRequestCount,
-					WindowTokensConsumed: statCopy.WindowTokensConsumed,
-					WindowInputTokens:    statCopy.WindowInputTokens,
-					WindowOutputTokens:   statCopy.WindowOutputTokens,
-					TimeWindow:           statCopy.TimeWindow,
-				}
-				if record.TimeWindow == 0 {
-					if service.TimeWindow > 0 {
-						record.TimeWindow = service.TimeWindow
-					} else {
-						record.TimeWindow = defaultServiceTimeWindow
-					}
-				}
-				if record.ServiceID == "" {
-					record.ServiceID = service.ServiceID()
-				}
-				if record.WindowStart.IsZero() {
-					record.WindowStart = time.Now()
-				}
-				if err := ss.db.Create(record).Error; err != nil {
-					return err
-				}
-				// Add to statsMap so other services with same provider:model find it
+			} else if record := buildStatsRecordFromService(service); record != nil {
+				// buildStatsRecordFromService initializes service.Stats and
+				// applies the same defaults this branch used to duplicate
+				// inline. Register the row in statsMap so other services
+				// with the same provider:model reuse it.
 				statsMap[key] = record
+				missing = append(missing, record)
 			}
+		}
+	}
+
+	if len(missing) > 0 {
+		if err := ss.db.CreateInBatches(missing, 100).Error; err != nil {
+			return err
 		}
 	}
 
