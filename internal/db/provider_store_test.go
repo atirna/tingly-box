@@ -699,3 +699,101 @@ func TestProviderCredentialBundleRoundTrip(t *testing.T) {
 		t.Errorf("region after update: got %q, want %q", got2.Credential.Field("region"), "eu-west-1")
 	}
 }
+
+// TestProviderStore_FailedWriteDoesNotCorruptCache checks that Save,
+// UpdateCredential, and UpdateCredentialBundle don't leave the cache holding
+// unpersisted data when the SQLite write fails (forced by closing the DB).
+func TestProviderStore_FailedWriteDoesNotCorruptCache(t *testing.T) {
+	seed := func(t *testing.T) *ProviderStore {
+		t.Helper()
+		store, _ := setupTestProviderStore(t)
+		provider := &typ.Provider{
+			UUID:     "test-cache-integrity-uuid",
+			Name:     "original-name",
+			APIBase:  "https://api.example.com",
+			APIStyle: protocol.APIStyleOpenAI,
+			AuthType: typ.AuthTypeAPIKey,
+			Token:    "original-token",
+			Enabled:  true,
+		}
+		if err := store.Save(provider); err != nil {
+			t.Fatalf("seed Save: %v", err)
+		}
+		return store
+	}
+
+	closeUnderlyingDB := func(t *testing.T, store *ProviderStore) {
+		t.Helper()
+		sqlDB, err := store.db.DB()
+		if err != nil {
+			t.Fatalf("store.db.DB(): %v", err)
+		}
+		if err := sqlDB.Close(); err != nil {
+			t.Fatalf("closing underlying db: %v", err)
+		}
+	}
+
+	t.Run("Save", func(t *testing.T) {
+		store := seed(t)
+		closeUnderlyingDB(t, store)
+
+		err := store.Save(&typ.Provider{
+			UUID:     "test-cache-integrity-uuid",
+			Name:     "corrupted-name",
+			APIBase:  "https://api.example.com",
+			APIStyle: protocol.APIStyleOpenAI,
+			AuthType: typ.AuthTypeAPIKey,
+			Token:    "corrupted-token",
+			Enabled:  true,
+		})
+		if err == nil {
+			t.Fatal("expected Save to fail against a closed db")
+		}
+
+		got, getErr := store.GetByUUID("test-cache-integrity-uuid")
+		if getErr != nil {
+			t.Fatalf("GetByUUID: %v", getErr)
+		}
+		if got.Name != "original-name" || got.Token != "original-token" {
+			t.Errorf("cache reflects a failed write: got name=%q token=%q, want the pre-failure values", got.Name, got.Token)
+		}
+	})
+
+	t.Run("UpdateCredential", func(t *testing.T) {
+		store := seed(t)
+		closeUnderlyingDB(t, store)
+
+		err := store.UpdateCredential("test-cache-integrity-uuid", "corrupted-token", nil)
+		if err == nil {
+			t.Fatal("expected UpdateCredential to fail against a closed db")
+		}
+
+		token, getErr := store.GetAccessToken("test-cache-integrity-uuid")
+		if getErr != nil {
+			t.Fatalf("GetAccessToken: %v", getErr)
+		}
+		if token != "original-token" {
+			t.Errorf("cache reflects a failed write: got token=%q, want %q", token, "original-token")
+		}
+	})
+
+	t.Run("UpdateCredentialBundle", func(t *testing.T) {
+		store := seed(t)
+		closeUnderlyingDB(t, store)
+
+		err := store.UpdateCredentialBundle("test-cache-integrity-uuid", &typ.CredentialBundle{
+			Fields: map[string]string{"region": "corrupted-region"},
+		})
+		if err == nil {
+			t.Fatal("expected UpdateCredentialBundle to fail against a closed db")
+		}
+
+		got, getErr := store.GetByUUID("test-cache-integrity-uuid")
+		if getErr != nil {
+			t.Fatalf("GetByUUID: %v", getErr)
+		}
+		if got.Credential != nil {
+			t.Errorf("cache reflects a failed write: got Credential=%v, want nil (seed provider has no credential bundle)", got.Credential)
+		}
+	})
+}

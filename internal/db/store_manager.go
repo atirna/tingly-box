@@ -200,13 +200,11 @@ func (sm *StoreManager) initUsageStore() error {
 
 // initProviderStore initializes the ProviderStore.
 func (sm *StoreManager) initProviderStore() error {
-	if err := sm.db.AutoMigrate(&ProviderRecord{}); err != nil {
+	store, err := newProviderStoreOverDB(sm.db, constant.GetDBFile(sm.baseDir))
+	if err != nil {
 		return err
 	}
-	sm.providerStore = &ProviderStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-	}
+	sm.providerStore = store
 	return nil
 }
 
