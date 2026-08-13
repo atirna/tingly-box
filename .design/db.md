@@ -314,3 +314,21 @@ Ranked by expected value; each is independent.
 7. **Server shutdown order**: `StoreManager.Close` runs before
    `httpServer.Shutdown`, so in-flight requests can hit closed stores
    (clean errors, but still backwards).
+8. **Two known consistency windows from outcome batching** (accepted for
+   the ~12× hot-path win; close them if they ever start to matter):
+   - *Config hot-reload can regress in-memory stats by ≤1 flush interval.*
+     `HydrateRules` re-seeds `service.Stats` from `service_stats` on every
+     config reload; outcomes still buffered in the writer aren't in the
+     table yet, so the rebuilt counters can be up to 1s behind the traffic
+     the old rule objects had already counted. Self-correcting window
+     counters, no user-visible effect today. Fix if needed: flush the
+     writer before `RefreshStatsFromStore` (a `StoreManager` method that
+     calls `outcomeWriter`'s flush synchronously).
+   - *Admin "clear stats" can be resurrected by a pending flush.*
+     `ClearAllStats`/`ClearServiceStats` deletes rows, but a snapshot
+     buffered before the clear re-Saves the old cumulative counts up to 1s
+     later. Same fix shape: flush (or drop matching buffered outcomes)
+     before the delete. Note any future reader that needs
+     read-your-writes on `usage_records`/`service_stats` (e.g. real-time
+     quota enforcement) must NOT read the tables directly — add an
+     explicit writer flush or read the in-memory stats instead.
