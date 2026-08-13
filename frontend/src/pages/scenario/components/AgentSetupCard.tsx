@@ -2,6 +2,7 @@ import { ContentCopy as ContentCopyIcon } from '@/components/icons';
 import { CheckCircle as CheckCircleIcon } from '@/components/icons';
 import { ExpandLess as ExpandLessIcon } from '@/components/icons';
 import { ExpandMore as ExpandMoreIcon } from '@/components/icons';
+import { HelpOutline as HelpOutlineIcon } from '@/components/icons';
 import {
     Alert,
     Box,
@@ -19,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import UnifiedCard from '@/components/UnifiedCard';
 import { api } from '@/services/api';
 import { SPOTLIGHT_ADD_MODEL_EVENT } from '@/components/nodes/ActionAddNode';
+import { EntryGuideDialog } from '@/components/tier/EntryGuideDialog';
 
 export interface AgentApplyResult {
     success: boolean;
@@ -55,6 +57,8 @@ export interface AgentSetupCardProps {
     hasModelSelected?: boolean;
     onSelectModel?: () => void;
     onConnectProvider?: () => void;
+    /** Opened by the header "How routing works" help button. */
+    onShowGuide?: () => void;
 }
 
 const COLLAPSED_KEY = (agentKey: string) => `setup-card-collapsed-${agentKey}`;
@@ -121,6 +125,7 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
     hasModelSelected = false,
     onSelectModel,
     onConnectProvider,
+    onShowGuide,
 }) => {
     const { t } = useTranslation();
     // Pages may override these; otherwise fall back to the translated defaults.
@@ -145,6 +150,7 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
     const [applyResult, setApplyResult] = useState<AgentApplyResult | null>(null);
     const [copied, setCopied] = useState(false);
     const [copiedMirror, setCopiedMirror] = useState(false);
+    const [showGuide, setShowGuide] = useState(false);
     // Tracks which completed steps the user has manually expanded
     const [expandedDoneSteps, setExpandedDoneSteps] = useState<Set<number>>(new Set());
 
@@ -278,6 +284,7 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
     });
 
     return (
+        <>
         <UnifiedCard
             size="header"
             titleMarginBottom={collapsed ? 0 : 2}
@@ -323,6 +330,16 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
                     >
                         {t('agentSetup.resetProgress')}
                     </Button>
+                    <Tooltip title={t('templateActions.howRoutingWorks', { defaultValue: 'How routing works' })}>
+                        <IconButton
+                            size="small"
+                            aria-label={t('templateActions.howRoutingWorks', { defaultValue: 'How routing works' })}
+                            onClick={() => { if (onShowGuide) onShowGuide(); else setShowGuide(true); }}
+                            sx={{ color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
+                        >
+                            <HelpOutlineIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
                     <Tooltip title={collapsed ? t('agentSetup.expand') : t('agentSetup.collapse')}>
                         <IconButton size="small" onClick={toggleCollapsed}>
                             {collapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
@@ -639,6 +656,18 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
                 </Stack>
             </Collapse>
         </UnifiedCard>
+
+        {/* Self-hosted "How routing works" guide — only when the page didn't
+            hand in its own `onShowGuide` (in which case the page owns the
+            dialog). */}
+        {!onShowGuide && (
+            <EntryGuideDialog
+                open={showGuide}
+                onClose={() => setShowGuide(false)}
+                mode="direct"
+            />
+        )}
+        </>
     );
 };
 
