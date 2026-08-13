@@ -47,6 +47,7 @@ export default {
       "useClaudeDesktop": "Claude Desktop",
       "useOpenCode": "OpenCode",
       "usePi": "Pi",
+      "useDsh": "DeepSeek",
       "useXcode": "Xcode",
       "useVSCode": "VS Code",
       "useEmbed": "Embedding",
@@ -1584,6 +1585,7 @@ export default {
       "xcode": "通过 Tingly Box 代理，在 Xcode 中用于 iOS/macOS 开发的 AI 编码助手",
       "vscode": "自带密钥：通过 Tingly Box 代理，在 VS Code Copilot 中使用你自己的 API Key",
       "pi": "通过 Tingly Box 代理使用 pi 编码 Agent",
+      "dsh": "通过 Tingly Box 代理使用 DeepSeek Harness (dsh) 智能体框架",
       "imagegen": "通过 Tingly Box 代理进行 AI 图像生成，支持多种模型",
     },
     "vscode": {
@@ -1604,6 +1606,16 @@ export default {
       "openGuide": "查看配置",
       "configTitle": "配置 Pi",
       "modalDescription": "把 pi 的 provider base URL 和 API Key 配置为本页面上方显示的值，具体配置项请参考下方仓库中的说明。",
+    },
+    "dsh": {
+      "openWebUi": "打开 Web UI",
+      "installDescription": "在本机运行 `npx @deepseek-ai/dsh web`（需要 Node.js），Web UI 默认地址为 http://127.0.0.1:3080。出于安全考虑 Tingly Box 不会代为启动 dsh，运行后可用下方按钮一键跳转。注意：dsh 处于开发者预览阶段，配置可能变化。",
+      "viewRepo": "在 GitHub 上查看",
+      "applyStepLabel": "配置 DSH",
+      "applyStepDescription": "把 dsh 模型 provider 插件的 base URL 和 API Key 配置为上方的值 —— 具体插件配置请参考 dsh 文档。",
+      "openGuide": "查看配置",
+      "configTitle": "配置 DSH",
+      "modalDescription": "把 dsh 的模型 provider 插件指向本页面上方显示的 base URL 和 API Key，具体插件配置请参考下方仓库中的说明。",
     },
   },
   "scenarioOverview": {

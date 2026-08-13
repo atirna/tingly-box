@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getHiddenScenarios } from '@/pages/scenario/scenarioRegistry';
-import { OpenAI, Anthropic, Claude, OpenCode, Pi, Xcode, VSCode, Codex, ClaudeDesktop } from '../components/BrandIcons';
+import { OpenAI, Anthropic, Claude, DeepSeek, OpenCode, Pi, Xcode, VSCode, Codex, ClaudeDesktop } from '../components/BrandIcons';
 import {
     SettingsApplications,
     BarChart as IconChartBar,
@@ -104,6 +104,7 @@ export function useActivityItems(): ActivityItem[] {
             { id: 'codex', nav: { path: '/agent/codex', label: t('layout.nav.useCodex', { defaultValue: 'Codex' }), icon: <Codex size={20} /> } },
             { id: 'opencode', nav: { path: '/agent/opencode', label: t('layout.nav.useOpenCode', { defaultValue: 'OpenCode' }), icon: <OpenCode size={20} /> } },
             { id: 'pi', nav: { path: '/agent/pi', label: t('layout.nav.usePi', { defaultValue: 'Pi' }), icon: <Pi size={20} /> } },
+            { id: 'dsh', nav: { path: '/agent/dsh', label: t('layout.nav.useDsh', { defaultValue: 'DeepSeek' }), icon: <DeepSeek size={20} /> } },
             { id: 'xcode', nav: { path: '/agent/xcode', label: t('layout.nav.useXcode', { defaultValue: 'Xcode' }), icon: <Xcode size={20} /> } },
             { id: 'vscode', nav: { path: '/agent/vscode', label: t('layout.nav.useVSCode', { defaultValue: 'VS Code' }), icon: <VSCode size={20} /> } },
             // "custom" (bring-your-own-request-model) closes out the coding
