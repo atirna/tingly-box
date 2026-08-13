@@ -107,11 +107,18 @@ so it doesn't block the response, but it's real DB load), not a read this
 caching pattern touches.
 
 **`UpdateLastUsed`: debounce the write instead of caching a read.**
-`last_used_at` only needs display-level freshness (token admin UI), not
-per-request precision. `UpdateLastUsed` now persists at most once per
-`defaultLastUsedDebounce` (1 minute) per token — checked cheaply under
+`last_used_at` is only ever rendered as a minute/second-level absolute
+timestamp in an admin token table a human reads occasionally (traced every
+consumer — the sharing API passes it through unrounded, both frontend
+renderers show absolute time, nothing polls or diffs it) — no per-request
+precision needed. `UpdateLastUsed` now persists at most once per
+`defaultLastUsedDebounce` (10 minutes) per token — checked cheaply under
 `RLock` against the cached `LastUsedAt` before ever touching SQLite. No new
-cache or flusher: the debounce state *is* the existing cache entry.
+cache or flusher: the debounce state *is* the existing cache entry. The
+window size doesn't change the per-request win below (a single hot token
+saturates the debounce at any window ≥ its request-burst duration); it
+mainly cuts *aggregate* background writes when many tokens are active
+concurrently, since that scales as (active tokens) / (window size).
 
 | Benchmark | cached only | + debounced `UpdateLastUsed` | change |
 |---|---|---|---|
