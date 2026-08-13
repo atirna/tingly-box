@@ -1,9 +1,10 @@
 package server
 
 import (
-	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"strings"
 	"time"
+
+	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 )
 
 // =============================================

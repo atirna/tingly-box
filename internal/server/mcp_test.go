@@ -1,8 +1,9 @@
 package server
 
 import (
-	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"testing"
+
+	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tingly-dev/tingly-box/internal/server/config"

@@ -4,11 +4,12 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"log"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/browser"

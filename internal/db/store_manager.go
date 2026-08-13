@@ -4,13 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/sirupsen/logrus"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/remote/session"
@@ -92,21 +89,11 @@ func NewStoreManagerWithConfig(config StoreManagerConfig) (*StoreManager, error)
 		config.BusyTimeout = 5000
 	}
 
-	// Get database path
-	dbPath := constant.GetDBFile(config.BaseDir)
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create db directory: %w", err)
-	}
-
 	// Open shared database connection
-	dsn := fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=WAL&_foreign_keys=1",
-		dbPath, config.BusyTimeout)
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	dbPath := constant.GetDBFile(config.BaseDir)
+	db, err := openSQLite(dbPath, config.BusyTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, err
 	}
 
 	logrus.Debugf("StoreManager: Opened database at %s", dbPath)
@@ -168,31 +155,27 @@ func (sm *StoreManager) initStores() error {
 
 // initStatsStore initializes the StatsStore.
 func (sm *StoreManager) initStatsStore() error {
-	if err := sm.db.AutoMigrate(&ServiceStatsRecord{}); err != nil {
+	store, err := newStatsStore(borrowedConn(sm.db))
+	if err != nil {
 		return err
 	}
-	sm.statsStore = &StatsStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-	}
+	sm.statsStore = store
 	return nil
 }
 
 // initUsageStore initializes the UsageStore.
 func (sm *StoreManager) initUsageStore() error {
-	if err := migrateUsageTables(sm.db); err != nil {
+	store, err := newUsageStore(borrowedConn(sm.db))
+	if err != nil {
 		return err
 	}
-	sm.usageStore = &UsageStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-	}
+	sm.usageStore = store
 	return nil
 }
 
 // initProviderStore initializes the ProviderStore.
 func (sm *StoreManager) initProviderStore() error {
-	store, err := newProviderStoreOverDB(sm.db, constant.GetDBFile(sm.baseDir))
+	store, err := newProviderStore(borrowedConn(sm.db))
 	if err != nil {
 		return err
 	}
@@ -202,13 +185,11 @@ func (sm *StoreManager) initProviderStore() error {
 
 // initImBotSettingsStore initializes the ImBotSettingsStore.
 func (sm *StoreManager) initImBotSettingsStore() error {
-	if err := sm.db.AutoMigrate(&ImBotSettingsRecord{}); err != nil {
+	store, err := newImBotSettingsStore(borrowedConn(sm.db))
+	if err != nil {
 		return err
 	}
-	sm.imbotSettingsStore = &ImBotSettingsStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-	}
+	sm.imbotSettingsStore = store
 	return nil
 }
 
@@ -236,19 +217,17 @@ func (sm *StoreManager) dropDeprecatedTables() error {
 
 // initModelStore initializes the ModelStore.
 func (sm *StoreManager) initModelStore() error {
-	if err := sm.db.AutoMigrate(&ProviderModelRecord{}); err != nil {
+	store, err := newModelStore(borrowedConn(sm.db))
+	if err != nil {
 		return err
 	}
-	sm.modelStore = &ModelStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-	}
+	sm.modelStore = store
 	return nil
 }
 
 // initAPITokenStore initializes the APITokenStore.
 func (sm *StoreManager) initAPITokenStore() error {
-	store, err := newAPITokenStoreOverDB(sm.db, constant.GetDBFile(sm.baseDir))
+	store, err := newAPITokenStore(borrowedConn(sm.db))
 	if err != nil {
 		return err
 	}

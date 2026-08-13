@@ -3,17 +3,11 @@ package db
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
-	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -43,49 +37,28 @@ func (ServiceStatsRecord) TableName() string {
 
 // StatsStore persists service usage statistics in SQLite using GORM.
 type StatsStore struct {
-	db     *gorm.DB
-	dbPath string
-	mu     sync.Mutex
+	storeConn
+	mu sync.Mutex
 }
 
-// NewStatsStore creates or loads a stats store using SQLite database.
+// NewStatsStore creates or loads a stats store over its own connection to
+// the shared tingly.db.
 func NewStatsStore(baseDir string) (*StatsStore, error) {
-	logrus.Debugf("Initializing stats store in directory: %s", baseDir)
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create stats store directory: %w", err)
-	}
-
-	dbPath := constant.GetDBFile(baseDir)
-	// Ensure the db subdirectory exists
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create db directory: %w", err)
-	}
-
-	logrus.Debugf("Opening SQLite database: %s", dbPath)
-	// Configure SQLite with busy timeout and other settings to prevent hangs
-	// Use pure Go driver by ensuring modernc.org/sqlite is used
-	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent), // Disable verbose logging for now
-	})
+	db, err := openTinglyDB(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open stats database: %w", err)
+		return nil, fmt.Errorf("stats store: %w", err)
 	}
-	logrus.Debugf("SQLite database opened successfully")
+	return newStatsStore(ownedConn(db))
+}
 
-	store := &StatsStore{
-		db:     db,
-		dbPath: dbPath,
-	}
-
-	// Auto-migrate schema, if we add column it would create or update the database table to match the struct definition
-	if err := db.AutoMigrate(&ServiceStatsRecord{}); err != nil {
+// newStatsStore finishes setting up a StatsStore (migrate) over an
+// already-open connection, shared by NewStatsStore and
+// StoreManager.initStatsStore.
+func newStatsStore(conn storeConn) (*StatsStore, error) {
+	if err := conn.db.AutoMigrate(&ServiceStatsRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate stats database: %w", err)
 	}
-	logrus.Debugf("Stats store initialization completed")
-
-	return store, nil
+	return &StatsStore{storeConn: conn}, nil
 }
 
 // ServiceKey builds a unique key for a provider/model combination.

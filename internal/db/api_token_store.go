@@ -3,17 +3,11 @@ package db
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-
-	"github.com/tingly-dev/tingly-box/internal/constant"
 )
 
 // APITokenRecord represents a user API token for multi-tenant authentication
@@ -49,64 +43,40 @@ const defaultLastUsedDebounce = 10 * time.Minute
 // request, see internal/middleware/auth.go), so cache mirrors the
 // api_tokens table by TokenID the same way ProviderStore mirrors providers.
 type APITokenStore struct {
-	db     *gorm.DB
-	dbPath string
-	mu     sync.RWMutex
-	cache  map[string]*APITokenRecord
+	storeConn
+	mu    sync.RWMutex
+	cache map[string]*APITokenRecord
 
 	// lastUsedDebounce is the minimum interval between persisted
 	// last_used_at writes for the same token; see UpdateLastUsed.
 	lastUsedDebounce time.Duration
 }
 
-// NewAPITokenStore creates or loads an API token store using SQLite database.
+// NewAPITokenStore creates or loads an API token store over its own
+// connection to the shared tingly.db.
 func NewAPITokenStore(baseDir string) (*APITokenStore, error) {
-	logrus.Debugf("Initializing API token store in directory: %s", baseDir)
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create API token store directory: %w", err)
-	}
-
-	dbPath := constant.GetDBFile(baseDir)
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create db directory: %w", err)
-	}
-
-	logrus.Debugf("Opening SQLite database for API token store: %s", dbPath)
-	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	db, err := openTinglyDB(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open API token database: %w", err)
+		return nil, fmt.Errorf("api token store: %w", err)
 	}
-	logrus.Debugf("SQLite database opened successfully for API token store")
-
-	store, err := newAPITokenStoreOverDB(db, dbPath)
-	if err != nil {
-		return nil, err
-	}
-
-	logrus.Debugf("API token store initialization completed")
-	return store, nil
+	return newAPITokenStore(ownedConn(db))
 }
 
-// newAPITokenStoreOverDB finishes setting up an APITokenStore (migrate +
-// cache load) over an already-open *gorm.DB, shared by NewAPITokenStore and
-// StoreManager.initAPITokenStore -- see newProviderStoreOverDB.
-func newAPITokenStoreOverDB(db *gorm.DB, dbPath string) (*APITokenStore, error) {
-	if err := db.AutoMigrate(&APITokenRecord{}); err != nil {
+// newAPITokenStore finishes setting up an APITokenStore (migrate + cache
+// load) over an already-open connection, shared by NewAPITokenStore and
+// StoreManager.initAPITokenStore -- see newProviderStore.
+func newAPITokenStore(conn storeConn) (*APITokenStore, error) {
+	if err := conn.db.AutoMigrate(&APITokenRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate API token database: %w", err)
 	}
 
 	// Rename user_uuid column to user_id for consistency
-	if err := ensureAPITokenSchema(db); err != nil {
+	if err := ensureAPITokenSchema(conn.db); err != nil {
 		return nil, fmt.Errorf("failed to align API token schema: %w", err)
 	}
 
 	store := &APITokenStore{
-		db:               db,
-		dbPath:           dbPath,
+		storeConn:        conn,
 		cache:            make(map[string]*APITokenRecord),
 		lastUsedDebounce: defaultLastUsedDebounce,
 	}
@@ -445,13 +415,4 @@ func (s *APITokenStore) CleanupExpiredTokens(olderThan time.Duration) (int64, er
 // GetDB returns the underlying GORM DB instance (for testing)
 func (s *APITokenStore) GetDB() *gorm.DB {
 	return s.db
-}
-
-// Close closes the database connection
-func (s *APITokenStore) Close() error {
-	sqlDB, err := s.db.DB()
-	if err != nil {
-		return err
-	}
-	return sqlDB.Close()
 }

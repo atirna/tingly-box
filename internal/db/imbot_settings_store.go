@@ -4,17 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-
-	"github.com/sirupsen/logrus"
-	"github.com/tingly-dev/tingly-box/internal/constant"
 )
 
 // Settings represents ImBot configuration (exported for use by remote_coder module)
@@ -46,44 +39,28 @@ type Settings struct {
 
 // ImBotSettingsStore persists ImBot settings in SQLite using GORM.
 type ImBotSettingsStore struct {
-	db     *gorm.DB
-	dbPath string
-	mu     sync.Mutex
+	storeConn
+	mu sync.Mutex
 }
 
-// NewImBotSettingsStore creates or loads an ImBot settings store using SQLite database.
+// NewImBotSettingsStore creates or loads an ImBot settings store over its
+// own connection to the shared tingly.db.
 func NewImBotSettingsStore(baseDir string) (*ImBotSettingsStore, error) {
-	logrus.Debugf("Initializing stats store in directory: %s", baseDir)
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create stats store directory: %w", err)
-	}
-
-	dbPath := constant.GetDBFile(baseDir)
-	// Ensure the db subdirectory exists
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create db directory: %w", err)
-	}
-	// Configure SQLite with busy timeout and other settings
-	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	db, err := openTinglyDB(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open imbot settings database: %w", err)
+		return nil, fmt.Errorf("imbot settings store: %w", err)
 	}
+	return newImBotSettingsStore(ownedConn(db))
+}
 
-	store := &ImBotSettingsStore{
-		db:     db,
-		dbPath: dbPath,
-	}
-
-	// Auto-migrate schema
-	if err := db.AutoMigrate(&ImBotSettingsRecord{}); err != nil {
+// newImBotSettingsStore finishes setting up an ImBotSettingsStore (migrate)
+// over an already-open connection, shared by NewImBotSettingsStore and
+// StoreManager.initImBotSettingsStore.
+func newImBotSettingsStore(conn storeConn) (*ImBotSettingsStore, error) {
+	if err := conn.db.AutoMigrate(&ImBotSettingsRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate imbot settings database: %w", err)
 	}
-
-	return store, nil
+	return &ImBotSettingsStore{storeConn: conn}, nil
 }
 
 // ListSettings returns all ImBot configurations.
