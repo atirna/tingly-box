@@ -152,6 +152,24 @@ func TestTeamScenarioDescriptor(t *testing.T) {
 	}
 }
 
+func TestDshScenarioDescriptor(t *testing.T) {
+	d, ok := GetScenarioDescriptor(ScenarioDsh)
+	if !ok {
+		t.Fatal("dsh descriptor not found")
+	}
+	if !d.AllowRuleBinding {
+		t.Error("dsh should allow rule binding")
+	}
+	if !d.AllowDirectPathUse {
+		t.Error("dsh should allow direct path use")
+	}
+	for _, transport := range []ScenarioTransport{TransportOpenAI, TransportAnthropic} {
+		if !ScenarioSupportsTransport(ScenarioDsh, transport) {
+			t.Errorf("dsh should support transport %q", transport)
+		}
+	}
+}
+
 func TestResolveScenarioAlias(t *testing.T) {
 	canonical, ok := ResolveScenarioAlias(ScenarioAgent)
 	if !ok {

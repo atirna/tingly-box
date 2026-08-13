@@ -15,6 +15,7 @@ import {
     Claude,
     ClaudeDesktop,
     Codex,
+    DeepSeek,
     OpenAI,
     OpenCode,
     Pi,
@@ -71,6 +72,14 @@ export const SCENARIOS: ScenarioDescriptor[] = [
         descKey: 'scenarioOverview.descriptions.pi',
         path: '/agent/pi',
         icon: (size) => <Pi size={size} />,
+        hideable: true,
+    },
+    {
+        id: 'dsh',
+        labelKey: 'layout.nav.useDsh',
+        descKey: 'scenarioOverview.descriptions.dsh',
+        path: '/agent/dsh',
+        icon: (size) => <DeepSeek size={size} />,
         hideable: true,
     },
     {

@@ -45,6 +45,7 @@ export default {
       "useClaudeDesktop": "Claude Desktop",
       "useOpenCode": "OpenCode",
       "usePi": "Pi",
+      "useDsh": "DeepSeek",
       "useXcode": "Xcode",
       "useVSCode": "VS Code",
       "useEmbed": "Embedding",
@@ -1530,6 +1531,8 @@ export default {
     "model": {
       "label": "Select a Model",
       "configured": "Configured",
+      "skipped": "Skipped",
+      "skip": "Skip",
       "choose": "Choose Model",
       "change": "Change",
       "tooltip": "Choose which model {{agent}} will use in the Model Rules section below."
@@ -1584,6 +1587,7 @@ export default {
       "xcode": "Xcode AI coding assistant through Tingly Box proxy for iOS/macOS development",
       "vscode": "Bring Your Own Key: Use your own API keys with VS Code Copilot through Tingly Box proxy",
       "pi": "Pi coding agent through Tingly Box proxy",
+      "dsh": "DeepSeek Harness (dsh) agent harness through Tingly Box proxy",
       "imagegen": "AI-powered image generation through Tingly Box proxy with multiple model support"
     },
     "vscode": {
@@ -1604,6 +1608,16 @@ export default {
       "openGuide": "View Config",
       "configTitle": "Configure Pi",
       "modalDescription": "Point pi's provider base URL and API key at the values shown on this page, then check the repo below for pi's exact configuration options."
+    },
+    "dsh": {
+      "openWebUi": "Open Web UI",
+      "installDescription": "Run DeepSeek Harness locally with `npx @deepseek-ai/dsh web` (requires Node.js) — the Web UI serves at http://127.0.0.1:3080. Tingly Box does not launch dsh for you; use the button below to jump to it once it's running. Note: dsh is in developer preview and its config may change.",
+      "viewRepo": "View on GitHub",
+      "applyStepLabel": "Configure DSH",
+      "applyStepDescription": "Point dsh's model provider plugin base URL and API key at the values above — see the dsh docs for the exact plugin config.",
+      "openGuide": "View Config",
+      "configTitle": "Configure DSH",
+      "modalDescription": "Point dsh's model provider plugin at the base URL and API key shown on this page, then check the repo below for dsh's plugin configuration options."
     }
   },
   "scenarioOverview": {
@@ -1624,6 +1638,7 @@ export default {
       "xcode": "Bring your model into Xcode's coding intelligence.",
       "vscode": "Power VS Code Copilot Chat through Tingly Box.",
       "pi": "Route the pi coding agent through your provider.",
+      "dsh": "Route DeepSeek Harness (dsh) through your provider.",
       "openai": "Drop-in OpenAI-compatible SDK endpoint.",
       "anthropic": "Drop-in Anthropic-compatible SDK endpoint.",
       "embed": "Route embedding requests to your provider.",
