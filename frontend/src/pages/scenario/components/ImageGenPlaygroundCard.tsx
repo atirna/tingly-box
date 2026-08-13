@@ -288,6 +288,11 @@ const ImageGenPlaygroundCard: React.FC<ImageGenPlaygroundCardProps> = ({
                             startIcon={pendingCount > 0
                                 ? <CircularProgress size={18} color="inherit" />
                                 : <AutoAwesome />}
+                            sx={{
+                                '&.Mui-disabled': {
+                                    color: 'common.white',
+                                },
+                            }}
                         >
                             {pendingCount > 0
                                 ? t('playground.generateAnother', {

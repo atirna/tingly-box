@@ -642,7 +642,8 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                                 <Box
                                     sx={{
                                         p: 1.5,
-                                        bgcolor: 'grey.50',
+                                        bgcolor: 'background.default',
+                                        color: 'text.primary',
                                         borderRadius: 1.5,
                                         fontFamily: 'monospace',
                                         fontSize: '0.8rem',
@@ -662,7 +663,8 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                                 <Box
                                     sx={{
                                         p: 1.5,
-                                        bgcolor: 'grey.50',
+                                        bgcolor: 'background.default',
+                                        color: 'text.primary',
                                         borderRadius: 1.5,
                                         fontFamily: 'monospace',
                                         fontSize: '0.72rem',
