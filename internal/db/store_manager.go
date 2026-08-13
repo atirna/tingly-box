@@ -255,13 +255,11 @@ func (sm *StoreManager) initModelStore() error {
 
 // initAPITokenStore initializes the APITokenStore.
 func (sm *StoreManager) initAPITokenStore() error {
-	if err := sm.db.AutoMigrate(&APITokenRecord{}); err != nil {
+	store, err := newAPITokenStoreOverDB(sm.db, constant.GetDBFile(sm.baseDir))
+	if err != nil {
 		return err
 	}
-	sm.apiTokenStore = &APITokenStore{
-		db:     sm.db,
-		dbPath: constant.GetDBFile(sm.baseDir),
-	}
+	sm.apiTokenStore = store
 	return nil
 }
 

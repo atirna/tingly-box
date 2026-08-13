@@ -36,11 +36,25 @@ func (APITokenRecord) TableName() string {
 	return "api_tokens"
 }
 
-// APITokenStore manages API tokens for multi-tenant authentication
+// defaultLastUsedDebounce is how often UpdateLastUsed will actually persist
+// a new last_used_at — the column only needs display-level freshness, not
+// per-request precision. See UpdateLastUsed.
+const defaultLastUsedDebounce = time.Minute
+
+// APITokenStore manages API tokens for multi-tenant authentication.
+//
+// ValidateToken is on the request hot path (every "tb-share-"-prefixed
+// request, see internal/middleware/auth.go), so cache mirrors the
+// api_tokens table by TokenID the same way ProviderStore mirrors providers.
 type APITokenStore struct {
 	db     *gorm.DB
 	dbPath string
-	mu     sync.Mutex
+	mu     sync.RWMutex
+	cache  map[string]*APITokenRecord
+
+	// lastUsedDebounce is the minimum interval between persisted
+	// last_used_at writes for the same token; see UpdateLastUsed.
+	lastUsedDebounce time.Duration
 }
 
 // NewAPITokenStore creates or loads an API token store using SQLite database.
@@ -66,12 +80,19 @@ func NewAPITokenStore(baseDir string) (*APITokenStore, error) {
 	}
 	logrus.Debugf("SQLite database opened successfully for API token store")
 
-	store := &APITokenStore{
-		db:     db,
-		dbPath: dbPath,
+	store, err := newAPITokenStoreOverDB(db, dbPath)
+	if err != nil {
+		return nil, err
 	}
 
-	// Auto-migrate schema
+	logrus.Debugf("API token store initialization completed")
+	return store, nil
+}
+
+// newAPITokenStoreOverDB finishes setting up an APITokenStore (migrate +
+// cache load) over an already-open *gorm.DB, shared by NewAPITokenStore and
+// StoreManager.initAPITokenStore -- see newProviderStoreOverDB.
+func newAPITokenStoreOverDB(db *gorm.DB, dbPath string) (*APITokenStore, error) {
 	if err := db.AutoMigrate(&APITokenRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate API token database: %w", err)
 	}
@@ -81,8 +102,34 @@ func NewAPITokenStore(baseDir string) (*APITokenStore, error) {
 		return nil, fmt.Errorf("failed to align API token schema: %w", err)
 	}
 
-	logrus.Debugf("API token store initialization completed")
+	store := &APITokenStore{
+		db:               db,
+		dbPath:           dbPath,
+		cache:            make(map[string]*APITokenRecord),
+		lastUsedDebounce: defaultLastUsedDebounce,
+	}
+	if err := store.loadCache(); err != nil {
+		return nil, fmt.Errorf("failed to load API token cache: %w", err)
+	}
+
 	return store, nil
+}
+
+// loadCache (re)populates the in-memory mirror from SQLite. Called at
+// construction and from CleanupExpiredTokens (under s.mu already held),
+// where re-deriving a bulk delete's predicate against the cache isn't
+// worth it.
+func (s *APITokenStore) loadCache() error {
+	var records []APITokenRecord
+	if err := s.db.Find(&records).Error; err != nil {
+		return err
+	}
+	s.cache = make(map[string]*APITokenRecord, len(records))
+	for i := range records {
+		r := records[i]
+		s.cache[r.TokenID] = &r
+	}
+	return nil
 }
 
 // ensureAPITokenSchema ensures the API token table schema is up to date
@@ -131,6 +178,7 @@ func (s *APITokenStore) createTokenRecord(userID, tokenID, displayName, createdB
 		return nil, fmt.Errorf("failed to create API token record: %w", err)
 	}
 
+	s.cache[tokenID] = record
 	logrus.Debugf("Created API token: %s for user: %s", tokenID, userID)
 	return record, nil
 }
@@ -156,18 +204,16 @@ func (s *APITokenStore) ValidateToken(tokenID string) (*APITokenRecord, error) {
 		return nil, errors.New("token ID cannot be empty")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	var record APITokenRecord
-	if err := s.db.Where("token_id = ? AND enabled = ?", tokenID, true).First(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("token not found or disabled")
-		}
-		return nil, fmt.Errorf("failed to validate token: %w", err)
+	record, ok := s.cache[tokenID]
+	if !ok || !record.Enabled {
+		return nil, fmt.Errorf("token not found or disabled")
 	}
 
-	return &record, nil
+	clone := *record
+	return &clone, nil
 }
 
 // RevokeToken revokes a token by setting enabled to false
@@ -195,14 +241,20 @@ func (s *APITokenStore) RevokeToken(tokenID, reason string) error {
 		return fmt.Errorf("token with ID '%s' not found", tokenID)
 	}
 
+	if record, ok := s.cache[tokenID]; ok {
+		record.Enabled = false
+		record.RevokedAt = &now
+		record.RevokeReason = reason
+	}
+
 	logrus.Debugf("Revoked API token: %s, reason: %s", tokenID, reason)
 	return nil
 }
 
 // ListTokens returns tokens matching filters
 func (s *APITokenStore) ListTokens(userID string, enabled *bool, limit, offset int) ([]APITokenRecord, int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	db := s.db.Model(&APITokenRecord{})
 
@@ -234,32 +286,62 @@ func (s *APITokenStore) ListTokens(userID string, enabled *bool, limit, offset i
 
 // GetToken retrieves a token by token ID
 func (s *APITokenStore) GetToken(tokenID string) (*APITokenRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	var record APITokenRecord
-	if err := s.db.Where("token_id = ?", tokenID).First(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("token with ID '%s' not found", tokenID)
-		}
-		return nil, fmt.Errorf("failed to get token: %w", err)
+	record, ok := s.cache[tokenID]
+	if !ok {
+		return nil, fmt.Errorf("token with ID '%s' not found", tokenID)
 	}
 
-	return &record, nil
+	clone := *record
+	return &clone, nil
 }
 
-// UpdateLastUsed updates the last_used_at timestamp for a token
+// debounceWindow returns lastUsedDebounce, falling back to the package
+// default for any store built without going through newAPITokenStoreOverDB.
+func (s *APITokenStore) debounceWindow() time.Duration {
+	if s.lastUsedDebounce > 0 {
+		return s.lastUsedDebounce
+	}
+	return defaultLastUsedDebounce
+}
+
+// UpdateLastUsed updates the last_used_at timestamp for a token. Called on
+// every authenticated request, so writes within debounceWindow() of the
+// last persisted value are coalesced away instead of costing one SQLite
+// UPDATE per request.
 func (s *APITokenStore) UpdateLastUsed(tokenID string) error {
+	now := time.Now()
+	window := s.debounceWindow()
+
+	s.mu.RLock()
+	if record, ok := s.cache[tokenID]; ok && record.LastUsedAt != nil && now.Sub(*record.LastUsedAt) < window {
+		s.mu.RUnlock()
+		return nil
+	}
+	s.mu.RUnlock()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now()
+	// Re-check under the write lock: another goroutine may have already
+	// flushed while this one was waiting.
+	record, ok := s.cache[tokenID]
+	if ok && record.LastUsedAt != nil && now.Sub(*record.LastUsedAt) < window {
+		return nil
+	}
+
 	result := s.db.Model(&APITokenRecord{}).
 		Where("token_id = ?", tokenID).
 		Update("last_used_at", now)
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to update last used: %w", result.Error)
+	}
+
+	if ok {
+		record.LastUsedAt = &now
 	}
 
 	return nil
@@ -279,6 +361,10 @@ func (s *APITokenStore) SetTokenEnabled(tokenID string, enabled bool) error {
 	}
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("token with ID '%s' not found", tokenID)
+	}
+
+	if record, ok := s.cache[tokenID]; ok {
+		record.Enabled = enabled
 	}
 
 	logrus.Debugf("Token %s enabled state set to: %v", tokenID, enabled)
@@ -301,6 +387,12 @@ func (s *APITokenStore) UpdateTokenString(tokenID, newTokenString string) error 
 		return fmt.Errorf("token with ID '%s' not found", tokenID)
 	}
 
+	if record, ok := s.cache[tokenID]; ok {
+		delete(s.cache, tokenID)
+		record.TokenID = newTokenString
+		s.cache[newTokenString] = record
+	}
+
 	logrus.Debugf("Token regenerated, old ID: %s, new ID: %s", tokenID, newTokenString)
 	return nil
 }
@@ -318,6 +410,8 @@ func (s *APITokenStore) DeleteToken(tokenID string) error {
 		return fmt.Errorf("token with ID '%s' not found", tokenID)
 	}
 
+	delete(s.cache, tokenID)
+
 	logrus.Debugf("Deleted API token: %s", tokenID)
 	return nil
 }
@@ -332,6 +426,14 @@ func (s *APITokenStore) CleanupExpiredTokens(olderThan time.Duration) (int64, er
 
 	if result.Error != nil {
 		return 0, fmt.Errorf("failed to cleanup expired tokens: %w", result.Error)
+	}
+
+	// Bulk, predicate-based delete — simplest to resync the whole mirror from
+	// SQLite rather than re-deriving the same predicate against the cache.
+	if result.RowsAffected > 0 {
+		if err := s.loadCache(); err != nil {
+			return result.RowsAffected, fmt.Errorf("cleaned up %d tokens but failed to refresh cache: %w", result.RowsAffected, err)
+		}
 	}
 
 	logrus.Debugf("Cleaned up %d expired tokens", result.RowsAffected)
