@@ -93,25 +93,6 @@ func (ss *StatsStore) ServiceKey(provider, model string) string {
 	return fmt.Sprintf("%s:%s", provider, model)
 }
 
-// Snapshot returns a copy of all stats keyed by provider:model.
-func (ss *StatsStore) Snapshot() map[string]loadbalance.ServiceStats {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-
-	var records []ServiceStatsRecord
-	if err := ss.db.Find(&records).Error; err != nil {
-		return make(map[string]loadbalance.ServiceStats)
-	}
-
-	snapshot := make(map[string]loadbalance.ServiceStats, len(records))
-	for _, record := range records {
-		key := ss.ServiceKey(record.Provider, record.Model)
-		snapshot[key] = record.toServiceStats()
-	}
-
-	return snapshot
-}
-
 // Get returns stats for a specific provider/model combination.
 func (ss *StatsStore) Get(provider, model string) (loadbalance.ServiceStats, bool) {
 	ss.mu.Lock()
