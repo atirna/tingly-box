@@ -63,7 +63,8 @@ const (
 	ScenarioCodex         RuleScenario = "codex"
 	ScenarioClaudeCode    RuleScenario = "claude_code"
 	ScenarioOpenCode      RuleScenario = "opencode"
-	ScenarioPi            RuleScenario = "pi" // Pi agent (https://github.com/earendil-works/pi)
+	ScenarioPi            RuleScenario = "pi"  // Pi agent (https://github.com/earendil-works/pi)
+	ScenarioDsh           RuleScenario = "dsh" // DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness)
 	ScenarioXcode         RuleScenario = "xcode"
 	ScenarioVSCode        RuleScenario = "vscode"
 	ScenarioClaudeDesktop RuleScenario = "claude_desktop"
@@ -83,6 +84,7 @@ func BuiltinScenarios() []RuleScenario {
 		ScenarioClaudeCode,
 		ScenarioOpenCode,
 		ScenarioPi,
+		ScenarioDsh,
 		ScenarioXcode,
 		ScenarioVSCode,
 		ScenarioClaudeDesktop,
