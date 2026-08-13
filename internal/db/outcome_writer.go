@@ -70,20 +70,29 @@ func newOutcomeWriter(stats *StatsStore, usage *UsageStore) *outcomeWriter {
 	return w
 }
 
-// enqueue hands one outcome to the flusher. It never blocks: false means the
-// writer is closed or the queue is full, and the caller should write
-// synchronously instead.
-func (w *outcomeWriter) enqueue(o queuedOutcome) bool {
+// enqueueResult tells RecordOutcome which fallback the caller owes, because
+// "queue full" and "writer gone" need different handling: only the former
+// leaves older outcomes buffered behind the caller's.
+type enqueueResult int
+
+const (
+	enqueued    enqueueResult = iota // handed to the flusher
+	queueFull                        // writer alive, but the queue is saturated
+	writerClosed                     // writer stopped; nothing is buffered
+)
+
+// enqueue hands one outcome to the flusher. It never blocks.
+func (w *outcomeWriter) enqueue(o queuedOutcome) enqueueResult {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
-		return false
+		return writerClosed
 	}
 	select {
 	case w.ch <- o:
-		return true
+		return enqueued
 	default:
-		return false
+		return queueFull
 	}
 }
 
@@ -217,9 +226,24 @@ func (sm *StoreManager) RecordOutcome(service *loadbalance.Service, usage *Usage
 		if o.stats == nil && o.usage == nil {
 			return nil
 		}
-		if writer.enqueue(o) {
+		switch writer.enqueue(o) {
+		case enqueued:
+			return nil
+		case queueFull:
+			// Older outcomes are still buffered ahead of this one. Committing
+			// this stats snapshot now would let the flusher overwrite it with
+			// those older cumulative counters, walking service_stats
+			// backwards. Stats snapshots are cumulative, so dropping this one
+			// is safe -- the service's next outcome supersedes it, exactly
+			// like the per-batch dedupe in flush. The usage row is an
+			// append-only audit record, so it still has to be written.
+			if o.usage != nil {
+				return usageStore.RecordUsage(o.usage)
+			}
 			return nil
 		}
+		// writerClosed: nothing is buffered (close drains and flushes), so
+		// the synchronous path below is safe and complete.
 	}
 
 	return RecordRequestOutcome(stats, usageStore, service, usage)

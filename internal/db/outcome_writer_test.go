@@ -102,6 +102,59 @@ func TestRecordOutcome_StatsDedupeKeepsNewestSnapshot(t *testing.T) {
 	assert.EqualValues(t, 5, total, "every usage row must be kept")
 }
 
+// TestRecordOutcome_QueueFullKeepsUsageAndDropsStats: when the queue
+// saturates, older stats snapshots are still buffered ahead of the caller,
+// so committing the caller's snapshot synchronously would let the flusher
+// overwrite it with older cumulative counters. The snapshot is dropped
+// instead — the next outcome supersedes it.
+//
+// What this pins is the cost of that rule: overflow may cost a stats
+// snapshot, but never a usage audit row, and the surviving snapshot is
+// still a recent one. The ordering property itself is about intermediate
+// visibility (a reader between the synchronous commit and the flush would
+// have seen the counter jump forward and then back), which both the old
+// and new code converge away from by the final flush.
+func TestRecordOutcome_QueueFullKeepsUsageAndDropsStats(t *testing.T) {
+	dir := t.TempDir()
+	sm, err := NewStoreManager(dir)
+	require.NoError(t, err)
+
+	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
+
+	// Block the flusher inside flush's stats lock so the queue cannot drain.
+	// It can still absorb one in-flight batch before blocking, so saturation
+	// needs the queue plus a batch, plus one more to overflow.
+	sm.Stats().mu.Lock()
+	total := outcomeQueueSize + outcomeMaxBatch + 1
+	for i := 0; i < total; i++ {
+		service.RecordUsage(10, 20)
+		require.NoError(t, sm.RecordOutcome(service, &UsageRecord{
+			ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai",
+		}))
+	}
+	sm.Stats().mu.Unlock()
+
+	// Close drains and flushes everything still buffered.
+	require.NoError(t, sm.Close())
+
+	reopened, err := NewStoreManager(dir)
+	require.NoError(t, err)
+	defer reopened.Close()
+
+	_, usageTotal, err := reopened.Usage().GetRecords(time.Time{}, time.Time{}, nil, 1, 0)
+	require.NoError(t, err)
+	assert.EqualValues(t, total, usageTotal, "no usage audit row may be dropped when the queue saturates")
+
+	// The surviving snapshot is the newest one the flusher received: at most
+	// the outcomes that overflowed are missing, so it is still recent rather
+	// than an arbitrarily stale value.
+	stats, found := reopened.Stats().Get("p1", "m1")
+	require.True(t, found)
+	assert.LessOrEqual(t, stats.RequestCount, int64(total))
+	assert.Greater(t, stats.RequestCount, int64(outcomeQueueSize),
+		"the persisted snapshot must be a recent one, not a stale cumulative value")
+}
+
 func TestRecordOutcome_AfterCloseFallsBackSafely(t *testing.T) {
 	sm, err := NewStoreManager(t.TempDir())
 	require.NoError(t, err)

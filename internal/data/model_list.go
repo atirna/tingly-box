@@ -46,6 +46,9 @@ func NewProviderModelManagerWithStore(store *db.ModelStore) *ModelListManager {
 // Close releases the underlying model store's database connection when the
 // store owns one; for a store borrowed from StoreManager it is a no-op.
 func (mm *ModelListManager) Close() error {
+	if mm == nil || mm.modelStore == nil {
+		return nil
+	}
 	return mm.modelStore.Close()
 }
 

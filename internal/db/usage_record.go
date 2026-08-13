@@ -159,27 +159,37 @@ func ensureUsageRecordSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	// Migrate from separate cache fields to combined cache_input_tokens
-	if db.Migrator().HasColumn(&UsageRecord{}, "cache_creation_input_tokens") {
-		// Add new column if it doesn't exist
-		if !db.Migrator().HasColumn(&UsageRecord{}, "cache_input_tokens") {
-			if err := db.Migrator().AutoMigrate(&UsageRecord{}); err != nil {
-				return err
-			}
+	// Legacy layout: the two cache measures lived in
+	// cache_creation_input_tokens / cache_read_input_tokens. Today's model
+	// keeps them just as separate -- writes in cache_write_tokens, reads in
+	// cache_input_tokens -- so each legacy column maps to exactly one
+	// current column.
+	//
+	// An earlier version of this summed BOTH into cache_input_tokens, which
+	// under today's semantics books cache writes as cache reads and then
+	// drops the evidence. That never reached production (only NewUsageStore
+	// called it, and nothing calls that outside tests); it runs on every
+	// boot now that migrateUsageTables owns it, so the mapping has to be
+	// right. The columns AutoMigrate just added are guaranteed present --
+	// migrateUsageTables runs AutoMigrate first.
+	//
+	// Each legacy column is handled independently: a partially migrated DB
+	// can carry one without the other, and the previous version's SQL
+	// referenced both whenever either existed.
+	for _, m := range []struct{ legacy, current string }{
+		{"cache_read_input_tokens", "cache_input_tokens"},
+		{"cache_creation_input_tokens", "cache_write_tokens"},
+	} {
+		if !db.Migrator().HasColumn(&UsageRecord{}, m.legacy) {
+			continue
 		}
-		// Migrate data: sum of cache_creation + cache_read
-		if err := db.Exec(`
-			UPDATE usage_records
-			SET cache_input_tokens = COALESCE(cache_creation_input_tokens, 0) + COALESCE(cache_read_input_tokens, 0)
-			WHERE cache_input_tokens = 0
-		`).Error; err != nil {
+		// WHERE current = 0 leaves already-migrated rows alone.
+		if err := db.Exec(fmt.Sprintf(
+			`UPDATE usage_records SET %s = COALESCE(%s, 0) WHERE %s = 0`,
+			m.current, m.legacy, m.current)).Error; err != nil {
 			return err
 		}
-		// Drop old columns
-		if err := db.Migrator().DropColumn(&UsageRecord{}, "cache_creation_input_tokens"); err != nil {
-			return err
-		}
-		if err := db.Migrator().DropColumn(&UsageRecord{}, "cache_read_input_tokens"); err != nil {
+		if err := db.Migrator().DropColumn(&UsageRecord{}, m.legacy); err != nil {
 			return err
 		}
 	}

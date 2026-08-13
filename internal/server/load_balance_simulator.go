@@ -130,6 +130,11 @@ func NewLBSimulatorWithSequences(rule *typ.Rule, faults map[string]vmodel.Sequen
 		runCleanup()
 		return nil, nil, fmt.Errorf("config: %w", err)
 	}
+	// The config owns a StoreManager, which owns a SQLite handle and the
+	// outcome writer's flusher goroutine — both leak per simulator run
+	// without this. Registered before the temp-dir removal so it runs first
+	// (cleanups unwind in reverse).
+	cleanups = append(cleanups, func() { _ = cfg.CloseStores() })
 
 	seen := map[string]bool{}
 	for _, svc := range rule.Services {

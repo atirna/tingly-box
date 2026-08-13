@@ -171,10 +171,10 @@ func toSessions(recs []RemoteSessionRecord) []*session.Session {
 // ---------- transcript ----------
 
 // AppendMessage adds one message to a session's transcript file. A nil
-// transcript drops history, as NewRemoteSessionStore documents — previously
-// that case panicked here instead.
+// transcript drops history, as NewRemoteSessionStore documents —
+// session.Transcript's methods are nil-receiver safe.
 func (s *RemoteSessionStore) AppendMessage(sessionID string, msg session.Message) error {
-	if s == nil || s.transcript == nil {
+	if s == nil {
 		return nil
 	}
 	return s.transcript.Append(sessionID, msg)
@@ -182,7 +182,7 @@ func (s *RemoteSessionStore) AppendMessage(sessionID string, msg session.Message
 
 // Messages reads a session's transcript on demand.
 func (s *RemoteSessionStore) Messages(sessionID string) ([]session.Message, error) {
-	if s == nil || s.transcript == nil {
+	if s == nil {
 		return nil, nil
 	}
 	return s.transcript.Load(sessionID)
