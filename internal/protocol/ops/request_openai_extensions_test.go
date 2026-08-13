@@ -21,9 +21,9 @@ func TestSplitProviderHostPath(t *testing.T) {
 		{"port stripped", "https://api.deepseek.com:8443/v1", "api.deepseek.com", "/v1"},
 		{"userinfo stripped", "https://user:pass@api.deepseek.com/v1", "api.deepseek.com", "/v1"},
 		{"uppercase normalized", "HTTPS://API.DeepSeek.COM/V1", "api.deepseek.com", "/v1"},
-		{"query string kept in path", "https://gateway.example.com/relay?target=api.deepseek.com", "gateway.example.com", "/relay?target=api.deepseek.com"},
-		{"bracketed IPv6 host + port", "https://[::1]:8080/v1", "[::1]", "/v1"},
-		{"bracketed IPv6 host, no port", "https://[2001:db8::1]/v1", "[2001:db8::1]", "/v1"},
+		{"query string excluded from path", "https://gateway.example.com/relay?target=api.deepseek.com", "gateway.example.com", "/relay"},
+		{"IPv6 host + port", "https://[::1]:8080/v1", "::1", "/v1"},
+		{"IPv6 host, no port", "https://[2001:db8::1]/v1", "2001:db8::1", "/v1"},
 	}
 
 	for _, tt := range tests {

@@ -2,6 +2,7 @@ package ops
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -49,10 +50,14 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 }
 
 // splitProviderHostPath splits a provider base URL into its lowercased host
-// (userinfo and port stripped) and path, without requiring a URL scheme.
-// Provider.APIBase is sometimes stored without one (e.g. "api.deepseek.com"
-// rather than "https://api.deepseek.com"), which net/url.Parse treats as a
-// bare relative path rather than a host, so it can't be used here.
+// and lowercased path via net/url, which already handles userinfo, port, and
+// bracketed IPv6 literals correctly — no need to hand-roll that parsing.
+//
+// The one thing net/url won't do is a bare, scheme-less host: Provider.APIBase
+// is sometimes stored without one (e.g. "api.deepseek.com" rather than
+// "https://api.deepseek.com"), and net/url.Parse treats that as a relative
+// path rather than a host. A default scheme is prepended when one is
+// missing so parsing lands on the host as intended.
 //
 // This also fixes a correctness gap the old strings.Contains(url, "...")
 // dispatch had: matching anywhere in the full URL text meant a base URL that
@@ -60,29 +65,15 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 // at "https://gateway.example.com/relay?target=api.deepseek.com" — was
 // mistaken for that vendor. Matching the parsed host exactly closes that.
 func splitProviderHostPath(providerURL string) (host, path string) {
-	rest := strings.ToLower(strings.TrimSpace(providerURL))
-	if idx := strings.Index(rest, "://"); idx >= 0 {
-		rest = rest[idx+3:]
+	raw := strings.TrimSpace(providerURL)
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
 	}
-	if idx := strings.IndexAny(rest, "/?#"); idx >= 0 {
-		host, path = rest[:idx], rest[idx:]
-	} else {
-		host = rest
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", ""
 	}
-	if idx := strings.IndexByte(host, '@'); idx >= 0 { // strip userinfo@
-		host = host[idx+1:]
-	}
-	if strings.HasPrefix(host, "[") {
-		// Bracketed IPv6 literal, e.g. "[::1]:8080" — keep through the
-		// closing bracket. A plain IndexByte(':') would truncate at the
-		// first colon inside the address itself.
-		if end := strings.IndexByte(host, ']'); end >= 0 {
-			host = host[:end+1]
-		}
-	} else if idx := strings.IndexByte(host, ':'); idx >= 0 { // strip :port
-		host = host[:idx]
-	}
-	return host, path
+	return strings.ToLower(u.Hostname()), strings.ToLower(u.Path)
 }
 
 // supportsExplicitPromptCache reports whether the provider host is confirmed
