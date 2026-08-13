@@ -4273,6 +4273,375 @@
         }
       }
     },
+    "/api/v1/peers": {
+      "get": {
+        "tags": [
+          "peer"
+        ],
+        "summary": "List peers (no tokens).",
+        "description": "List peers (no tokens).",
+        "operationId": "apiV1PeersGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "peer"
+        ],
+        "summary": "Register a peer; the scoped tb-peer- token is returned exactly once.",
+        "description": "Register a peer; the scoped tb-peer- token is returned exactly once.",
+        "operationId": "apiV1PeersPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePeerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePeerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid name or missing fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/peers/{id}": {
+      "get": {
+        "tags": [
+          "peer"
+        ],
+        "summary": "Get one peer.",
+        "description": "Get one peer.",
+        "operationId": "apiV1PeersIdGet",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Peer UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "peer"
+        ],
+        "summary": "Update name/bot/chat/exclusive/enabled (partial).",
+        "description": "Update name/bot/chat/exclusive/enabled (partial).",
+        "operationId": "apiV1PeersIdPut",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Peer UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePeerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "peer"
+        ],
+        "summary": "Delete the peer and its queued updates.",
+        "description": "Delete the peer and its queued updates.",
+        "operationId": "apiV1PeersIdDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Peer UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OKResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/peers/{id}/send": {
+      "post": {
+        "tags": [
+          "peer-data"
+        ],
+        "summary": "Send a message into the peer's bound chat, attributed with its name; reply_to_update_id threads it to an inbound update. Accepts the peer's tb-peer- token.",
+        "description": "Send a message into the peer's bound chat, attributed with its name; reply_to_update_id threads it to an inbound update. Accepts the peer's tb-peer- token.",
+        "operationId": "apiV1PeersIdSendPost",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Peer UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Peer not available or bot not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/peers/{id}/token": {
+      "post": {
+        "tags": [
+          "peer"
+        ],
+        "summary": "Rotate the scoped token; the old one stops working immediately.",
+        "description": "Rotate the scoped token; the old one stops working immediately.",
+        "operationId": "apiV1PeersIdTokenPost",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Peer UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateTokenResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/peers/{id}/updates": {
+      "get": {
+        "tags": [
+          "peer-data"
+        ],
+        "summary": "Long-poll the inbound stream (getUpdates semantics): offset confirms every update below it and returns the rest, oldest first; omit offset to re-read unconfirmed updates.",
+        "description": "Long-poll the inbound stream (getUpdates semantics): offset confirms every update below it and returns the rest, oldest first; omit offset to re-read unconfirmed updates.",
+        "operationId": "apiV1PeersIdUpdatesGet",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Peer UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdatesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Peer not available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/requests": {
       "get": {
         "tags": [
@@ -6515,6 +6884,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "force_upstream",
+            "in": "query",
+            "description": "Attempt the upstream models endpoint even when normally skipped",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -8360,6 +8738,58 @@
           "connection_type"
         ]
       },
+      "CreatePeerRequest": {
+        "type": "object",
+        "properties": {
+          "bot_uuid": {
+            "type": "string",
+            "description": "Field bot_uuid",
+            "example": "bot-uuid"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "123456789"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Field enabled",
+            "example": true
+          },
+          "exclusive": {
+            "type": "boolean",
+            "description": "Field exclusive",
+            "example": false
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name",
+            "example": "report"
+          }
+        },
+        "required": [
+          "name",
+          "bot_uuid",
+          "chat_id"
+        ]
+      },
+      "CreatePeerResponse": {
+        "type": "object",
+        "properties": {
+          "peer": {
+            "$ref": "#/components/schemas/PeerView"
+          },
+          "token": {
+            "type": "string",
+            "description": "Field token",
+            "example": "tb-peer-…"
+          }
+        },
+        "required": [
+          "peer",
+          "token"
+        ]
+      },
       "CreateProviderRequest": {
         "type": "object",
         "properties": {
@@ -8994,7 +9424,7 @@
         "type": "object",
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/ProbeResult"
+            "$ref": "#/components/schemas/Result"
           },
           "error": {
             "$ref": "#/components/schemas/errorDetail"
@@ -11438,7 +11868,8 @@
         "properties": {
           "ok": {
             "type": "boolean",
-            "description": "Field ok"
+            "description": "Field ok",
+            "example": true
           }
         },
         "required": [
@@ -11503,6 +11934,93 @@
         "required": [
           "success",
           "active"
+        ]
+      },
+      "PeerListResponse": {
+        "type": "object",
+        "properties": {
+          "peers": {
+            "type": "array",
+            "description": "Field peers",
+            "items": {
+              "$ref": "#/components/schemas/PeerView"
+            }
+          }
+        },
+        "required": [
+          "peers"
+        ]
+      },
+      "PeerResponse": {
+        "type": "object",
+        "properties": {
+          "peer": {
+            "$ref": "#/components/schemas/PeerView"
+          }
+        },
+        "required": [
+          "peer"
+        ]
+      },
+      "PeerView": {
+        "type": "object",
+        "properties": {
+          "bot_uuid": {
+            "type": "string",
+            "description": "Field bot_uuid",
+            "example": "bot-uuid"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "123456789"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Field created_at",
+            "example": "2026-08-13T12:00:00Z"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Field enabled",
+            "example": true
+          },
+          "exclusive": {
+            "type": "boolean",
+            "description": "Field exclusive",
+            "example": false
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name",
+            "example": "report"
+          },
+          "online": {
+            "type": "boolean",
+            "description": "Field online",
+            "example": false
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Field updated_at",
+            "example": "2026-08-13T12:00:00Z"
+          },
+          "uuid": {
+            "type": "string",
+            "description": "Field uuid",
+            "example": "3d5a…"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "bot_uuid",
+          "chat_id",
+          "exclusive",
+          "enabled",
+          "online",
+          "created_at",
+          "updated_at"
         ]
       },
       "PerformanceMetricSummary": {
@@ -11890,135 +12408,6 @@
           "policy_name",
           "policy_type",
           "verdict"
-        ]
-      },
-      "ProbeResult": {
-        "type": "object",
-        "properties": {
-          "applied_flags": {
-            "type": "string",
-            "description": "Field applied_flags"
-          },
-          "completion_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field completion_tokens"
-          },
-          "content": {
-            "type": "string",
-            "description": "Field content"
-          },
-          "error_message": {
-            "type": "string",
-            "description": "Field error_message"
-          },
-          "latency_ms": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field latency_ms"
-          },
-          "matched_rule": {
-            "type": "string",
-            "description": "Field matched_rule"
-          },
-          "matched_rule_desc": {
-            "type": "string",
-            "description": "Field matched_rule_desc"
-          },
-          "matched_smart_rule": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field matched_smart_rule"
-          },
-          "message": {
-            "type": "string",
-            "description": "Field message"
-          },
-          "models_count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field models_count"
-          },
-          "prompt_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field prompt_tokens"
-          },
-          "request_url": {
-            "type": "string",
-            "description": "Field request_url"
-          },
-          "routing_source": {
-            "type": "string",
-            "description": "Field routing_source"
-          },
-          "selected_model": {
-            "type": "string",
-            "description": "Field selected_model"
-          },
-          "selected_provider": {
-            "type": "string",
-            "description": "Field selected_provider"
-          },
-          "selected_provider_uuid": {
-            "type": "string",
-            "description": "Field selected_provider_uuid"
-          },
-          "stream": {
-            "type": "boolean",
-            "description": "Field stream"
-          },
-          "success": {
-            "type": "boolean",
-            "description": "Field success"
-          },
-          "tool_calls": {
-            "type": "array",
-            "description": "Field tool_calls",
-            "items": {
-              "$ref": "#/components/schemas/ProbeToolCall"
-            }
-          },
-          "total_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field total_tokens"
-          },
-          "upstream_api": {
-            "type": "string",
-            "description": "Field upstream_api"
-          },
-          "upstream_url": {
-            "type": "string",
-            "description": "Field upstream_url"
-          }
-        },
-        "required": [
-          "success",
-          "latency_ms"
-        ]
-      },
-      "ProbeToolCall": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Field id"
-          },
-          "input": {
-            "type": "object",
-            "description": "Field input",
-            "additionalProperties": {}
-          },
-          "name": {
-            "type": "string",
-            "description": "Field name"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "input"
         ]
       },
       "ProfileClaudeConfigData": {
@@ -12756,6 +13145,108 @@
           "message"
         ]
       },
+      "Result": {
+        "type": "object",
+        "properties": {
+          "applied_flags": {
+            "type": "string",
+            "description": "Field applied_flags"
+          },
+          "content": {
+            "type": "string",
+            "description": "Field content"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Field error_message"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field latency_ms"
+          },
+          "matched_rule": {
+            "type": "string",
+            "description": "Field matched_rule"
+          },
+          "matched_rule_desc": {
+            "type": "string",
+            "description": "Field matched_rule_desc"
+          },
+          "matched_smart_rule": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field matched_smart_rule"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "request_url": {
+            "type": "string",
+            "description": "Field request_url"
+          },
+          "routing_source": {
+            "type": "string",
+            "description": "Field routing_source"
+          },
+          "selected_model": {
+            "type": "string",
+            "description": "Field selected_model"
+          },
+          "selected_provider": {
+            "type": "string",
+            "description": "Field selected_provider"
+          },
+          "selected_provider_uuid": {
+            "type": "string",
+            "description": "Field selected_provider_uuid"
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Field stream"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          },
+          "tool_calls": {
+            "type": "array",
+            "description": "Field tool_calls",
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            }
+          },
+          "upstream_api": {
+            "type": "string",
+            "description": "Field upstream_api"
+          },
+          "upstream_url": {
+            "type": "string",
+            "description": "Field upstream_url"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/TokenUsage"
+          }
+        },
+        "required": [
+          "success",
+          "latency_ms"
+        ]
+      },
+      "RotateTokenResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Field token",
+            "example": "tb-peer-…"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
       "Route": {
         "type": "object",
         "properties": {
@@ -13411,6 +13902,43 @@
             }
           }
         }
+      },
+      "SendRequest": {
+        "type": "object",
+        "properties": {
+          "reply_to_update_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field reply_to_update_id",
+            "example": 42
+          },
+          "text": {
+            "type": "string",
+            "description": "Field text",
+            "example": "job 7 restarted ✅"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "SendResponse": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Field message_id",
+            "example": "1024"
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "Field ok",
+            "example": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
       },
       "ServerActionResponse": {
         "type": "object",
@@ -14329,6 +14857,68 @@
           "type"
         ]
       },
+      "TokenUsage": {
+        "type": "object",
+        "properties": {
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field cache_read_tokens"
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field cache_write_tokens"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field input_tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field output_tokens"
+          },
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field reasoning_tokens"
+          },
+          "system_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field system_tokens"
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens"
+        ]
+      },
+      "ToolCall": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Field id"
+          },
+          "input": {
+            "type": "object",
+            "description": "Field input",
+            "additionalProperties": {}
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "input"
+        ]
+      },
       "UpdateClientRequest": {
         "type": "object",
         "properties": {
@@ -14400,6 +14990,36 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "UpdatePeerRequest": {
+        "type": "object",
+        "properties": {
+          "bot_uuid": {
+            "type": "string",
+            "description": "Field bot_uuid",
+            "example": "bot-uuid"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "123456789"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Field enabled",
+            "example": false
+          },
+          "exclusive": {
+            "type": "boolean",
+            "description": "Field exclusive",
+            "example": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name",
+            "example": "report"
           }
         }
       },
@@ -14694,6 +15314,70 @@
           "success",
           "message",
           "data"
+        ]
+      },
+      "UpdateView": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Field chat_id",
+            "example": "123456789"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Field created_at",
+            "example": "2026-08-13T12:00:00Z"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Field message_id",
+            "example": "1024"
+          },
+          "sender_id": {
+            "type": "string",
+            "description": "Field sender_id",
+            "example": "987654321"
+          },
+          "text": {
+            "type": "string",
+            "description": "Field text",
+            "example": "run job 7"
+          },
+          "type": {
+            "type": "string",
+            "description": "Field type",
+            "example": "message"
+          },
+          "update_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field update_id",
+            "example": 42
+          }
+        },
+        "required": [
+          "update_id",
+          "type",
+          "chat_id",
+          "sender_id",
+          "text",
+          "created_at"
+        ]
+      },
+      "UpdatesResponse": {
+        "type": "object",
+        "properties": {
+          "updates": {
+            "type": "array",
+            "description": "Field updates",
+            "items": {
+              "$ref": "#/components/schemas/UpdateView"
+            }
+          }
+        },
+        "required": [
+          "updates"
         ]
       },
       "UsageAccount": {
@@ -16076,6 +16760,14 @@
     {
       "name": "onboarding",
       "description": "Operations related to onboarding"
+    },
+    {
+      "name": "peer",
+      "description": "Operations related to peer"
+    },
+    {
+      "name": "peer-data",
+      "description": "Operations related to peer-data"
     },
     {
       "name": "providers",
