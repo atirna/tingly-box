@@ -73,6 +73,13 @@ func supportsExplicitPromptCache(url string) bool {
 // All the fields carry omitzero, so zeroing them omits the keys from the
 // marshaled request without a JSON round-trip (which would drop per-message
 // extra fields such as x_thinking / reasoning_content).
+//
+// The strip scope is deliberately exactly these three. Per the SDK's own
+// history (libs/openai-go), prompt_cache_retention arrived with gpt-5.1 and
+// prompt_cache_options / prompt_cache_breakpoint with gpt-5.6 — the
+// non-universal newcomers strict vendors reject (NIM 400s on both top-level
+// ones). prompt_cache_key predates them by over a year (SDK v1.12.0), is
+// part of the schema OpenAI-compatible vendors cloned, and is kept.
 func stripOpenAIPromptCacheFields(req *openai.ChatCompletionNewParams) {
 	req.PromptCacheOptions = openai.ChatCompletionNewParamsPromptCacheOptions{}
 	req.PromptCacheRetention = ""

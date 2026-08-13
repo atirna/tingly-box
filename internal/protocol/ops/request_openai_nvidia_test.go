@@ -26,6 +26,7 @@ func TestNVIDIAStripPromptCacheTopLevel(t *testing.T) {
 		Model:                openai.ChatModel("thinkingmachines/inkling"),
 		PromptCacheOptions:   openai.ChatCompletionNewParamsPromptCacheOptions{Mode: "implicit"},
 		PromptCacheRetention: openai.ChatCompletionNewParamsPromptCacheRetention("1400h"),
+		PromptCacheKey:       openai.String("stable-affinity-key"),
 		Messages: []openai.ChatCompletionMessageParamUnion{{
 			OfUser: &openai.ChatCompletionUserMessageParam{
 				Name:    openai.String("u"),
@@ -41,6 +42,8 @@ func TestNVIDIAStripPromptCacheTopLevel(t *testing.T) {
 		"prompt_cache_options must be stripped for NVIDIA NIM")
 	assert.NotContains(t, raw, "prompt_cache_retention",
 		"prompt_cache_retention must be stripped for NVIDIA NIM")
+	assert.Equal(t, "stable-affinity-key", raw["prompt_cache_key"],
+		"prompt_cache_key predates the gpt-5.1/5.6 fields (SDK v1.12.0) and is part of the widely-cloned schema — the strip must not touch it")
 }
 
 // TestNVIDIAStripOnlyPromptCacheOptions proves stripping also works when only
