@@ -642,7 +642,7 @@ sends a cached and a no-cache Anthropic v1 → OpenAI Chat request and asserts
 the final provider capture matches (reusing `assertCapturedCacheState` from
 §10.2 — same assertion, different provider identity). Today the fixture table
 only exercises the prompt-cache allowlist (`openai_official`,
-`generic_openai_compatible`, `deepseek`); extending it to other
+`generic_openai_compatible`, `deepseek`, `nvidia_nim`); extending it to other
 vendor-specific transforms (DeepSeek's `reasoning_content` flip, Gemini's
 `thinking_config` mapping, tool-schema filtering, ...) means adding fields to
 `vendorFixture` and assertions in `runVendorTransformCase` — the

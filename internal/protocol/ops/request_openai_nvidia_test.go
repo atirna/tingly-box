@@ -110,9 +110,10 @@ func TestNVIDIAStripPreservesRequestExtras(t *testing.T) {
 		"request-level extra fields must survive the NVIDIA transform")
 }
 
-// TestNVIDIANonNVIDIAProvidersUnaffected proves the transform only fires for
-// NVIDIA NIM URLs.
-func TestNVIDIANonNVIDIAProvidersUnaffected(t *testing.T) {
+// TestNVIDIAAllowlistedProviderKeepsPromptCache proves the strip is scoped:
+// api.openai.com, the only supportsExplicitPromptCache allowlist entry,
+// keeps prompt_cache_options rather than having it stripped like NIM's.
+func TestNVIDIAAllowlistedProviderKeepsPromptCache(t *testing.T) {
 	req := &openai.ChatCompletionNewParams{
 		Model:              openai.ChatModel("gpt-oss-20b"),
 		PromptCacheOptions: openai.ChatCompletionNewParamsPromptCacheOptions{Mode: "implicit"},
@@ -123,7 +124,7 @@ func TestNVIDIANonNVIDIAProvidersUnaffected(t *testing.T) {
 
 	raw := marshalParams(t, req)
 	assert.Contains(t, raw, "prompt_cache_options",
-		"non-NVIDIA providers must keep prompt_cache_options")
+		"api.openai.com is allowlisted and must keep prompt_cache_options")
 }
 
 func marshalParams(t *testing.T, req *openai.ChatCompletionNewParams) map[string]any {

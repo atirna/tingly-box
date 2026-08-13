@@ -18,14 +18,8 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 	url := strings.ToLower(providerURL)
 	modelLower := strings.ToLower(model)
 
-	// prompt_cache_options / prompt_cache_retention / prompt_cache_breakpoint
-	// are OpenAI-specific fields, not part of the long-stable Chat Completions
-	// schema every OpenAI-compatible vendor cloned. Most vendors don't
-	// implement them, and strict-schema gateways reject the whole request over
-	// an unknown field — Azure OpenAI ignores them, NVIDIA NIM 400s on the
-	// top-level ones ("Unsupported parameter(s): `prompt_cache_options`",
-	// #1548). Default to stripping; only vendors confirmed to accept them opt
-	// in below.
+	// See stripOpenAIPromptCacheFields for why: most OpenAI-compatible
+	// vendors reject these fields outright (#1548), so default to stripping.
 	if !supportsExplicitPromptCache(url) {
 		stripOpenAIPromptCacheFields(req)
 	}
@@ -45,12 +39,8 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 		return applyGeminiPoeTransform(req, providerURL, model, config)
 	}
 
-	// api.openai.com falls through to here too: it has no vendor-specific
-	// request shaping beyond applyDefaultTransform's thinking fallback — the
-	// request already carries the correct prompt_cache_options /
-	// prompt_cache_breakpoint fields from the shared Anthropic→OpenAI
-	// conversion, and it's the one vendor supportsExplicitPromptCache
-	// confirms accepts them as-is.
+	// api.openai.com falls through to here too — no vendor-specific shaping
+	// needed beyond applyDefaultTransform's thinking fallback.
 	return applyDefaultTransform(req, config)
 }
 
@@ -62,24 +52,25 @@ func supportsExplicitPromptCache(url string) bool {
 	return strings.Contains(url, "api.openai.com")
 }
 
-// stripOpenAIPromptCacheFields removes the OpenAI-specific prompt-cache
-// fields from a request — the top-level prompt_cache_options and
-// prompt_cache_retention, and the per-content-part prompt_cache_breakpoint
-// markers. It's the default for every vendor not on the
-// supportsExplicitPromptCache allowlist: the fields are pure caching hints,
-// so dropping them changes nothing about message/tool semantics — vendors
-// with their own automatic prefix caching (DeepSeek, Moonshot, most
-// self-hosted OpenAI-compatible backends) still get cache hits without them.
-// All the fields carry omitzero, so zeroing them omits the keys from the
-// marshaled request without a JSON round-trip (which would drop per-message
-// extra fields such as x_thinking / reasoning_content).
+// stripOpenAIPromptCacheFields removes the OpenAI-only prompt-cache fields
+// from a request: top-level prompt_cache_options and prompt_cache_retention,
+// and the per-content-part prompt_cache_breakpoint markers. It's the default
+// for every vendor not on the supportsExplicitPromptCache allowlist — most
+// OpenAI-compatible vendors don't implement these fields and strict-schema
+// gateways reject the whole request over the unknown one (NVIDIA NIM 400s on
+// the top-level fields, #1548). Dropping them is safe: they're pure caching
+// hints, and vendors with their own automatic prefix caching (DeepSeek,
+// Moonshot, most self-hosted backends) still get cache hits without them.
 //
-// The strip scope is deliberately exactly these three. Per the SDK's own
-// history (libs/openai-go), prompt_cache_retention arrived with gpt-5.1 and
-// prompt_cache_options / prompt_cache_breakpoint with gpt-5.6 — the
-// non-universal newcomers strict vendors reject (NIM 400s on both top-level
-// ones). prompt_cache_key predates them by over a year (SDK v1.12.0), is
-// part of the schema OpenAI-compatible vendors cloned, and is kept.
+// Scope is exactly these three fields, per the SDK's history (libs/openai-go):
+// prompt_cache_retention shipped with gpt-5.1, prompt_cache_options /
+// prompt_cache_breakpoint with gpt-5.6. prompt_cache_key predates both by
+// over a year (SDK v1.12.0), is part of the schema every OpenAI-compatible
+// vendor cloned, and is deliberately left alone.
+//
+// All three carry omitzero, so zeroing them omits the keys from the
+// marshaled request without a JSON round-trip — which would drop per-message
+// extra fields such as x_thinking / reasoning_content.
 func stripOpenAIPromptCacheFields(req *openai.ChatCompletionNewParams) {
 	req.PromptCacheOptions = openai.ChatCompletionNewParamsPromptCacheOptions{}
 	req.PromptCacheRetention = ""

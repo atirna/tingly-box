@@ -330,11 +330,12 @@ func assertCapturedAutomaticCacheState(t flagTB, env *TestEnv, target protocol.A
 	if wantImplicit {
 		wantMode = "implicit"
 	}
-	options, hasOptions := body["prompt_cache_options"].(map[string]any)
+	rawOptions, hasOptions := body["prompt_cache_options"]
 	if wantMode == "" && hasOptions {
 		t.Errorf("%s: final prompt_cache_options present, want stripped; body=%s",
 			label, truncate(string(captured.Body), 1200))
 	}
+	options, _ := rawOptions.(map[string]any)
 	if got, _ := options["mode"].(string); got != wantMode {
 		t.Errorf("%s: final prompt_cache_options.mode = %q, want %q; body=%s",
 			label, got, wantMode, truncate(string(captured.Body), 1200))
