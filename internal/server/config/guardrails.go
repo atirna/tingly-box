@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	guardrailscore "github.com/tingly-dev/tingly-box/internal/guardrails/core"
 	guardrailsevaluate "github.com/tingly-dev/tingly-box/internal/guardrails/evaluate"
@@ -137,14 +138,26 @@ func WriteFileAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
+// credentialStores memoizes one ProtectedCredentialStore (and so one lazy
+// SQLite connection) per db path. CredentialStore is called from both the
+// admin CRUD handlers and every credential-cache refresh on the request
+// path; before memoization each call minted a fresh store whose connection
+// was never closed.
+var credentialStores sync.Map // db path -> *guardrailsutils.ProtectedCredentialStore
+
 // CredentialStore opens the protected-credential sqlite store shared by
 // request-time masking (AI Model API) and the admin credential CRUD (WebUI
-// Management API).
+// Management API). Calls with the same configDir return the same store.
 func CredentialStore(configDir string) (*guardrailsutils.ProtectedCredentialStore, error) {
 	if configDir == "" {
 		return nil, errors.New("config directory not set")
 	}
-	return guardrailsutils.NewProtectedCredentialStore(DBPath(configDir)), nil
+	path := DBPath(configDir)
+	if store, ok := credentialStores.Load(path); ok {
+		return store.(*guardrailsutils.ProtectedCredentialStore), nil
+	}
+	store, _ := credentialStores.LoadOrStore(path, guardrailsutils.NewProtectedCredentialStore(path))
+	return store.(*guardrailsutils.ProtectedCredentialStore), nil
 }
 
 // applyGuardrailsDefaults ensures the global scenario has an extensions map so

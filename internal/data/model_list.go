@@ -19,7 +19,10 @@ type ModelListManager struct {
 	modelStore *db.ModelStore
 }
 
-// NewProviderModelManager creates a new provider model manager with database backing
+// NewProviderModelManager creates a provider model manager over its own
+// database connection. Inside the server process prefer
+// NewProviderModelManagerWithStore with the StoreManager's ModelStore, so
+// the process keeps a single connection to tingly.db.
 func NewProviderModelManager(configDir string) (*ModelListManager, error) {
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create models directory: %w", err)
@@ -33,7 +36,15 @@ func NewProviderModelManager(configDir string) (*ModelListManager, error) {
 	return &ModelListManager{modelStore: modelStore}, nil
 }
 
-// Close releases the underlying model store's database connection.
+// NewProviderModelManagerWithStore wraps an existing ModelStore (usually the
+// StoreManager's) instead of opening a second connection to the same
+// database file.
+func NewProviderModelManagerWithStore(store *db.ModelStore) *ModelListManager {
+	return &ModelListManager{modelStore: store}
+}
+
+// Close releases the underlying model store's database connection when the
+// store owns one; for a store borrowed from StoreManager it is a no-op.
 func (mm *ModelListManager) Close() error {
 	return mm.modelStore.Close()
 }

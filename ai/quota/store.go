@@ -265,17 +265,23 @@ type Store interface {
 
 // GormStore implements Store with GORM.
 type GormStore struct {
-	db     *gorm.DB
-	dbPath string
+	db *gorm.DB
+	// ownsDB records whether this store opened its own connection (and so
+	// must close it) or borrowed a shared handle from the caller.
+	ownsDB bool
 	mu     sync.RWMutex
 	logger *logrus.Logger
 }
 
-// NewGormStore creates a GORM-backed quota store. dbPath is the full path to
-// the SQLite database file (typically shared with the other tingly-box
-// stores); the caller is responsible for deriving it — e.g. via
-// constant.GetDBFile(configDir) — since ai/quota does not depend on the
-// parent repo's internal/constant package.
+// NewGormStore creates a GORM-backed quota store over its own connection.
+// dbPath is the full path to the SQLite database file; the caller is
+// responsible for deriving it — e.g. via constant.GetDBFile(configDir) —
+// since ai/quota does not depend on the parent repo's internal/constant
+// package.
+//
+// Inside the server process prefer NewGormStoreOverDB with the
+// StoreManager's shared handle; this constructor is for standalone use
+// (CLI commands, tests) where no shared connection exists.
 func NewGormStore(dbPath string, logger *logrus.Logger) (*GormStore, error) {
 	dbDir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dbDir, 0700); err != nil {
@@ -292,7 +298,7 @@ func NewGormStore(dbPath string, logger *logrus.Logger) (*GormStore, error) {
 
 	store := &GormStore{
 		db:     db,
-		dbPath: dbPath,
+		ownsDB: true,
 		logger: logger,
 	}
 
@@ -300,6 +306,20 @@ func NewGormStore(dbPath string, logger *logrus.Logger) (*GormStore, error) {
 		return nil, fmt.Errorf("failed to migrate quota database: %w", err)
 	}
 
+	return store, nil
+}
+
+// NewGormStoreOverDB creates a GORM-backed quota store over an already-open
+// shared connection. The caller retains ownership of the handle: Close on
+// the returned store is a no-op.
+func NewGormStoreOverDB(db *gorm.DB, logger *logrus.Logger) (*GormStore, error) {
+	store := &GormStore{
+		db:     db,
+		logger: logger,
+	}
+	if err := store.migrate(); err != nil {
+		return nil, fmt.Errorf("failed to migrate quota database: %w", err)
+	}
 	return store, nil
 }
 
@@ -373,6 +393,9 @@ func (s *GormStore) CleanupExpired(ctx context.Context) (int64, error) {
 }
 
 func (s *GormStore) Close() error {
+	if !s.ownsDB {
+		return nil
+	}
 	sqlDB, err := s.db.DB()
 	if err != nil {
 		return err

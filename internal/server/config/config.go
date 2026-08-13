@@ -363,12 +363,10 @@ func NewConfig(opts ...ConfigOption) (*Config, error) {
 		}
 	}
 
-	// Initialize provider model manager
-	providerModelManager, err := data.NewProviderModelManager(configDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize provider model manager: %w", err)
-	}
-	cfg.modelManager = providerModelManager
+	// Initialize provider model manager over the store manager's ModelStore,
+	// so the process keeps one connection to tingly.db instead of a second
+	// pool (with its own AutoMigrate run) against the same file.
+	cfg.modelManager = data.NewProviderModelManagerWithStore(storeManager.Model())
 
 	if err := cfg.RefreshStatsFromStore(); err != nil {
 		return nil, err

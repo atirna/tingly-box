@@ -627,10 +627,24 @@ func (s *Server) setupConfigWatcher() {
 
 // initQuotaManager initializes the provider quota manager
 func initQuotaManager(cfg *config.Config) (*quota.Manager, error) {
-	// Create quota store
-	store, err := quota.NewGormStore(constant.GetDBFile(cfg.ConfigDir), logrus.StandardLogger())
-	if err != nil {
-		return nil, err
+	// Create quota store. Borrow the StoreManager's shared connection to
+	// tingly.db rather than opening (and leaking — nothing closed it) a
+	// second connection pool against the same file.
+	var store quota.Store
+	if sm := cfg.StoreManager(); sm != nil && sm.DB() != nil {
+		gormStore, err := quota.NewGormStoreOverDB(sm.DB(), logrus.StandardLogger())
+		if err != nil {
+			return nil, err
+		}
+		store = gormStore
+	} else {
+		// No store manager (some embedders/tests): fall back to a dedicated
+		// connection the quota store owns.
+		gormStore, err := quota.NewGormStore(constant.GetDBFile(cfg.ConfigDir), logrus.StandardLogger())
+		if err != nil {
+			return nil, err
+		}
+		store = gormStore
 	}
 
 	// Create quota manager with default config

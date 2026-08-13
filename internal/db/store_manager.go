@@ -338,6 +338,17 @@ func (sm *StoreManager) APIToken() *APITokenStore {
 	return sm.apiTokenStore
 }
 
+// DB returns the shared *gorm.DB every store runs on. Subsystems that keep
+// their own record types on the shared tingly.db (e.g. ai/quota) borrow this
+// handle instead of opening a second connection to the same file — the
+// process should hold exactly one connection pool per database.
+// Returns nil after Close().
+func (sm *StoreManager) DB() *gorm.DB {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.db
+}
+
 // BaseDir returns the base directory for this StoreManager.
 func (sm *StoreManager) BaseDir() string {
 	sm.mu.RLock()

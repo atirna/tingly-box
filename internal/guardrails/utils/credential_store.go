@@ -205,7 +205,12 @@ func (s *ProtectedCredentialStore) ensureDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("create protected credential db dir: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(s.path), &gorm.Config{
+	// Same connection options as the tingly.db stores (internal/db): WAL and
+	// a busy timeout, so concurrent writers back off instead of failing with
+	// SQLITE_BUSY immediately. This was the one SQLite open in the codebase
+	// with no options at all.
+	dsn := s.path + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
