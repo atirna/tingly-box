@@ -179,9 +179,6 @@ func NewUsageStore(baseDir string) (*UsageStore, error) {
 	if err := migrateUsageTables(db); err != nil {
 		return nil, err
 	}
-	if err := ensureUsageRecordSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to align usage schema: %w", err)
-	}
 	logrus.Debugf("Usage store initialization completed")
 
 	return store, nil
@@ -196,6 +193,9 @@ func migrateUsageTables(db *gorm.DB) error {
 	}
 	if err := db.AutoMigrate(&UsageRecord{}, &UsageDailyRecord{}, &UsageMonthlyRecord{}); err != nil {
 		return fmt.Errorf("failed to migrate usage database: %w", err)
+	}
+	if err := ensureUsageRecordSchema(db); err != nil {
+		return fmt.Errorf("failed to align usage schema: %w", err)
 	}
 	return nil
 }
