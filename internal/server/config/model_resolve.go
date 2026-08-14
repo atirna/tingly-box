@@ -232,7 +232,9 @@ func (c *Config) FetchAndSaveProviderModels(uid string) error {
 //     we override APIBase to https://api.deepseek.com before constructing the
 //     OpenAI client.
 func (c *Config) newModelLister(ctx context.Context, provider *typ.Provider) (client.ModelLister, error) {
-	if isDeepSeekProvider(provider.APIBase) {
+	host, _ := ops.SplitProviderHostPath(provider.APIBase)
+	switch host {
+	case "api.deepseek.com":
 		providerForModels := *provider
 		providerForModels.APIBase = "https://api.deepseek.com"
 		oClient, err := client.NewOpenAIClient(&providerForModels, "", typ.SessionID{})
@@ -299,16 +301,6 @@ func isOpenRouterProvider(provider *typ.Provider) bool {
 		}
 	}
 	return false
-}
-
-// isDeepSeekProvider reports whether apiBase points at DeepSeek's own host,
-// matched on the parsed host (see ops.SplitProviderHostPath) rather than
-// searching for "api.deepseek.com" as a substring anywhere in apiBase, so a
-// base URL that merely mentions that hostname in its path or query isn't
-// mistaken for DeepSeek.
-func isDeepSeekProvider(apiBase string) bool {
-	host, _ := ops.SplitProviderHostPath(apiBase)
-	return host == "api.deepseek.com"
 }
 
 func (c *Config) GetModelManager() *data.ModelListManager {
