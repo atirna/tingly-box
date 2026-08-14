@@ -17,6 +17,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/data"
 	"github.com/tingly-dev/tingly-box/internal/db"
+	guardrailsutils "github.com/tingly-dev/tingly-box/internal/guardrails/utils"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/pkg/auth"
@@ -103,6 +104,11 @@ type Config struct {
 	toolConfigStore    *db.ToolConfigStore
 	imbotSettingsStore *db.ImBotSettingsStore
 	templateManager    *data.TemplateManager
+
+	// credentialStore backs the guardrails protected-credential database,
+	// which is a separate file from tingly.db. Built lazily by
+	// CredentialStore.
+	credentialStore *guardrailsutils.ProtectedCredentialStore
 
 	// Provider lifecycle hooks
 	providerUpdateHooks []ProviderUpdateHook

@@ -137,14 +137,27 @@ func WriteFileAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// CredentialStore opens the protected-credential sqlite store shared by
+// CredentialStore returns the protected-credential sqlite store shared by
 // request-time masking (AI Model API) and the admin credential CRUD (WebUI
-// Management API).
-func CredentialStore(configDir string) (*guardrailsutils.ProtectedCredentialStore, error) {
-	if configDir == "" {
+// Management API), building it on first use.
+//
+// The Config owns it for the same reason it owns the other stores: the store
+// holds a lazily-opened SQLite connection, and something has to be able to
+// close it. This used to be a free function handing out a fresh store per
+// call, which left a new connection behind on every credential-cache
+// refresh — i.e. on the request path.
+func (c *Config) CredentialStore() (*guardrailsutils.ProtectedCredentialStore, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.credentialStore != nil {
+		return c.credentialStore, nil
+	}
+	if c.ConfigDir == "" {
 		return nil, errors.New("config directory not set")
 	}
-	return guardrailsutils.NewProtectedCredentialStore(DBPath(configDir)), nil
+	c.credentialStore = guardrailsutils.NewProtectedCredentialStore(DBPath(c.ConfigDir))
+	return c.credentialStore, nil
 }
 
 // applyGuardrailsDefaults ensures the global scenario has an extensions map so
