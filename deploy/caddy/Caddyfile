@@ -1,0 +1,44 @@
+{
+	servers {
+		timeouts {
+			read_body 30m
+			read_header 1m
+			write 0
+			idle 10m
+		}
+	}
+}
+
+# https:// (port 443) is implied by the bare host — Caddy auto-provisions TLS
+# and its automatic HTTPS redirects :80 -> :443
+you.domain {
+	handle /tingly/* {
+		reverse_proxy localhost:12580 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				keepalive 10m
+			}
+		}
+	}
+
+	# mirror for debug or rc version
+	handle /mirror/* {
+		uri replace /mirror /tingly
+		reverse_proxy localhost:12580 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				keepalive 10m
+			}
+		}
+	}
+
+	handle /hi {
+		respond "Hello, privacy!"
+	}
+
+	handle {
+		respond "Forbidden" 403
+	}
+}
