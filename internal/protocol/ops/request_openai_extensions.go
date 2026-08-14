@@ -2,7 +2,6 @@ package ops
 
 import (
 	"encoding/json"
-	"net/url"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -18,7 +17,7 @@ import (
 // New providers are added as new cases here; aliases (e.g. multiple URLs that
 // share a vendor's quirks) sit in the same case body.
 func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, model string, config *protocol.OpenAIConfig) *openai.ChatCompletionNewParams {
-	host, path := splitProviderHostPath(providerURL)
+	host, path := SplitProviderHostPath(providerURL)
 	modelLower := strings.ToLower(model)
 
 	// See stripOpenAIPromptCacheFields for why: most OpenAI-compatible
@@ -47,33 +46,6 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 	// api.openai.com falls through to here too — no vendor-specific shaping
 	// needed beyond applyDefaultTransform's thinking fallback.
 	return applyDefaultTransform(req, config)
-}
-
-// splitProviderHostPath splits a provider base URL into its lowercased host
-// and lowercased path via net/url, which already handles userinfo, port, and
-// bracketed IPv6 literals correctly — no need to hand-roll that parsing.
-//
-// The one thing net/url won't do is a bare, scheme-less host: Provider.APIBase
-// is sometimes stored without one (e.g. "api.deepseek.com" rather than
-// "https://api.deepseek.com"), and net/url.Parse treats that as a relative
-// path rather than a host. A default scheme is prepended when one is
-// missing so parsing lands on the host as intended.
-//
-// This also fixes a correctness gap the old strings.Contains(url, "...")
-// dispatch had: matching anywhere in the full URL text meant a base URL that
-// merely mentioned a vendor's hostname in its path or query — e.g. a proxy
-// at "https://gateway.example.com/relay?target=api.deepseek.com" — was
-// mistaken for that vendor. Matching the parsed host exactly closes that.
-func splitProviderHostPath(providerURL string) (host, path string) {
-	raw := strings.TrimSpace(providerURL)
-	if !strings.Contains(raw, "://") {
-		raw = "https://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", ""
-	}
-	return strings.ToLower(u.Hostname()), strings.ToLower(u.Path)
 }
 
 // supportsExplicitPromptCache reports whether the provider host is confirmed
