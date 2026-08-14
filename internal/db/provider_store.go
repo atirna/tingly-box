@@ -4,18 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/ai"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
-	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -285,9 +280,8 @@ func updateRecordFromProvider(record *ProviderRecord, p *typ.Provider) {
 // the request hot path (see internal/routing/selector.go) and used to
 // account for ~47% of Select()'s CPU time.
 type ProviderStore struct {
-	db     *gorm.DB
-	dbPath string
-	mu     sync.RWMutex
+	storeConn
+	mu sync.RWMutex
 
 	cache map[string]*ProviderRecord
 	// order preserves insertion order for List/ListOAuth/ListEnabled, since
@@ -295,52 +289,27 @@ type ProviderStore struct {
 	order []string
 }
 
-// NewProviderStore creates or loads a provider store using SQLite database.
+// NewProviderStore creates or loads a provider store over its own connection
+// to the shared tingly.db.
 func NewProviderStore(baseDir string) (*ProviderStore, error) {
-	logrus.Debugf("Initializing provider store in directory: %s", baseDir)
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create provider store directory: %w", err)
-	}
-
-	dbPath := constant.GetDBFile(baseDir)
-	// Ensure the db subdirectory exists
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create db directory: %w", err)
-	}
-
-	logrus.Debugf("Opening SQLite database for provider store: %s", dbPath)
-	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	db, err := openTinglyDB(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open provider database: %w", err)
+		return nil, fmt.Errorf("provider store: %w", err)
 	}
-	logrus.Debugf("SQLite database opened successfully for provider store")
-
-	store, err := newProviderStoreOverDB(db, dbPath)
-	if err != nil {
-		return nil, err
-	}
-	logrus.Debugf("Provider store initialization completed")
-
-	return store, nil
+	return newProviderStore(ownedConn(db))
 }
 
-// newProviderStoreOverDB finishes setting up a ProviderStore (migrate +
-// cache load) over an already-open *gorm.DB, shared by NewProviderStore and
-// StoreManager.initProviderStore so the cache-init wiring can't drift
-// between them.
-func newProviderStoreOverDB(db *gorm.DB, dbPath string) (*ProviderStore, error) {
-	if err := db.AutoMigrate(&ProviderRecord{}); err != nil {
+// newProviderStore finishes setting up a ProviderStore (migrate + cache load)
+// over an already-open connection, shared by NewProviderStore and
+// StoreManager so the cache-init wiring can't drift between them.
+func newProviderStore(conn storeConn) (*ProviderStore, error) {
+	if err := conn.db.AutoMigrate(&ProviderRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate provider database: %w", err)
 	}
 
 	store := &ProviderStore{
-		db:     db,
-		dbPath: dbPath,
-		cache:  make(map[string]*ProviderRecord),
+		storeConn: conn,
+		cache:     make(map[string]*ProviderRecord),
 	}
 	if err := store.loadCache(); err != nil {
 		return nil, fmt.Errorf("failed to load provider cache: %w", err)
@@ -655,13 +624,4 @@ func (ps *ProviderStore) ListEnabled() ([]*typ.Provider, error) {
 // GetDB returns the underlying GORM DB instance (for testing/advanced usage)
 func (ps *ProviderStore) GetDB() *gorm.DB {
 	return ps.db
-}
-
-// Close closes the database connection
-func (ps *ProviderStore) Close() error {
-	sqlDB, err := ps.db.DB()
-	if err != nil {
-		return err
-	}
-	return sqlDB.Close()
 }
