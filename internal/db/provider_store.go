@@ -590,24 +590,18 @@ func (ps *ProviderStore) UpdateOAuthAccessToken(uuid, accessToken string) error 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	record, ok := ps.cache[uuid]
-	if !ok {
-		return fmt.Errorf("provider with UUID '%s' not found", uuid)
+	// Route through writeThroughLocked like every other write. This used to
+	// issue a single-column UPDATE and then mutate the cached record in
+	// place, which broke the copy-then-swap invariant writeThroughLocked
+	// documents (a failed write could leave the cache holding unpersisted
+	// data) and bumped updated_at in the cache while leaving the column
+	// stale in SQLite.
+	if _, err := ps.writeThroughLocked(uuid, func(r *ProviderRecord) {
+		r.Token = accessToken
+		r.UpdatedAt = time.Now()
+	}); err != nil {
+		return fmt.Errorf("failed to update oauth access token: %w", err)
 	}
-
-	result := ps.db.Model(&ProviderRecord{}).
-		Where("uuid = ?", uuid).
-		Update("token", accessToken)
-
-	if result.Error != nil {
-		return fmt.Errorf("failed to update oauth access token: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("provider with UUID '%s' not found", uuid)
-	}
-
-	record.Token = accessToken
-	record.UpdatedAt = time.Now()
 
 	logrus.Debugf("Updated OAuth access token for provider: %s", uuid)
 	return nil
