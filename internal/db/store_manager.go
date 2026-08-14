@@ -460,6 +460,7 @@ func (sm *StoreManager) HealthCheck() (*HealthStatus, error) {
 		"tasks":          sm.taskStore,
 		"remoteChats":    sm.remoteChatStore,
 		"remoteSessions": sm.remoteSessionStore,
+		"botAccess":      sm.botAccessStore,
 	}
 
 	status := &HealthStatus{
