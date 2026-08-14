@@ -15,6 +15,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/data"
 	"github.com/tingly-dev/tingly-box/internal/db"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
+	"github.com/tingly-dev/tingly-box/internal/protocol/ops"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -231,7 +232,7 @@ func (c *Config) FetchAndSaveProviderModels(uid string) error {
 //     we override APIBase to https://api.deepseek.com before constructing the
 //     OpenAI client.
 func (c *Config) newModelLister(ctx context.Context, provider *typ.Provider) (client.ModelLister, error) {
-	if strings.Contains(strings.ToLower(strings.TrimSpace(provider.APIBase)), "api.deepseek.com") {
+	if isDeepSeekProvider(provider.APIBase) {
 		providerForModels := *provider
 		providerForModels.APIBase = "https://api.deepseek.com"
 		oClient, err := client.NewOpenAIClient(&providerForModels, "", typ.SessionID{})
@@ -292,11 +293,22 @@ func SortProviderModels(provider *typ.Provider, models []string) {
 // as https://openrouter.ai/api/v1 (OpenAI) and https://openrouter.ai/api (Anthropic).
 func isOpenRouterProvider(provider *typ.Provider) bool {
 	for _, base := range []string{provider.APIBase, provider.APIBaseOpenAI, provider.APIBaseAnthropic} {
-		if strings.Contains(strings.ToLower(base), "openrouter.ai") {
+		host, _ := ops.SplitProviderHostPath(base)
+		if host == "openrouter.ai" {
 			return true
 		}
 	}
 	return false
+}
+
+// isDeepSeekProvider reports whether apiBase points at DeepSeek's own host,
+// matched on the parsed host (see ops.SplitProviderHostPath) rather than
+// searching for "api.deepseek.com" as a substring anywhere in apiBase, so a
+// base URL that merely mentions that hostname in its path or query isn't
+// mistaken for DeepSeek.
+func isDeepSeekProvider(apiBase string) bool {
+	host, _ := ops.SplitProviderHostPath(apiBase)
+	return host == "api.deepseek.com"
 }
 
 func (c *Config) GetModelManager() *data.ModelListManager {
