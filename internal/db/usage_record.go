@@ -3,18 +3,12 @@ package db
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-
-	"github.com/tingly-dev/tingly-box/internal/constant"
 )
 
 // UsageRecord is the GORM model for persisting individual usage records
@@ -95,8 +89,7 @@ func (UsageDailyRecord) TableName() string {
 
 // UsageStore persists usage records in SQLite using GORM.
 type UsageStore struct {
-	db     *gorm.DB
-	dbPath string
+	storeConn
 	// mu guards the database: writes take the write lock, queries the read
 	// lock (WAL mode supports concurrent readers), so dashboard queries do
 	// not serialize behind proxy usage writes or each other.
@@ -123,40 +116,23 @@ type PerformanceSummary struct {
 	Completion PerformanceMetricSummary
 }
 
-// NewUsageStore creates or loads a usage store using SQLite database.
+// NewUsageStore creates or loads a usage store over its own connection to
+// the shared tingly.db.
 func NewUsageStore(baseDir string) (*UsageStore, error) {
-	logrus.Printf("Initializing usage store in directory: %s", baseDir)
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create usage store directory: %w", err)
-	}
-
-	dbPath := constant.GetDBFile(baseDir)
-	// Ensure the db subdirectory exists (matches every other NewXStore constructor).
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create db directory: %w", err)
-	}
-	logrus.Printf("Opening SQLite database for usage store: %s", dbPath)
-	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	db, err := openTinglyDB(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open usage database: %w", err)
+		return nil, fmt.Errorf("usage store: %w", err)
 	}
-	logrus.Debugf("SQLite database opened successfully for usage store")
+	return newUsageStore(ownedConn(db))
+}
 
-	store := &UsageStore{
-		db:     db,
-		dbPath: dbPath,
-	}
-
-	if err := migrateUsageTables(db); err != nil {
+// newUsageStore finishes setting up a UsageStore (migrate) over an
+// already-open connection.
+func newUsageStore(conn storeConn) (*UsageStore, error) {
+	if err := migrateUsageTables(conn.db); err != nil {
 		return nil, err
 	}
-	logrus.Debugf("Usage store initialization completed")
-
-	return store, nil
+	return &UsageStore{storeConn: conn}, nil
 }
 
 // migrateUsageTables aligns and auto-migrates usage_records and usage_daily.

@@ -4,15 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
-	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -53,55 +49,29 @@ func (ProviderModelRecord) TableName() string {
 
 // ModelStore persists provider model information in SQLite using GORM.
 type ModelStore struct {
-	db     *gorm.DB
-	dbPath string
-	mu     sync.RWMutex
+	storeConn
+	mu sync.RWMutex
 }
 
-// NewModelStore creates or loads a model store using SQLite database.
+// NewModelStore creates or loads a model store over its own connection to
+// the shared tingly.db. Short-lived embedders must Close, or each instance
+// leaks a SQLite handle for the process lifetime; a store borrowed from
+// StoreManager is closed by it instead.
 func NewModelStore(baseDir string) (*ModelStore, error) {
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create model store directory: %w", err)
-	}
-
-	dbPath := constant.GetDBFile(baseDir)
-	// Configure SQLite with busy timeout and other settings
-	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	db, err := openTinglyDB(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open models database: %w", err)
+		return nil, fmt.Errorf("model store: %w", err)
 	}
+	return newModelStore(ownedConn(db))
+}
 
-	store := &ModelStore{
-		db:     db,
-		dbPath: dbPath,
-	}
-
-	// Auto-migrate schema
-	if err := db.AutoMigrate(&ProviderModelRecord{}); err != nil {
+// newModelStore finishes setting up a ModelStore (migrate) over an
+// already-open connection.
+func newModelStore(conn storeConn) (*ModelStore, error) {
+	if err := conn.db.AutoMigrate(&ProviderModelRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate models database: %w", err)
 	}
-
-	return store, nil
-}
-
-// Close releases the store's database connection. Safe to call more than
-// once. Short-lived embedders (tests, harness environments) must close, or
-// each instance leaks a SQLite handle for the process lifetime.
-func (s *ModelStore) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.db == nil {
-		return nil
-	}
-	sqlDB, err := s.db.DB()
-	s.db = nil
-	if err != nil {
-		return fmt.Errorf("model store: get database instance: %w", err)
-	}
-	return sqlDB.Close()
+	return &ModelStore{storeConn: conn}, nil
 }
 
 // SaveModels saves models for a provider by UUID
