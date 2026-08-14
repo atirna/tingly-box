@@ -15,6 +15,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/data"
 	"github.com/tingly-dev/tingly-box/internal/db"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
+	"github.com/tingly-dev/tingly-box/internal/protocol/ops"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -231,7 +232,9 @@ func (c *Config) FetchAndSaveProviderModels(uid string) error {
 //     we override APIBase to https://api.deepseek.com before constructing the
 //     OpenAI client.
 func (c *Config) newModelLister(ctx context.Context, provider *typ.Provider) (client.ModelLister, error) {
-	if strings.Contains(strings.ToLower(strings.TrimSpace(provider.APIBase)), "api.deepseek.com") {
+	host, _ := ops.SplitProviderHostPath(provider.APIBase)
+	switch host {
+	case "api.deepseek.com":
 		providerForModels := *provider
 		providerForModels.APIBase = "https://api.deepseek.com"
 		oClient, err := client.NewOpenAIClient(&providerForModels, "", typ.SessionID{})
@@ -292,7 +295,8 @@ func SortProviderModels(provider *typ.Provider, models []string) {
 // as https://openrouter.ai/api/v1 (OpenAI) and https://openrouter.ai/api (Anthropic).
 func isOpenRouterProvider(provider *typ.Provider) bool {
 	for _, base := range []string{provider.APIBase, provider.APIBaseOpenAI, provider.APIBaseAnthropic} {
-		if strings.Contains(strings.ToLower(base), "openrouter.ai") {
+		host, _ := ops.SplitProviderHostPath(base)
+		if host == "openrouter.ai" {
 			return true
 		}
 	}

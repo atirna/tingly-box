@@ -1,8 +1,6 @@
 package transform
 
 import (
-	"strings"
-
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
@@ -11,9 +9,10 @@ import (
 )
 
 // VendorTransform applies provider-specific request adjustments. Per-shape
-// dispatch is a flat strings.Contains chain — uniform across all request
-// shapes so new vendors land in one place per shape. Provider data is read from
-// TransformContext so this transform remains stateless and reusable.
+// dispatch matches the provider URL's host (see ops.SplitProviderHostPath) —
+// uniform across all request shapes so new vendors land in one place per
+// shape. Provider data is read from TransformContext so this transform
+// remains stateless and reusable.
 type VendorTransform struct{}
 
 // NewVendorTransform creates a new vendor transform.
@@ -24,18 +23,24 @@ func NewVendorTransform() *VendorTransform {
 func (t *VendorTransform) Name() string { return "vendor_adjust" }
 
 // Apply dispatches to the per-shape vendor logic. Unknown shapes are a no-op.
+//
+// Every per-shape helper gets the raw providerURL and parses it itself (via
+// ops.SplitProviderHostPath) rather than Apply pre-parsing it once and
+// threading a host string down — a shape that only needs the host today
+// (applyAnthropicV1/Beta) may need the path too once a vendor's Anthropic-shape
+// quirk turns out to be path-scoped, same as api.kimi.com's path check on the
+// OpenAI Chat side, and that shouldn't require changing Apply's signature.
 func (t *VendorTransform) Apply(ctx *TransformContext) error {
 	providerURL := t.providerURL(ctx)
-	url := strings.ToLower(providerURL)
 	switch req := ctx.Request.(type) {
 	case *openai.ChatCompletionNewParams:
 		ctx.Request = t.applyChat(ctx, req, providerURL)
 	case *responses.ResponseNewParams:
 		ctx.Request = t.applyResponses(ctx, req)
 	case *anthropic.MessageNewParams:
-		ctx.Request = t.applyAnthropicV1(ctx, req, url)
+		ctx.Request = t.applyAnthropicV1(ctx, req, providerURL)
 	case *anthropic.BetaMessageNewParams:
-		ctx.Request = t.applyAnthropicBeta(ctx, req, url)
+		ctx.Request = t.applyAnthropicBeta(ctx, req, providerURL)
 	}
 	return nil
 }
@@ -66,30 +71,32 @@ func (t *VendorTransform) applyResponses(ctx *TransformContext, req *responses.R
 	return req
 }
 
-func (t *VendorTransform) applyAnthropicV1(ctx *TransformContext, req *anthropic.MessageNewParams, url string) *anthropic.MessageNewParams {
+func (t *VendorTransform) applyAnthropicV1(ctx *TransformContext, req *anthropic.MessageNewParams, providerURL string) *anthropic.MessageNewParams {
 	if req.Model == "" {
 		return req
 	}
-	switch {
-	case strings.Contains(url, "api.anthropic.com"), strings.Contains(url, "claude.ai"):
+	host, _ := ops.SplitProviderHostPath(providerURL)
+	switch host {
+	case "api.anthropic.com", "claude.ai":
 		req = ops.ApplyAnthropicV1ModelTransform(req, string(req.Model))
 		req = ops.ApplyAnthropicV1MetadataTransform(req, ctx.configExtraForMetadata())
-	case strings.Contains(url, "api.deepseek.com"):
+	case "api.deepseek.com":
 		ops.SanitizeAnthropicV1ThinkingConfig(req)
 		ops.ApplyAnthropicV1DeepSeekThinkingPatch(req)
 	}
 	return req
 }
 
-func (t *VendorTransform) applyAnthropicBeta(ctx *TransformContext, req *anthropic.BetaMessageNewParams, url string) *anthropic.BetaMessageNewParams {
+func (t *VendorTransform) applyAnthropicBeta(ctx *TransformContext, req *anthropic.BetaMessageNewParams, providerURL string) *anthropic.BetaMessageNewParams {
 	if req.Model == "" {
 		return req
 	}
-	switch {
-	case strings.Contains(url, "api.anthropic.com"), strings.Contains(url, "claude.ai"):
+	host, _ := ops.SplitProviderHostPath(providerURL)
+	switch host {
+	case "api.anthropic.com", "claude.ai":
 		req = ops.ApplyAnthropicBetaModelTransform(req, string(req.Model))
 		req = ops.ApplyAnthropicBetaMetadataTransform(req, ctx.configExtraForMetadata())
-	case strings.Contains(url, "api.deepseek.com"):
+	case "api.deepseek.com":
 		ops.SanitizeAnthropicBetaThinkingConfig(req)
 		ops.ApplyAnthropicBetaDeepSeekThinkingPatch(req)
 	}

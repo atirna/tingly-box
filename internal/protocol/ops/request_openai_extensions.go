@@ -9,35 +9,42 @@ import (
 )
 
 // ApplyProviderTransforms applies provider-specific transformations to an
-// OpenAI Chat request. The dispatch is a flat strings.Contains chain — short,
-// explicit, and parallel to the per-shape dispatch in VendorTransform.
+// OpenAI Chat request. The dispatch matches the provider URL's host (and,
+// where a vendor's quirk is scoped to one path on a shared host, a path
+// prefix too) — short, explicit, and parallel to the per-shape dispatch in
+// VendorTransform.
 //
 // New providers are added as new cases here; aliases (e.g. multiple URLs that
 // share a vendor's quirks) sit in the same case body.
 func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, model string, config *protocol.OpenAIConfig) *openai.ChatCompletionNewParams {
-	url := strings.ToLower(providerURL)
+	host, path := SplitProviderHostPath(providerURL)
 	modelLower := strings.ToLower(model)
 
 	// See stripOpenAIPromptCacheFields for why: most OpenAI-compatible
 	// vendors reject these fields outright (#1548), so default to stripping.
-	if !supportsExplicitPromptCache(url) {
+	if !supportsExplicitPromptCache(host) {
 		stripOpenAIPromptCacheFields(req)
 	}
 
 	switch {
-	case strings.Contains(url, "api.deepseek.com"),
-		strings.Contains(url, "opencode.ai/zen/go") && strings.Contains(modelLower, "deepseek"):
+	case host == "api.deepseek.com",
+		host == "opencode.ai" && strings.HasPrefix(path, "/zen/go") && strings.Contains(modelLower, "deepseek"):
 		return applyDeepSeekTransform(req, providerURL, model, config)
 
-	case strings.Contains(url, "api.moonshot.cn"),
-		strings.Contains(url, "api.moonshot.ai"),
-		strings.Contains(url, "api.kimi.com/coding/v1"):
+	case host == "api.moonshot.cn",
+		host == "api.moonshot.ai",
+		// api.kimi.com is Moonshot's own dedicated host; the only product
+		// catalogued on it today is /coding/v1, and the wire protocol is a
+		// property of the vendor/model, not the product path, so a host-only
+		// match is enough here (unlike opencode.ai below, a multi-vendor
+		// relay where the path is load-bearing).
+		host == "api.kimi.com":
 		return applyKimiTransform(req, providerURL, model, config)
 
-	case strings.Contains(url, "generativelanguage.googleapis.com") && strings.Contains(modelLower, "gemini"):
+	case host == "generativelanguage.googleapis.com" && strings.Contains(modelLower, "gemini"):
 		return applyGeminiTransform(req, providerURL, model, config)
 
-	case strings.Contains(url, "poe.com") && strings.Contains(modelLower, "gemini"):
+	case host == "poe.com" && strings.Contains(modelLower, "gemini"):
 		return applyGeminiPoeTransform(req, providerURL, model, config)
 	}
 
@@ -46,12 +53,12 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 	return applyDefaultTransform(req, config)
 }
 
-// supportsExplicitPromptCache reports whether providerURL is confirmed to
-// accept OpenAI's gpt-5.6+ explicit prompt-cache fields. Extend this
+// supportsExplicitPromptCache reports whether the provider host is confirmed
+// to accept OpenAI's gpt-5.6+ explicit prompt-cache fields. Extend this
 // allowlist only once a vendor has been verified to accept the fields —
 // the default (stripped) is the safe outcome for an unverified vendor.
-func supportsExplicitPromptCache(url string) bool {
-	return strings.Contains(url, "api.openai.com")
+func supportsExplicitPromptCache(host string) bool {
+	return host == "api.openai.com"
 }
 
 // stripOpenAIPromptCacheFields removes the OpenAI-only prompt-cache fields
