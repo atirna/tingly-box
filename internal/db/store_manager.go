@@ -146,8 +146,8 @@ func (sm *StoreManager) initStores() error {
 	if err := sm.initImBotSettingsStore(); err != nil {
 		errs = append(errs, fmt.Errorf("imbot settings store: %w", err))
 	}
-	if err := sm.dropDeprecatedModelCapabilities(); err != nil {
-		errs = append(errs, fmt.Errorf("drop deprecated model_capabilities: %w", err))
+	if err := sm.dropDeprecatedTables(); err != nil {
+		errs = append(errs, fmt.Errorf("drop deprecated tables: %w", err))
 	}
 	if err := sm.initModelStore(); err != nil {
 		errs = append(errs, fmt.Errorf("model store: %w", err))
@@ -212,11 +212,26 @@ func (sm *StoreManager) initImBotSettingsStore() error {
 	return nil
 }
 
-// dropDeprecatedModelCapabilities removes the model_capabilities table that
-// belonged to the now-removed AdaptiveProbe subsystem. Idempotent: harmless
-// when the table is already absent (new installs or post-migration restarts).
-func (sm *StoreManager) dropDeprecatedModelCapabilities() error {
-	return sm.db.Exec("DROP TABLE IF EXISTS model_capabilities").Error
+// dropDeprecatedTables removes tables belonging to subsystems that no longer
+// exist. Idempotent: harmless when a table is already absent (new installs,
+// or restarts after the first migration).
+//
+//   - model_capabilities: the removed AdaptiveProbe subsystem.
+//   - tasks: the never-wired TaskStore. The internal/task subsystem it
+//     implemented was never constructed in production, so the table only
+//     ever existed empty.
+//   - tool_configs: the unreachable ToolConfigStore. Tool configs live in
+//     config.json, so this table was created on every boot and never read
+//     or written.
+//   - usage_monthly: AutoMigrated on every boot, never read or written;
+//     usage aggregation uses usage_daily only.
+func (sm *StoreManager) dropDeprecatedTables() error {
+	for _, table := range []string{"model_capabilities", "tasks", "tool_configs", "usage_monthly"} {
+		if err := sm.db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
+			return fmt.Errorf("drop %s: %w", table, err)
+		}
+	}
+	return nil
 }
 
 // initModelStore initializes the ModelStore.
