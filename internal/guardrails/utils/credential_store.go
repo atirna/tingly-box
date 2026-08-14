@@ -194,6 +194,25 @@ func (s *ProtectedCredentialStore) Resolve(ids []string) ([]guardrailscore.Prote
 	return resolved, nil
 }
 
+// Close releases the connection ensureDB opened, if any. Safe to call more
+// than once, and on a store that never opened one. With WAL enabled a live
+// connection holds three descriptors (db, -wal, -shm), so an owner that
+// never closes leaks all three for the process lifetime.
+func (s *ProtectedCredentialStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.db == nil {
+		return nil
+	}
+	sqlDB, err := s.db.DB()
+	s.db = nil
+	if err != nil {
+		return fmt.Errorf("protected credential store: get database instance: %w", err)
+	}
+	return sqlDB.Close()
+}
+
 func (s *ProtectedCredentialStore) ensureDB() (*gorm.DB, error) {
 	if s.db != nil {
 		return s.db, nil
@@ -205,7 +224,12 @@ func (s *ProtectedCredentialStore) ensureDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("create protected credential db dir: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(s.path), &gorm.Config{
+	// Same connection options the tingly.db stores use: WAL journaling and a
+	// busy timeout, so concurrent writers back off instead of failing
+	// immediately with SQLITE_BUSY. This was the one SQLite open in the
+	// codebase with no options at all.
+	dsn := s.path + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=1"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {

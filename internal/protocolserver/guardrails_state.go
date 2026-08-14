@@ -130,7 +130,7 @@ func (g *GuardrailsState) RefreshCredentialCache() error {
 		return nil
 	}
 
-	store, err := config.CredentialStore(g.cfg.ConfigDir)
+	store, err := g.cfg.CredentialStore()
 	if err != nil {
 		return err
 	}
