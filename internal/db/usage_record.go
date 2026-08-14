@@ -207,45 +207,61 @@ func ensureUsageRecordSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	// Migrate from separate cache fields to combined cache_input_tokens
-	if db.Migrator().HasColumn(&UsageRecord{}, "cache_creation_input_tokens") {
-		// Add new column if it doesn't exist
-		if !db.Migrator().HasColumn(&UsageRecord{}, "cache_input_tokens") {
-			if err := db.Migrator().AutoMigrate(&UsageRecord{}); err != nil {
-				return err
-			}
-		}
-		// Migrate data: sum of cache_creation + cache_read
-		if err := db.Exec(`
-			UPDATE usage_records
-			SET cache_input_tokens = COALESCE(cache_creation_input_tokens, 0) + COALESCE(cache_read_input_tokens, 0)
-			WHERE cache_input_tokens = 0
-		`).Error; err != nil {
-			return err
-		}
-		// Drop old columns
-		if err := db.Migrator().DropColumn(&UsageRecord{}, "cache_creation_input_tokens"); err != nil {
-			return err
-		}
-		if err := db.Migrator().DropColumn(&UsageRecord{}, "cache_read_input_tokens"); err != nil {
-			return err
-		}
+	// Legacy layout: the two cache measures lived in
+	// cache_read_input_tokens / cache_creation_input_tokens. Today's model
+	// keeps them just as separate -- reads in cache_input_tokens, writes in
+	// cache_write_tokens -- so each legacy column maps to exactly one
+	// current column.
+	//
+	// This used to sum BOTH into cache_input_tokens, which under today's
+	// semantics books cache writes as cache reads and then drops the
+	// evidence. Each column is also handled independently now, because a
+	// partially migrated database can carry one without the other while the
+	// previous SQL referenced both whenever either existed. The WHERE
+	// clauses leave already-migrated rows alone.
+	if err := migrateLegacyColumn(db, "cache_read_input_tokens",
+		`UPDATE usage_records SET cache_input_tokens = COALESCE(cache_read_input_tokens, 0) WHERE cache_input_tokens = 0`); err != nil {
+		return err
+	}
+	if err := migrateLegacyColumn(db, "cache_creation_input_tokens",
+		`UPDATE usage_records SET cache_write_tokens = COALESCE(cache_creation_input_tokens, 0) WHERE cache_write_tokens = 0`); err != nil {
+		return err
 	}
 
-	// Migrate empty user_id to default admin user
-	// This ensures backward compatibility after multi-tenant support was added
-	// Records created before multi-tenant have empty user_id, which should be
-	// associated with the default admin user
-	if err := db.Exec(`
-		UPDATE usage_records
-		SET user_id = ?
-		WHERE user_id = '' OR user_id IS NULL
-	`, DefaultAdminUserID).Error; err != nil {
-		logrus.WithError(err).Warn("Failed to migrate empty user_id to default admin user")
-		// Don't fail initialization for this migration, it's not critical
+	// Attribute pre-multi-tenant rows (empty user_id) to the default admin
+	// user. Probe for one first rather than opening a write transaction
+	// against the whole table every time this runs.
+	var legacy int64
+	if err := db.Model(&UsageRecord{}).
+		Where("user_id = '' OR user_id IS NULL").
+		Limit(1).Count(&legacy).Error; err != nil {
+		logrus.WithError(err).Warn("Failed to check for usage rows with no user_id")
+		return nil
+	}
+	if legacy > 0 {
+		if err := db.Exec(`
+			UPDATE usage_records
+			SET user_id = ?
+			WHERE user_id = '' OR user_id IS NULL
+		`, DefaultAdminUserID).Error; err != nil {
+			logrus.WithError(err).Warn("Failed to migrate empty user_id to default admin user")
+			// Don't fail initialization for this migration, it's not critical
+		}
 	}
 
 	return nil
+}
+
+// migrateLegacyColumn copies a legacy column's data into its replacement via
+// copySQL and then drops it. A no-op once the column is gone.
+func migrateLegacyColumn(db *gorm.DB, legacy, copySQL string) error {
+	if !db.Migrator().HasColumn(&UsageRecord{}, legacy) {
+		return nil
+	}
+	if err := db.Exec(copySQL).Error; err != nil {
+		return err
+	}
+	return db.Migrator().DropColumn(&UsageRecord{}, legacy)
 }
 
 // ensureUsageDailySchema rebuilds the usage_daily table when it predates the
@@ -294,6 +310,14 @@ func prepareUsageRecord(record *UsageRecord) {
 	record.TotalTokens = record.InputTokens + record.OutputTokens
 	if record.Status == "" {
 		record.Status = "success"
+	}
+	// A request with no authenticated user (the default single-user
+	// deployment) belongs to the admin user. Stamping it at write time is
+	// what keeps the schema backfill above a one-shot legacy migration:
+	// otherwise every row written since the last restart is empty-user and
+	// has to be rewritten at the next one.
+	if record.UserID == "" {
+		record.UserID = DefaultAdminUserID
 	}
 }
 
