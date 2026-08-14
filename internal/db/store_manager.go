@@ -403,6 +403,16 @@ func (sm *StoreManager) BaseDir() string {
 	return sm.baseDir
 }
 
+// DB returns the shared *gorm.DB every store runs on. Subsystems that keep
+// their own record types on the shared tingly.db borrow this handle instead
+// of opening a second connection to the same file — the process should hold
+// exactly one connection pool per database. Returns nil after Close().
+func (sm *StoreManager) DB() *gorm.DB {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.db
+}
+
 // Close closes all database connections and cleans up resources.
 // After Close() is called, all accessor methods will return nil.
 func (sm *StoreManager) Close() error {

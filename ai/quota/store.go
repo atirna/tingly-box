@@ -267,8 +267,26 @@ type Store interface {
 type GormStore struct {
 	db     *gorm.DB
 	dbPath string
+	// ownsDB records whether this store opened its own connection (and so
+	// must close it) or borrowed a shared handle from the caller.
+	ownsDB bool
 	mu     sync.RWMutex
 	logger *logrus.Logger
+}
+
+// NewGormStoreOverDB creates a quota store over an already-open shared
+// connection. The caller retains ownership of the handle: Close on the
+// returned store is a no-op.
+//
+// Prefer this inside the server process, where StoreManager already owns a
+// connection to the same file; NewGormStore is for standalone use (CLI
+// commands, tests) with no shared connection to borrow.
+func NewGormStoreOverDB(db *gorm.DB, logger *logrus.Logger) (*GormStore, error) {
+	store := &GormStore{db: db, logger: logger}
+	if err := store.migrate(); err != nil {
+		return nil, fmt.Errorf("failed to migrate quota database: %w", err)
+	}
+	return store, nil
 }
 
 // NewGormStore creates a GORM-backed quota store. dbPath is the full path to
@@ -293,6 +311,7 @@ func NewGormStore(dbPath string, logger *logrus.Logger) (*GormStore, error) {
 	store := &GormStore{
 		db:     db,
 		dbPath: dbPath,
+		ownsDB: true,
 		logger: logger,
 	}
 
@@ -373,6 +392,9 @@ func (s *GormStore) CleanupExpired(ctx context.Context) (int64, error) {
 }
 
 func (s *GormStore) Close() error {
+	if !s.ownsDB {
+		return nil
+	}
 	sqlDB, err := s.db.DB()
 	if err != nil {
 		return err

@@ -371,12 +371,10 @@ func NewConfig(opts ...ConfigOption) (*Config, error) {
 		}
 	}
 
-	// Initialize provider model manager
-	providerModelManager, err := data.NewProviderModelManager(configDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize provider model manager: %w", err)
-	}
-	cfg.modelManager = providerModelManager
+	// Initialize provider model manager over the store manager's ModelStore,
+	// so the process keeps one connection to tingly.db instead of a second
+	// pool (with its own AutoMigrate) against the same file.
+	cfg.modelManager = data.NewModelListManager(storeManager.Model())
 
 	if err := cfg.RefreshStatsFromStore(); err != nil {
 		return nil, err
@@ -480,25 +478,21 @@ func (c *Config) StoreManager() *db.StoreManager {
 }
 
 // CloseStores releases every database handle the config owns: the shared
-// store-manager connection, the provider-model store, and the guardrails
-// credential store (a separate file, and with WAL on, three
-// descriptors). The long-lived
+// store-manager connection (which every store, including the one the
+// ModelListManager wraps, now runs on) and the guardrails credential store,
+// a separate file holding three descriptors with WAL on. The long-lived
 // server closes the store manager from Stop; short-lived embedders (tests,
 // harness environments) call this so each instance does not leak SQLite
 // descriptors for the process lifetime. Safe to call more than once.
 func (c *Config) CloseStores() error {
 	c.mu.Lock()
 	storeManager := c.storeManager
-	modelManager := c.modelManager
 	credentialStore := c.credentialStore
 	c.mu.Unlock()
 
 	var errs []error
 	if storeManager != nil {
 		errs = append(errs, storeManager.Close())
-	}
-	if modelManager != nil {
-		errs = append(errs, modelManager.Close())
 	}
 	if credentialStore != nil {
 		errs = append(errs, credentialStore.Close())
