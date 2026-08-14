@@ -81,13 +81,18 @@ const ApiKeyField: React.FC<ApiKeyFieldProps> = ({
                 }}
             />
             {!hideCheckbox && !optionalEditable && (
-                <Box sx={{display: 'flex', justifyContent: 'flex-end', mt: 0.5, pr: 2}}>
+                <Box sx={{display: 'flex', justifyContent: 'flex-end', mt: 0.25, pr: 1}}>
                     <FormControlLabel
+                        sx={{
+                            mr: 0,
+                            '& .MuiFormControlLabel-label': {fontSize: '0.75rem', color: 'text.secondary'},
+                        }}
                         control={
                             <Checkbox
                                 size="small"
                                 checked={noApiKey}
                                 onChange={(e) => onNoApiKeyChange(e.target.checked)}
+                                sx={{p: 0.5}}
                             />
                         }
                         label="No API Key Required"
