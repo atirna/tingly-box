@@ -557,6 +557,53 @@ func TestProviderUpdateOAuthAccessToken(t *testing.T) {
 	}
 }
 
+// TestProviderUpdateOAuthAccessTokenPersistsUpdatedAt reads the row straight
+// from SQLite rather than through the cache. The previous implementation
+// issued a single-column UPDATE and bumped UpdatedAt only on the cached
+// record, so the persisted row kept its old timestamp and a restart lost it.
+func TestProviderUpdateOAuthAccessTokenPersistsUpdatedAt(t *testing.T) {
+	store, _ := setupTestProviderStore(t)
+	defer store.Close()
+
+	provider := &typ.Provider{
+		UUID:     "persist-updated-at-uuid",
+		Name:     "persist-updated-at-test",
+		APIBase:  "https://api.anthropic.com",
+		APIStyle: protocol.APIStyleAnthropic,
+		AuthType: typ.AuthTypeOAuth,
+		OAuthDetail: &typ.OAuthDetail{
+			AccessToken: "old-access-token",
+			Issuer:      ai.IssuerAnthropic,
+		},
+		Enabled: true,
+	}
+	if err := store.Save(provider); err != nil {
+		t.Fatalf("Failed to save provider: %v", err)
+	}
+
+	var before ProviderRecord
+	if err := store.GetDB().Where("uuid = ?", provider.UUID).First(&before).Error; err != nil {
+		t.Fatalf("Failed to read seeded row: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if err := store.UpdateOAuthAccessToken(provider.UUID, "new-access-token"); err != nil {
+		t.Fatalf("Failed to update OAuth access token: %v", err)
+	}
+
+	var after ProviderRecord
+	if err := store.GetDB().Where("uuid = ?", provider.UUID).First(&after).Error; err != nil {
+		t.Fatalf("Failed to read updated row: %v", err)
+	}
+
+	if after.Token != "new-access-token" {
+		t.Errorf("persisted token = %q, want %q", after.Token, "new-access-token")
+	}
+	if !after.UpdatedAt.After(before.UpdatedAt) {
+		t.Errorf("persisted UpdatedAt not advanced: before %v, after %v", before.UpdatedAt, after.UpdatedAt)
+	}
+}
+
 func TestProviderCount(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
 	defer store.Close()
