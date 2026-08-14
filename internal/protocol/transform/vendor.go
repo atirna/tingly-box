@@ -23,18 +23,24 @@ func NewVendorTransform() *VendorTransform {
 func (t *VendorTransform) Name() string { return "vendor_adjust" }
 
 // Apply dispatches to the per-shape vendor logic. Unknown shapes are a no-op.
+//
+// Every per-shape helper gets the raw providerURL and parses it itself (via
+// ops.SplitProviderHostPath) rather than Apply pre-parsing it once and
+// threading a host string down — a shape that only needs the host today
+// (applyAnthropicV1/Beta) may need the path too once a vendor's Anthropic-shape
+// quirk turns out to be path-scoped, same as api.kimi.com's path check on the
+// OpenAI Chat side, and that shouldn't require changing Apply's signature.
 func (t *VendorTransform) Apply(ctx *TransformContext) error {
 	providerURL := t.providerURL(ctx)
-	host, _ := ops.SplitProviderHostPath(providerURL)
 	switch req := ctx.Request.(type) {
 	case *openai.ChatCompletionNewParams:
 		ctx.Request = t.applyChat(ctx, req, providerURL)
 	case *responses.ResponseNewParams:
 		ctx.Request = t.applyResponses(ctx, req)
 	case *anthropic.MessageNewParams:
-		ctx.Request = t.applyAnthropicV1(ctx, req, host)
+		ctx.Request = t.applyAnthropicV1(ctx, req, providerURL)
 	case *anthropic.BetaMessageNewParams:
-		ctx.Request = t.applyAnthropicBeta(ctx, req, host)
+		ctx.Request = t.applyAnthropicBeta(ctx, req, providerURL)
 	}
 	return nil
 }
@@ -65,10 +71,11 @@ func (t *VendorTransform) applyResponses(ctx *TransformContext, req *responses.R
 	return req
 }
 
-func (t *VendorTransform) applyAnthropicV1(ctx *TransformContext, req *anthropic.MessageNewParams, host string) *anthropic.MessageNewParams {
+func (t *VendorTransform) applyAnthropicV1(ctx *TransformContext, req *anthropic.MessageNewParams, providerURL string) *anthropic.MessageNewParams {
 	if req.Model == "" {
 		return req
 	}
+	host, _ := ops.SplitProviderHostPath(providerURL)
 	switch host {
 	case "api.anthropic.com", "claude.ai":
 		req = ops.ApplyAnthropicV1ModelTransform(req, string(req.Model))
@@ -80,10 +87,11 @@ func (t *VendorTransform) applyAnthropicV1(ctx *TransformContext, req *anthropic
 	return req
 }
 
-func (t *VendorTransform) applyAnthropicBeta(ctx *TransformContext, req *anthropic.BetaMessageNewParams, host string) *anthropic.BetaMessageNewParams {
+func (t *VendorTransform) applyAnthropicBeta(ctx *TransformContext, req *anthropic.BetaMessageNewParams, providerURL string) *anthropic.BetaMessageNewParams {
 	if req.Model == "" {
 		return req
 	}
+	host, _ := ops.SplitProviderHostPath(providerURL)
 	switch host {
 	case "api.anthropic.com", "claude.ai":
 		req = ops.ApplyAnthropicBetaModelTransform(req, string(req.Model))
