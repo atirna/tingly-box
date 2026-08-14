@@ -102,7 +102,7 @@ const ProviderFormDialog = ({
     const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
     const [selectedProvider, setSelectedProvider] = useState<UniqueProvider | null>(null);
     const [nameIsAutoFilled, setNameIsAutoFilled] = useState(true);
-    const [showNameField, setShowNameField] = useState(mode === 'edit');
+    const [showNameField, setShowNameField] = useState(false);
     const [useGlobalProxy, setUseGlobalProxy] = useState(false);
     const [globalProxyUrl, setGlobalProxyUrl] = useState('');
     const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -189,7 +189,7 @@ const ProviderFormDialog = ({
 
         setVerificationResult(null);
         setBaseUrlError(false);
-        setShowNameField(mode === 'edit');
+        setShowNameField(false);
 
         const hasDualOpenAI = !!data.apiBaseOpenAI;
         const hasDualAnthropic = !!data.apiBaseAnthropic;
