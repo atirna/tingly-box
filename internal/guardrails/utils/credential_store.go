@@ -194,6 +194,25 @@ func (s *ProtectedCredentialStore) Resolve(ids []string) ([]guardrailscore.Prote
 	return resolved, nil
 }
 
+// Close releases the connection ensureDB opened, if any. Safe to call more
+// than once, and on a store that never opened one. With WAL enabled a live
+// connection holds three descriptors (db, -wal, -shm), so an owner that
+// never closes leaks all three for the process lifetime.
+func (s *ProtectedCredentialStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.db == nil {
+		return nil
+	}
+	sqlDB, err := s.db.DB()
+	s.db = nil
+	if err != nil {
+		return fmt.Errorf("protected credential store: get database instance: %w", err)
+	}
+	return sqlDB.Close()
+}
+
 func (s *ProtectedCredentialStore) ensureDB() (*gorm.DB, error) {
 	if s.db != nil {
 		return s.db, nil

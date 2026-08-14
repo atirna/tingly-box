@@ -17,6 +17,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/data"
 	"github.com/tingly-dev/tingly-box/internal/db"
+	guardrailsutils "github.com/tingly-dev/tingly-box/internal/guardrails/utils"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/pkg/auth"
@@ -103,6 +104,11 @@ type Config struct {
 	toolConfigStore    *db.ToolConfigStore
 	imbotSettingsStore *db.ImBotSettingsStore
 	templateManager    *data.TemplateManager
+
+	// credentialStore backs the guardrails protected-credential database,
+	// which is a separate file from tingly.db. Built lazily by
+	// CredentialStore.
+	credentialStore *guardrailsutils.ProtectedCredentialStore
 
 	// Provider lifecycle hooks
 	providerUpdateHooks []ProviderUpdateHook
@@ -474,7 +480,9 @@ func (c *Config) StoreManager() *db.StoreManager {
 }
 
 // CloseStores releases every database handle the config owns: the shared
-// store-manager connection and the provider-model store. The long-lived
+// store-manager connection, the provider-model store, and the guardrails
+// credential store (a separate file, and with WAL on, three
+// descriptors). The long-lived
 // server closes the store manager from Stop; short-lived embedders (tests,
 // harness environments) call this so each instance does not leak SQLite
 // descriptors for the process lifetime. Safe to call more than once.
@@ -482,6 +490,7 @@ func (c *Config) CloseStores() error {
 	c.mu.Lock()
 	storeManager := c.storeManager
 	modelManager := c.modelManager
+	credentialStore := c.credentialStore
 	c.mu.Unlock()
 
 	var errs []error
@@ -490,6 +499,9 @@ func (c *Config) CloseStores() error {
 	}
 	if modelManager != nil {
 		errs = append(errs, modelManager.Close())
+	}
+	if credentialStore != nil {
+		errs = append(errs, credentialStore.Close())
 	}
 	return errors.Join(errs...)
 }
