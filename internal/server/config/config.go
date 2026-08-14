@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -371,12 +370,10 @@ func NewConfig(opts ...ConfigOption) (*Config, error) {
 		}
 	}
 
-	// Initialize provider model manager
-	providerModelManager, err := data.NewProviderModelManager(configDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize provider model manager: %w", err)
-	}
-	cfg.modelManager = providerModelManager
+	// Initialize provider model manager over the store manager's ModelStore,
+	// so the process keeps one connection to tingly.db instead of a second
+	// pool (with its own AutoMigrate) against the same file.
+	cfg.modelManager = data.NewModelListManager(storeManager.Model())
 
 	if err := cfg.RefreshStatsFromStore(); err != nil {
 		return nil, err
@@ -479,25 +476,21 @@ func (c *Config) StoreManager() *db.StoreManager {
 	return c.storeManager
 }
 
-// CloseStores releases every database handle the config owns: the shared
-// store-manager connection and the provider-model store. The long-lived
-// server closes the store manager from Stop; short-lived embedders (tests,
-// harness environments) call this so each instance does not leak SQLite
-// descriptors for the process lifetime. Safe to call more than once.
+// CloseStores releases the database handle the config owns. Every store,
+// including the model store the ModelListManager wraps, now runs on the
+// store manager's one connection, so closing it is the whole job. The
+// long-lived server closes it from Stop; short-lived embedders (tests,
+// harness environments) call this so each instance does not leak a SQLite
+// descriptor for the process lifetime. Safe to call more than once.
 func (c *Config) CloseStores() error {
 	c.mu.Lock()
 	storeManager := c.storeManager
-	modelManager := c.modelManager
 	c.mu.Unlock()
 
-	var errs []error
-	if storeManager != nil {
-		errs = append(errs, storeManager.Close())
+	if storeManager == nil {
+		return nil
 	}
-	if modelManager != nil {
-		errs = append(errs, modelManager.Close())
-	}
-	return errors.Join(errs...)
+	return storeManager.Close()
 }
 
 func (c *Config) CreateDefaultConfig() error {
