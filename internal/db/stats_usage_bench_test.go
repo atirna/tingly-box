@@ -19,7 +19,7 @@ func newUsageStoreForBench(b *testing.B) *UsageStore {
 
 // Benchmarks for StatsStore/UsageStore, both written synchronously once per
 // completed LLM request by ProtocolHandler.trackUsageWithTokenUsage -- see
-// .design/hot-path-db-access.md.
+// .design/db.md.
 //
 // Run: go test ./internal/db/... -bench 'StatsStore|UsageStore' -benchmem -run '^$'
 
@@ -163,4 +163,49 @@ func BenchmarkStatsAndUsage_RecordRequestOutcome(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// BenchmarkStatsAndUsage_RecordOutcomeBatched measures the production hot
+// path after batching: RecordOutcome builds the records on the caller's
+// goroutine and enqueues them; the SQLite transaction happens on the
+// writer's flush cadence. The b.StopTimer/Close ensures every enqueued
+// outcome is actually persisted before the benchmark exits, so throughput
+// (not just enqueue latency) is what's bounded here.
+func BenchmarkStatsAndUsage_RecordOutcomeBatched(b *testing.B) {
+	sm, err := NewStoreManager(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	service := &loadbalance.Service{
+		Provider: "bench-provider",
+		Model:    "bench-model",
+		Weight:   1,
+		Active:   true,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		service.RecordUsage(10, 20)
+		record := &UsageRecord{
+			ProviderUUID: "bench-provider",
+			ProviderName: "bench-provider",
+			Model:        "bench-model",
+			Scenario:     "openai",
+			RuleUUID:     "bench-rule",
+			UserID:       DefaultAdminUserID,
+			RequestModel: "bench-model",
+			Timestamp:    time.Now(),
+			InputTokens:  10,
+			OutputTokens: 20,
+			Status:       "success",
+			LatencyMs:    120,
+		}
+		if err := sm.RecordOutcome(service, record); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+	_ = sm.Close()
 }

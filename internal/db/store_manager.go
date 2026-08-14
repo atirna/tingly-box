@@ -19,6 +19,10 @@ type StoreManager struct {
 	baseDir string
 	db      *gorm.DB // Shared DB instance for all stores
 
+	// outcomeWriter batches the per-request stats+usage writes; see
+	// RecordOutcome. Not a store: it runs over statsStore/usageStore.
+	outcomeWriter *outcomeWriter
+
 	storeSet
 }
 
@@ -164,6 +168,10 @@ func (sm *StoreManager) initStores() error {
 	if len(errs) > 0 {
 		return fmt.Errorf("failed to initialize stores: %v", errs)
 	}
+
+	// The batched outcome writer needs both stores; start it last so a
+	// failed store init never leaves a flusher goroutine behind.
+	sm.outcomeWriter = newOutcomeWriter(sm.statsStore, sm.usageStore)
 
 	return nil
 }
@@ -318,6 +326,13 @@ func (sm *StoreManager) Close() error {
 
 	if sm.db == nil {
 		return nil // Already closed
+	}
+
+	// Stop the outcome writer first: it flushes buffered outcomes, and the
+	// flush needs the connection this method is about to close.
+	if sm.outcomeWriter != nil {
+		sm.outcomeWriter.close()
+		sm.outcomeWriter = nil
 	}
 
 	// Close the shared database connection

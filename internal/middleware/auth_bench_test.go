@@ -13,7 +13,7 @@ import (
 
 // Benchmarks for AuthMiddleware.ModelAuthMiddleware's multi-tenant
 // "tb-share-" API-token path, wired against a real db.APITokenStore
-// (SQLite-backed) instead of a mock. See .design/hot-path-db-access.md.
+// (SQLite-backed) instead of a mock. See .design/db.md.
 //
 // Run: go test ./internal/middleware/... -bench . -benchmem -run '^$'
 

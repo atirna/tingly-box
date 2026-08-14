@@ -3,8 +3,6 @@ package db
 import (
 	"fmt"
 
-	"gorm.io/gorm"
-
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 )
 
@@ -12,7 +10,7 @@ import (
 // usage audit row (UsageStore) together in one SQLite transaction, instead
 // of each store committing independently. Assumes both stores share the
 // same *gorm.DB, true of every production call site (StoreManager wires
-// every store to one shared connection). See .design/hot-path-db-access.md.
+// every store to one shared connection). See .design/db.md.
 //
 // service and/or usage may be nil (only one side has something to persist);
 // statsStore and/or usageStore may be nil (store not initialized).
@@ -39,17 +37,8 @@ func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, servic
 	usageStore.mu.Lock()
 	defer usageStore.mu.Unlock()
 
-	return statsStore.db.Transaction(func(tx *gorm.DB) error {
-		if statsRecord != nil {
-			if err := tx.Save(statsRecord).Error; err != nil {
-				return fmt.Errorf("failed to save service stats: %w", err)
-			}
-		}
-		if usage != nil {
-			if err := tx.Create(usage).Error; err != nil {
-				return fmt.Errorf("failed to create usage record: %w", err)
-			}
-		}
-		return nil
-	})
+	if err := commitOutcomesLocked(statsStore, usageStore, oneOf(statsRecord), oneOf(usage)); err != nil {
+		return fmt.Errorf("failed to record request outcome: %w", err)
+	}
+	return nil
 }

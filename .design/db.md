@@ -1,15 +1,55 @@
 # Database Layer (`internal/db`)
 
 Design notes for `internal/db`'s stores — SQLite via gorm, one shared
-`*gorm.DB` owned by `StoreManager`. Performance is the first topic below;
-other sections (schema, migrations, ...) can be added here as they come up.
+`*gorm.DB` owned by `StoreManager`.
+
+## Architecture (rules established by the holistic 2026-08 pass)
+
+A whole-layer audit (all of `internal/db`, every SQLite open outside it,
+and every store call site) found the layer had grown by copy-paste: three
+independent GORM connection pools against one `tingly.db`, the store set
+hand-enumerated in four places, six of eleven stores constructed by
+struct-literal bypass, four dead subsystems still migrated on every boot,
+and one migration step that only ran on the test path. The pass distilled
+into rules; hold new code to them:
+
+1. **One connection per database file per process.** `StoreManager` owns
+   the only production connection to `tingly.db` and exposes it via
+   `StoreManager.DB()` for subsystems that keep their own record types on
+   the shared file (`ai/quota` borrows it via `quota.NewGormStoreOverDB`;
+   the model-list subsystem wraps `StoreManager.Model()` via
+   `data.NewProviderModelManagerWithStore`). A standalone
+   `NewXStore(baseDir)` opening its own connection is for CLI commands and
+   tests only. `guardrails.db` is a separate file by design (separate
+   security domain), but follows the same rules: canonical DSN options and
+   one memoized store per path (`config.CredentialStore`).
+2. **All connection opening goes through `internal/db/open.go`.**
+   `sqliteDSN`/`openSQLite`/`openTinglyDB` are the only places the DSN
+   option set (`_busy_timeout`, `_journal_mode=WAL`, `_foreign_keys=1`)
+   and directory creation are spelled out. Never hand-type the DSN again.
+3. **Every store embeds `storeConn`** (`db *gorm.DB` + `ownsDB bool`) and
+   has a `newXStore(conn storeConn)` seam that does migrate + init.
+   `NewXStore(baseDir)` = `openTinglyDB` + `ownedConn`;
+   `StoreManager.initXStore` = the same seam + `borrowedConn`, so the two
+   init paths cannot drift (the `ensureUsageRecordSchema` drift was exactly
+   this failure mode). `Close` on a borrowed connection is a no-op — a
+   store can never tear the shared handle down.
+4. **The store set is spelled out in two places only**: the `storeSet`
+   struct and `storeSet.initialized()`. `Close` resets stores with one
+   zero-value assignment; `HealthCheck` iterates `initialized()` and pings
+   the shared connection once.
+5. **Migrations run from the shared constructor seam**, never only from
+   `NewXStore`. Dead tables get dropped in
+   `StoreManager.dropDeprecatedTables` (currently: `model_capabilities`,
+   `tasks`, `tool_configs`, `usage_monthly`).
+6. **Hot-path writes go through `StoreManager.RecordOutcome`** (batched;
+   see below), not per-store write methods.
 
 ## Performance
 
-Status: `ProviderStore` and `APITokenStore` (read-cache fixes) and
-`StatsStore`/`UsageStore` (transaction-merge fix) shipped as three
-independent PRs off this investigation. Batched/debounced stats+usage
-writes remain open — tracked below as the holistic follow-up.
+Status: `ProviderStore` and `APITokenStore` (read-cache fixes),
+`StatsStore`/`UsageStore` (transaction-merge fix), and batched outcome
+writes (`StoreManager.RecordOutcome` + `outcomeWriter`) are all shipped.
 
 ### Why this matters
 
@@ -169,10 +209,57 @@ Two directions were considered:
   rows for one request can no longer partially persist
   (`TestRecordRequestOutcome_AtomicRollback`).
 
-**Still open**: batching/debouncing multiple requests' stats and usage
-writes into fewer, larger transactions — the actual lever for the remaining
-per-statement cost, at the cost of async durability (a crash loses whatever's
-still buffered) and added complexity (buffer, flush trigger, backpressure).
+**Batching (shipped)**: `StoreManager.RecordOutcome`
+(`internal/db/outcome_writer.go`) is now the production entry point.
+Records are built on the request goroutine (the stats record snapshots
+live counters; the usage timestamp is completion time); only the SQLite
+write is deferred.
+
+The two record kinds are buffered **differently, because their semantics
+are opposite** — conflating them in one queue is what previously forced a
+"drop the caller's stats snapshot on overflow" rule and a tri-state
+enqueue result:
+
+- A **stats row is a cumulative snapshot** keyed by provider:model, so a
+  newer one fully supersedes an older one. These coalesce into
+  `StatsStore.pending`: enqueue is O(1), never fails, and needs no
+  ordering. It lives on the store (under its own `pendingMu`, lock order
+  `mu` → `pendingMu`) rather than inside the writer, so every reader and
+  mutator of `service_stats` sees one view — see the consistency note
+  below.
+- A **usage row is an append-only audit record** that must not be lost or
+  merged, so those go through a bounded queue (1024). On overflow
+  `RecordOutcome` inserts that one row itself; it is an independent
+  INSERT, so there is nothing to order it against.
+
+The flusher commits up to 128 usage rows plus all pending snapshots per
+transaction, at most 1s apart, via `commitOutcomesLocked` — the single
+place that encodes the stats→usage lock order and the shared-`*gorm.DB`
+assumption (`RecordRequestOutcome` delegates to it too).
+`StoreManager.Close` drains and flushes before closing the connection, so
+the crash-loss window is the flush interval (1s) — the accepted trade.
+
+**Consistency with in-flight snapshots.** Because `pending` lives under
+the stats lock, buffering can't be observed as lost or resurrected data:
+`ClearAll`/`ClearService` drop pending rows in the same critical section
+that deletes them (clicking "clear stats" no longer has the counters come
+back a second later), `HydrateRules` overlays pending over the table (a
+config hot-reload no longer re-seeds in-memory counters from a stale row),
+and `Get` prefers pending. The flusher takes and commits snapshots under
+one acquisition of `mu`, so a clear can never interleave between the two.
+`markPending` deliberately takes only `pendingMu`, so the request path
+never waits on a flush transaction.
+
+| Benchmark | Result |
+|---|---|
+| `BenchmarkStatsAndUsage_Combined` (pre-merge baseline) | ~398 µs/op, 246 allocs |
+| `BenchmarkStatsAndUsage_RecordRequestOutcome` (merged txn) | ~383 µs/op, 246 allocs |
+| `BenchmarkStatsAndUsage_RecordOutcomeBatched` (shipped) | **~28 µs/op, 30 allocs** |
+
+(Absolute numbers vary with the machine and disk; run all three together
+to compare. The batched benchmark closes the writer before stopping the
+timer, so it measures throughput including the commits, not just enqueue
+latency.)
 
 **Fixed in passing**: `NewUsageStore` never created the `db` subdirectory
 `constant.GetDBFile` expects (every other `NewXStore` constructor does).
@@ -193,11 +280,11 @@ message path**:
 |---|---|---|---|
 | `ProviderStore` | Yes (read) | `ServiceSelector.Select` resolves a provider every request | Fixed — read cache |
 | `APITokenStore` | Yes (read + write) | `AuthMiddleware.ModelAuthMiddleware` validates every API-token request, updates `last_used_at` | Fixed — read cache + debounced write |
-| `StatsStore`, `UsageStore` | Yes (write) | `usage_tracking.go` persists stats + a usage row every completed request | Partially fixed — merged transaction; batching still open |
+| `StatsStore`, `UsageStore` | Yes (write) | `usage_tracking.go` persists stats + a usage row every completed request | Fixed — merged transaction, then batched writer (`RecordOutcome`) |
 | `ImBotSettingsStore` | No | Bot lifecycle events, admin REST/CLI only | Not touched — genuinely low frequency |
-| `ModelStore` | No | Admin "list/refresh models" endpoints, OAuth completion, CLI | Not touched — already `RWMutex`, admin-paced |
-| `TaskStore` | Dead code | Zero callers; the real task subsystem uses `internal/task/store.go` instead | Not touched — separate cleanup ticket |
-| `ToolConfigStore` | Effectively unreachable | `Config.GetToolConfig` is a different, in-memory-only implementation that never touches this store | Not touched — separate cleanup ticket |
+| `ModelStore` | No | Admin "list/refresh models" endpoints, OAuth completion, CLI | Now shared via `StoreManager.Model()` (was a second connection) |
+| `TaskStore` | Dead code | Zero callers; the `internal/task` subsystem it implemented is itself never constructed | **Removed** (table dropped) |
+| `ToolConfigStore` | Effectively unreachable | `Config.GetToolConfig` is a different, config-file-backed implementation that never touched this store | **Removed** (table dropped; `ToolTypeMCPRuntime` moved to `internal/server/config`) |
 | `RemoteChatStore`, `RemoteSessionStore`, `BotAccessStore` | IM-bot message path | `remote/control/remoteagent/handler_message.go` et al. | Not touched — real traffic but chat-message-rate, not LLM-API-rate; no app-level mutex today |
 
 ### Recommended approach for future stores
@@ -218,3 +305,71 @@ message path**:
 4. **Write the benchmark first**, against the real production wiring, and
    profile before touching any code — don't reason about the win from first
    principles; measure it.
+
+## Remaining backlog (found by the 2026-08 audit, not yet done)
+
+Ranked by expected value; each is independent.
+
+1. **IM path: per-message chat-row caching.** One inbound bot message
+   issues ~6–10 identical `GetChat` SELECTs across the dispatch chain
+   (`DisabledChatGate`, `AuthorizationGate`, `HandleMessage`, then
+   `GetProjectPath`/`GetBashCwd`/... each re-fetching the same row —
+   `remote/control/bot`, `remote/control/remoteagent`). A `*bot.Chat`
+   fetched once into the handler context collapses them; pure call-site
+   change, `RemoteChatStore` needs no cache. Related N+1s:
+   `BotAccessStore.ListGroupActors` (2 queries per actor) and
+   `ResolveRoute` (a `First()` per candidate route).
+2. **`GetPerformanceSummary` computes percentiles in Go**
+   (`usage_record.go`): loads every matching success row into memory and
+   sorts — unbounded on a dashboard endpoint, and the only usage read with
+   no `usage_daily` fast path.
+3. **Daily aggregation runs lazily inside dashboard queries**
+   (`ensureDailyAggregates` under the write lock, one transaction per
+   missing day) — a cold-start query spanning many days aggregates them
+   serially in-request. A scheduled job calling the already-written
+   `AggregateToDaily` moves it off the read path. Same job should own
+   retention: nothing calls `DeleteOlderThan` except the manual REST
+   endpoint, so `usage_records` grows unbounded; and
+   `APITokenStore.CleanupExpiredTokens` has no caller either.
+4. **`config.json` has two writers** (`internal/server/config.Config.Save`,
+   non-atomic, 0644; `internal/config/app_config.go`, atomic, 0600) with
+   divergent formatting and no locking — consolidate on one atomic writer.
+   Related: guardrails history (`utils/history.go`) rewrites its whole
+   capped JSON array on every guardrails evaluation — per-LLM-request file
+   I/O that belongs next to `usage_records` in SQLite.
+5. **Error-dialect inconsistency across stores**: `fmt.Errorf` strings
+   (provider/token/imbot), sentinel errors (`remote_chat_store`,
+   `bot_access_store`), and silent zero-value returns (`provider_model`,
+   parts of `service_stat`). Callers can only distinguish "not found" for
+   the sentinel stores. Converge on sentinels when a store is next touched.
+6. **The usage column list exists in five SQL strings**
+   (`usage_record.go` ×2, `usage_daily.go` ×3): adding a token dimension
+   means editing five queries plus the scan structs. Extract a shared
+   column-list builder when the next dimension lands.
+7. **Server shutdown order**: `StoreManager.Close` runs before
+   `httpServer.Shutdown`, so in-flight requests can hit closed stores
+   (clean errors, but still backwards).
+8. **No versioned migration mechanism.** Boot-time schema fixups exist in
+   four ad-hoc flavors — `dropDeprecatedTables`' hardcoded list
+   (`store_manager.go`), `HasColumn`-probe-then-`DropColumn`
+   (`ensureUsageRecordSchema`), table rebuild (`ensureUsageDailySchema`),
+   column rename (`ensureAPITokenSchema`) — and because nothing records
+   what has been applied, no entry can ever be retired; the list only
+   grows. A `schema_migrations(id, applied_at)` table plus an
+   `applyOnce(db, id, fn)` helper in `open.go` would let each fixup run
+   exactly once and become deletable once a floor version is declared.
+   The `HasColumn` probes would then be belt-and-suspenders rather than
+   the mechanism.
+9. **`outcomeWriter` and `internal/obs`'s `BatchProcessor` are the same
+   shape** (bounded channel, max-batch trigger, timed flush, drain on
+   close). Making `BatchProcessor` generic (`BatchProcessor[T]`, exporter
+   over `[]T`) would let the writer reuse it; the two-store transaction
+   fits its `Export` signature unchanged. Not done here because it changes
+   a package outside this work; worth folding together next time either
+   one is touched.
+
+Note for any future reader that needs read-your-writes on
+`usage_records`: a usage row can be up to one flush interval behind. Stats
+are not affected — `StatsStore` reads through its pending set. Either add
+an explicit writer flush or read the in-memory `service.Stats`, rather
+than assuming the tables are current.

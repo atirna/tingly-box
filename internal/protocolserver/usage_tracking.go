@@ -445,7 +445,8 @@ func (ph *ProtocolHandler) updateServiceStats(rule *typ.Rule, provider *typ.Prov
 }
 
 // persistRequestOutcome saves service and usage (either may be nil) via
-// db.RecordRequestOutcome, which commits both in a single transaction.
+// StoreManager.RecordOutcome — batched off the request path, with a
+// synchronous single-transaction fallback when the writer is unavailable.
 func (ph *ProtocolHandler) persistRequestOutcome(service *loadbalance.Service, usage *db.UsageRecord) {
 	if ph.deps.Config == nil {
 		return
@@ -454,7 +455,7 @@ func (ph *ProtocolHandler) persistRequestOutcome(service *loadbalance.Service, u
 	if sm == nil {
 		return
 	}
-	_ = db.RecordRequestOutcome(sm.Stats(), sm.Usage(), service, usage)
+	_ = sm.RecordOutcome(service, usage)
 }
 
 // reportHealthStatus reports the health status of a service based on request outcome.

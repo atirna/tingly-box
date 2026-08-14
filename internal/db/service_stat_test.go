@@ -23,7 +23,8 @@ func newTestStatsStore(t *testing.T) *StatsStore {
 func TestStatsStore_ClearService(t *testing.T) {
 	store := newTestStatsStore(t)
 
-	// Seed two services via the store's only remaining write path.
+	// Seed two services, persisted directly (not via the batched writer) so
+	// this covers the committed-row path rather than the pending one.
 	svcA := &loadbalance.Service{Provider: "prov-a", Model: "m"}
 	svcB := &loadbalance.Service{Provider: "prov-b", Model: "m"}
 	svcA.RecordUsage(10, 20)

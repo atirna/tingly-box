@@ -39,6 +39,24 @@ func (ServiceStatsRecord) TableName() string {
 type StatsStore struct {
 	storeConn
 	mu sync.Mutex
+
+	// pending holds stats snapshots the outcome writer has accepted but not
+	// yet committed, keyed by ServiceKey. Rows here are cumulative snapshots,
+	// so a newer snapshot simply replaces an older one -- coalescing at the
+	// source instead of queueing every snapshot and deduping at flush time.
+	//
+	// pendingMu is deliberately separate from mu: markPending runs on the
+	// request path and must never wait on mu, which flush holds for the
+	// length of a SQLite transaction. Lock order is mu -> pendingMu; nothing
+	// acquires them the other way round.
+	//
+	// Keeping the buffer on the store (rather than inside the writer) is what
+	// makes it visible to every reader and mutator of service_stats:
+	// ClearAll/ClearService drop pending rows, and HydrateRules/Get read them
+	// over the table. A buffer the store could not see is what let a cleared
+	// stat come back a second later.
+	pendingMu sync.Mutex
+	pending   map[string]*ServiceStatsRecord
 }
 
 // NewStatsStore creates or loads a stats store over its own connection to
@@ -52,7 +70,8 @@ func NewStatsStore(baseDir string) (*StatsStore, error) {
 }
 
 // newStatsStore finishes setting up a StatsStore (migrate) over an
-// already-open connection.
+// already-open connection, shared by NewStatsStore and
+// StoreManager.initStatsStore.
 func newStatsStore(conn storeConn) (*StatsStore, error) {
 	if err := conn.db.AutoMigrate(&ServiceStatsRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate stats database: %w", err)
@@ -62,13 +81,65 @@ func newStatsStore(conn storeConn) (*StatsStore, error) {
 
 // ServiceKey builds a unique key for a provider/model combination.
 func (ss *StatsStore) ServiceKey(provider, model string) string {
-	return fmt.Sprintf("%s:%s", provider, model)
+	return serviceKey(provider, model)
 }
 
-// Get returns stats for a specific provider/model combination.
+func serviceKey(provider, model string) string {
+	return provider + ":" + model
+}
+
+// markPending records a cumulative snapshot for later commit, replacing any
+// snapshot still pending for the same service. Runs on the request path, so
+// it takes only pendingMu and never blocks on a flush in progress.
+func (ss *StatsStore) markPending(record *ServiceStatsRecord) {
+	if ss == nil || record == nil {
+		return
+	}
+	ss.pendingMu.Lock()
+	defer ss.pendingMu.Unlock()
+	if ss.pending == nil {
+		ss.pending = make(map[string]*ServiceStatsRecord)
+	}
+	ss.pending[serviceKey(record.Provider, record.Model)] = record
+}
+
+// takePendingLocked removes and returns the pending snapshots. Callers must
+// hold ss.mu and must commit the returned rows before releasing it: ClearAll
+// takes ss.mu too, so holding it across take-and-commit is what stops a
+// snapshot from landing after a clear.
+func (ss *StatsStore) takePendingLocked() []*ServiceStatsRecord {
+	ss.pendingMu.Lock()
+	defer ss.pendingMu.Unlock()
+
+	if len(ss.pending) == 0 {
+		return nil
+	}
+	records := make([]*ServiceStatsRecord, 0, len(ss.pending))
+	for _, record := range ss.pending {
+		records = append(records, record)
+	}
+	clear(ss.pending)
+	return records
+}
+
+// pendingLocked returns the snapshot for a service, if one is buffered.
+// Callers must hold ss.mu.
+func (ss *StatsStore) pendingLocked(key string) (*ServiceStatsRecord, bool) {
+	ss.pendingMu.Lock()
+	defer ss.pendingMu.Unlock()
+	record, ok := ss.pending[key]
+	return record, ok
+}
+
+// Get returns stats for a specific provider/model combination, preferring a
+// snapshot still pending commit over the (older) persisted row.
 func (ss *StatsStore) Get(provider, model string) (loadbalance.ServiceStats, bool) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
+
+	if pending, ok := ss.pendingLocked(serviceKey(provider, model)); ok {
+		return pending.toServiceStats(), true
+	}
 
 	var record ServiceStatsRecord
 	err := ss.db.Where("provider = ? AND model = ?", provider, model).
@@ -151,33 +222,39 @@ func (ss *StatsStore) HydrateRules(rules []typ.Rule) error {
 		return err
 	}
 
-	// Build lookup map by provider:model
+	// Build lookup map by provider:model, then overlay snapshots still
+	// pending commit -- those are newer than the persisted rows, and
+	// re-seeding a rule's in-memory counters from the older table value is
+	// what made a hot-reload look like traffic had been lost.
 	statsMap := make(map[string]*ServiceStatsRecord)
 	for i := range records {
 		record := &records[i]
-		key := ss.ServiceKey(record.Provider, record.Model)
+		statsMap[serviceKey(record.Provider, record.Model)] = record
+	}
+	ss.pendingMu.Lock()
+	for key, record := range ss.pending {
 		statsMap[key] = record
 	}
+	ss.pendingMu.Unlock()
 
 	// Collect rows for services with no stored stats and insert them in one
-	// batch at the end. HydrateRules runs on every config load and every
-	// hot-reload, and a per-row Create inside the loop made that an N+1
-	// insert over rules x services on first boot or after adding a rule.
+	// batch at the end. HydrateRules runs on every config load/hot-reload,
+	// and the previous per-row Create inside the loop was an N+1 insert over
+	// rules x services on first boot or after adding a rule.
 	var missing []*ServiceStatsRecord
 	for i := range rules {
 		rule := &rules[i]
 		for j := range rule.Services {
 			service := rule.Services[j]
-			key := ss.ServiceKey(service.Provider, service.Model)
+			key := serviceKey(service.Provider, service.Model)
 
 			if record, ok := statsMap[key]; ok {
 				service.Stats = record.toServiceStats()
 			} else if record := buildStatsRecordFromService(service); record != nil {
 				// buildStatsRecordFromService initializes service.Stats and
-				// applies the same TimeWindow/ServiceID/WindowStart defaults
-				// this branch used to duplicate inline. Register the row in
-				// statsMap so other services with the same provider:model
-				// reuse it instead of inserting a duplicate.
+				// applies the same defaults this branch used to duplicate
+				// inline. Register the row in statsMap so other services
+				// with the same provider:model reuse it.
 				statsMap[key] = record
 				missing = append(missing, record)
 			}
@@ -198,6 +275,14 @@ func (ss *StatsStore) ClearAll() error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
+	// Drop buffered snapshots under ss.mu, which flush also holds across
+	// take-and-commit: a snapshot taken before the clear would otherwise be
+	// committed afterwards, putting the counters the user just cleared
+	// straight back.
+	ss.pendingMu.Lock()
+	clear(ss.pending)
+	ss.pendingMu.Unlock()
+
 	return ss.db.Exec("DELETE FROM service_stats").Error
 }
 
@@ -206,6 +291,11 @@ func (ss *StatsStore) ClearAll() error {
 func (ss *StatsStore) ClearService(provider, model string) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
+
+	// See ClearAll: a buffered snapshot would otherwise resurrect the row.
+	ss.pendingMu.Lock()
+	delete(ss.pending, serviceKey(provider, model))
+	ss.pendingMu.Unlock()
 
 	return ss.db.Where("provider = ? AND model = ?", provider, model).
 		Delete(&ServiceStatsRecord{}).Error
