@@ -33,7 +33,12 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 
 	case host == "api.moonshot.cn",
 		host == "api.moonshot.ai",
-		host == "api.kimi.com" && strings.HasPrefix(path, "/coding/v1"):
+		// api.kimi.com is Moonshot's own dedicated host; the only product
+		// catalogued on it today is /coding/v1, and the wire protocol is a
+		// property of the vendor/model, not the product path, so a host-only
+		// match is enough here (unlike opencode.ai below, a multi-vendor
+		// relay where the path is load-bearing).
+		host == "api.kimi.com":
 		return applyKimiTransform(req, providerURL, model, config)
 
 	case host == "generativelanguage.googleapis.com" && strings.Contains(modelLower, "gemini"):

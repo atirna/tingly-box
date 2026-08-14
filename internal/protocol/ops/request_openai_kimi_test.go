@@ -45,6 +45,27 @@ func TestKimiTransformReasoningContentConversion(t *testing.T) {
 		"x_thinking should be removed after conversion")
 }
 
+// TestKimiTransformMatchesHostRegardlessOfPath proves api.kimi.com dispatch
+// is host-only, not scoped to /coding/v1: it's Moonshot's own dedicated
+// host, and the wire protocol is a property of the vendor/model, not the
+// product path on that host (unlike opencode.ai, a multi-vendor relay where
+// the path is load-bearing — see the opencode.ai test in
+// request_openai_deepseek_test.go).
+func TestKimiTransformMatchesHostRegardlessOfPath(t *testing.T) {
+	msg := assistantToolCallMessage(t)
+	msg.OfAssistant.SetExtraFields(map[string]any{"x_thinking": "reasoning for kimi"})
+
+	req := &openai.ChatCompletionNewParams{
+		Model:    openai.ChatModel("kimi-k3"),
+		Messages: []openai.ChatCompletionMessageParamUnion{msg},
+	}
+
+	ApplyProviderTransforms(req, "https://api.kimi.com/some-other-product", string(req.Model), &protocol.OpenAIConfig{})
+
+	raw := marshalMessage(t, req.Messages[0])
+	assert.Equal(t, "reasoning for kimi", raw["reasoning_content"])
+}
+
 // TestKimiReasoningEffortCollapsesOntoThreeTiers proves that Kimi K3 gets
 // the same low/high/max reasoning_effort collapse as DeepSeek, since both
 // vendors document the identical three-tier scheme.
