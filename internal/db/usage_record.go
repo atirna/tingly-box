@@ -93,31 +93,6 @@ func (UsageDailyRecord) TableName() string {
 	return "usage_daily"
 }
 
-// UsageMonthlyRecord is the GORM model for monthly aggregated usage statistics
-type UsageMonthlyRecord struct {
-	ID           uint   `gorm:"primaryKey;autoIncrement;column:id"`
-	Year         int    `gorm:"column:year;not null"`
-	Month        int    `gorm:"column:month;not null"`
-	ProviderUUID string `gorm:"column:provider_uuid;not null"`
-	ProviderName string `gorm:"column:provider_name;not null"`
-	Model        string `gorm:"column:model;not null"`
-	RequestCount int64  `gorm:"column:request_count;not null"`
-	TotalTokens  int64  `gorm:"column:total_tokens;not null"`
-	InputTokens  int64  `gorm:"column:input_tokens;not null"`
-	OutputTokens int64  `gorm:"column:output_tokens;not null"`
-	// Cache tokens: reads, then writes (a subset of InputTokens)
-	CacheReadTokens  int64 `gorm:"column:cache_input_tokens;default:0"`
-	CacheWriteTokens int64 `gorm:"column:cache_write_tokens;default:0"`
-	// System tokens
-	SystemTokens int64 `gorm:"column:system_tokens;default:0"`
-	ErrorCount   int64 `gorm:"column:error_count;default:0"`
-}
-
-// TableName specifies the table name for GORM
-func (UsageMonthlyRecord) TableName() string {
-	return "usage_monthly"
-}
-
 // UsageStore persists usage records in SQLite using GORM.
 type UsageStore struct {
 	db     *gorm.DB
@@ -184,14 +159,14 @@ func NewUsageStore(baseDir string) (*UsageStore, error) {
 	return store, nil
 }
 
-// migrateUsageTables aligns and auto-migrates usage_records, usage_daily, and
-// usage_monthly. Shared by NewUsageStore and StoreManager.initUsageStore so
-// the two initialization paths can't drift apart.
+// migrateUsageTables aligns and auto-migrates usage_records and usage_daily.
+// Shared by NewUsageStore and StoreManager.initUsageStore so the two
+// initialization paths can't drift apart.
 func migrateUsageTables(db *gorm.DB) error {
 	if err := ensureUsageDailySchema(db); err != nil {
 		return fmt.Errorf("failed to align usage daily schema: %w", err)
 	}
-	if err := db.AutoMigrate(&UsageRecord{}, &UsageDailyRecord{}, &UsageMonthlyRecord{}); err != nil {
+	if err := db.AutoMigrate(&UsageRecord{}, &UsageDailyRecord{}); err != nil {
 		return fmt.Errorf("failed to migrate usage database: %w", err)
 	}
 	if err := ensureUsageRecordSchema(db); err != nil {
@@ -783,32 +758,6 @@ func percentileFloat(sorted []float64, p float64) float64 {
 	}
 	fraction := index - float64(lower)
 	return sorted[lower] + fraction*(sorted[upper]-sorted[lower])
-}
-
-// GetRecordsAfterID returns usage records with id greater than lastID.
-// On initial sync, startTime can be used to cap the historical backfill window.
-func (us *UsageStore) GetRecordsAfterID(lastID uint, startTime time.Time, limit int) ([]UsageRecord, error) {
-	us.mu.RLock()
-	defer us.mu.RUnlock()
-
-	if limit <= 0 {
-		limit = 100
-	}
-
-	db := us.db.Model(&UsageRecord{}).Where("id > ?", lastID)
-	if !startTime.IsZero() {
-		db = db.Where("timestamp >= ?", startTime)
-	}
-
-	var records []UsageRecord
-	if err := db.
-		Order("id ASC").
-		Limit(limit).
-		Find(&records).Error; err != nil {
-		return nil, err
-	}
-
-	return records, nil
 }
 
 // DeleteOlderThan deletes records older than the specified date, together

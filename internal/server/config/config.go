@@ -100,7 +100,6 @@ type Config struct {
 	statsStore         *db.StatsStore
 	usageStore         *db.UsageStore
 	providerStore      *db.ProviderStore
-	toolConfigStore    *db.ToolConfigStore
 	imbotSettingsStore *db.ImBotSettingsStore
 	templateManager    *data.TemplateManager
 
@@ -209,7 +208,6 @@ func NewConfig(opts ...ConfigOption) (*Config, error) {
 	cfg.statsStore = storeManager.Stats()
 	cfg.usageStore = storeManager.Usage()
 	cfg.providerStore = storeManager.Provider()
-	cfg.toolConfigStore = storeManager.ToolConfig()
 	cfg.imbotSettingsStore = storeManager.ImBotSettings()
 
 	// Load existing cfg if exists
