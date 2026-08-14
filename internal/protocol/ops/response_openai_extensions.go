@@ -1,26 +1,15 @@
 package ops
 
-// ResponseTransform applies provider-specific transformations to OpenAI responses
-type ResponseTransform func(map[string]interface{}, string, string) map[string]interface{}
-
-// GetResponseTransform identifies the provider by the parsed host of
-// providerURL (see SplitProviderHostPath) — not by searching for a vendor
-// hostname as a substring anywhere in providerURL, so a base URL that merely
-// mentions a vendor's hostname in its path or query isn't mistaken for that
-// vendor — and returns its response transform, or nil if none applies.
-func GetResponseTransform(providerURL string) ResponseTransform {
+// ApplyResponseTransforms applies provider-specific transformations to a
+// response, dispatched by the parsed host of providerURL (see
+// SplitProviderHostPath) — not by searching for a vendor hostname as a
+// substring anywhere in providerURL, so a base URL that merely mentions a
+// vendor's hostname in its path or query isn't mistaken for that vendor.
+func ApplyResponseTransforms(resp map[string]interface{}, providerURL, model string) map[string]interface{} {
 	host, _ := SplitProviderHostPath(providerURL)
 	switch host {
 	case "api.deepseek.com":
-		return applyDeepSeekResponseTransform
-	}
-	return nil
-}
-
-// ApplyResponseTransforms applies provider-specific transformations to responses
-func ApplyResponseTransforms(resp map[string]interface{}, providerURL, model string) map[string]interface{} {
-	if transform := GetResponseTransform(providerURL); transform != nil {
-		return transform(resp, providerURL, model)
+		return applyDeepSeekResponseTransform(resp, providerURL, model)
 	}
 	return resp
 }
