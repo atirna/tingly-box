@@ -3,38 +3,17 @@ package ops
 // ResponseTransform applies provider-specific transformations to OpenAI responses
 type ResponseTransform func(map[string]interface{}, string, string) map[string]interface{}
 
-// responseConfig maps a provider's APIBase host to its response transform.
-type responseConfig struct {
-	APIBaseHost string
-	Transform   ResponseTransform
-}
-
-// ResponseConfigs holds all registered provider response configurations
-var ResponseConfigs = []responseConfig{
-	// DeepSeek - ensure reasoning_content is always present
-	{"api.deepseek.com", applyDeepSeekResponseTransform},
-}
-
-// GetResponseTransform identifies provider by APIBase URL and returns its
-// response transform. Matches on the parsed host (see SplitProviderHostPath)
-// rather than searching for APIBaseHost as a substring anywhere in
-// providerURL, so a base URL that merely mentions a vendor's hostname in its
-// path or query isn't mistaken for that vendor.
+// GetResponseTransform identifies the provider by the parsed host of
+// providerURL (see SplitProviderHostPath) — not by searching for a vendor
+// hostname as a substring anywhere in providerURL, so a base URL that merely
+// mentions a vendor's hostname in its path or query isn't mistaken for that
+// vendor — and returns its response transform, or nil if none applies.
 func GetResponseTransform(providerURL string) ResponseTransform {
-	if providerURL == "" {
-		return nil
-	}
 	host, _ := SplitProviderHostPath(providerURL)
-	if host == "" {
-		return nil
+	switch host {
+	case "api.deepseek.com":
+		return applyDeepSeekResponseTransform
 	}
-
-	for _, config := range ResponseConfigs {
-		if host == config.APIBaseHost {
-			return config.Transform
-		}
-	}
-
 	return nil
 }
 
