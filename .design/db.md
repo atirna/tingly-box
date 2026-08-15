@@ -449,24 +449,65 @@ path (`DeleteOlderThan`), and the access tables depend on `ON DELETE CASCADE`
 actually removing rows — soft delete would break the cascade semantics the
 DDL relies on.
 
-### Adjacent, bigger than "ORM features": context propagation
+### Done: context propagation
 
 Worth recording because it kept surfacing during this evaluation.
 `bot_access_store` threads `context.Context` into GORM at 37 call sites.
-**Every other store in the package ignores context entirely** — 0
+**Every other store in the package ignored context entirely** — 0
 `WithContext` calls across `api_token_store`, `imbot_settings_store`,
 `provider_model`, `provider_store`, `remote_chat_store`,
 `remote_session_store`, `service_stat`, `usage_daily`, `usage_record`. A
-cancelled or timed-out HTTP request cannot cancel the DB work it started.
+cancelled or timed-out HTTP request could not cancel the DB work it
+started.
 
-This is the highest-value item found, but it is not a local refactor: it
-changes public method signatures across the package and every caller. It
-belongs in its own ticket, not bundled with a codec change.
+This was the highest-value item found, and it was not a local refactor: it
+changed public method signatures across the package and every caller — a
+separate PR from the codec/scope/N+1 change above, one store (or
+tightly-coupled group of stores) per commit:
+
+- `service_stat` + `usage_record` + `usage_daily` + `RecordRequestOutcome`
+- `provider_model` (`ModelStore`) + `internal/data.ModelListManager`
+- `api_token_store` (selective — cache-only reads stayed ctx-free)
+- `provider_store` (selective, same reasoning) + `vmodel/virtualserver.ProviderSaver`
+- `remote_session_store` + `remote/session.SessionStore`
+- `remote_chat_store` + `remote/control/bot.ChatStoreInterface` (~70 call sites)
+- `imbot_settings_store`
+
+Two rules kept the change bounded rather than snowballing into a
+whole-repo signature rewrite:
+
+1. **Selective conversion.** A store with a write-through in-memory cache
+   (`ProviderStore`, `APITokenStore`) only threads ctx through the methods
+   that actually reach `.db` — a cache-only read (`ValidateToken`,
+   `GetByUUID`, …) takes no ctx, because it never blocks on I/O.
+2. **Scope boundary.** ctx propagation stops at `internal/db`'s public API
+   and the interfaces it backs directly (`bot.ChatStoreInterface`,
+   `session.SessionStore`, `middleware.APITokenStore`,
+   `vmodel/virtualserver.ProviderSaver`). Wrapper interfaces that predate
+   ctx and are consulted outside any one request's lifetime —
+   `internal/data.ModelListManager`, `remote/session.Manager`,
+   `internal/protocolserver.LoadBalancer`, `adapter.SettingsReader` /
+   `bot.SettingsStore` — were deliberately left ctx-free rather than
+   cascading the signature change further up the stack; those callers pass
+   `context.Background()` (or a small adapter shim, e.g.
+   `backgroundSettingsReader` in `internal/server/module/imbot/manager.go`)
+   at that boundary.
+
+The other recurring judgment call was **which context to pass at each call
+site**: a real request context (`c.Request.Context()`, or a ctx parameter
+already threaded through, e.g. `AgentRouter.Execute`) where one exists,
+`context.Background()` at startup/construction/background-goroutine sites,
+and — deliberately — **not** the inbound request's context for a handful
+of "audit write must survive its own trigger" sites: `RecordRequestOutcome`
+(a disconnected client's usage record still needs to be written),
+`fetchAndSaveAPIModels`'s failure-persistence path, and
+`APITokenStore.UpdateLastUsed` (already fire-and-forget via `go`). Reusing
+the triggering context there would have made the write racing its own
+cancellation.
 
 ### Suggested order
 
-All three are done. Context propagation (below) is deliberately left for
-its own change.
+All items are done.
 
 1. ~~`serializer:json`, one store per commit, each re-auditing that store's
    `WHERE` clauses over the converted columns.~~ Done for `provider_store`,
