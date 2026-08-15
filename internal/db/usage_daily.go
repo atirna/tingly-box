@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"time"
@@ -266,16 +267,8 @@ func (us *UsageStore) dailyStatBuckets(q UsageStatsQuery, firstDay, lastDayEx ti
 	}
 
 	db := us.db.Model(&UsageDailyRecord{}).
-		Where("date >= ? AND date < ?", firstDay.Format(dailyDateLayout), lastDayEx.Format(dailyDateLayout))
-	if q.Provider != "" {
-		db = db.Where("provider_uuid = ?", q.Provider)
-	}
-	if q.Model != "" {
-		db = db.Where("model = ?", q.Model)
-	}
-	if q.UserID != "" {
-		db = db.Where("user_id = ?", q.UserID)
-	}
+		Where("date >= ? AND date < ?", firstDay.Format(dailyDateLayout), lastDayEx.Format(dailyDateLayout)).
+		Scopes(withColumnFilters(q.dailyFilterMap()))
 
 	var buckets []aggBucket
 	if err := db.Select(keyExpr + `,
@@ -407,16 +400,58 @@ func (us *UsageStore) timeSeriesFromDaily(interval string, start, end time.Time,
 	return out, true, nil
 }
 
+// dailyFilterColumns is the usage_daily subset of usageFilterColumns. The
+// pre-aggregation table only carries these dimensions -- scenario, rule_uuid
+// and status are not columns here, which is exactly why
+// aggregatedStatsFromDaily and timeSeriesFromDaily refuse a query that sets
+// them and fall back to the raw table.
+var dailyFilterColumns = map[string]struct{}{
+	"provider_uuid": {},
+	"provider_name": {},
+	"model":         {},
+	"user_id":       {},
+}
+
+// validateDailyFilterColumns rejects any filter key usage_daily has no column
+// for. The callers above already gate on the same set, so reaching this is a
+// bug rather than user input -- but an unchecked key would be interpolated
+// into SQL, so it is checked here too.
+func validateDailyFilterColumns(filters map[string]string) error {
+	for key := range filters {
+		if _, ok := dailyFilterColumns[key]; !ok {
+			return fmt.Errorf("usage daily: unsupported filter column %q", key)
+		}
+	}
+	return nil
+}
+
+// dailyFilterMap is UsageStatsQuery.filterMap restricted to the dimensions
+// usage_daily carries.
+func (q UsageStatsQuery) dailyFilterMap() map[string]string {
+	filters := make(map[string]string, 3)
+	for column, value := range map[string]string{
+		"provider_uuid": q.Provider,
+		"model":         q.Model,
+		"user_id":       q.UserID,
+	} {
+		if value != "" {
+			filters[column] = value
+		}
+	}
+	return filters
+}
+
 // dailyTimeSeries returns one bucket per date from usage_daily.
 func (us *UsageStore) dailyTimeSeries(firstDay, lastDayEx time.Time, filters map[string]string) ([]TimeSeriesData, error) {
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
-	db := us.db.Model(&UsageDailyRecord{}).
-		Where("date >= ? AND date < ?", firstDay.Format(dailyDateLayout), lastDayEx.Format(dailyDateLayout))
-	for k, v := range filters {
-		db = db.Where(k+" = ?", v)
+	if err := validateDailyFilterColumns(filters); err != nil {
+		return nil, err
 	}
+	db := us.db.Model(&UsageDailyRecord{}).
+		Where("date >= ? AND date < ?", firstDay.Format(dailyDateLayout), lastDayEx.Format(dailyDateLayout)).
+		Scopes(withColumnFilters(filters))
 
 	type row struct {
 		Date             string

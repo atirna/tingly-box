@@ -3,6 +3,8 @@ package db
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -247,6 +249,98 @@ type AggregatedStat struct {
 	StreamedRate     float64 `json:"streamed_rate"`
 }
 
+// ---------- query scopes ----------
+//
+// Every read path over usage_records narrows by the same two things: a
+// timestamp range and a set of equality filters. These scopes are that
+// shared shape, so the four call sites (rawAggBuckets, rawTimeSeries,
+// GetRecords, GetPerformanceSummary) cannot drift apart.
+
+// withinTimeRange narrows to [start, end]. A zero bound is left open.
+func withinTimeRange(start, end time.Time) func(*gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		if !start.IsZero() {
+			db = db.Where("timestamp >= ?", start)
+		}
+		if !end.IsZero() {
+			db = db.Where("timestamp <= ?", end)
+		}
+		return db
+	}
+}
+
+// usageFilterColumns is the closed set of columns the map-based filter API
+// may narrow on.
+//
+// The filter map's *key* is a column name that gets interpolated into SQL.
+// Every caller today builds that map with hardcoded keys and takes only the
+// value from the request (see internal/server/module/usage/handler.go), so
+// this is not a live injection, but nothing in the store enforced it and the
+// next caller had no way to know. Validating here makes it structural.
+//
+// An unknown key is an error rather than a silently dropped filter: dropping
+// one widens the result set, and for user_id that would mean handing back
+// another user's records.
+var usageFilterColumns = map[string]struct{}{
+	"provider_uuid": {},
+	"provider_name": {},
+	"model":         {},
+	"request_model": {},
+	"scenario":      {},
+	"rule_uuid":     {},
+	"user_id":       {},
+	"status":        {},
+	"error_code":    {},
+}
+
+// validateFilterColumns rejects any filter key outside usageFilterColumns.
+func validateFilterColumns(filters map[string]string) error {
+	for key := range filters {
+		if _, ok := usageFilterColumns[key]; !ok {
+			return fmt.Errorf("usage: unsupported filter column %q", key)
+		}
+	}
+	return nil
+}
+
+// withColumnFilters applies equality filters keyed by column name. Callers
+// must have run validateFilterColumns first; keys are sorted so the generated
+// SQL is stable (Go randomizes map iteration, which otherwise produces a
+// different statement per call).
+func withColumnFilters(filters map[string]string) func(*gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		for _, key := range slices.Sorted(maps.Keys(filters)) {
+			db = db.Where(key+" = ?", filters[key])
+		}
+		return db
+	}
+}
+
+// withStatsFilters is the UsageStatsQuery equivalent of withColumnFilters:
+// same columns, taken from typed fields instead of a map, so no validation is
+// needed.
+func withStatsFilters(q UsageStatsQuery) func(*gorm.DB) *gorm.DB {
+	return withColumnFilters(q.filterMap())
+}
+
+// filterMap renders the query's set dimension fields as a column filter map.
+func (q UsageStatsQuery) filterMap() map[string]string {
+	filters := make(map[string]string, 6)
+	for column, value := range map[string]string{
+		"provider_uuid": q.Provider,
+		"model":         q.Model,
+		"scenario":      q.Scenario,
+		"rule_uuid":     q.RuleUUID,
+		"user_id":       q.UserID,
+		"status":        q.Status,
+	} {
+		if value != "" {
+			filters[column] = value
+		}
+	}
+	return filters
+}
+
 // GetAggregatedStats returns aggregated statistics. For queries spanning
 // several completed days it combines the usage_daily pre-aggregation table
 // with a raw scan of only the partial edge days (see usage_daily.go), so
@@ -320,36 +414,10 @@ func (us *UsageStore) rawAggBuckets(query UsageStatsQuery, applyLimit bool) ([]a
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
-	// Build the base query
-	db := us.db.Model(&UsageRecord{})
-
-	// Apply time filter
-	if !query.StartTime.IsZero() {
-		db = db.Where("timestamp >= ?", query.StartTime)
-	}
-	if !query.EndTime.IsZero() {
-		db = db.Where("timestamp <= ?", query.EndTime)
-	}
-
-	// Apply filters
-	if query.Provider != "" {
-		db = db.Where("provider_uuid = ?", query.Provider)
-	}
-	if query.Model != "" {
-		db = db.Where("model = ?", query.Model)
-	}
-	if query.Scenario != "" {
-		db = db.Where("scenario = ?", query.Scenario)
-	}
-	if query.RuleUUID != "" {
-		db = db.Where("rule_uuid = ?", query.RuleUUID)
-	}
-	if query.UserID != "" {
-		db = db.Where("user_id = ?", query.UserID)
-	}
-	if query.Status != "" {
-		db = db.Where("status = ?", query.Status)
-	}
+	db := us.db.Model(&UsageRecord{}).Scopes(
+		withinTimeRange(query.StartTime, query.EndTime),
+		withStatsFilters(query),
+	)
 
 	// Determine grouping and select fields
 	var groupBy string
@@ -452,19 +520,13 @@ func (us *UsageStore) rawTimeSeries(interval string, startTime, endTime time.Tim
 		timeFormat = "%Y-%m-%d %H:00:00" // default to hour
 	}
 
-	// Build query
-	db := us.db.Model(&UsageRecord{})
-
-	if !startTime.IsZero() {
-		db = db.Where("timestamp >= ?", startTime)
+	if err := validateFilterColumns(filters); err != nil {
+		return nil, err
 	}
-	if !endTime.IsZero() {
-		db = db.Where("timestamp <= ?", endTime)
-	}
-
-	for key, value := range filters {
-		db = db.Where(key+" = ?", value)
-	}
+	db := us.db.Model(&UsageRecord{}).Scopes(
+		withinTimeRange(startTime, endTime),
+		withColumnFilters(filters),
+	)
 
 	type result struct {
 		Timestamp        string
@@ -527,18 +589,14 @@ func (us *UsageStore) GetRecords(startTime, endTime time.Time, filters map[strin
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
+	if err := validateFilterColumns(filters); err != nil {
+		return nil, 0, err
+	}
 	base := func() *gorm.DB {
-		q := us.db.Model(&UsageRecord{})
-		if !startTime.IsZero() {
-			q = q.Where("timestamp >= ?", startTime)
-		}
-		if !endTime.IsZero() {
-			q = q.Where("timestamp <= ?", endTime)
-		}
-		for key, value := range filters {
-			q = q.Where(key+" = ?", value)
-		}
-		return q
+		return us.db.Model(&UsageRecord{}).Scopes(
+			withinTimeRange(startTime, endTime),
+			withColumnFilters(filters),
+		)
 	}
 
 	// Get records with pagination
@@ -582,18 +640,16 @@ func (us *UsageStore) GetPerformanceSummary(startTime, endTime time.Time, filter
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
+	if err := validateFilterColumns(filters); err != nil {
+		return PerformanceSummary{}, err
+	}
 	query := us.db.Model(&UsageRecord{}).
 		Select("latency_ms", "ttft_ms", "output_tokens", "streamed").
-		Where("status = ?", "success")
-	if !startTime.IsZero() {
-		query = query.Where("timestamp >= ?", startTime)
-	}
-	if !endTime.IsZero() {
-		query = query.Where("timestamp <= ?", endTime)
-	}
-	for key, value := range filters {
-		query = query.Where(key+" = ?", value)
-	}
+		Where("status = ?", "success").
+		Scopes(
+			withinTimeRange(startTime, endTime),
+			withColumnFilters(filters),
+		)
 
 	var records []UsageRecord
 	if err := query.Find(&records).Error; err != nil {

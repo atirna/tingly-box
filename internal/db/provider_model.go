@@ -25,7 +25,7 @@ type ProviderModelRecord struct {
 	ProviderUUID string      `gorm:"primaryKey;column:provider_uuid"`
 	ProviderName string      `gorm:"column:provider_name;index"`
 	APIBase      string      `gorm:"column:api_base"`
-	Models       string      `gorm:"column:models;type:text"`
+	Models       []string    `gorm:"column:models;type:text;serializer:json"`
 	Source       ModelSource `gorm:"column:source"`
 	LastUpdated  time.Time   `gorm:"column:last_updated"`
 
@@ -113,47 +113,46 @@ func (ms *ModelStore) saveModels(provider *typ.Provider, models []string, source
 		whenAt = now
 	}
 
-	var modelsJSON string
-	if models != nil {
-		encoded, err := json.Marshal(models)
-		if err != nil {
-			return fmt.Errorf("failed to marshal models: %w", err)
-		}
-		modelsJSON = string(encoded)
-	}
-
 	var rawResponse *string
 	if len(raw) > 0 {
 		value := string(raw)
 		rawResponse = &value
 	}
 
-	// Failure-only writes omit model fields so the last successful list remains
-	// available as a stale fallback.
-	updates := map[string]any{
-		"provider_name": provider.Name,
-		"api_base":      provider.APIBase,
-		"updated_at":    now,
-	}
+	// applyWrite mutates a record -- freshly built or freshly loaded -- into
+	// the state this write wants. Failure-only writes (models == nil) leave
+	// the model fields alone so the last successful list remains available as
+	// a stale fallback.
+	//
+	// This is deliberately a struct mutation followed by Save, not
+	// Updates(map): a map update bypasses the field's serializer entirely.
+	// Handing Updates a []string makes SQLite fail with "row value misused",
+	// and an empty []string silently writes NULL -- so the map form cannot
+	// express this write at all now that models is a serialized column.
+	applyWrite := func(r *ProviderModelRecord) {
+		r.ProviderName = provider.Name
+		r.APIBase = provider.APIBase
+		r.UpdatedAt = now
 
-	if models != nil {
-		updates["models"] = modelsJSON
-		updates["source"] = source
-		updates["last_updated"] = now
-	}
+		if models != nil {
+			r.Models = models
+			r.Source = source
+			r.LastUpdated = now
+		}
 
-	if rawResponse != nil {
-		updates["raw_response"] = *rawResponse
-	} else if models != nil {
-		updates["raw_response"] = nil
-	}
+		if rawResponse != nil {
+			r.RawResponse = rawResponse
+		} else if models != nil {
+			r.RawResponse = nil
+		}
 
-	if lastErr != nil {
-		updates["last_error"] = *lastErr
-		updates["last_error_at"] = whenAt
-	} else if models != nil {
-		updates["last_error"] = nil
-		updates["last_error_at"] = nil
+		if lastErr != nil {
+			r.LastError = lastErr
+			r.LastErrorAt = &whenAt
+		} else if models != nil {
+			r.LastError = nil
+			r.LastErrorAt = nil
+		}
 	}
 
 	var existing ProviderModelRecord
@@ -161,33 +160,41 @@ func (ms *ModelStore) saveModels(provider *typ.Provider, models []string, source
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		record := ProviderModelRecord{
 			ProviderUUID: provider.UUID,
-			ProviderName: provider.Name,
-			APIBase:      provider.APIBase,
 			CreatedAt:    now,
-			UpdatedAt:    now,
 		}
-		if models != nil {
-			record.Models = modelsJSON
-			record.Source = source
-			record.LastUpdated = now
-		}
-		record.RawResponse = rawResponse
-		if lastErr != nil {
-			record.LastError = lastErr
-			record.LastErrorAt = &whenAt
-		}
+		applyWrite(&record)
 		if err := ms.db.Create(&record).Error; err != nil {
 			return fmt.Errorf("failed to create model record: %w", err)
 		}
 	} else if err != nil {
 		return fmt.Errorf("failed to query existing record: %w", err)
 	} else {
-		if err := ms.db.Model(&existing).Updates(updates).Error; err != nil {
+		applyWrite(&existing)
+		if err := ms.db.Save(&existing).Error; err != nil {
 			return fmt.Errorf("failed to update model record: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// hasStoredModelList is a gorm scope matching rows whose models column holds
+// a stored list. It is shared by GetAllProviders and HasModels so the two
+// cannot drift.
+//
+// The column carries two encodings. Rows written before it moved to a json
+// serializer use the empty string to mean "no list stored"; rows written
+// after use SQL NULL. This one predicate covers both without special-casing:
+// the empty string fails the comparison, and NULL fails it too because
+// comparing NULL to anything yields NULL rather than true. A stored-but-empty
+// list matches under either encoding, which is what this predicate did before
+// the migration.
+//
+// The Go-side equivalent of this check did need rewriting -- see
+// GetProviderInfo, where a decoded empty slice can no longer tell a
+// stored-empty list apart from a never-written column.
+func hasStoredModelList(db *gorm.DB) *gorm.DB {
+	return db.Where("models <> ''")
 }
 
 // GetModels returns models for a provider by UUID.
@@ -208,12 +215,10 @@ func (ms *ModelStore) GetModels(providerUUID string, ttl time.Duration) []string
 		return []string{}
 	}
 
-	var models []string
-	if err := json.Unmarshal([]byte(record.Models), &models); err != nil {
+	if record.Models == nil {
 		return []string{}
 	}
-
-	return models
+	return record.Models
 }
 
 // GetAllProviders returns all provider UUIDs that have models
@@ -222,7 +227,7 @@ func (ms *ModelStore) GetAllProviders() []string {
 	defer ms.mu.RUnlock()
 
 	var records []ProviderModelRecord
-	if err := ms.db.Where("models <> ''").Find(&records).Error; err != nil {
+	if err := ms.db.Scopes(hasStoredModelList).Find(&records).Error; err != nil {
 		return []string{}
 	}
 
@@ -241,7 +246,8 @@ func (ms *ModelStore) HasModels(providerUUID string) bool {
 
 	var count int64
 	if err := ms.db.Model(&ProviderModelRecord{}).
-		Where("provider_uuid = ? AND models <> ''", providerUUID).
+		Where("provider_uuid = ?", providerUUID).
+		Scopes(hasStoredModelList).
 		Count(&count).Error; err != nil {
 		return false
 	}
@@ -268,7 +274,12 @@ func (ms *ModelStore) GetProviderInfo(providerUUID string) (apiBase string, last
 	if errors.Is(err, gorm.ErrRecordNotFound) || err != nil {
 		return "", "", false
 	}
-	if record.Models == "" || record.LastUpdated.IsZero() {
+	// last_updated is the encoding-independent discriminator here: it is
+	// written in the same step as the models list and only then, so a zero
+	// value means no fetch ever succeeded. Post-decode, a stored empty list
+	// and a never-written column are both an empty slice in Go, so the models
+	// field alone can no longer tell those apart.
+	if record.LastUpdated.IsZero() {
 		return "", "", false
 	}
 
@@ -290,12 +301,10 @@ func (ms *ModelStore) GetModelsBySource(providerUUID string, source ModelSource,
 		return []string{}
 	}
 
-	var models []string
-	if err := json.Unmarshal([]byte(record.Models), &models); err != nil {
+	if record.Models == nil {
 		return []string{}
 	}
-
-	return models
+	return record.Models
 }
 
 // GetModelCount returns the number of models for a provider
@@ -308,12 +317,7 @@ func (ms *ModelStore) GetModelCount(providerUUID string) int {
 		return 0
 	}
 
-	var models []string
-	if err := json.Unmarshal([]byte(record.Models), &models); err != nil {
-		return 0
-	}
-
-	return len(models)
+	return len(record.Models)
 }
 
 // GetAllModelRecords returns all provider records (with metadata)
