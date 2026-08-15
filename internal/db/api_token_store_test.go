@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -31,19 +32,21 @@ func TestAPITokenStore_GetToken_NotFound(t *testing.T) {
 func TestAPITokenStore_RevokeToken_NotFound(t *testing.T) {
 	store, _ := setupTestAPITokenStore(t)
 	defer store.Close()
+	ctx := context.Background()
 
-	err := store.RevokeToken("non-existent", "reason")
+	err := store.RevokeToken(ctx, "non-existent", "reason")
 	assert.Error(t, err)
 }
 
 func TestAPITokenStore_UpdateLastUsed_FirstCallPersists(t *testing.T) {
 	store, _ := setupTestAPITokenStore(t)
 	defer store.Close()
+	ctx := context.Background()
 
-	_, err := store.CreateTokenWithTokenID("user-1", "token-1", "display", "admin", nil)
+	_, err := store.CreateTokenWithTokenID(ctx, "user-1", "token-1", "display", "admin", nil)
 	assert.NoError(t, err)
 
-	assert.NoError(t, store.UpdateLastUsed("token-1"))
+	assert.NoError(t, store.UpdateLastUsed(ctx, "token-1"))
 
 	cached, err := store.GetToken("token-1")
 	assert.NoError(t, err)
@@ -58,16 +61,17 @@ func TestAPITokenStore_UpdateLastUsed_FirstCallPersists(t *testing.T) {
 func TestAPITokenStore_UpdateLastUsed_DebouncesWithinWindow(t *testing.T) {
 	store, _ := setupTestAPITokenStore(t)
 	defer store.Close()
+	ctx := context.Background()
 
-	_, err := store.CreateTokenWithTokenID("user-1", "token-1", "display", "admin", nil)
+	_, err := store.CreateTokenWithTokenID(ctx, "user-1", "token-1", "display", "admin", nil)
 	assert.NoError(t, err)
 
-	assert.NoError(t, store.UpdateLastUsed("token-1"))
+	assert.NoError(t, store.UpdateLastUsed(ctx, "token-1"))
 	first, err := store.GetToken("token-1")
 	assert.NoError(t, err)
 
 	// A second call inside the debounce window must not move last_used_at.
-	assert.NoError(t, store.UpdateLastUsed("token-1"))
+	assert.NoError(t, store.UpdateLastUsed(ctx, "token-1"))
 	second, err := store.GetToken("token-1")
 	assert.NoError(t, err)
 
@@ -77,10 +81,11 @@ func TestAPITokenStore_UpdateLastUsed_DebouncesWithinWindow(t *testing.T) {
 func TestAPITokenStore_UpdateLastUsed_WritesAgainAfterWindow(t *testing.T) {
 	store, _ := setupTestAPITokenStore(t)
 	defer store.Close()
+	ctx := context.Background()
 
-	_, err := store.CreateTokenWithTokenID("user-1", "token-1", "display", "admin", nil)
+	_, err := store.CreateTokenWithTokenID(ctx, "user-1", "token-1", "display", "admin", nil)
 	assert.NoError(t, err)
-	assert.NoError(t, store.UpdateLastUsed("token-1"))
+	assert.NoError(t, store.UpdateLastUsed(ctx, "token-1"))
 
 	// Simulate the debounce window having elapsed without sleeping in the test.
 	store.mu.Lock()
@@ -88,7 +93,7 @@ func TestAPITokenStore_UpdateLastUsed_WritesAgainAfterWindow(t *testing.T) {
 	store.cache["token-1"].LastUsedAt = &stale
 	store.mu.Unlock()
 
-	assert.NoError(t, store.UpdateLastUsed("token-1"))
+	assert.NoError(t, store.UpdateLastUsed(ctx, "token-1"))
 	refreshed, err := store.GetToken("token-1")
 	assert.NoError(t, err)
 	assert.True(t, refreshed.LastUsedAt.After(stale))

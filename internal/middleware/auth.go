@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -30,7 +31,7 @@ type AuthMiddleware struct {
 // APITokenStore interface for token validation (abstracted for testability)
 type APITokenStore interface {
 	ValidateToken(tokenID string) (*db.APITokenRecord, error)
-	UpdateLastUsed(tokenID string) error
+	UpdateLastUsed(ctx context.Context, tokenID string) error
 }
 
 // ErrorResponse represents an error response
@@ -330,8 +331,12 @@ func (am *AuthMiddleware) ModelAuthMiddleware() gin.HandlerFunc {
 					// Token is valid and enabled
 					c.Set(constant.CtxKeyUserID, tokenRecord.UserID)
 
-					// Update last used asynchronously
-					go am.apiTokenStore.UpdateLastUsed(tokenRecord.TokenID)
+					// Update last used asynchronously, deliberately detached from
+					// the request context: this already outlives the handler
+					// (it's a bare goroutine, no cancellation wired to it), and
+					// there is no reason a client disconnect should drop a
+					// last-used timestamp the debounce window already delays.
+					go am.apiTokenStore.UpdateLastUsed(context.Background(), tokenRecord.TokenID)
 
 					c.Next()
 					return

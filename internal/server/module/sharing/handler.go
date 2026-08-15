@@ -79,7 +79,7 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	tokenString := "tb-share-" + randomToken
 
-	record, err := h.store.CreateTokenWithTokenID(userUUID, tokenString, req.DisplayName, "admin", nil)
+	record, err := h.store.CreateTokenWithTokenID(c.Request.Context(), userUUID, tokenString, req.DisplayName, "admin", nil)
 	if err != nil {
 		sendError(c, http.StatusInternalServerError, errors.New("failed to create token: "+err.Error()), "internal_error")
 		return
@@ -119,7 +119,7 @@ func (h *Handler) List(c *gin.Context) {
 		}
 	}
 
-	records, total, err := h.store.ListTokens(userUUID, enabled, limit, offset)
+	records, total, err := h.store.ListTokens(c.Request.Context(), userUUID, enabled, limit, offset)
 	if err != nil {
 		sendError(c, http.StatusInternalServerError, errors.New("failed to list tokens: "+err.Error()), "internal_error")
 		return
@@ -157,7 +157,7 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.store.DeleteToken(tokenID); err != nil {
+	if err := h.store.DeleteToken(c.Request.Context(), tokenID); err != nil {
 		sendError(c, http.StatusInternalServerError, errors.New("failed to delete token: "+err.Error()), "internal_error")
 		return
 	}
@@ -185,7 +185,7 @@ func (h *Handler) setEnabled(c *gin.Context, enabled bool) {
 	if enabled {
 		action = "enable"
 	}
-	if err := h.store.SetTokenEnabled(tokenID, enabled); err != nil {
+	if err := h.store.SetTokenEnabled(c.Request.Context(), tokenID, enabled); err != nil {
 		sendError(c, http.StatusInternalServerError, errors.New("failed to "+action+" token: "+err.Error()), "internal_error")
 		return
 	}
@@ -214,7 +214,7 @@ func (h *Handler) Regenerate(c *gin.Context) {
 	}
 	newTokenString := "tb-share-" + randomToken
 
-	if err := h.store.UpdateTokenString(tokenID, newTokenString); err != nil {
+	if err := h.store.UpdateTokenString(c.Request.Context(), tokenID, newTokenString); err != nil {
 		sendError(c, http.StatusInternalServerError, errors.New("failed to regenerate token: "+err.Error()), "internal_error")
 		return
 	}

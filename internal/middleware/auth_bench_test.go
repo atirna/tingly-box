@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -26,7 +27,7 @@ func benchAPITokenStore(b *testing.B) (*db.APITokenStore, string) {
 	b.Cleanup(func() { _ = store.Close() })
 
 	token := "tb-share-benchtoken0000000000000000000000000000"
-	if _, err := store.CreateTokenWithTokenID("bench-user", token, "bench", "bench", nil); err != nil {
+	if _, err := store.CreateTokenWithTokenID(context.Background(), "bench-user", token, "bench", "bench", nil); err != nil {
 		b.Fatal(err)
 	}
 	return store, token

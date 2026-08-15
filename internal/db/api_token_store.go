@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -79,7 +80,7 @@ func newAPITokenStore(conn storeConn) (*APITokenStore, error) {
 		cache:            make(map[string]*APITokenRecord),
 		lastUsedDebounce: defaultLastUsedDebounce,
 	}
-	if err := store.loadCache(); err != nil {
+	if err := store.loadCache(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to load API token cache: %w", err)
 	}
 
@@ -90,9 +91,9 @@ func newAPITokenStore(conn storeConn) (*APITokenStore, error) {
 // construction and from CleanupExpiredTokens (under s.mu already held),
 // where re-deriving a bulk delete's predicate against the cache isn't
 // worth it.
-func (s *APITokenStore) loadCache() error {
+func (s *APITokenStore) loadCache(ctx context.Context) error {
 	var records []APITokenRecord
-	if err := s.db.Find(&records).Error; err != nil {
+	if err := s.db.WithContext(ctx).Find(&records).Error; err != nil {
 		return err
 	}
 	s.cache = make(map[string]*APITokenRecord, len(records))
@@ -133,7 +134,7 @@ func ensureAPITokenSchema(db *gorm.DB) error {
 
 // createTokenRecord is a private helper that creates a token record with the given parameters.
 // The caller must hold s.mu.Lock() before calling this function.
-func (s *APITokenStore) createTokenRecord(userID, tokenID, displayName, createdBy string, expiresAt *time.Time) (*APITokenRecord, error) {
+func (s *APITokenStore) createTokenRecord(ctx context.Context, userID, tokenID, displayName, createdBy string, expiresAt *time.Time) (*APITokenRecord, error) {
 	now := time.Now()
 	record := &APITokenRecord{
 		TokenID:     tokenID,
@@ -145,7 +146,7 @@ func (s *APITokenStore) createTokenRecord(userID, tokenID, displayName, createdB
 		CreatedBy:   createdBy,
 	}
 
-	if err := s.db.Create(record).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(record).Error; err != nil {
 		return nil, fmt.Errorf("failed to create API token record: %w", err)
 	}
 
@@ -155,7 +156,7 @@ func (s *APITokenStore) createTokenRecord(userID, tokenID, displayName, createdB
 }
 
 // CreateTokenWithTokenID creates a new API token record with a specific token ID
-func (s *APITokenStore) CreateTokenWithTokenID(userID, tokenID, displayName, createdBy string, expiresAt *time.Time) (*APITokenRecord, error) {
+func (s *APITokenStore) CreateTokenWithTokenID(ctx context.Context, userID, tokenID, displayName, createdBy string, expiresAt *time.Time) (*APITokenRecord, error) {
 	if userID == "" {
 		return nil, errors.New("user ID cannot be empty")
 	}
@@ -166,7 +167,7 @@ func (s *APITokenStore) CreateTokenWithTokenID(userID, tokenID, displayName, cre
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.createTokenRecord(userID, tokenID, displayName, createdBy, expiresAt)
+	return s.createTokenRecord(ctx, userID, tokenID, displayName, createdBy, expiresAt)
 }
 
 // ValidateToken validates a token ID and returns the associated token record
@@ -188,7 +189,7 @@ func (s *APITokenStore) ValidateToken(tokenID string) (*APITokenRecord, error) {
 }
 
 // RevokeToken revokes a token by setting enabled to false
-func (s *APITokenStore) RevokeToken(tokenID, reason string) error {
+func (s *APITokenStore) RevokeToken(ctx context.Context, tokenID, reason string) error {
 	if tokenID == "" {
 		return errors.New("token ID cannot be empty")
 	}
@@ -197,7 +198,7 @@ func (s *APITokenStore) RevokeToken(tokenID, reason string) error {
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	result := s.db.Model(&APITokenRecord{}).
+	result := s.db.WithContext(ctx).Model(&APITokenRecord{}).
 		Where("token_id = ?", tokenID).
 		Updates(map[string]interface{}{
 			"enabled":       false,
@@ -223,11 +224,11 @@ func (s *APITokenStore) RevokeToken(tokenID, reason string) error {
 }
 
 // ListTokens returns tokens matching filters
-func (s *APITokenStore) ListTokens(userID string, enabled *bool, limit, offset int) ([]APITokenRecord, int64, error) {
+func (s *APITokenStore) ListTokens(ctx context.Context, userID string, enabled *bool, limit, offset int) ([]APITokenRecord, int64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	db := s.db.Model(&APITokenRecord{})
+	db := s.db.WithContext(ctx).Model(&APITokenRecord{})
 
 	if userID != "" {
 		db = db.Where("user_id = ?", userID)
@@ -282,7 +283,7 @@ func (s *APITokenStore) debounceWindow() time.Duration {
 // every authenticated request, so writes within debounceWindow() of the
 // last persisted value are coalesced away instead of costing one SQLite
 // UPDATE per request.
-func (s *APITokenStore) UpdateLastUsed(tokenID string) error {
+func (s *APITokenStore) UpdateLastUsed(ctx context.Context, tokenID string) error {
 	now := time.Now()
 	window := s.debounceWindow()
 
@@ -303,7 +304,7 @@ func (s *APITokenStore) UpdateLastUsed(tokenID string) error {
 		return nil
 	}
 
-	result := s.db.Model(&APITokenRecord{}).
+	result := s.db.WithContext(ctx).Model(&APITokenRecord{}).
 		Where("token_id = ?", tokenID).
 		Update("last_used_at", now)
 
@@ -319,11 +320,11 @@ func (s *APITokenStore) UpdateLastUsed(tokenID string) error {
 }
 
 // SetTokenEnabled enables or disables a token
-func (s *APITokenStore) SetTokenEnabled(tokenID string, enabled bool) error {
+func (s *APITokenStore) SetTokenEnabled(ctx context.Context, tokenID string, enabled bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	result := s.db.Model(&APITokenRecord{}).
+	result := s.db.WithContext(ctx).Model(&APITokenRecord{}).
 		Where("token_id = ?", tokenID).
 		Update("enabled", enabled)
 
@@ -343,11 +344,11 @@ func (s *APITokenStore) SetTokenEnabled(tokenID string, enabled bool) error {
 }
 
 // UpdateTokenString updates the token string for a token (for regeneration)
-func (s *APITokenStore) UpdateTokenString(tokenID, newTokenString string) error {
+func (s *APITokenStore) UpdateTokenString(ctx context.Context, tokenID, newTokenString string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	result := s.db.Model(&APITokenRecord{}).
+	result := s.db.WithContext(ctx).Model(&APITokenRecord{}).
 		Where("token_id = ?", tokenID).
 		Update("token_id", newTokenString)
 
@@ -369,11 +370,11 @@ func (s *APITokenStore) UpdateTokenString(tokenID, newTokenString string) error 
 }
 
 // DeleteToken permanently deletes a token record
-func (s *APITokenStore) DeleteToken(tokenID string) error {
+func (s *APITokenStore) DeleteToken(ctx context.Context, tokenID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	result := s.db.Where("token_id = ?", tokenID).Delete(&APITokenRecord{})
+	result := s.db.WithContext(ctx).Where("token_id = ?", tokenID).Delete(&APITokenRecord{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete token: %w", result.Error)
 	}
@@ -388,12 +389,12 @@ func (s *APITokenStore) DeleteToken(tokenID string) error {
 }
 
 // CleanupExpiredTokens removes expired tokens older than the specified duration
-func (s *APITokenStore) CleanupExpiredTokens(olderThan time.Duration) (int64, error) {
+func (s *APITokenStore) CleanupExpiredTokens(ctx context.Context, olderThan time.Duration) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	cutoff := time.Now().Add(-olderThan)
-	result := s.db.Where("expires_at < ? AND enabled = ?", cutoff, false).Delete(&APITokenRecord{})
+	result := s.db.WithContext(ctx).Where("expires_at < ? AND enabled = ?", cutoff, false).Delete(&APITokenRecord{})
 
 	if result.Error != nil {
 		return 0, fmt.Errorf("failed to cleanup expired tokens: %w", result.Error)
@@ -402,7 +403,7 @@ func (s *APITokenStore) CleanupExpiredTokens(olderThan time.Duration) (int64, er
 	// Bulk, predicate-based delete — simplest to resync the whole mirror from
 	// SQLite rather than re-deriving the same predicate against the cache.
 	if result.RowsAffected > 0 {
-		if err := s.loadCache(); err != nil {
+		if err := s.loadCache(ctx); err != nil {
 			return result.RowsAffected, fmt.Errorf("cleaned up %d tokens but failed to refresh cache: %w", result.RowsAffected, err)
 		}
 	}
