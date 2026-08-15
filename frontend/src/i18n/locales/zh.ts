@@ -1231,6 +1231,7 @@ export default {
       "joined": "添加于 {{value}}",
       "input": "输入",
       "output": "输出",
+      "reasoning": "推理",
       "cacheRead": "缓存读取",
       "allModels": "全部模型",
       "modelMix": "Token 用在了哪里",
@@ -1354,6 +1355,7 @@ export default {
       "cacheHit": "缓存命中",
       "input": "输入 Token",
       "output": "输出 Token",
+      "reasoning": "推理 Token",
       "errorRate": "错误率"
     },
     "chart": {

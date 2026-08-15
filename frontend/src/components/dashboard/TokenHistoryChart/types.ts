@@ -8,6 +8,10 @@ export interface TimeSeriesData {
     output_tokens: number;
     cache_read_tokens?: number;
     cache_write_tokens?: number;
+    // Reasoning is a SUBSET of output_tokens (thinking/reasoning tokens,
+    // OpenAI reasoning models only -- always 0/absent for Anthropic). Not
+    // yet plotted as its own chart series; present for API parity.
+    reasoning_tokens?: number;
     error_count?: number;
     avg_latency_ms?: number;
 }

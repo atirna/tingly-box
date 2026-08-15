@@ -6,6 +6,7 @@ export type UsageMetricKey =
     | 'cacheHit'
     | 'input'
     | 'output'
+    | 'reasoning'
     | 'errorRate';
 
 export interface UsageMetricLabels {
@@ -16,6 +17,7 @@ export interface UsageMetricLabels {
     cacheHit: string;
     input: string;
     output: string;
+    reasoning: string;
     errorRate: string;
 }
 
@@ -25,6 +27,7 @@ export interface UsageMetricSource {
     total_output_tokens?: number;
     cache_read_tokens?: number;
     cache_write_tokens?: number;
+    reasoning_tokens?: number;
     error_rate?: number;
 }
 
@@ -46,6 +49,7 @@ export const defaultUsageMetricLabels: UsageMetricLabels = {
     cacheHit: 'Cache Hit',
     input: 'Input Tokens',
     output: 'Output Tokens',
+    reasoning: 'Reasoning Tokens',
     errorRate: 'Error Rate',
 };
 
@@ -60,5 +64,6 @@ export const getUsageMetricColumns = (
     { key: 'cacheHit', label: labels.cacheHit },
     { key: 'input', label: labels.input },
     { key: 'output', label: labels.output },
+    { key: 'reasoning', label: labels.reasoning },
     { key: 'errorRate', label: labels.errorRate },
 ];

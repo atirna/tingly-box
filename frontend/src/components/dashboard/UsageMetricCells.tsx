@@ -24,6 +24,7 @@ export function UsageMetricHeaderCells({
         cacheHit: t('dashboard.metricLabels.cacheHit', { defaultValue: 'Cache Hit' }),
         input: t('dashboard.metricLabels.input', { defaultValue: 'Input Tokens' }),
         output: t('dashboard.metricLabels.output', { defaultValue: 'Output Tokens' }),
+        reasoning: t('dashboard.metricLabels.reasoning', { defaultValue: 'Reasoning Tokens' }),
         errorRate: t('dashboard.metricLabels.errorRate', { defaultValue: 'Error Rate' }),
     };
     return getUsageMetricColumns({ showTotal, showCacheWrite }, resolvedLabels).map((column) => (
@@ -65,6 +66,9 @@ export function UsageMetricValueCells({
             <TableCell align="right">{getCacheHitRate(cacheRead, input).toFixed(cacheHitDigits)}%</TableCell>
             <TableCell align="right">{formatNumber(input)}</TableCell>
             <TableCell align="right">{formatNumber(usage.total_output_tokens || 0)}</TableCell>
+            <TableCell align="right">
+                {usage.reasoning_tokens ? formatNumber(usage.reasoning_tokens) : '—'}
+            </TableCell>
             <TableCell align="right">
                 <Typography
                     variant="body2"

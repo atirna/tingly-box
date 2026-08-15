@@ -34,6 +34,7 @@ export interface AggregatedStat {
     total_output_tokens: number;
     cache_read_tokens?: number;
     cache_write_tokens?: number;
+    reasoning_tokens?: number;
     avg_latency_ms?: number;
     error_count?: number;
     error_rate?: number;
