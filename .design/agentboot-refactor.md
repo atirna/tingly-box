@@ -601,8 +601,39 @@ Applied as sequential commits on one branch, each independently green:
    says what it is instead of "common".
 
 Resulting tree: root engine+service, `history/`, `process/`, `protocol/`,
-`claude/` (+`claude/session`, `claude/fixture`). Still open from the §9 plan:
-the optional move of `claude/formatter.go` + `tool_renderer.go` (IM text
-rendering, only consumer is `remoteagent/stream.go`) out of the claude
-adapter — deliberately deferred pending a decision on where rendering should
-live (`remote/control/render` vs a `claude/render` subpackage).
+`claude/` (+`claude/session`, `claude/fixture`).
+
+## 10. IM rendering extraction (2026-08-15)
+
+The §9 open item is resolved: `claude/formatter.go` + `tool_renderer.go`
+moved to `remote/control/render` (package `render`), the only consumer's
+side of the decision — `remoteagent/stream.go` was the sole caller and now
+imports `render.TextFormatter` / `render.NewTextFormatter` instead of
+`claude.TextFormatter`. The `claude` package keeps the message-type
+hierarchy (`Message`, `SystemMessage`, `AssistantMessage`, …) that rendering
+operates on; `render` imports `agentboot/claude` for those types, preserving
+the one-way dependency direction (`agentboot` never imports back into
+`tingly-box`).
+
+Two small surface changes fell out of the move:
+
+- `SystemMessage`'s retry-notice accessors (`retryAttempt`/`retryDelayMS`/
+  `retryReason`) are now exported (`RetryAttempt`/`RetryDelayMS`/
+  `RetryReason`) — the CLI-version-spelling fallback logic they encapsulate
+  belongs with the message model, not duplicated in the rendering package,
+  so the accessors had to become part of `claude`'s public surface rather
+  than being reimplemented across the package boundary.
+- `render`'s own `getStr`/`getInt`/`getBool` map-access helpers are a small,
+  intentional duplication of `claude/utils.go`'s private equivalents rather
+  than newly-exported `claude` API — those helpers are also used by
+  `claude/transport.go` (core engine code), and exporting them purely to
+  serve the rendering package would have widened the module's public
+  surface for no reason beyond convenience.
+
+This is the library-vs-product-presentation boundary the module's
+"internal-first, Claude-honest" positioning (§8) calls for: `agentboot`
+owns the Claude wire protocol and message model, `tingly-box` owns how that
+data is shown to a user (IM formatting is chat-surface specific, not a
+concern of a Claude Code CLI wrapper). Verified: `go build`, `go vet`, and
+`go test` green in both the `agentboot` module and the root module's
+`remote/control/...` tree.
