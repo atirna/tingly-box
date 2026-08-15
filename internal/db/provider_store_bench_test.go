@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
@@ -22,7 +23,7 @@ func benchmarkGetByUUID(b *testing.B, p *typ.Provider) {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = store.Close() })
-	if err := store.Save(p); err != nil {
+	if err := store.Save(context.Background(), p); err != nil {
 		b.Fatal(err)
 	}
 

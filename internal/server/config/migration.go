@@ -633,7 +633,7 @@ func normalizeCodexEndpointMode(c *Config) bool {
 					continue
 				}
 				p.OpenAIEndpointMode = ai.EndpointModeResponses
-				if err := c.providerStore.Save(p); err != nil {
+				if err := c.providerStore.Save(context.Background(), p); err != nil {
 					logrus.WithError(err).WithField("provider_uuid", p.UUID).Warn("Failed to backfill openai_endpoint_mode on Codex provider")
 					continue
 				}

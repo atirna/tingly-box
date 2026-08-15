@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,6 +49,7 @@ func TestNewProviderStore(t *testing.T) {
 
 func TestProviderSaveAndGetByUUID(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create a test provider with API key auth
@@ -67,7 +69,7 @@ func TestProviderSaveAndGetByUUID(t *testing.T) {
 	}
 
 	// Save provider
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 
@@ -108,6 +110,7 @@ func TestProviderSaveAndGetByUUID(t *testing.T) {
 
 func TestProviderSaveOAuth(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create a test provider with OAuth auth
@@ -131,7 +134,7 @@ func TestProviderSaveOAuth(t *testing.T) {
 	}
 
 	// Save provider
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save OAuth provider: %v", err)
 	}
 
@@ -167,6 +170,7 @@ func TestProviderSaveOAuth(t *testing.T) {
 
 func TestProviderUpdate(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create and save a provider
@@ -180,7 +184,7 @@ func TestProviderUpdate(t *testing.T) {
 		Enabled:  true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 
@@ -189,7 +193,7 @@ func TestProviderUpdate(t *testing.T) {
 	provider.Token = "updated-token"
 	provider.Enabled = false
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to update provider: %v", err)
 	}
 
@@ -212,6 +216,7 @@ func TestProviderUpdate(t *testing.T) {
 
 func TestProviderDelete(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create and save a provider
@@ -225,7 +230,7 @@ func TestProviderDelete(t *testing.T) {
 		Enabled:  true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 
@@ -235,7 +240,7 @@ func TestProviderDelete(t *testing.T) {
 	}
 
 	// Delete the provider
-	if err := store.Delete("test-delete-uuid"); err != nil {
+	if err := store.Delete(ctx, "test-delete-uuid"); err != nil {
 		t.Fatalf("Failed to delete provider: %v", err)
 	}
 
@@ -253,6 +258,7 @@ func TestProviderDelete(t *testing.T) {
 
 func TestProviderList(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create multiple providers
@@ -290,7 +296,7 @@ func TestProviderList(t *testing.T) {
 	}
 
 	for _, p := range providers {
-		if err := store.Save(p); err != nil {
+		if err := store.Save(ctx, p); err != nil {
 			t.Fatalf("Failed to save provider: %v", err)
 		}
 	}
@@ -328,6 +334,7 @@ func TestProviderList(t *testing.T) {
 
 func TestProviderGetByName(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create a provider
@@ -341,7 +348,7 @@ func TestProviderGetByName(t *testing.T) {
 		Enabled:  true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 
@@ -364,6 +371,7 @@ func TestProviderGetByName(t *testing.T) {
 
 func TestProviderUpdateCredential(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create a provider
@@ -377,12 +385,12 @@ func TestProviderUpdateCredential(t *testing.T) {
 		Enabled:  true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 
 	// Update credential
-	if err := store.UpdateCredential("update-cred-uuid", "new-token", nil); err != nil {
+	if err := store.UpdateCredential(ctx, "update-cred-uuid", "new-token", nil); err != nil {
 		t.Fatalf("Failed to update credential: %v", err)
 	}
 
@@ -399,6 +407,7 @@ func TestProviderUpdateCredential(t *testing.T) {
 
 func TestProviderUpdateOAuthCredential(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create an OAuth provider
@@ -419,7 +428,7 @@ func TestProviderUpdateOAuthCredential(t *testing.T) {
 		Enabled: true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save OAuth provider: %v", err)
 	}
 
@@ -433,7 +442,7 @@ func TestProviderUpdateOAuthCredential(t *testing.T) {
 		ExpiresAt:    newExpiresAt.Format(time.RFC3339),
 	}
 
-	if err := store.UpdateCredential("update-oauth-uuid", "", newOAuthDetail); err != nil {
+	if err := store.UpdateCredential(ctx, "update-oauth-uuid", "", newOAuthDetail); err != nil {
 		t.Fatalf("Failed to update OAuth credential: %v", err)
 	}
 
@@ -453,6 +462,7 @@ func TestProviderUpdateOAuthCredential(t *testing.T) {
 
 func TestProviderIsOAuthExpired(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create an OAuth provider with expired token
@@ -472,7 +482,7 @@ func TestProviderIsOAuthExpired(t *testing.T) {
 		Enabled: true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 
@@ -495,7 +505,7 @@ func TestProviderIsOAuthExpired(t *testing.T) {
 		ExpiresAt:   futureTime.Format(time.RFC3339),
 	}
 
-	if err := store.UpdateCredential("expired-oauth-uuid", "", newOAuthDetail); err != nil {
+	if err := store.UpdateCredential(ctx, "expired-oauth-uuid", "", newOAuthDetail); err != nil {
 		t.Fatalf("Failed to update OAuth credential: %v", err)
 	}
 
@@ -512,6 +522,7 @@ func TestProviderIsOAuthExpired(t *testing.T) {
 
 func TestProviderUpdateOAuthAccessToken(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Create an OAuth provider
@@ -529,12 +540,12 @@ func TestProviderUpdateOAuthAccessToken(t *testing.T) {
 		Enabled: true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 
 	// Update only the access token
-	if err := store.UpdateOAuthAccessToken("update-access-token-uuid", "new-access-token"); err != nil {
+	if err := store.UpdateOAuthAccessToken(ctx, "update-access-token-uuid", "new-access-token"); err != nil {
 		t.Fatalf("Failed to update OAuth access token: %v", err)
 	}
 
@@ -559,6 +570,7 @@ func TestProviderUpdateOAuthAccessToken(t *testing.T) {
 
 func TestProviderCount(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	// Initially 0 providers
@@ -581,7 +593,7 @@ func TestProviderCount(t *testing.T) {
 			Token:    fmt.Sprintf("token-%d", i),
 			Enabled:  true,
 		}
-		if err := store.Save(provider); err != nil {
+		if err := store.Save(ctx, provider); err != nil {
 			t.Fatalf("Failed to save provider: %v", err)
 		}
 	}
@@ -598,6 +610,7 @@ func TestProviderCount(t *testing.T) {
 
 func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	provider := &typ.Provider{
@@ -615,7 +628,7 @@ func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
 		Enabled: true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -629,7 +642,7 @@ func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
 
 	// Update path must also persist the field.
 	got.OpenAIEndpointMode = ai.EndpointModeBoth
-	if err := store.Save(got); err != nil {
+	if err := store.Save(ctx, got); err != nil {
 		t.Fatalf("Save update: %v", err)
 	}
 	got2, err := store.GetByUUID("test-endpoint-mode-uuid")
@@ -643,6 +656,7 @@ func TestProviderOpenAIEndpointModeRoundTrip(t *testing.T) {
 
 func TestProviderCredentialBundleRoundTrip(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
+	ctx := context.Background()
 	defer store.Close()
 
 	provider := &typ.Provider{
@@ -661,7 +675,7 @@ func TestProviderCredentialBundleRoundTrip(t *testing.T) {
 		Enabled: true,
 	}
 
-	if err := store.Save(provider); err != nil {
+	if err := store.Save(ctx, provider); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -688,7 +702,7 @@ func TestProviderCredentialBundleRoundTrip(t *testing.T) {
 		"secret_access_key": "secret2",
 		"region":            "eu-west-1",
 	}}
-	if err := store.UpdateCredentialBundle("test-cred-bundle-uuid", newBundle); err != nil {
+	if err := store.UpdateCredentialBundle(ctx, "test-cred-bundle-uuid", newBundle); err != nil {
 		t.Fatalf("UpdateCredentialBundle: %v", err)
 	}
 	got2, err := store.GetByUUID("test-cred-bundle-uuid")
@@ -707,6 +721,7 @@ func TestProviderStore_FailedWriteDoesNotCorruptCache(t *testing.T) {
 	seed := func(t *testing.T) *ProviderStore {
 		t.Helper()
 		store, _ := setupTestProviderStore(t)
+		ctx := context.Background()
 		provider := &typ.Provider{
 			UUID:     "test-cache-integrity-uuid",
 			Name:     "original-name",
@@ -716,7 +731,7 @@ func TestProviderStore_FailedWriteDoesNotCorruptCache(t *testing.T) {
 			Token:    "original-token",
 			Enabled:  true,
 		}
-		if err := store.Save(provider); err != nil {
+		if err := store.Save(ctx, provider); err != nil {
 			t.Fatalf("seed Save: %v", err)
 		}
 		return store
@@ -735,9 +750,10 @@ func TestProviderStore_FailedWriteDoesNotCorruptCache(t *testing.T) {
 
 	t.Run("Save", func(t *testing.T) {
 		store := seed(t)
+		ctx := context.Background()
 		closeUnderlyingDB(t, store)
 
-		err := store.Save(&typ.Provider{
+		err := store.Save(ctx, &typ.Provider{
 			UUID:     "test-cache-integrity-uuid",
 			Name:     "corrupted-name",
 			APIBase:  "https://api.example.com",
@@ -761,9 +777,10 @@ func TestProviderStore_FailedWriteDoesNotCorruptCache(t *testing.T) {
 
 	t.Run("UpdateCredential", func(t *testing.T) {
 		store := seed(t)
+		ctx := context.Background()
 		closeUnderlyingDB(t, store)
 
-		err := store.UpdateCredential("test-cache-integrity-uuid", "corrupted-token", nil)
+		err := store.UpdateCredential(ctx, "test-cache-integrity-uuid", "corrupted-token", nil)
 		if err == nil {
 			t.Fatal("expected UpdateCredential to fail against a closed db")
 		}
@@ -779,9 +796,10 @@ func TestProviderStore_FailedWriteDoesNotCorruptCache(t *testing.T) {
 
 	t.Run("UpdateCredentialBundle", func(t *testing.T) {
 		store := seed(t)
+		ctx := context.Background()
 		closeUnderlyingDB(t, store)
 
-		err := store.UpdateCredentialBundle("test-cache-integrity-uuid", &typ.CredentialBundle{
+		err := store.UpdateCredentialBundle(ctx, "test-cache-integrity-uuid", &typ.CredentialBundle{
 			Fields: map[string]string{"region": "corrupted-region"},
 		})
 		if err == nil {

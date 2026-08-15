@@ -1,6 +1,8 @@
 package virtualserver
 
 import (
+	"context"
+
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -69,7 +71,7 @@ func (s *Service) BuildBuiltinProviders() []*typ.Provider {
 // without virtualserver depending on the db package.
 type ProviderSaver interface {
 	GetByUUID(uuid string) (*typ.Provider, error)
-	Save(provider *typ.Provider) error
+	Save(ctx context.Context, provider *typ.Provider) error
 }
 
 // EnsureBuiltinProviders inserts or refreshes the builtin virtual-model
@@ -79,13 +81,13 @@ type ProviderSaver interface {
 //   - If a builtin provider already exists its Enabled flag is preserved
 //     (users may have disabled it) while the model list is refreshed to match
 //     what is currently registered.
-func (s *Service) EnsureBuiltinProviders(store ProviderSaver) error {
+func (s *Service) EnsureBuiltinProviders(ctx context.Context, store ProviderSaver) error {
 	for _, p := range s.BuildBuiltinProviders() {
 		existing, err := store.GetByUUID(p.UUID)
 		if err == nil && existing != nil {
 			p.Enabled = existing.Enabled
 		}
-		if err := store.Save(p); err != nil {
+		if err := store.Save(ctx, p); err != nil {
 			return err
 		}
 	}

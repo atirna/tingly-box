@@ -60,7 +60,7 @@ func (c *Config) migrateProvidersToDB() error {
 
 	// Migrate each provider to database
 	for _, provider := range c.Providers {
-		if err := c.providerStore.Save(provider); err != nil {
+		if err := c.providerStore.Save(context.Background(), provider); err != nil {
 			return fmt.Errorf("failed to migrate provider %s: %w", provider.UUID, err)
 		}
 	}
@@ -192,7 +192,7 @@ func (c *Config) AddProvider(provider *typ.Provider) error {
 		if provider.UUID == "" {
 			provider.UUID = GenerateUUID()
 		}
-		if err := c.providerStore.Save(provider); err != nil {
+		if err := c.providerStore.Save(context.Background(), provider); err != nil {
 			return err
 		}
 
@@ -271,7 +271,7 @@ func (c *Config) UpdateProvider(uuid string, provider *typ.Provider) error {
 	if c.providerStore != nil {
 		// Preserve the UUID
 		provider.UUID = uuid
-		if err := c.providerStore.Save(provider); err != nil {
+		if err := c.providerStore.Save(context.Background(), provider); err != nil {
 			return err
 		}
 
@@ -294,7 +294,7 @@ func (c *Config) DeleteProvider(uuid string) error {
 		panic("[db] Provider store missing")
 	}
 
-	if err := c.providerStore.Delete(uuid); err != nil {
+	if err := c.providerStore.Delete(context.Background(), uuid); err != nil {
 		return err
 	}
 

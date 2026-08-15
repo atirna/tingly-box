@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
@@ -150,6 +151,7 @@ func TestProviderStore_ReadsLegacyJSONStringRows(t *testing.T) {
 func TestProviderStore_CacheIsolation(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
 	defer store.Close()
+	ctx := context.Background()
 
 	// The shared scaffolding is the same for all three; each subtest only
 	// varies the field whose isolation it is checking.
@@ -170,7 +172,7 @@ func TestProviderStore_CacheIsolation(t *testing.T) {
 		p.Token = "tok"
 		p.Tags = []string{"keep"}
 	})
-	if err := store.Save(seed); err != nil {
+	if err := store.Save(ctx, seed); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -209,7 +211,7 @@ func TestProviderStore_CacheIsolation(t *testing.T) {
 				ExtraFields: map[string]any{"id_token": "original"},
 			}
 		})
-		if err := store.Save(oauth); err != nil {
+		if err := store.Save(ctx, oauth); err != nil {
 			t.Fatalf("Save oauth: %v", err)
 		}
 
@@ -235,7 +237,7 @@ func TestProviderStore_CacheIsolation(t *testing.T) {
 				Fields: map[string]string{"region": "us-east-1"},
 			}
 		})
-		if err := store.Save(bundle); err != nil {
+		if err := store.Save(ctx, bundle); err != nil {
 			t.Fatalf("Save bundle: %v", err)
 		}
 

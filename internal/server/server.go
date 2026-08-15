@@ -440,7 +440,7 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	// pipeline; the dispatcher short-circuits to the in-process handler when it
 	// resolves to a vmodel provider.
 	if store := cfg.GetProviderStore(); store != nil {
-		if err := server.virtualModelService.EnsureBuiltinProviders(store); err != nil {
+		if err := server.virtualModelService.EnsureBuiltinProviders(context.Background(), store); err != nil {
 			logrus.WithError(err).Warn("Failed to seed builtin virtual-model providers")
 		} else {
 			logrus.Debugf("Builtin virtual-model providers seeded")

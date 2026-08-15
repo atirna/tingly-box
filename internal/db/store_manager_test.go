@@ -267,7 +267,7 @@ func TestStoreManager_StoreOperations(t *testing.T) {
 		NoKeyRequired: false,
 	}
 
-	if err := providerStore.Save(provider); err != nil {
+	if err := providerStore.Save(context.Background(), provider); err != nil {
 		t.Fatalf("Failed to save provider: %v", err)
 	}
 

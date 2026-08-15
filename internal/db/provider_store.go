@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -320,7 +321,7 @@ func newProviderStore(conn storeConn) (*ProviderStore, error) {
 		storeConn: conn,
 		cache:     make(map[string]*ProviderRecord),
 	}
-	if err := store.loadCache(); err != nil {
+	if err := store.loadCache(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to load provider cache: %w", err)
 	}
 
@@ -329,9 +330,9 @@ func newProviderStore(conn storeConn) (*ProviderStore, error) {
 
 // loadCache populates the in-memory mirror from SQLite. Called once at
 // construction, before the store is shared with any other goroutine.
-func (ps *ProviderStore) loadCache() error {
+func (ps *ProviderStore) loadCache(ctx context.Context) error {
 	var records []ProviderRecord
-	if err := ps.db.Find(&records).Error; err != nil {
+	if err := ps.db.WithContext(ctx).Find(&records).Error; err != nil {
 		return err
 	}
 	for i := range records {
@@ -343,7 +344,7 @@ func (ps *ProviderStore) loadCache() error {
 }
 
 // Save saves a provider (create or update)
-func (ps *ProviderStore) Save(provider *typ.Provider) error {
+func (ps *ProviderStore) Save(ctx context.Context, provider *typ.Provider) error {
 	if provider == nil {
 		return errors.New("provider cannot be nil")
 	}
@@ -355,7 +356,7 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 	defer ps.mu.Unlock()
 
 	if _, ok := ps.cache[provider.UUID]; ok {
-		if _, err := ps.writeThroughLocked(provider.UUID, func(r *ProviderRecord) {
+		if _, err := ps.writeThroughLocked(ctx, provider.UUID, func(r *ProviderRecord) {
 			updateRecordFromProvider(r, provider)
 		}); err != nil {
 			return fmt.Errorf("failed to update provider record: %w", err)
@@ -364,7 +365,7 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 	} else {
 		// Create new record
 		record := toRecord(provider)
-		if err := ps.db.Create(record).Error; err != nil {
+		if err := ps.db.WithContext(ctx).Create(record).Error; err != nil {
 			return fmt.Errorf("failed to create provider record: %w", err)
 		}
 		ps.cache[provider.UUID] = record
@@ -378,7 +379,7 @@ func (ps *ProviderStore) Save(provider *typ.Provider) error {
 // writeThroughLocked mutates a copy of the cached record for uuid, persists
 // it, and only then swaps it into ps.cache -- so a failed write can't leave
 // the cache holding unpersisted data. Callers must hold ps.mu.Lock().
-func (ps *ProviderStore) writeThroughLocked(uuid string, mutate func(*ProviderRecord)) (*ProviderRecord, error) {
+func (ps *ProviderStore) writeThroughLocked(ctx context.Context, uuid string, mutate func(*ProviderRecord)) (*ProviderRecord, error) {
 	existing, ok := ps.cache[uuid]
 	if !ok {
 		return nil, fmt.Errorf("provider with UUID '%s' not found", uuid)
@@ -387,7 +388,7 @@ func (ps *ProviderStore) writeThroughLocked(uuid string, mutate func(*ProviderRe
 	updated := *existing
 	mutate(&updated)
 
-	if err := ps.db.Save(&updated).Error; err != nil {
+	if err := ps.db.WithContext(ctx).Save(&updated).Error; err != nil {
 		return nil, err
 	}
 
@@ -452,7 +453,7 @@ func (ps *ProviderStore) ListOAuth() ([]*typ.Provider, error) {
 }
 
 // Delete removes a provider by UUID
-func (ps *ProviderStore) Delete(uuid string) error {
+func (ps *ProviderStore) Delete(ctx context.Context, uuid string) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
@@ -460,7 +461,7 @@ func (ps *ProviderStore) Delete(uuid string) error {
 		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
-	result := ps.db.Where("uuid = ?", uuid).Delete(&ProviderRecord{})
+	result := ps.db.WithContext(ctx).Where("uuid = ?", uuid).Delete(&ProviderRecord{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete provider: %w", result.Error)
 	}
@@ -498,11 +499,11 @@ func (ps *ProviderStore) Count() (int64, error) {
 }
 
 // UpdateCredential updates only the credential fields of a provider
-func (ps *ProviderStore) UpdateCredential(uuid string, token string, oauthDetail *typ.OAuthDetail) error {
+func (ps *ProviderStore) UpdateCredential(ctx context.Context, uuid string, token string, oauthDetail *typ.OAuthDetail) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	_, err := ps.writeThroughLocked(uuid, func(r *ProviderRecord) {
+	_, err := ps.writeThroughLocked(ctx, uuid, func(r *ProviderRecord) {
 		if r.AuthType == string(typ.AuthTypeOAuth) && oauthDetail != nil {
 			r.Token = oauthDetail.AccessToken
 			r.OAuthProviderType = string(oauthDetail.GetIssuer())
@@ -528,11 +529,11 @@ func (ps *ProviderStore) UpdateCredential(uuid string, token string, oauthDetail
 // UpdateCredentialBundle updates only the multi-field credential of a provider
 // (auth types aws_sigv4, azure_key, gcp_sa). Added alongside UpdateCredential
 // to avoid changing that method's signature and its existing callers.
-func (ps *ProviderStore) UpdateCredentialBundle(uuid string, bundle *typ.CredentialBundle) error {
+func (ps *ProviderStore) UpdateCredentialBundle(ctx context.Context, uuid string, bundle *typ.CredentialBundle) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	_, err := ps.writeThroughLocked(uuid, func(r *ProviderRecord) {
+	_, err := ps.writeThroughLocked(ctx, uuid, func(r *ProviderRecord) {
 		r.Credential = cloneCredential(bundle)
 		r.UpdatedAt = time.Now()
 	})
@@ -558,7 +559,7 @@ func (ps *ProviderStore) GetAccessToken(uuid string) (string, error) {
 }
 
 // UpdateOAuthAccessToken updates only the OAuth access token for a provider
-func (ps *ProviderStore) UpdateOAuthAccessToken(uuid, accessToken string) error {
+func (ps *ProviderStore) UpdateOAuthAccessToken(ctx context.Context, uuid, accessToken string) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
@@ -567,7 +568,7 @@ func (ps *ProviderStore) UpdateOAuthAccessToken(uuid, accessToken string) error 
 		return fmt.Errorf("provider with UUID '%s' not found", uuid)
 	}
 
-	result := ps.db.Model(&ProviderRecord{}).
+	result := ps.db.WithContext(ctx).Model(&ProviderRecord{}).
 		Where("uuid = ?", uuid).
 		Update("token", accessToken)
 
