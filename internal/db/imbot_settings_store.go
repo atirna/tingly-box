@@ -1,7 +1,6 @@
 package db
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -74,11 +73,7 @@ func (s *ImBotSettingsStore) ListSettings() ([]Settings, error) {
 
 	settings := make([]Settings, 0, len(records))
 	for _, record := range records {
-		setting, err := recordToSettings(record)
-		if err != nil {
-			return nil, err
-		}
-		settings = append(settings, setting)
+		settings = append(settings, recordToSettings(record))
 	}
 
 	return settings, nil
@@ -96,11 +91,7 @@ func (s *ImBotSettingsStore) ListEnabledSettings() ([]Settings, error) {
 
 	settings := make([]Settings, 0, len(records))
 	for _, record := range records {
-		setting, err := recordToSettings(record)
-		if err != nil {
-			return nil, err
-		}
-		settings = append(settings, setting)
+		settings = append(settings, recordToSettings(record))
 	}
 
 	return settings, nil
@@ -119,7 +110,7 @@ func (s *ImBotSettingsStore) GetSettingsByUUID(uuid string) (Settings, error) {
 		return Settings{Auth: make(map[string]string)}, fmt.Errorf("failed to get settings by uuid: %w", err)
 	}
 
-	return recordToSettings(record)
+	return recordToSettings(record), nil
 }
 
 // CreateSettings creates a new ImBot configuration.
@@ -135,31 +126,15 @@ func (s *ImBotSettingsStore) CreateSettings(settings Settings) (Settings, error)
 	settings.CreatedAt = now
 	settings.UpdatedAt = now
 
-	// Convert auth map to JSON
-	authConfigJSON := ""
-	if len(settings.Auth) > 0 {
-		if b, err := json.Marshal(settings.Auth); err == nil {
-			authConfigJSON = string(b)
-		}
-	}
-
-	// Convert bash allowlist to JSON
-	allowlistJSON := ""
-	if len(settings.BashAllowlist) > 0 {
-		if b, err := json.Marshal(settings.BashAllowlist); err == nil {
-			allowlistJSON = string(b)
-		}
-	}
-
 	record := ImBotSettingsRecord{
 		BotUUID:            settings.UUID,
 		Name:               settings.Name,
 		Platform:           settings.Platform,
 		AuthType:           settings.AuthType,
-		AuthConfig:         authConfigJSON,
+		AuthConfig:         settings.Auth,
 		ProxyURL:           settings.ProxyURL,
 		ChatIDLock:         settings.ChatIDLock,
-		BashAllowlist:      allowlistJSON,
+		BashAllowlist:      settings.BashAllowlist,
 		DefaultCwd:         settings.DefaultCwd,
 		DefaultAgent:       settings.DefaultAgent,
 		Enabled:            settings.Enabled,
@@ -187,77 +162,67 @@ func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) erro
 	now := time.Now()
 	settings.UpdatedAt = now
 
-	// Build a map of only the fields to update
-	// This allows partial updates - empty/zero values won't overwrite existing data
-	updates := make(map[string]interface{})
+	// Read-modify-write rather than Updates(map). A map update cannot carry
+	// auth_config or bash_allowlist now that they are serialized columns --
+	// gorm applies a field's serializer only when the value comes off the
+	// model, so a map value would reach the driver raw. Loading the row first
+	// keeps the same partial-update rule (an empty/zero field leaves the
+	// stored value alone) and preserves the columns Settings does not model
+	// at all, such as debug and verbose.
+	var record ImBotSettingsRecord
+	if err := s.db.Where("bot_uuid = ?", uuid).First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("imbot settings with uuid %s not found", uuid)
+		}
+		return fmt.Errorf("failed to load settings for update: %w", err)
+	}
 
 	if settings.Name != "" {
-		updates["name"] = settings.Name
+		record.Name = settings.Name
 	}
 	if settings.Platform != "" {
-		updates["platform"] = settings.Platform
+		record.Platform = settings.Platform
 	}
 	if settings.AuthType != "" {
-		updates["auth_type"] = settings.AuthType
+		record.AuthType = settings.AuthType
 	}
 	if settings.ProxyURL != "" {
-		updates["proxy_url"] = settings.ProxyURL
+		record.ProxyURL = settings.ProxyURL
 	}
 	if settings.ChatIDLock != "" {
-		updates["chat_id_lock"] = settings.ChatIDLock
+		record.ChatIDLock = settings.ChatIDLock
 	}
-
-	// Handle Auth config - only update if non-empty
 	if len(settings.Auth) > 0 {
-		if b, err := json.Marshal(settings.Auth); err == nil {
-			updates["auth_config"] = string(b)
-		}
+		record.AuthConfig = settings.Auth
 	}
-
-	// Handle BashAllowlist - only update if non-empty
 	if len(settings.BashAllowlist) > 0 {
-		if b, err := json.Marshal(settings.BashAllowlist); err == nil {
-			updates["bash_allowlist"] = string(b)
-		}
+		record.BashAllowlist = settings.BashAllowlist
 	}
-
 	if settings.DefaultCwd != "" {
-		updates["default_cwd"] = settings.DefaultCwd
+		record.DefaultCwd = settings.DefaultCwd
 	}
 	if settings.DefaultAgent != "" {
-		updates["default_agent"] = settings.DefaultAgent
+		record.DefaultAgent = settings.DefaultAgent
 	}
 	if settings.SmartGuideProvider != "" {
-		updates["smartguide_provider"] = settings.SmartGuideProvider
+		record.SmartGuideProvider = settings.SmartGuideProvider
 	}
 	if settings.SmartGuideModel != "" {
-		updates["smartguide_model"] = settings.SmartGuideModel
+		record.SmartGuideModel = settings.SmartGuideModel
 	}
 	if settings.RequirePairing != nil {
-		updates["require_pairing"] = settings.RequirePairing
+		record.RequirePairing = settings.RequirePairing
 	}
 	// Scenarios is intentionally allowed to be cleared (empty string) so
 	// callers can unbind a bot from all scenarios.
-	updates["scenarios"] = settings.Scenarios
+	record.Scenarios = settings.Scenarios
 
-	// Always update enabled and updated_at if explicitly set
-	updates["enabled"] = settings.Enabled
-	updates["updated_at"] = settings.UpdatedAt
+	// enabled and updated_at are always written.
+	record.Enabled = settings.Enabled
+	record.UpdatedAt = settings.UpdatedAt
 
-	if len(updates) == 0 {
-		return nil // Nothing to update
-	}
-
-	result := s.db.Model(&ImBotSettingsRecord{}).
-		Where("bot_uuid = ?", uuid).
-		Updates(updates)
-
-	if result.Error != nil {
-		return fmt.Errorf("failed to update settings: %w", result.Error)
-	}
-
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("imbot settings with uuid %s not found", uuid)
+	if err := s.db.Save(&record).Error; err != nil {
+		return fmt.Errorf("failed to update settings: %w", err)
 	}
 
 	return nil
@@ -322,7 +287,11 @@ func (s *ImBotSettingsStore) SetEnabled(uuid string, enabled bool) error {
 }
 
 // recordToSettings converts an ImBotSettingsRecord to a Settings struct.
-func recordToSettings(record ImBotSettingsRecord) (Settings, error) {
+//
+// This no longer returns an error: auth_config and bash_allowlist are decoded
+// by gorm's json serializer when the row is read, so a malformed column now
+// fails the query itself rather than being re-parsed (and re-reported) here.
+func recordToSettings(record ImBotSettingsRecord) Settings {
 	settings := Settings{
 		UUID:               record.BotUUID,
 		Name:               record.Name,
@@ -339,14 +308,12 @@ func recordToSettings(record ImBotSettingsRecord) (Settings, error) {
 		Scenarios:          record.Scenarios,
 		CreatedAt:          record.CreatedAt,
 		UpdatedAt:          record.UpdatedAt,
-		Auth:               make(map[string]string),
+		BashAllowlist:      record.BashAllowlist,
+		// Auth is always non-nil: callers index and assign into it.
+		Auth: record.AuthConfig,
 	}
-
-	// Parse auth config JSON
-	if record.AuthConfig != "" {
-		if err := json.Unmarshal([]byte(record.AuthConfig), &settings.Auth); err != nil {
-			return Settings{}, fmt.Errorf("failed to unmarshal auth config: %w", err)
-		}
+	if settings.Auth == nil {
+		settings.Auth = make(map[string]string)
 	}
 
 	// Set Token field for backward compatibility (from auth["token"])
@@ -354,14 +321,7 @@ func recordToSettings(record ImBotSettingsRecord) (Settings, error) {
 		settings.Token = token
 	}
 
-	// Parse bash allowlist JSON
-	if record.BashAllowlist != "" {
-		if err := json.Unmarshal([]byte(record.BashAllowlist), &settings.BashAllowlist); err != nil {
-			return Settings{}, fmt.Errorf("failed to unmarshal bash allowlist: %w", err)
-		}
-	}
-
-	return settings, nil
+	return settings
 }
 
 // generateUUID generates a unique ID for settings.

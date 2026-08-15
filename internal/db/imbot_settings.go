@@ -6,17 +6,17 @@ import (
 
 // ImBotSettingsRecord is the GORM model for persisting ImBot credentials
 type ImBotSettingsRecord struct {
-	BotUUID       string `gorm:"primaryKey;column:bot_uuid"`
-	Name          string `gorm:"column:name"`
-	Platform      string `gorm:"column:platform;index:idx_platform"`
-	AuthType      string `gorm:"column:auth_type"`
-	AuthConfig    string `gorm:"column:auth_config;type:text"` // JSON string of auth map
-	ProxyURL      string `gorm:"column:proxy_url"`
-	ChatIDLock    string `gorm:"column:chat_id_lock"`
-	BashAllowlist string `gorm:"column:bash_allowlist;type:text"` // JSON array string
-	DefaultCwd    string `gorm:"column:default_cwd"`              // Default working directory
-	DefaultAgent  string `gorm:"column:default_agent"`            // Default Agent UUID
-	Enabled       bool   `gorm:"column:enabled;index:idx_enabled"`
+	BotUUID       string            `gorm:"primaryKey;column:bot_uuid"`
+	Name          string            `gorm:"column:name"`
+	Platform      string            `gorm:"column:platform;index:idx_platform"`
+	AuthType      string            `gorm:"column:auth_type"`
+	AuthConfig    map[string]string `gorm:"column:auth_config;type:text;serializer:json"`
+	ProxyURL      string            `gorm:"column:proxy_url"`
+	ChatIDLock    string            `gorm:"column:chat_id_lock"`
+	BashAllowlist []string          `gorm:"column:bash_allowlist;type:text;serializer:json"`
+	DefaultCwd    string            `gorm:"column:default_cwd"`   // Default working directory
+	DefaultAgent  string            `gorm:"column:default_agent"` // Default Agent UUID
+	Enabled       bool              `gorm:"column:enabled;index:idx_enabled"`
 
 	// Output behavior settings
 	Debug   bool  `gorm:"column:debug;default:false"`  // Show message IDs in output
