@@ -7,11 +7,48 @@ permission/ask routing behind one `AgentService` entry point.
 It is an internal library of tingly-box, kept as its own Go module so the
 dependency direction stays clean (agentboot never imports tingly-box
 internals). The execution core (`Runner` + `AgentDriver` + `AgentTransport` +
-`process`/`protocol`) is agent-neutral — that seam exists for testability
-(scripted fake processes) and as the extension point if another CLI agent is
-ever added — but Claude Code is the only implemented backend, and the message
-types consumers see are Claude's. AgentBoot does not embed the Python
-`claude-agent-sdk` and does not use Claude Desktop as an execution backend.
+`internal/process`/`internal/protocol`) is agent-neutral — that seam exists
+for testability (scripted fake processes) and as the extension point if
+another CLI agent is ever added — but Claude Code is the only implemented
+backend, and the message types consumers see are Claude's. AgentBoot does not
+embed the Python `claude-agent-sdk` and does not use Claude Desktop as an
+execution backend.
+
+## Public API
+
+`internal/process`, `internal/protocol`, `internal/history`, and
+`claude/internal/session` are Go `internal` packages: nothing outside this
+module can import them, and today nothing outside this module does — grep the
+consumer tree before assuming otherwise if that ever needs revisiting. That
+boundary is enforced by the compiler, not just by convention. Everything else
+below is what tingly-box actually imports; treat this as the change-review
+checklist, not an aspiration.
+
+- **Production entry point** — `AgentService` (`NewService`, `Execute`, `Run`,
+  `ListProjects`, `ListSessions`, `GetSession`, `GetSessionSummary`),
+  `RunRequest`, `ExecutionOptions`, `ExecutionHandle`, the `StreamEvent`
+  variants (`MessageEvent`, `ApprovalRequestEvent`, `AskRequestEvent`,
+  `ErrorEvent`), `ControlResponse` (`ApprovalResponse`, `AskResponse`),
+  `Prompter`, `Result`, `AgentType`, `OutputFormat`, `Config`.
+- **Claude message model** — `claude.Message` and its concrete types
+  (`AssistantMessage`, `SystemMessage`, `UserMessage`, `ToolUseMessage`,
+  `ToolResultMessage`, `StreamEventMessage`, `ResultMessage`), their
+  `SDK*`/`SystemSubtype*`/`ContentBlockType*` constants, `StreamEvent`,
+  `TextDelta`, `InputJSONDelta`, content-block types and
+  `UnmarshalContentBlock`. `MessageEvent.Raw` carries these concrete types by
+  design (§8 of `.design/agentboot-refactor.md`) — this is intentionally not
+  provider-neutral, and consumers are expected to type-switch on it.
+- **Claude production config** — `claude.Config`, `claude.PermissionMode` +
+  its constants, `IsValidPermissionMode`, `claude.NewService`,
+  `claude.WithProjectsDir`, the `claude.ContextKey*` execution-context keys.
+- **Test-harness seam** — `claude.NewAgentWithFactory` + `claude.Driver` /
+  `claude.Transport` (constructor types) + `claude/fixture` (scripted CLI
+  output). This is how external tests substitute a fake Claude CLI process;
+  it is a real, supported extension point, not incidental exposure.
+
+Changing or removing anything in this list is a breaking change for
+tingly-box and should be reviewed as one. Anything reachable only through
+`internal/` can be refactored freely.
 
 ## Features
 
@@ -231,9 +268,10 @@ agentboot/
 ├── run.go                # High-level Prompter/MessageSink consumer
 ├── service.go            # AgentService — the single public entry point (registry + query + execute)
 ├── lifecycle.go          # Runtime LifecycleStore interface
-├── history/              # SessionReader + historical session types
-├── process/              # LaunchSpec + process abstraction (OS/fake)
-├── protocol/             # Stream-JSON encoder / decoder + canonical Event
+├── internal/
+│   ├── history/          # SessionReader + historical session types
+│   ├── process/          # LaunchSpec + process abstraction (OS/fake)
+│   └── protocol/         # Stream-JSON encoder / decoder + canonical Event
 └── claude/               # Claude Code agent implementation
     ├── agent.go          # claude.Agent (wraps Runner)
     ├── service.go        # Agent + Claude session-reader composition
@@ -246,7 +284,8 @@ agentboot/
     ├── message.go        # Claude wire message types
     ├── content.go        # Content block decoding
     ├── prompt_builder.go # Prompt assembly
-    ├── session/          # Claude-specific session store (~/.claude/projects)
+    ├── internal/session/ # Claude-specific session store (~/.claude/projects)
+    ├── fixture/          # Scripted CLI output for the test-harness seam
     └── examples/session/ # Session query example
 ```
 

@@ -1,6 +1,6 @@
 package agentboot
 
-import "github.com/tingly-dev/tingly-box/agentboot/protocol"
+import "github.com/tingly-dev/tingly-box/agentboot/internal/protocol"
 
 // AgentTransportFactory creates the protocol state for one execution.
 //

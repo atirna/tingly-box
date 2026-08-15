@@ -3,7 +3,7 @@ package session
 import (
 	"strings"
 
-	"github.com/tingly-dev/tingly-box/agentboot/history"
+	"github.com/tingly-dev/tingly-box/agentboot/internal/history"
 )
 
 // SessionFilter defines a function to filter sessions

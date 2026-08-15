@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/tingly-dev/tingly-box/agentboot/protocol"
+	"github.com/tingly-dev/tingly-box/agentboot/internal/protocol"
 )
 
 // MessageAccumulator collects related events into complete messages

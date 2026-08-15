@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/tingly-dev/tingly-box/agentboot"
-	claudesession "github.com/tingly-dev/tingly-box/agentboot/claude/session"
+	claudesession "github.com/tingly-dev/tingly-box/agentboot/claude/internal/session"
 )
 
 type serviceConfig struct {

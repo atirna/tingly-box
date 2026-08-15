@@ -13,7 +13,7 @@ import (
 	"github.com/tingly-dev/tingly-box/agentboot"
 	"github.com/tingly-dev/tingly-box/agentboot/claude"
 	"github.com/tingly-dev/tingly-box/agentboot/claude/fixture"
-	"github.com/tingly-dev/tingly-box/agentboot/process"
+	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
 )
 
 func TestRunner_PropagatesProcessExitError(t *testing.T) {

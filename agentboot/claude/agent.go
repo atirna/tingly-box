@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/tingly-dev/tingly-box/agentboot"
-	"github.com/tingly-dev/tingly-box/agentboot/process"
+	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
 )
 
 // Agent implements the agentboot.Agent interface for Claude Code.

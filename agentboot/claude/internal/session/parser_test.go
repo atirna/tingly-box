@@ -3,7 +3,7 @@ package session
 import (
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/agentboot/history"
+	"github.com/tingly-dev/tingly-box/agentboot/internal/history"
 )
 
 func TestExtractString(t *testing.T) {

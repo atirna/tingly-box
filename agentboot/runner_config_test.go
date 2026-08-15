@@ -11,7 +11,7 @@ import (
 
 	"github.com/tingly-dev/tingly-box/agentboot"
 	"github.com/tingly-dev/tingly-box/agentboot/claude"
-	"github.com/tingly-dev/tingly-box/agentboot/process"
+	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
 )
 
 func TestRunner_AppliesConfiguredBufferAndDefaultTimeout(t *testing.T) {

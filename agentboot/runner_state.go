@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tingly-dev/tingly-box/agentboot/protocol"
+	"github.com/tingly-dev/tingly-box/agentboot/internal/protocol"
 )
 
 // runState is the shared accumulator driven by the pump goroutine.
