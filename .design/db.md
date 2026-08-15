@@ -308,6 +308,61 @@ lives in the DDL, which GORM can't see. A nil `Config` would hit the NOT NULL
 constraint at write time. Leave `bot_access_store`'s `rawJSONOrObject` helper
 alone; it exists for this reason.
 
+#### Outcome
+
+Done for **`provider_store`** (tags, oauth_extra_fields, vmodel_detail,
+credential), **`provider_model`** (models) and **`imbot_settings_store`**
+(auth_config, bash_allowlist). Three things came out of doing it that the
+evaluation above did not anticipate:
+
+**1. It is a hot-path performance fix, not just a tidy-up.**
+`ProviderStore.GetByUUID` is served from the write-through cache, so its cost
+is whatever `toProvider()` does — which included decoding the JSON columns on
+every call, i.e. once per routed LLM request. Removing that:
+
+| Benchmark | before | after |
+|---|---|---|
+| `GetByUUID_Tagged` | 1637–1901 ns/op, 11 allocs | 369–386 ns/op, 2 allocs (**~4.5×**) |
+| `GetByUUID_OAuth` | 2671–2922 ns/op, 21 allocs | 718–838 ns/op, 5 allocs (**~3.5×**) |
+| `GetByUUID_NoJSON` (control) | ~253 ns/op | ~245 ns/op |
+
+**2. `Updates(map[string]any)` silently bypasses serializers.** GORM applies
+a field's serializer only when the value comes off the *model*. A map value
+reaches the driver raw: passing a `[]string` fails with SQLite's
+"row value misused", and — worse — an empty `[]string` **writes NULL with no
+error at all**. Every store whose write path used `Updates(map)` on a column
+being converted had to move to read-modify-write (`provider_model.saveModels`,
+`imbot_settings_store.UpdateSettings`). This is the single biggest trap in
+this migration: the failure is silent in exactly the case (empty collection)
+that a test is least likely to cover.
+
+**3. The string encoding was providing cache isolation by accident.**
+Unmarshalling allocated a fresh value per read, so no caller shared state
+with a cached record. `ProviderStore` caches `*ProviderRecord`, and the OAuth
+callback handler mutates `provider.OAuthDetail.ExtraFields` in place on a
+provider it read from the store — which, with typed fields, would write
+straight into the cache and persist even if the following `UpdateProvider`
+failed. Explicit clone helpers restore the isolation; `TestProviderStore_CacheIsolation`
+pins it. **Any cached store converted in future needs the same treatment.**
+
+#### Not done: `remote_chat_store.project_history`
+
+Deliberately left as hand-marshalled, reversing the evaluation above.
+
+The serializer turns a decode failure into a failed *query*. For provider
+config that is the right trade — silently loading a provider with no
+credentials is worse than a loud error. For `project_history` it is not:
+`decodeProjectHistory` deliberately logs and degrades to empty, and the
+column holds a best-effort MRU path list, not anything the bot needs to
+function.
+
+Hard-failing the read would also make the row **unrecoverable through the
+store**. `GetChat` gates the IM-bot message path, and every write path
+(`GetOrCreateChat` → `mutate` → `UpdateChat`) reads before it writes — so a
+column that fails to decode could no longer be overwritten by the next
+`BindProject`, where today it is simply replaced. Trading that for the
+removal of two helper functions is a bad deal.
+
 ### Yes: `Scopes` for the repeated usage filter blocks
 
 `usage_record.go` rebuilds the same time-range + filter-map `WHERE` block
@@ -410,10 +465,10 @@ belongs in its own ticket, not bundled with a codec change.
 
 ### Suggested order
 
-1. `serializer:json`, **one store per PR**, each PR re-auditing that store's
-   `WHERE` clauses over the converted columns (`GetAllProviders` is the
-   known one). Start with `provider_store` — most sites, and it fixes the
-   swallowed JSON errors.
+1. ~~`serializer:json`, one store per commit, each re-auditing that store's
+   `WHERE` clauses over the converted columns.~~ Done for `provider_store`,
+   `provider_model` and `imbot_settings_store`; `remote_chat_store`
+   deliberately skipped. See **Outcome** above.
 2. `usage_record` filter scopes + the column whitelist.
 3. The `ListGroupActors` `IN` batching.
 
