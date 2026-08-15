@@ -375,3 +375,71 @@ func TestParseIntQuery_Helper(t *testing.T) {
 		})
 	}
 }
+
+// TestReasoningTokensSurviveHandlerConversion exercises the real Handler
+// (backed by a real db.UsageStore, not the mock) end to end, verifying
+// ReasoningTokens survives the db.X -> usage.X conversion in all three
+// handlers instead of being dropped like it used to be before persistence.
+func TestReasoningTokensSurviveHandlerConversion(t *testing.T) {
+	sm, err := db.NewStoreManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewStoreManager failed: %v", err)
+	}
+	defer sm.Close()
+	store := sm.Usage()
+
+	if err := store.RecordUsage(&db.UsageRecord{
+		ProviderUUID:    "prov-1",
+		ProviderName:    "openai",
+		Model:           "gpt-5.1-reasoning",
+		Scenario:        "default",
+		UserID:          "admin",
+		Timestamp:       time.Now(),
+		InputTokens:     100,
+		OutputTokens:    80,
+		ReasoningTokens: 30,
+		Status:          "success",
+	}); err != nil {
+		t.Fatalf("RecordUsage failed: %v", err)
+	}
+
+	handler := NewHandler(store)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/usage/stats", handler.GetStats)
+	router.GET("/usage/timeseries", handler.GetTimeSeries)
+	router.GET("/usage/records", handler.GetRecords)
+
+	start := time.Now().Add(-time.Hour).Format(time.RFC3339)
+	end := time.Now().Add(time.Hour).Format(time.RFC3339)
+
+	t.Run("stats", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/usage/stats?start_time="+start+"&end_time="+end, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		assert.Contains(t, w.Body.String(), `"reasoning_tokens":30`)
+	})
+
+	t.Run("timeseries", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/usage/timeseries?interval=hour&start_time="+start+"&end_time="+end, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		assert.Contains(t, w.Body.String(), `"reasoning_tokens":30`)
+	})
+
+	t.Run("records", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/usage/records?start_time="+start+"&end_time="+end, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		assert.Contains(t, w.Body.String(), `"reasoning_tokens":30`)
+	})
+}

@@ -37,6 +37,12 @@ type UsageRecord struct {
 	// alias it (`SUM(cache_input_tokens) as cache_read_tokens`) so Scan binds.
 	CacheReadTokens  int `gorm:"column:cache_input_tokens;default:0"`
 	CacheWriteTokens int `gorm:"column:cache_write_tokens;default:0"`
+	// ReasoningTokens counts thinking/reasoning tokens (OpenAI o1/o3/gpt-5.x
+	// reasoning models). It is a SUBSET of OutputTokens, not an addition to
+	// it -- OutputTokens already includes them upstream. Anthropic does not
+	// expose a separate thinking-token count at all, so this is always 0 for
+	// Anthropic-routed requests even when extended thinking was used.
+	ReasoningTokens int `gorm:"column:reasoning_tokens;default:0"`
 	// System tokens (framework overhead, templates, etc.)
 	SystemTokens int    `gorm:"column:system_tokens;default:0"`
 	Status       string `gorm:"column:status;index;not null"` // success, error, partial
@@ -75,6 +81,8 @@ type UsageDailyRecord struct {
 	// Cache tokens: reads, then writes (a subset of InputTokens)
 	CacheReadTokens  int64 `gorm:"column:cache_input_tokens;default:0"`
 	CacheWriteTokens int64 `gorm:"column:cache_write_tokens;default:0"`
+	// ReasoningTokens: a subset of OutputTokens (see UsageRecord doc)
+	ReasoningTokens int64 `gorm:"column:reasoning_tokens;default:0"`
 	// System tokens
 	SystemTokens  int64 `gorm:"column:system_tokens;default:0"`
 	ErrorCount    int64 `gorm:"column:error_count;default:0"`
@@ -239,6 +247,7 @@ type AggregatedStat struct {
 	OutputTokens     int64   `json:"total_output_tokens"`
 	CacheReadTokens  int64   `json:"cache_read_tokens"`
 	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
 	SystemTokens     int64   `json:"system_tokens"`
 	AvgInputTokens   float64 `json:"avg_input_tokens"`
 	AvgOutputTokens  float64 `json:"avg_output_tokens"`
@@ -376,6 +385,7 @@ type aggBucket struct {
 	OutputTokens     int64
 	CacheReadTokens  int64
 	CacheWriteTokens int64
+	ReasoningTokens  int64
 	SystemTokens     int64
 	ErrorCount       int64
 	StreamedCount    int64
@@ -396,6 +406,7 @@ func (b aggBucket) toAggregatedStat() AggregatedStat {
 		OutputTokens:     b.OutputTokens,
 		CacheReadTokens:  b.CacheReadTokens,
 		CacheWriteTokens: b.CacheWriteTokens,
+		ReasoningTokens:  b.ReasoningTokens,
 		SystemTokens:     b.SystemTokens,
 		AvgInputTokens:   avgFloat(float64(b.InputTokens), b.RequestCount),
 		AvgOutputTokens:  avgFloat(float64(b.OutputTokens), b.RequestCount),
@@ -460,6 +471,7 @@ func (us *UsageStore) rawAggBuckets(query UsageStatsQuery, applyLimit bool) ([]a
 		COALESCE(SUM(output_tokens), 0) as output_tokens,
 		COALESCE(SUM(cache_input_tokens), 0) as cache_read_tokens,
 		COALESCE(SUM(cache_write_tokens), 0) as cache_write_tokens,
+		COALESCE(SUM(reasoning_tokens), 0) as reasoning_tokens,
 		COALESCE(SUM(system_tokens), 0) as system_tokens,
 		COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) as error_count,
 		COALESCE(SUM(CASE WHEN streamed = true THEN 1 ELSE 0 END), 0) as streamed_count,
@@ -486,6 +498,7 @@ type TimeSeriesData struct {
 	OutputTokens     int64   `json:"output_tokens"`
 	CacheReadTokens  int64   `json:"cache_read_tokens"`
 	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
 	SystemTokens     int64   `json:"system_tokens"`
 	ErrorCount       int64   `json:"error_count"`
 	AvgLatencyMs     float64 `json:"avg_latency_ms"`
@@ -536,6 +549,7 @@ func (us *UsageStore) rawTimeSeries(interval string, startTime, endTime time.Tim
 		OutputTokens     int64
 		CacheReadTokens  int64
 		CacheWriteTokens int64
+		ReasoningTokens  int64
 		SystemTokens     int64
 		ErrorCount       int64
 		AvgLatency       float64
@@ -551,6 +565,7 @@ func (us *UsageStore) rawTimeSeries(interval string, startTime, endTime time.Tim
 		COALESCE(SUM(output_tokens), 0) as output_tokens,
 		COALESCE(SUM(cache_input_tokens), 0) as cache_read_tokens,
 		COALESCE(SUM(cache_write_tokens), 0) as cache_write_tokens,
+		COALESCE(SUM(reasoning_tokens), 0) as reasoning_tokens,
 		COALESCE(SUM(system_tokens), 0) as system_tokens,
 		COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) as error_count,
 		COALESCE(AVG(latency_ms), 0) as avg_latency
@@ -575,6 +590,7 @@ func (us *UsageStore) rawTimeSeries(interval string, startTime, endTime time.Tim
 			OutputTokens:     r.OutputTokens,
 			CacheReadTokens:  r.CacheReadTokens,
 			CacheWriteTokens: r.CacheWriteTokens,
+			ReasoningTokens:  r.ReasoningTokens,
 			SystemTokens:     r.SystemTokens,
 			ErrorCount:       r.ErrorCount,
 			AvgLatencyMs:     r.AvgLatency,

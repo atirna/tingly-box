@@ -40,6 +40,7 @@ func seedUsageRecords(t *testing.T, store *UsageStore, days int) int {
 					OutputTokens:     50 + h,
 					CacheReadTokens:  20 * i,
 					CacheWriteTokens: 7 * (d % 3),
+					ReasoningTokens:  3 * (h % 4),
 					SystemTokens:     5,
 					Status:           status,
 					LatencyMs:        200 + h*3,
@@ -115,6 +116,7 @@ func TestAggregatedStatsDailyMatchesRaw(t *testing.T) {
 				m.OutputTokens != r.OutputTokens ||
 				m.CacheReadTokens != r.CacheReadTokens ||
 				m.CacheWriteTokens != r.CacheWriteTokens ||
+				m.ReasoningTokens != r.ReasoningTokens ||
 				m.SystemTokens != r.SystemTokens ||
 				m.ErrorCount != r.ErrorCount ||
 				m.StreamedCount != r.StreamedCount {
@@ -216,6 +218,7 @@ func TestTimeSeriesDailyMatchesRaw(t *testing.T) {
 			m.OutputTokens != r.OutputTokens ||
 			m.CacheReadTokens != r.CacheReadTokens ||
 			m.CacheWriteTokens != r.CacheWriteTokens ||
+			m.ReasoningTokens != r.ReasoningTokens ||
 			m.ErrorCount != r.ErrorCount {
 			t.Fatalf("bucket %d mismatch:\nmerged=%+v\nraw=%+v", i, m, r)
 		}

@@ -389,6 +389,7 @@ func (ph *ProtocolHandler) recordDetailedUsageWithTokenUsage(c *gin.Context, rul
 		OutputTokens:     usage.OutputTokens,
 		CacheReadTokens:  usage.CacheReadTokens,
 		CacheWriteTokens: usage.CacheWriteTokens,
+		ReasoningTokens:  usage.ReasoningTokens,
 		SystemTokens:     usage.SystemTokens,
 		TotalTokens:      usage.TotalTokens(),
 		Status:           status,

@@ -41,6 +41,11 @@ type AggregatedStat struct {
 	StreamedRate     float64 `json:"streamed_rate" example:"0.885"`
 	CacheReadTokens  int64   `json:"cache_read_tokens" example:"500000"`
 	CacheWriteTokens int64   `json:"cache_write_tokens" example:"75000"`
+	// ReasoningTokens is a subset of OutputTokens (thinking/reasoning
+	// tokens). Always 0 for Anthropic-routed requests -- Anthropic does not
+	// expose a separate thinking-token count, even when extended thinking
+	// was used.
+	ReasoningTokens int64 `json:"reasoning_tokens" example:"12000"`
 }
 
 // UsageStatsResponse represents the response for usage statistics
@@ -77,6 +82,7 @@ type TimeSeriesData struct {
 	OutputTokens     int64   `json:"output_tokens" example:"20000"`
 	CacheReadTokens  int64   `json:"cache_read_tokens" example:"10000"`
 	CacheWriteTokens int64   `json:"cache_write_tokens" example:"1500"`
+	ReasoningTokens  int64   `json:"reasoning_tokens" example:"800"`
 	ErrorCount       int64   `json:"error_count" example:"0"`
 	AvgLatencyMs     float64 `json:"avg_latency_ms" example:"1100"`
 }
@@ -123,6 +129,7 @@ type UsageRecordResponse struct {
 	TotalTokens      int     `json:"total_tokens" example:"1500"`
 	CacheReadTokens  int     `json:"cache_read_tokens" example:"2000"`
 	CacheWriteTokens int     `json:"cache_write_tokens" example:"300"`
+	ReasoningTokens  int     `json:"reasoning_tokens" example:"50"`
 	Status           string  `json:"status" example:"success"`
 	ErrorCode        string  `json:"error_code,omitempty"`
 	LatencyMs        int     `json:"latency_ms" example:"1200"`
