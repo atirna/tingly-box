@@ -128,8 +128,10 @@ func TestFromAnthropicMessage(t *testing.T) {
 		name                  string
 		input, creation, read int64
 		output                int64
+		reasoning             int64
 		wantInput, wantOutput int
 		wantCache             int
+		wantReasoning         int
 	}{
 		{
 			name:  "cache read only",
@@ -146,6 +148,13 @@ func TestFromAnthropicMessage(t *testing.T) {
 			input: 300, creation: 0, read: 0, output: 80,
 			wantInput: 300, wantOutput: 80, wantCache: 0,
 		},
+		{
+			// output_tokens_details.thinking_tokens (added alongside
+			// claude-opus-4-8): a subset of output_tokens, not subtracted.
+			name:  "extended thinking",
+			input: 100, creation: 0, read: 0, output: 80, reasoning: 30,
+			wantInput: 100, wantOutput: 80, wantCache: 0, wantReasoning: 30,
+		},
 	}
 
 	for _, tc := range tests {
@@ -155,11 +164,15 @@ func TestFromAnthropicMessage(t *testing.T) {
 				OutputTokens:             tc.output,
 				CacheCreationInputTokens: tc.creation,
 				CacheReadInputTokens:     tc.read,
+				OutputTokensDetails: anthropic.OutputTokensDetails{
+					ThinkingTokens: tc.reasoning,
+				},
 			}
 			got := usage.FromAnthropicMessage(u)
 			assert.Equal(t, tc.wantInput, got.InputTokens)
 			assert.Equal(t, tc.wantOutput, got.OutputTokens)
 			assert.Equal(t, tc.wantCache, got.CacheReadTokens)
+			assert.Equal(t, tc.wantReasoning, got.ReasoningTokens)
 		})
 	}
 }
@@ -170,11 +183,15 @@ func TestFromAnthropicBetaMessage(t *testing.T) {
 		OutputTokens:             50,
 		CacheCreationInputTokens: 200,
 		CacheReadInputTokens:     400,
+		OutputTokensDetails: anthropic.BetaOutputTokensDetails{
+			ThinkingTokens: 15,
+		},
 	}
 	got := usage.FromAnthropicBetaMessage(u)
 	assert.Equal(t, 300, got.InputTokens) // 100 + 200
 	assert.Equal(t, 50, got.OutputTokens)
 	assert.Equal(t, 400, got.CacheReadTokens)
+	assert.Equal(t, 15, got.ReasoningTokens)
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +272,26 @@ func messageDeltaFullJSON(t *testing.T, inputTokens, outputTokens, cacheRead int
 			"input_tokens":            inputTokens,
 			"output_tokens":           outputTokens,
 			"cache_read_input_tokens": cacheRead,
+		},
+	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// thinkingDeltaJSON is outputOnlyDeltaJSON plus a
+// usage.output_tokens_details.thinking_tokens breakdown (extended thinking,
+// added alongside claude-opus-4-8).
+func thinkingDeltaJSON(t *testing.T, outputTokens, thinkingTokens int64) string {
+	t.Helper()
+	ev := map[string]interface{}{
+		"type":  "message_delta",
+		"delta": map[string]interface{}{"stop_reason": "end_turn"},
+		"usage": map[string]interface{}{
+			"output_tokens":         outputTokens,
+			"output_tokens_details": map[string]interface{}{"thinking_tokens": thinkingTokens},
 		},
 	}
 	b, err := json.Marshal(ev)
@@ -350,6 +387,30 @@ func TestAnthropicAccumulator_Beta(t *testing.T) {
 	assert.Equal(t, 45, got.InputTokens) // 40 + 5
 	assert.Equal(t, 22, got.OutputTokens)
 	assert.Equal(t, 8, got.CacheReadTokens)
+}
+
+// TestAnthropicAccumulator_ExtendedThinking verifies
+// output_tokens_details.thinking_tokens accumulates into ReasoningTokens
+// (a subset of OutputTokens, not added on top of it).
+func TestAnthropicAccumulator_ExtendedThinking(t *testing.T) {
+	events := []string{
+		messageStartJSON(t, 100, 0, 0),
+		thinkingDeltaJSON(t, 80, 30),
+	}
+	dec := newFakeDecoder(events)
+	stream := anthropicstream.NewStream[anthropic.MessageStreamEventUnion](dec, nil)
+
+	acc := usage.NewAnthropicAccumulator()
+	for stream.Next() {
+		evt := stream.Current()
+		acc.Consume(&evt)
+	}
+
+	got := acc.Result()
+	assert.Equal(t, 100, got.InputTokens)
+	assert.Equal(t, 80, got.OutputTokens)
+	assert.Equal(t, 30, got.ReasoningTokens)
+	assert.True(t, acc.HasUsage())
 }
 
 // TestAnthropicAccumulator_NoUsage verifies HasUsage is false when no usage seen.
@@ -494,8 +555,23 @@ func TestToAnthropicUsageMap_UnfoldsCacheWrite(t *testing.T) {
 	assert.Equal(t, 200, m["input_tokens"], "input_tokens excludes the write portion")
 	assert.Equal(t, 50, m["cache_creation_input_tokens"])
 	assert.Equal(t, 800, m["cache_read_input_tokens"])
+	assert.Nil(t, m["output_tokens_details"], "absent when there is no reasoning to report")
 
 	// input + creation + read must reconstruct the original prompt total.
 	assert.Equal(t, u.InputTokens+u.CacheReadTokens,
 		m["input_tokens"].(int)+m["cache_creation_input_tokens"].(int)+m["cache_read_input_tokens"].(int))
+}
+
+// TestToAnthropicUsageMap_ReasoningTokens verifies ReasoningTokens (whether
+// sourced from OpenAI or Anthropic itself) round-trips onto the Anthropic
+// wire shape as output_tokens_details.thinking_tokens.
+func TestToAnthropicUsageMap_ReasoningTokens(t *testing.T) {
+	u := protocol.NewTokenUsageFull(100, 80, 0, 0, 30)
+
+	m := u.ToAnthropicUsageMap()
+	details, ok := m["output_tokens_details"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected output_tokens_details map, got %T", m["output_tokens_details"])
+	}
+	assert.Equal(t, 30, details["thinking_tokens"])
 }

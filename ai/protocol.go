@@ -125,6 +125,14 @@ func (u *TokenUsage) ToAnthropicUsageMap() map[string]interface{} {
 	if u.CacheWriteTokens > 0 {
 		usage["cache_creation_input_tokens"] = u.CacheWriteTokens
 	}
+	if u.ReasoningTokens > 0 {
+		// Mirrors Anthropic's own usage.output_tokens_details.thinking_tokens
+		// (added alongside claude-opus-4-8) -- a subset of output_tokens, not
+		// something Anthropic lacks.
+		usage["output_tokens_details"] = map[string]interface{}{
+			"thinking_tokens": u.ReasoningTokens,
+		}
+	}
 	return usage
 }
 

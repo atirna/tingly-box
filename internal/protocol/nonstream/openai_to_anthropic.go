@@ -19,12 +19,18 @@ import (
 // InputTokens, so emitting it unchanged alongside cache_creation_input_tokens
 // would bill the write portion twice.
 func anthropicUsageWire(u *protocol.TokenUsage) wire.AnthropicUsageWire {
-	return wire.AnthropicUsageWire{
+	w := wire.AnthropicUsageWire{
 		InputTokens:              int64(u.UncachedInputTokens()),
 		OutputTokens:             int64(u.OutputTokens),
 		CacheReadInputTokens:     int64(u.CacheReadTokens),
 		CacheCreationInputTokens: int64(u.CacheWriteTokens),
 	}
+	if u.ReasoningTokens > 0 {
+		w.OutputTokensDetails = &wire.AnthropicOutputTokensDetailsWire{
+			ThinkingTokens: int64(u.ReasoningTokens),
+		}
+	}
+	return w
 }
 
 func HandleOpenAIChatToAnthropic(chat *openai.ChatCompletion, model string) *anthropic.BetaMessage {

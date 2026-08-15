@@ -64,6 +64,9 @@ func (a *AnthropicStreamAssembler) RecordV1Event(event *anthropic.MessageStreamE
 				InputTokens:          event.Usage.InputTokens,
 				OutputTokens:         event.Usage.OutputTokens,
 				CacheReadInputTokens: event.Usage.CacheReadInputTokens,
+				OutputTokensDetails: anthropic.OutputTokensDetails{
+					ThinkingTokens: event.Usage.OutputTokensDetails.ThinkingTokens,
+				},
 			}
 		}
 	}
@@ -92,6 +95,9 @@ func (a *AnthropicStreamAssembler) RecordV1BetaEvent(event *anthropic.BetaRawMes
 				InputTokens:          event.Usage.InputTokens,
 				OutputTokens:         event.Usage.OutputTokens,
 				CacheReadInputTokens: event.Usage.CacheReadInputTokens,
+				OutputTokensDetails: anthropic.OutputTokensDetails{
+					ThinkingTokens: event.Usage.OutputTokensDetails.ThinkingTokens,
+				},
 			}
 		}
 	}
@@ -211,8 +217,11 @@ func (a *AnthropicStreamAssembler) SetUsage(inputTokens, outputTokens int) {
 // SetUsageFromTokenUsage sets the assembled response usage from the canonical
 // ai.TokenUsage type. Cache-read input tokens are mapped to
 // anthropic.Usage.CacheReadInputTokens and cache writes to
-// CacheCreationInputTokens; reasoning_tokens has no Anthropic analogue
-// (extended-thinking tokens are billed inside output_tokens).
+// CacheCreationInputTokens. ReasoningTokens maps to
+// Usage.OutputTokensDetails.ThinkingTokens -- Anthropic's own
+// usage.output_tokens_details.thinking_tokens field (added alongside
+// claude-opus-4-8), a genuine subset of OutputTokens like OpenAI's
+// reasoning_tokens, not something Anthropic lacks.
 //
 // InputTokens goes through UncachedInputTokens() because canonical usage folds
 // the cache-write cost into InputTokens while Anthropic's wire field excludes it.
@@ -225,6 +234,11 @@ func (a *AnthropicStreamAssembler) SetUsageFromTokenUsage(u *ai.TokenUsage) {
 		OutputTokens:             int64(u.OutputTokens),
 		CacheReadInputTokens:     int64(u.CacheReadTokens),
 		CacheCreationInputTokens: int64(u.CacheWriteTokens),
+	}
+	if u.ReasoningTokens > 0 {
+		a.usageData.OutputTokensDetails = anthropic.OutputTokensDetails{
+			ThinkingTokens: int64(u.ReasoningTokens),
+		}
 	}
 }
 
