@@ -102,7 +102,7 @@ const ProviderFormDialog = ({
     const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
     const [selectedProvider, setSelectedProvider] = useState<UniqueProvider | null>(null);
     const [nameIsAutoFilled, setNameIsAutoFilled] = useState(true);
-    const [showNameField, setShowNameField] = useState(mode === 'edit');
+    const [showNameField, setShowNameField] = useState(false);
     const [useGlobalProxy, setUseGlobalProxy] = useState(false);
     const [globalProxyUrl, setGlobalProxyUrl] = useState('');
     const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -189,8 +189,7 @@ const ProviderFormDialog = ({
 
         setVerificationResult(null);
         setBaseUrlError(false);
-        setAdvancedOpen(mode === 'edit');
-        setShowNameField(mode === 'edit');
+        setShowNameField(false);
 
         const hasDualOpenAI = !!data.apiBaseOpenAI;
         const hasDualAnthropic = !!data.apiBaseAnthropic;
@@ -519,9 +518,18 @@ const ProviderFormDialog = ({
             <DialogTitle sx={{flexShrink: 0}}>
                 <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
                     {title || defaultTitle}
-                    <IconButton aria-label="close" onClick={onClose} sx={{ml: 2}} size="small">
-                        <Close/>
-                    </IconButton>
+                    <Box sx={{display: 'flex', alignItems: 'center', gap: 1}}>
+                        {mode === 'edit' && (
+                            <FormControlLabel
+                                sx={{ml: 0, mr: 0}}
+                                control={<Switch size="small" checked={data.enabled || false} onChange={(e) => onChange('enabled', e.target.checked)}/>}
+                                label={<Typography variant="body2" color="text.secondary">{t('providerDialog.enabled')}</Typography>}
+                            />
+                        )}
+                        <IconButton aria-label="close" onClick={onClose} sx={{ml: 1}} size="small">
+                            <Close/>
+                        </IconButton>
+                    </Box>
                 </Box>
             </DialogTitle>
             <form onSubmit={handleSubmit} style={{display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden'}}>
@@ -619,6 +627,21 @@ const ProviderFormDialog = ({
                             </Stack>
                         </Box>
 
+                        {/* ── Name ────────────────────────────── */}
+                        <KeyNameField
+                            showField={showNameField}
+                            onShowField={() => {
+                                if (!data.name) onChangeRef.current('name', computeAutoName());
+                                setShowNameField(true);
+                            }}
+                            name={data.name}
+                            autoName={computeAutoName()}
+                            onNameChange={(value) => {
+                                onChange('name', value);
+                                setNameIsAutoFilled(false);
+                            }}
+                        />
+
                         {/* ── API Key ─────────────────────────── */}
                         <ApiKeyField
                             mode={mode}
@@ -687,31 +710,13 @@ const ProviderFormDialog = ({
                                         color: "text.secondary",
                                         fontWeight: 600
                                     }}>
-                                    {t('providerDialog.advanced.label', {defaultValue: 'Advanced — user-agent, name'})}
+                                    {t('providerDialog.advanced.title')}
                                 </Typography>
                             </AccordionSummary>
+                            {/* Empty for now — reserved for future advanced options
+                                (enabled toggle moved to the dialog title). */}
                             <AccordionDetails sx={{px: 0, pb: 1}}>
-                                <Stack spacing={2.5}>
-                                    <KeyNameField
-                                        showField={showNameField}
-                                        onShowField={() => {
-                                            if (!data.name) onChangeRef.current('name', computeAutoName());
-                                            setShowNameField(true);
-                                        }}
-                                        name={data.name}
-                                        autoName={computeAutoName()}
-                                        onNameChange={(value) => {
-                                            onChange('name', value);
-                                            setNameIsAutoFilled(false);
-                                        }}
-                                    />
-                                    {mode === 'edit' && (
-                                        <FormControlLabel
-                                            control={<Switch size="small" checked={data.enabled || false} onChange={(e) => onChange('enabled', e.target.checked)}/>}
-                                            label={t('providerDialog.enabled')}
-                                        />
-                                    )}
-                                </Stack>
+                                <Stack spacing={2.5} />
                             </AccordionDetails>
                         </Accordion>
                     </Stack>

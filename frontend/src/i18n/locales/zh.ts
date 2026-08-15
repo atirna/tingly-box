@@ -281,7 +281,7 @@ export default {
   "providerDialog": {
     "addTitle": "连接 AI",
     "addDescription": "选择提供商并输入您的 API 密钥以连接 AI 服务。支持多种协议的提供商可以启用多个协议。",
-    "editTitle": "修改连接",
+    "editTitle": "编辑 AI 配置",
     "addButton": "连接",
     "protocol": {
       "label": "协议",

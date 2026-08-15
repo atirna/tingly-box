@@ -330,6 +330,19 @@ export default function DashboardPage() {
         }
     }, [isHourlyRange]);
 
+    // Provider/model options are snapshotted from the current range's stats, so a
+    // selection from one range can be stale (or simply absent) in another. Clear
+    // them when the user switches time range. The user filter is kept — it names
+    // whose usage you're looking at, which stays meaningful across ranges.
+    const prevTimeRangeRef = useRef(timeRange);
+    useEffect(() => {
+        if (prevTimeRangeRef.current !== timeRange) {
+            setSelectedProvider('all');
+            setSelectedModel('all');
+            prevTimeRangeRef.current = timeRange;
+        }
+    }, [timeRange]);
+
     // Load records when entering the requests view or when a dashboard load
     // publishes new query params (filters are carried inside recordsParams).
     useEffect(() => {
@@ -724,7 +737,7 @@ export default function DashboardPage() {
                     view can use the full pane height (the Activity grid
                     centers itself vertically in it). */}
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                         <ToggleButtonGroup
                             value={effectiveViewMode}
                             exclusive

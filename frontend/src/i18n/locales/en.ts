@@ -279,7 +279,7 @@ export default {
   "providerDialog": {
     "addTitle": "Connect AI",
     "addDescription": "Select a provider and enter your API key to connect AI services. Multiple protocols can be enabled for providers that support them.",
-    "editTitle": "Edit Connection",
+    "editTitle": "Edit AI Config",
     "addButton": "Connect",
     "protocol": {
       "label": "Protocols",

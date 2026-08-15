@@ -113,10 +113,18 @@ const OAuthDetailDialog = ({ open, provider, onClose, onSubmit, onNotification }
     if (!provider) return null;
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Edit OAuth Provider</DialogTitle>
-            <form onSubmit={handleSubmit}>
-                <DialogContent sx={{ pb: 1 }}>
+        <Dialog
+            open={open}
+            onClose={onClose}
+            maxWidth="sm"
+            fullWidth
+            slotProps={{
+                paper: { sx: { maxHeight: '88vh', display: 'flex', flexDirection: 'column' } },
+            }}
+        >
+            <DialogTitle sx={{ flexShrink: 0 }}>Edit OAuth Provider</DialogTitle>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                <DialogContent sx={{ pb: 1, overflowY: 'auto', flex: 1 }}>
                     <Stack spacing={2.5}>
                         {/* OAuth Badge */}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -345,7 +353,7 @@ const OAuthDetailDialog = ({ open, provider, onClose, onSubmit, onNotification }
                         )}
                     </Stack>
                 </DialogContent>
-                <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+                <DialogActions sx={{ px: 3, pb: 2, gap: 1, flexShrink: 0 }}>
                     <ProviderExportButton providerUuid={provider.uuid} onNotification={onNotification}/>
                     <Box sx={{ml: 'auto'}}>
                         <Button onClick={onClose} color="inherit">Cancel</Button>
