@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -70,17 +71,15 @@ func setupGroupWithActors(t *testing.T, n int) (*BotAccessStore, *queryCounter, 
 
 	for i := 0; i < n; i++ {
 		_, err := store.AddGroupActor(ctx, bot.UUID, group.ID,
-			"actor-"+string(rune('a'+i)), "Actor", "label")
+			fmt.Sprintf("actor-%02d", i), "Actor", "label")
 		require.NoError(t, err)
 	}
 
 	// Re-wrap the shared handle with a counting logger. Same connection, so
 	// the data above is visible; only logging differs.
 	counter := &queryCounter{}
-	counted := &BotAccessStore{
-		db:        sm.db.Session(&gorm.Session{Logger: counter}),
-		transport: store.transport,
-	}
+	counted := NewBotAccessStore(sm.db.Session(&gorm.Session{Logger: counter}))
+	counted.SetTransportFactsSource(store.transport)
 	return counted, counter, bot.UUID, group.ID
 }
 
@@ -90,8 +89,11 @@ func setupGroupWithActors(t *testing.T, n int) (*BotAccessStore, *queryCounter, 
 func TestListGroupActorsIsNotNPlusOne(t *testing.T) {
 	ctx := context.Background()
 
-	counts := map[int]int{}
-	for _, n := range []int{1, 5, 20} {
+	sizes := []int{1, 5, 20}
+	queries := make([]int, len(sizes))
+	var largest string
+
+	for i, n := range sizes {
 		store, counter, botUUID, groupID := setupGroupWithActors(t, n)
 
 		counter.reset()
@@ -99,23 +101,15 @@ func TestListGroupActorsIsNotNPlusOne(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, actors, n)
 
-		counts[n] = counter.count()
-		t.Logf("n=%2d -> %d queries", n, counts[n])
+		queries[i] = counter.count()
+		largest = counter.dump()
+		t.Logf("n=%2d -> %d queries", n, queries[i])
 	}
 
-	if counts[20] != counts[1] {
-		t.Errorf("query count grows with group size: n=1 -> %d, n=5 -> %d, n=20 -> %d",
-			counts[1], counts[5], counts[20])
-	}
-	// GetGroup + bindings + actors + permissions. Kept as an explicit bound so
-	// a future change that reintroduces a per-actor query is caught here.
-	if counts[20] > 5 {
-		store, counter, botUUID, groupID := setupGroupWithActors(t, 20)
-		counter.reset()
-		_, _ = store.ListGroupActors(ctx, botUUID, groupID)
-		t.Errorf("ListGroupActors issued %d queries for 20 actors, want a small constant:\n  %s",
-			counts[20], counter.dump())
-	}
+	first, last := queries[0], queries[len(queries)-1]
+	require.Equalf(t, first, last,
+		"query count grows with group size: %v -> %v queries\nstatements at n=%d:\n  %s",
+		sizes, queries, sizes[len(sizes)-1], largest)
 }
 
 // TestListGroupActorsContent verifies the batched form returns the same
@@ -137,26 +131,23 @@ func TestListGroupActorsContent(t *testing.T) {
 		require.False(t, seen[ga.Actor.ID], "actor %s returned twice", ga.Actor.ID)
 		seen[ga.Actor.ID] = true
 
-		// AddGroupActor seeds start+approve allow and privileged deny.
-		require.Len(t, ga.Permissions, 3)
-
-		effects := map[access.ActionName]access.AccessEffect{}
-		for _, p := range ga.Permissions {
-			require.Equal(t, access.CapabilityRemoteControl, p.Capability)
-			effects[p.Action] = p.Effect
+		// The permissions AddGroupActor seeds, in the capability-then-action
+		// order the per-binding query produced. Comparing the whole slice
+		// covers contents and ordering in one assertion.
+		type perm struct {
+			Capability access.CapabilityName
+			Action     access.ActionName
+			Effect     access.AccessEffect
 		}
-		require.Equal(t, access.EffectAllow, effects[access.ActionRemoteControlStart])
-		require.Equal(t, access.EffectAllow, effects[access.ActionRemoteControlApprove])
-		require.Equal(t, access.EffectDeny, effects[access.ActionRemoteControlPrivileged])
-
-		// Ordered by capability, then action -- the order the per-binding
-		// query produced.
-		for i := 1; i < len(ga.Permissions); i++ {
-			prev, cur := ga.Permissions[i-1], ga.Permissions[i]
-			prevKey := string(prev.Capability) + "\x00" + string(prev.Action)
-			curKey := string(cur.Capability) + "\x00" + string(cur.Action)
-			require.Less(t, prevKey, curKey, "permissions are not ordered by capability, action")
+		got := make([]perm, len(ga.Permissions))
+		for i, p := range ga.Permissions {
+			got[i] = perm{p.Capability, p.Action, p.Effect}
 		}
+		require.Equal(t, []perm{
+			{access.CapabilityRemoteControl, access.ActionRemoteControlApprove, access.EffectAllow},
+			{access.CapabilityRemoteControl, access.ActionRemoteControlPrivileged, access.EffectDeny},
+			{access.CapabilityRemoteControl, access.ActionRemoteControlStart, access.EffectAllow},
+		}, got)
 	}
 }
 

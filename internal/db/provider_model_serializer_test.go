@@ -1,10 +1,10 @@
 package db
 
 import (
+	"slices"
 	"testing"
 	"time"
 
-	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -18,34 +18,9 @@ type legacyProviderModelRecord struct {
 	Models       string    `gorm:"column:models;type:text"`
 	Source       string    `gorm:"column:source"`
 	LastUpdated  time.Time `gorm:"column:last_updated"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
-	UpdatedAt    time.Time `gorm:"column:updated_at"`
 }
 
 func (legacyProviderModelRecord) TableName() string { return "provider_models" }
-
-func seedLegacyModelRows(t *testing.T, dir string, rows []legacyProviderModelRecord) {
-	t.Helper()
-	db, err := OpenSQLite(constant.GetDBFile(dir), 0)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if err := db.AutoMigrate(&legacyProviderModelRecord{}); err != nil {
-		t.Fatalf("legacy migrate: %v", err)
-	}
-	for i := range rows {
-		if err := db.Create(&rows[i]).Error; err != nil {
-			t.Fatalf("seed %s: %v", rows[i].ProviderUUID, err)
-		}
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("db.DB(): %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-}
 
 // TestModelStore_ReadsLegacyModelRows covers the read paths against rows in
 // the pre-serializer encoding.
@@ -53,7 +28,7 @@ func TestModelStore_ReadsLegacyModelRows(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
 
-	seedLegacyModelRows(t, dir, []legacyProviderModelRecord{
+	seedLegacyRows(t, dir, []legacyProviderModelRecord{
 		// A successful fetch with models.
 		{ProviderUUID: "has-models", ProviderName: "a", APIBase: "https://a",
 			Models: `["gpt-4","gpt-4o"]`, Source: "api", LastUpdated: now},
@@ -97,13 +72,13 @@ func TestModelStore_ReadsLegacyModelRows(t *testing.T) {
 	// legacy "[]" and "[...]" rows in -- the behaviour it had pre-migration.
 	t.Run("GetAllProviders excludes never-fetched", func(t *testing.T) {
 		got := store.GetAllProviders()
-		if !contains(got, "has-models") {
+		if !slices.Contains(got, "has-models") {
 			t.Errorf("GetAllProviders = %v, want it to contain has-models", got)
 		}
-		if !contains(got, "empty-list") {
+		if !slices.Contains(got, "empty-list") {
 			t.Errorf("GetAllProviders = %v, want it to contain empty-list (stored []), matching pre-migration behaviour", got)
 		}
-		if contains(got, "never-fetched") {
+		if slices.Contains(got, "never-fetched") {
 			t.Errorf("GetAllProviders = %v, want it to exclude never-fetched (legacy \"\")", got)
 		}
 	})
@@ -181,13 +156,13 @@ func TestModelStore_NewRowsMatchPredicate(t *testing.T) {
 
 	t.Run("GetAllProviders", func(t *testing.T) {
 		got := store.GetAllProviders()
-		if !contains(got, "with") {
+		if !slices.Contains(got, "with") {
 			t.Errorf("GetAllProviders = %v, want it to contain with", got)
 		}
-		if !contains(got, "empty") {
+		if !slices.Contains(got, "empty") {
 			t.Errorf("GetAllProviders = %v, want it to contain empty (stored [])", got)
 		}
-		if contains(got, "failed") {
+		if slices.Contains(got, "failed") {
 			t.Errorf("GetAllProviders = %v, want it to exclude failed (NULL models)", got)
 		}
 	})
@@ -232,10 +207,15 @@ func TestModelStore_NewRowsMatchPredicate(t *testing.T) {
 // TestHasStoredModelListScope pins the scope against every value the column
 // can hold under either encoding, in one place.
 func TestHasStoredModelListScope(t *testing.T) {
-	db, err := OpenSQLite(constant.GetDBFile(t.TempDir()), 0)
+	db, err := openTinglyDB(t.TempDir())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	if err := db.AutoMigrate(&ProviderModelRecord{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -272,13 +252,4 @@ func TestHasStoredModelListScope(t *testing.T) {
 			t.Errorf("hasStoredModelList matched %s = %v, want %v", c.uuid, got[c.uuid], c.want)
 		}
 	}
-}
-
-func contains(s []string, want string) bool {
-	for _, v := range s {
-		if v == want {
-			return true
-		}
-	}
-	return false
 }

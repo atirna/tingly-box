@@ -7,13 +7,16 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 )
 
-// newUsageStoreForBench builds a UsageStore for a fresh temp dir.
-func newUsageStoreForBench(b *testing.B) *UsageStore {
-	b.Helper()
-	store, err := NewUsageStore(b.TempDir())
+// newUsageStoreForTest builds a UsageStore over a fresh temp dir, closed when
+// the test or benchmark finishes. Takes testing.TB so benchmarks and tests
+// share one setup path.
+func newUsageStoreForTest(tb testing.TB) *UsageStore {
+	tb.Helper()
+	store, err := NewUsageStore(tb.TempDir())
 	if err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
+	tb.Cleanup(func() { _ = store.Close() })
 	return store
 }
 
@@ -53,7 +56,7 @@ func BenchmarkStatsStore_UpdateFromService(b *testing.B) {
 // recordDetailedUsageWithTokenUsage makes: a single-row INSERT per
 // completed request (the proxy's usage audit log).
 func BenchmarkUsageStore_RecordUsage(b *testing.B) {
-	store := newUsageStoreForBench(b)
+	store := newUsageStoreForTest(b)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -87,7 +90,7 @@ func BenchmarkStatsAndUsage_Combined(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	usageStore := newUsageStoreForBench(b)
+	usageStore := newUsageStoreForTest(b)
 
 	service := &loadbalance.Service{
 		Provider: "bench-provider",

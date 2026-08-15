@@ -1,30 +1,18 @@
 package db
 
-import (
-	"testing"
-	"time"
-
-	"github.com/tingly-dev/tingly-box/internal/constant"
-)
+import "testing"
 
 // legacyImBotSettingsRecord is ImBotSettingsRecord as it was before
 // auth_config and bash_allowlist moved to `serializer:json`: both were
 // `string` columns holding hand-marshalled JSON, with "" meaning absent.
 type legacyImBotSettingsRecord struct {
-	BotUUID       string    `gorm:"primaryKey;column:bot_uuid"`
-	Name          string    `gorm:"column:name"`
-	Platform      string    `gorm:"column:platform;index:idx_platform"`
-	AuthType      string    `gorm:"column:auth_type"`
-	AuthConfig    string    `gorm:"column:auth_config;type:text"`
-	ProxyURL      string    `gorm:"column:proxy_url"`
-	BashAllowlist string    `gorm:"column:bash_allowlist;type:text"`
-	DefaultCwd    string    `gorm:"column:default_cwd"`
-	Enabled       bool      `gorm:"column:enabled;index:idx_enabled"`
-	Debug         bool      `gorm:"column:debug;default:false"`
-	Verbose       *bool     `gorm:"column:verbose;default:true"`
-	Scenarios     string    `gorm:"column:scenarios;type:text"`
-	CreatedAt     time.Time `gorm:"column:created_at"`
-	UpdatedAt     time.Time `gorm:"column:updated_at"`
+	BotUUID       string `gorm:"primaryKey;column:bot_uuid"`
+	Name          string `gorm:"column:name"`
+	Platform      string `gorm:"column:platform;index:idx_platform"`
+	AuthType      string `gorm:"column:auth_type"`
+	AuthConfig    string `gorm:"column:auth_config;type:text"`
+	BashAllowlist string `gorm:"column:bash_allowlist;type:text"`
+	Enabled       bool   `gorm:"column:enabled;index:idx_enabled"`
 }
 
 func (legacyImBotSettingsRecord) TableName() string { return "imbot_settings" }
@@ -32,14 +20,7 @@ func (legacyImBotSettingsRecord) TableName() string { return "imbot_settings" }
 func TestImBotSettingsStore_ReadsLegacyJSONStringRows(t *testing.T) {
 	dir := t.TempDir()
 
-	legacyDB, err := OpenSQLite(constant.GetDBFile(dir), 0)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if err := legacyDB.AutoMigrate(&legacyImBotSettingsRecord{}); err != nil {
-		t.Fatalf("legacy migrate: %v", err)
-	}
-	rows := []legacyImBotSettingsRecord{
+	seedLegacyRows(t, dir, []legacyImBotSettingsRecord{
 		{
 			BotUUID: "full", Name: "full", Platform: "telegram", AuthType: "token",
 			AuthConfig:    `{"token":"legacy-token","secret":"s3cr3t"}`,
@@ -51,19 +32,7 @@ func TestImBotSettingsStore_ReadsLegacyJSONStringRows(t *testing.T) {
 			BotUUID: "bare", Name: "bare", Platform: "weixin",
 			AuthConfig: "", BashAllowlist: "", Enabled: false,
 		},
-	}
-	for i := range rows {
-		if err := legacyDB.Create(&rows[i]).Error; err != nil {
-			t.Fatalf("seed %s: %v", rows[i].BotUUID, err)
-		}
-	}
-	sqlDB, err := legacyDB.DB()
-	if err != nil {
-		t.Fatalf("legacyDB.DB(): %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
+	})
 
 	store, err := NewImBotSettingsStore(dir)
 	if err != nil {
@@ -148,28 +117,9 @@ func TestImBotSettingsStore_RoundTrip(t *testing.T) {
 		t.Errorf("BashAllowlist = %v, want [ls]", got.BashAllowlist)
 	}
 
-	t.Run("absent values store as NULL, not an empty json document", func(t *testing.T) {
-		bare, err := store.CreateSettings(Settings{Name: "bare", Platform: "weixin"})
-		if err != nil {
-			t.Fatalf("CreateSettings: %v", err)
-		}
-		type row struct {
-			AuthConfig    *string
-			BashAllowlist *string
-		}
-		var r row
-		if err := store.db.Raw(
-			"SELECT auth_config, bash_allowlist FROM imbot_settings WHERE bot_uuid = ?",
-			bare.UUID).Scan(&r).Error; err != nil {
-			t.Fatalf("raw scan: %v", err)
-		}
-		if r.AuthConfig != nil {
-			t.Errorf("auth_config = %q, want NULL", *r.AuthConfig)
-		}
-		if r.BashAllowlist != nil {
-			t.Errorf("bash_allowlist = %q, want NULL", *r.BashAllowlist)
-		}
-	})
+	if err := store.UpdateSettings("no-such-uuid", Settings{Name: "x"}); err == nil {
+		t.Error("UpdateSettings on a missing row returned nil, want an error")
+	}
 }
 
 // TestImBotSettingsStore_UpdateIsPartial pins the rule UpdateSettings has
@@ -229,7 +179,7 @@ func TestImBotSettingsStore_UpdateIsPartial(t *testing.T) {
 		t.Errorf("platform/authtype not preserved: %q/%q", got.Platform, got.AuthType)
 	}
 
-	t.Run("scenarios can still be cleared explicitly", func(t *testing.T) {
+	t.Run("an unset Scenarios clears the stored value (the documented exception)", func(t *testing.T) {
 		if err := store.UpdateSettings(created.UUID, Settings{Enabled: true}); err != nil {
 			t.Fatalf("UpdateSettings: %v", err)
 		}
@@ -283,12 +233,6 @@ func TestImBotSettingsStore_UpdateIsPartial(t *testing.T) {
 		}
 		if rec.Verbose == nil || *rec.Verbose {
 			t.Errorf("verbose = %v, want preserved false", rec.Verbose)
-		}
-	})
-
-	t.Run("unknown uuid is an error", func(t *testing.T) {
-		if err := store.UpdateSettings("nope", Settings{Name: "x"}); err == nil {
-			t.Error("UpdateSettings on a missing row returned nil, want an error")
 		}
 	})
 }

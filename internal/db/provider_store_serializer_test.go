@@ -1,10 +1,8 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -36,15 +34,7 @@ func (legacyProviderRecord) TableName() string { return "providers" }
 func TestProviderStore_ReadsLegacyJSONStringRows(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write the legacy rows through a legacy-shaped model.
-	legacyDB, err := OpenSQLite(constant.GetDBFile(dir), 0)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if err := legacyDB.AutoMigrate(&legacyProviderRecord{}); err != nil {
-		t.Fatalf("legacy migrate: %v", err)
-	}
-	legacyRows := []legacyProviderRecord{
+	seedLegacyRows(t, dir, []legacyProviderRecord{
 		{
 			UUID: "absent", Name: "absent", APIBase: "https://a.example.com",
 			APIStyle: "openai", AuthType: "api_key", Enabled: true, Token: "tok",
@@ -71,19 +61,7 @@ func TestProviderStore_ReadsLegacyJSONStringRows(t *testing.T) {
 			APIStyle: "openai", AuthType: "aws_sigv4", Enabled: true,
 			Credential: `{"fields":{"access_key_id":"AKIA","region":"us-east-1"}}`,
 		},
-	}
-	for i := range legacyRows {
-		if err := legacyDB.Create(&legacyRows[i]).Error; err != nil {
-			t.Fatalf("seed legacy row %s: %v", legacyRows[i].UUID, err)
-		}
-	}
-	sqlDB, err := legacyDB.DB()
-	if err != nil {
-		t.Fatalf("legacyDB.DB(): %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close legacy db: %v", err)
-	}
+	})
 
 	// Now open the same file through the migrated store.
 	store, err := NewProviderStore(dir)
@@ -162,18 +140,6 @@ func TestProviderStore_ReadsLegacyJSONStringRows(t *testing.T) {
 			t.Errorf("region = %q, want us-east-1", got)
 		}
 	})
-
-	// The migration must not have rewritten the column types out from under
-	// the legacy rows -- the file is still the same one AutoMigrate opened.
-	t.Run("db file is the same one", func(t *testing.T) {
-		if _, err := store.GetByUUID("tagged"); err != nil {
-			t.Fatalf("post-migrate read: %v", err)
-		}
-		want := filepath.Join(dir, "db", "tingly.db")
-		if got := constant.GetDBFile(dir); got != want {
-			t.Fatalf("test wired to the wrong path: %s", got)
-		}
-	})
 }
 
 // TestProviderStore_CacheIsolation pins the property the string encoding used
@@ -185,16 +151,25 @@ func TestProviderStore_CacheIsolation(t *testing.T) {
 	store, _ := setupTestProviderStore(t)
 	defer store.Close()
 
-	seed := &typ.Provider{
-		UUID:     "isolation",
-		Name:     "isolation",
-		APIBase:  "https://api.example.com",
-		APIStyle: protocol.APIStyleOpenAI,
-		AuthType: typ.AuthTypeAPIKey,
-		Token:    "tok",
-		Enabled:  true,
-		Tags:     []string{"keep"},
+	// The shared scaffolding is the same for all three; each subtest only
+	// varies the field whose isolation it is checking.
+	newProvider := func(uuid string, authType typ.AuthType, mut func(*typ.Provider)) *typ.Provider {
+		p := &typ.Provider{
+			UUID:     uuid,
+			Name:     uuid,
+			APIBase:  "https://api.example.com",
+			APIStyle: protocol.APIStyleOpenAI,
+			AuthType: authType,
+			Enabled:  true,
+		}
+		mut(p)
+		return p
 	}
+
+	seed := newProvider("isolation", typ.AuthTypeAPIKey, func(p *typ.Provider) {
+		p.Token = "tok"
+		p.Tags = []string{"keep"}
+	})
 	if err := store.Save(seed); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -228,18 +203,12 @@ func TestProviderStore_CacheIsolation(t *testing.T) {
 	})
 
 	t.Run("oauth ExtraFields map is not shared", func(t *testing.T) {
-		oauth := &typ.Provider{
-			UUID:     "isolation-oauth",
-			Name:     "isolation-oauth",
-			APIBase:  "https://api.example.com",
-			APIStyle: protocol.APIStyleOpenAI,
-			AuthType: typ.AuthTypeOAuth,
-			Enabled:  true,
-			OAuthDetail: &typ.OAuthDetail{
+		oauth := newProvider("isolation-oauth", typ.AuthTypeOAuth, func(p *typ.Provider) {
+			p.OAuthDetail = &typ.OAuthDetail{
 				AccessToken: "access",
 				ExtraFields: map[string]any{"id_token": "original"},
-			},
-		}
+			}
+		})
 		if err := store.Save(oauth); err != nil {
 			t.Fatalf("Save oauth: %v", err)
 		}
@@ -261,17 +230,11 @@ func TestProviderStore_CacheIsolation(t *testing.T) {
 	})
 
 	t.Run("credential bundle Fields map is not shared", func(t *testing.T) {
-		bundle := &typ.Provider{
-			UUID:     "isolation-cred",
-			Name:     "isolation-cred",
-			APIBase:  "https://api.example.com",
-			APIStyle: protocol.APIStyleOpenAI,
-			AuthType: typ.AuthTypeAWSSigV4,
-			Enabled:  true,
-			Credential: &typ.CredentialBundle{
+		bundle := newProvider("isolation-cred", typ.AuthTypeAWSSigV4, func(p *typ.Provider) {
+			p.Credential = &typ.CredentialBundle{
 				Fields: map[string]string{"region": "us-east-1"},
-			},
-		}
+			}
+		})
 		if err := store.Save(bundle); err != nil {
 			t.Fatalf("Save bundle: %v", err)
 		}

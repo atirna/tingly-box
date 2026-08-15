@@ -1,26 +1,19 @@
 package db
 
 import (
+	"maps"
 	"strings"
 	"testing"
 	"time"
-)
 
-func newUsageStoreForScopes(t *testing.T) *UsageStore {
-	t.Helper()
-	store, err := NewUsageStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewUsageStore: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
-}
+	"gorm.io/gorm"
+)
 
 // TestUsageFilterColumnValidation covers the whitelist on every entry point
 // that takes a caller-supplied filter map. The map's key is interpolated into
 // SQL, so an unknown key must be refused rather than reaching the driver.
 func TestUsageFilterColumnValidation(t *testing.T) {
-	store := newUsageStoreForScopes(t)
+	store := newUsageStoreForTest(t)
 	seedUsageRecords(t, store, 2)
 
 	start := time.Now().Add(-72 * time.Hour)
@@ -65,9 +58,10 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 		}
 	})
 
-	// An unknown key must not be silently dropped: dropping a user_id filter
-	// would widen the result set to other users' records.
-	t.Run("an unknown key is an error, not a dropped filter", func(t *testing.T) {
+	// Rejecting rather than dropping is what keeps a typo from widening the
+	// result set -- for user_id, into another user's records. The narrowing
+	// this protects is real: filtering by user_id returns strictly fewer rows.
+	t.Run("a typo'd key errors instead of widening the result", func(t *testing.T) {
 		scoped, _, err := store.GetRecords(start, end, map[string]string{"user_id": "admin"}, 1000, 0)
 		if err != nil {
 			t.Fatalf("GetRecords: %v", err)
@@ -77,10 +71,10 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 			t.Fatalf("GetRecords: %v", err)
 		}
 		if len(scoped) >= len(unscoped) {
-			t.Fatalf("test seed is not discriminating: scoped=%d unscoped=%d", len(scoped), len(unscoped))
+			t.Fatalf("seed is not discriminating: scoped=%d unscoped=%d", len(scoped), len(unscoped))
 		}
 		if _, _, err := store.GetRecords(start, end, map[string]string{"user_idd": "admin"}, 1000, 0); err == nil {
-			t.Error("a typo'd filter key was accepted, which would widen the result set")
+			t.Errorf("a typo'd user_id key was accepted; it would have returned all %d rows", len(unscoped))
 		}
 	})
 }
@@ -88,7 +82,7 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 // TestUsageFilterScopesPreserveResults pins that routing the four call sites
 // through shared scopes did not change what they return.
 func TestUsageFilterScopesPreserveResults(t *testing.T) {
-	store := newUsageStoreForScopes(t)
+	store := newUsageStoreForTest(t)
 	seedUsageRecords(t, store, 3)
 
 	start := time.Now().Add(-96 * time.Hour)
@@ -140,20 +134,25 @@ func TestUsageFilterScopesPreserveResults(t *testing.T) {
 		}
 	})
 
-	t.Run("repeated calls are stable", func(t *testing.T) {
-		// Map iteration order is randomized in Go; the scope sorts keys so the
-		// generated SQL (and therefore the plan) is the same every call.
-		first, _, err := store.GetRecords(start, end, filters, 1000, 0)
-		if err != nil {
-			t.Fatalf("GetRecords: %v", err)
+	t.Run("filter order does not vary the generated SQL", func(t *testing.T) {
+		// Go randomizes map iteration, so an unsorted scope would emit the
+		// WHERE clauses in a different order per call -- same rows either way,
+		// which is why this has to inspect the statement rather than the
+		// result. Several keys are needed for an ordering to exist at all.
+		many := map[string]string{
+			"provider_uuid": "prov-a", "model": "model-x",
+			"user_id": "admin", "status": "success", "scenario": "default",
 		}
+		render := func() string {
+			return store.db.Session(&gorm.Session{DryRun: true}).
+				Model(&UsageRecord{}).
+				Scopes(withinTimeRange(start, end), withColumnFilters(many)).
+				Find(&[]UsageRecord{}).Statement.SQL.String()
+		}
+		want := render()
 		for i := 0; i < 20; i++ {
-			again, _, err := store.GetRecords(start, end, filters, 1000, 0)
-			if err != nil {
-				t.Fatalf("GetRecords iteration %d: %v", i, err)
-			}
-			if len(again) != len(first) {
-				t.Fatalf("iteration %d returned %d records, first returned %d", i, len(again), len(first))
+			if got := render(); got != want {
+				t.Fatalf("iteration %d rendered different SQL:\n got: %s\nwant: %s", i, got, want)
 			}
 		}
 	})
@@ -165,14 +164,23 @@ func TestDailyFilterColumnValidation(t *testing.T) {
 	if err := validateDailyFilterColumns(map[string]string{"provider_uuid": "a", "model": "m", "user_id": "u"}); err != nil {
 		t.Errorf("daily columns rejected: %v", err)
 	}
-	// Real usage_records columns that usage_daily does not carry.
-	for _, key := range []string{"scenario", "rule_uuid", "status"} {
+	// usage_daily is a pre-aggregation of usage_records, so anything it can be
+	// filtered on must also be filterable on the raw table. Asserting the
+	// relation survives either set legitimately gaining a column.
+	for key := range dailyFilterColumns {
+		if _, ok := usageFilterColumns[key]; !ok {
+			t.Errorf("dailyFilterColumns has %q but usageFilterColumns does not", key)
+		}
+	}
+
+	// Whatever the raw table carries that the daily table does not must be
+	// refused there, which is what makes the callers fall back to a raw scan.
+	for key := range usageFilterColumns {
+		if _, ok := dailyFilterColumns[key]; ok {
+			continue
+		}
 		if err := validateDailyFilterColumns(map[string]string{key: "x"}); err == nil {
 			t.Errorf("validateDailyFilterColumns accepted %q, which usage_daily has no column for", key)
-		}
-		// The same key is fine against the raw table.
-		if err := validateFilterColumns(map[string]string{key: "x"}); err != nil {
-			t.Errorf("validateFilterColumns rejected %q, which usage_records does have: %v", key, err)
 		}
 	}
 }
@@ -189,13 +197,8 @@ func TestStatsQueryFilterMap(t *testing.T) {
 		"provider_uuid": "p", "model": "m", "scenario": "s",
 		"rule_uuid": "r", "user_id": "u", "status": "success",
 	}
-	if len(got) != len(want) {
-		t.Fatalf("filterMap = %v, want %v", got, want)
-	}
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("filterMap[%q] = %q, want %q", k, got[k], v)
-		}
+	if !maps.Equal(got, want) {
+		t.Errorf("filterMap = %v, want %v", got, want)
 	}
 	// Every key it can emit must be in the whitelist.
 	if err := validateFilterColumns(got); err != nil {
@@ -207,8 +210,8 @@ func TestStatsQueryFilterMap(t *testing.T) {
 	}
 
 	daily := full.dailyFilterMap()
-	if len(daily) != 3 {
-		t.Errorf("dailyFilterMap = %v, want only the 3 usage_daily dimensions", daily)
+	if !maps.Equal(daily, map[string]string{"provider_uuid": "p", "model": "m", "user_id": "u"}) {
+		t.Errorf("dailyFilterMap = %v, want only the usage_daily dimensions", daily)
 	}
 	if err := validateDailyFilterColumns(daily); err != nil {
 		t.Errorf("dailyFilterMap emitted a column usage_daily lacks: %v", err)
