@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -79,7 +80,7 @@ func NewManager(cfg Config, store SessionStore) *Manager {
 
 	if store != nil {
 		// Load all sessions from store
-		sessions := store.List()
+		sessions := store.List(context.Background())
 		for _, s := range sessions {
 			mgr.sessions[s.ID] = s
 		}
@@ -121,7 +122,7 @@ func (m *Manager) CreateWith(chatID, agent, project string) *Session {
 	logrus.Debugf("Session created: %s (chat=%s, agent=%s, project=%s, expires at %s)",
 		session.ID, chatID, agent, project, session.ExpiresAt.Format(time.RFC3339))
 	if m.store != nil {
-		_ = m.store.Set(session.ID, session)
+		_ = m.store.Set(context.Background(), session.ID, session)
 	}
 
 	return session
@@ -157,7 +158,7 @@ func (m *Manager) CreateWithID(id, chatID, agent, project string) *Session {
 	logrus.Debugf("Session resumed-bind: %s (chat=%s, agent=%s, project=%s)",
 		id, chatID, agent, project)
 	if m.store != nil {
-		_ = m.store.Set(id, sess)
+		_ = m.store.Set(context.Background(), id, sess)
 	}
 	return sess
 }
@@ -194,7 +195,7 @@ func (m *Manager) GetOrLoad(id string) (*Session, bool) {
 	if m.store == nil {
 		return nil, false
 	}
-	sess, err := m.store.Get(id)
+	sess, err := m.store.Get(context.Background(), id)
 	if err != nil || sess == nil {
 		return nil, false
 	}
@@ -221,7 +222,7 @@ func (m *Manager) FindBy(chatID, agent, project string) *Session {
 
 	// If not in memory, check the store
 	if m.store != nil {
-		if sess, err := m.store.FindByChatAgentProject(chatID, agent, project); err == nil && sess != nil {
+		if sess, err := m.store.FindByChatAgentProject(context.Background(), chatID, agent, project); err == nil && sess != nil {
 			if sess.Status != StatusClosed && sess.Status != StatusExpired {
 				// Load into memory
 				m.sessions[sess.ID] = sess
@@ -252,7 +253,7 @@ func (m *Manager) ListByChat(chatID string) []*Session {
 
 	// Also check store for sessions not in memory
 	if m.store != nil {
-		if stored, err := m.store.ListByChat(chatID); err == nil {
+		if stored, err := m.store.ListByChat(context.Background(), chatID); err == nil {
 			for _, sess := range stored {
 				if !seen[sess.ID] {
 					result = append(result, sess)
@@ -278,7 +279,7 @@ func (m *Manager) Update(id string, fn func(*Session)) bool {
 	fn(session)
 	session.LastActivity = time.Now()
 	if m.store != nil {
-		_ = m.store.Set(id, session)
+		_ = m.store.Set(context.Background(), id, session)
 	}
 
 	return true
@@ -297,7 +298,7 @@ func (m *Manager) Delete(id string) bool {
 	delete(m.sessions, id)
 	logrus.Debugf("Session deleted: %s", id)
 	if m.store != nil {
-		_ = m.store.Delete(id)
+		_ = m.store.Delete(context.Background(), id)
 	}
 
 	return true
@@ -320,7 +321,7 @@ func (m *Manager) Close(id string) bool {
 	logrus.Debugf("Session closed: %s", id)
 
 	if m.store != nil {
-		_ = m.store.Set(id, session)
+		_ = m.store.Set(context.Background(), id, session)
 	}
 
 	return true
@@ -446,7 +447,7 @@ func (m *Manager) cleanupExpired() {
 			delete(m.sessions, id)
 			logrus.Debugf("Session expired and cleaned up: %s", id)
 			if m.store != nil {
-				_ = m.store.Delete(id)
+				_ = m.store.Delete(context.Background(), id)
 			}
 		}
 	}
@@ -565,7 +566,7 @@ func (m *Manager) retentionLoop() {
 					delete(m.sessions, id)
 					// Also delete from store
 					if m.store != nil {
-						_ = m.store.Delete(id)
+						_ = m.store.Delete(context.Background(), id)
 					}
 				}
 			}

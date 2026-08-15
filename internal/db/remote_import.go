@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,7 +173,7 @@ func importSessions(path string, store *RemoteSessionStore) error {
 		if old.ID == "" {
 			old.ID = id
 		}
-		existing, err := store.Get(old.ID)
+		existing, err := store.Get(context.Background(), old.ID)
 		if err != nil {
 			return err
 		}
@@ -194,7 +195,7 @@ func importSessions(path string, store *RemoteSessionStore) error {
 				return fmt.Errorf("append message for session %s: %w", sess.ID, err)
 			}
 		}
-		if err := store.Import(sess); err != nil {
+		if err := store.Import(context.Background(), sess); err != nil {
 			return fmt.Errorf("insert session %s: %w", old.ID, err)
 		}
 		imported++

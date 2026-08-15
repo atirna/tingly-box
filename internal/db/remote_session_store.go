@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -82,13 +83,13 @@ func fromSessionRecord(rec *RemoteSessionRecord) *session.Session {
 // Get retrieves a session's index record by ID. Messages are not loaded —
 // call Messages when the transcript is actually needed. A missing session is
 // (nil, nil), matching the store it replaces.
-func (s *RemoteSessionStore) Get(sessionID string) (*session.Session, error) {
+func (s *RemoteSessionStore) Get(ctx context.Context, sessionID string) (*session.Session, error) {
 	if !s.ready() || sessionID == "" {
 		return nil, nil
 	}
 
 	var rec RemoteSessionRecord
-	if err := s.db.Where("id = ?", sessionID).First(&rec).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ?", sessionID).First(&rec).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -106,13 +107,13 @@ func (s *RemoteSessionStore) Get(sessionID string) (*session.Session, error) {
 //
 // Skipping them changes nothing observable: Manager.FindBy ignores closed and
 // expired sessions anyway, and GetOrLoad still fetches any session by id.
-func (s *RemoteSessionStore) List() []*session.Session {
+func (s *RemoteSessionStore) List(ctx context.Context) []*session.Session {
 	if !s.ready() {
 		return []*session.Session{}
 	}
 
 	var recs []RemoteSessionRecord
-	if err := s.db.
+	if err := s.db.WithContext(ctx).
 		Where("status NOT IN ?", []string{string(session.StatusClosed), string(session.StatusExpired)}).
 		Find(&recs).Error; err != nil {
 		logrus.WithError(err).Error("remote session: list failed")
@@ -125,13 +126,13 @@ func (s *RemoteSessionStore) List() []*session.Session {
 // bound to the tuple. Manager.FindBy consults its in-memory map first, so this
 // is the cold path: a session written by another process, or one the manager
 // has not loaded since restart.
-func (s *RemoteSessionStore) FindByChatAgentProject(chatID, agent, project string) (*session.Session, error) {
+func (s *RemoteSessionStore) FindByChatAgentProject(ctx context.Context, chatID, agent, project string) (*session.Session, error) {
 	if !s.ready() {
 		return nil, nil
 	}
 
 	var rec RemoteSessionRecord
-	err := s.db.
+	err := s.db.WithContext(ctx).
 		Where("chat_id = ? AND agent = ? AND project = ?", chatID, agent, project).
 		Where("status NOT IN ?", []string{string(session.StatusClosed), string(session.StatusExpired)}).
 		Order("last_activity DESC").
@@ -147,13 +148,13 @@ func (s *RemoteSessionStore) FindByChatAgentProject(chatID, agent, project strin
 }
 
 // ListByChat returns all sessions for a chat, newest activity first.
-func (s *RemoteSessionStore) ListByChat(chatID string) ([]*session.Session, error) {
+func (s *RemoteSessionStore) ListByChat(ctx context.Context, chatID string) ([]*session.Session, error) {
 	if !s.ready() {
 		return nil, nil
 	}
 
 	var recs []RemoteSessionRecord
-	if err := s.db.Where("chat_id = ?", chatID).Order("last_activity DESC").Find(&recs).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("chat_id = ?", chatID).Order("last_activity DESC").Find(&recs).Error; err != nil {
 		return nil, fmt.Errorf("list sessions by chat: %w", err)
 	}
 	return toSessions(recs), nil
@@ -195,11 +196,11 @@ func (s *RemoteSessionStore) Messages(sessionID string) ([]session.Message, erro
 // machinery that existed purely because the transcript was a table. With
 // messages in an append-only file, AppendMessage stands on its own and this
 // stays a single upsert.
-func (s *RemoteSessionStore) Set(sessionID string, sess *session.Session) error {
+func (s *RemoteSessionStore) Set(ctx context.Context, sessionID string, sess *session.Session) error {
 	if sess != nil && sessionID != "" {
 		sess.ID = sessionID
 	}
-	return s.write(sess, true)
+	return s.write(ctx, sess, true)
 }
 
 // Import stores a session exactly as given, without stamping LastActivity.
@@ -208,14 +209,14 @@ func (s *RemoteSessionStore) Set(sessionID string, sess *session.Session) error 
 // retention, so touching it on import would make every migrated session look
 // like it was just active and reorder conversations that had been dormant
 // for weeks.
-func (s *RemoteSessionStore) Import(sess *session.Session) error {
+func (s *RemoteSessionStore) Import(ctx context.Context, sess *session.Session) error {
 	if sess == nil {
 		return nil
 	}
-	return s.write(sess, false)
+	return s.write(ctx, sess, false)
 }
 
-func (s *RemoteSessionStore) write(sess *session.Session, touch bool) error {
+func (s *RemoteSessionStore) write(ctx context.Context, sess *session.Session, touch bool) error {
 	if !s.ready() || sess == nil {
 		return nil
 	}
@@ -226,7 +227,7 @@ func (s *RemoteSessionStore) write(sess *session.Session, touch bool) error {
 	if touch {
 		sess.LastActivity = time.Now().UTC()
 	}
-	if err := s.db.Clauses(clause.OnConflict{
+	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
 		UpdateAll: true,
 	}).Create(toSessionRecord(sess)).Error; err != nil {
@@ -240,11 +241,11 @@ func (s *RemoteSessionStore) write(sess *session.Session, touch bool) error {
 // The row goes first: an orphaned transcript file is inert (nothing can reach
 // it without an index entry) whereas an index entry whose transcript is gone
 // would surface in listings as a session whose history silently vanished.
-func (s *RemoteSessionStore) Delete(sessionID string) error {
+func (s *RemoteSessionStore) Delete(ctx context.Context, sessionID string) error {
 	if !s.ready() || sessionID == "" {
 		return nil
 	}
-	if err := s.db.Where("id = ?", sessionID).
+	if err := s.db.WithContext(ctx).Where("id = ?", sessionID).
 		Delete(&RemoteSessionRecord{}).Error; err != nil {
 		return fmt.Errorf("delete session %s: %w", sessionID, err)
 	}

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -126,7 +127,7 @@ func TestImportMovesChatsAndSessions(t *testing.T) {
 		t.Errorf("current agent = %q, want claude", chat.CurrentAgent)
 	}
 
-	sess, err := sessionStore.Get("sess-1")
+	sess, err := sessionStore.Get(context.Background(), "sess-1")
 	if err != nil {
 		t.Fatalf("get session: %v", err)
 	}

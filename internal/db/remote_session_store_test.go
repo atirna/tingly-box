@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ func newSessionStore(t *testing.T) *RemoteSessionStore {
 // a committed transaction.
 func TestSessionSetPersistsImmediately(t *testing.T) {
 	store := newSessionStore(t)
+	ctx := context.Background()
 
 	sess := &session.Session{
 		ID:        "sess-1",
@@ -33,20 +35,20 @@ func TestSessionSetPersistsImmediately(t *testing.T) {
 		Status:    session.StatusPending,
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := store.Set(sess.ID, sess); err != nil {
+	if err := store.Set(ctx, sess.ID, sess); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 
 	sess.Status = session.StatusCompleted
 	sess.Response = "done"
-	if err := store.Set(sess.ID, sess); err != nil {
+	if err := store.Set(ctx, sess.ID, sess); err != nil {
 		t.Fatalf("set after update: %v", err)
 	}
 	if err := store.AppendMessage(sess.ID, session.Message{Role: "user", Content: "hi"}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 
-	got, err := store.Get(sess.ID)
+	got, err := store.Get(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -70,9 +72,10 @@ func TestSessionSetPersistsImmediately(t *testing.T) {
 // across many appends.
 func TestSessionMessagesAppendInOrder(t *testing.T) {
 	store := newSessionStore(t)
+	ctx := context.Background()
 
 	sess := &session.Session{ID: "sess-1", Status: session.StatusRunning}
-	if err := store.Set(sess.ID, sess); err != nil {
+	if err := store.Set(ctx, sess.ID, sess); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	for i := 0; i < 5; i++ {
@@ -105,9 +108,10 @@ func TestSessionMessagesAppendInOrder(t *testing.T) {
 // transcript is fetched only when Messages is called.
 func TestSessionIndexReadsDoNotLoadTranscripts(t *testing.T) {
 	store := newSessionStore(t)
+	ctx := context.Background()
 
 	sess := &session.Session{ID: "sess-1", ChatID: "chat-1", Status: session.StatusRunning}
-	if err := store.Set(sess.ID, sess); err != nil {
+	if err := store.Set(ctx, sess.ID, sess); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	if err := store.AppendMessage(sess.ID, session.Message{Role: "user", Content: "hi"}); err != nil {
@@ -126,13 +130,13 @@ func TestSessionIndexReadsDoNotLoadTranscripts(t *testing.T) {
 	// ...but the index alone is enough to answer every listing query, and a
 	// store with no transcript configured still serves them.
 	indexOnly := &RemoteSessionStore{db: store.db}
-	if got, err := indexOnly.Get(sess.ID); err != nil || got == nil {
+	if got, err := indexOnly.Get(ctx, sess.ID); err != nil || got == nil {
 		t.Fatalf("index Get: got=%v err=%v", got, err)
 	}
-	if got := indexOnly.List(); len(got) != 1 {
+	if got := indexOnly.List(ctx); len(got) != 1 {
 		t.Errorf("index List = %d, want 1", len(got))
 	}
-	if got, err := indexOnly.ListByChat("chat-1"); err != nil || len(got) != 1 {
+	if got, err := indexOnly.ListByChat(ctx, "chat-1"); err != nil || len(got) != 1 {
 		t.Fatalf("index ListByChat: got=%d err=%v", len(got), err)
 	}
 	if got, err := indexOnly.Messages(sess.ID); err != nil || len(got) != 0 {
@@ -144,9 +148,10 @@ func TestSessionIndexReadsDoNotLoadTranscripts(t *testing.T) {
 // index row nor a transcript file behind.
 func TestSessionDeleteRemovesMessages(t *testing.T) {
 	store := newSessionStore(t)
+	ctx := context.Background()
 
 	sess := &session.Session{ID: "sess-1", Status: session.StatusCompleted}
-	if err := store.Set(sess.ID, sess); err != nil {
+	if err := store.Set(ctx, sess.ID, sess); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	if err := store.AppendMessage(sess.ID, session.Message{Role: "user", Content: "hi"}); err != nil {
@@ -154,11 +159,11 @@ func TestSessionDeleteRemovesMessages(t *testing.T) {
 	}
 	transcriptPath := store.transcript.Path(sess.ID)
 
-	if err := store.Delete(sess.ID); err != nil {
+	if err := store.Delete(ctx, sess.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	got, err := store.Get(sess.ID)
+	got, err := store.Get(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -175,6 +180,7 @@ func TestSessionDeleteRemovesMessages(t *testing.T) {
 // wins, and terminal ones are invisible.
 func TestFindByChatAgentProject(t *testing.T) {
 	store := newSessionStore(t)
+	ctx := context.Background()
 
 	base := time.Now().UTC().Add(-time.Hour)
 	mk := func(id string, status session.Status, activity time.Time) {
@@ -185,7 +191,7 @@ func TestFindByChatAgentProject(t *testing.T) {
 			Project: "/proj",
 			Status:  status,
 		}
-		if err := store.Set(id, sess); err != nil {
+		if err := store.Set(ctx, id, sess); err != nil {
 			t.Fatalf("set %s: %v", id, err)
 		}
 		// Set stamps LastActivity; rewrite it so the ordering is deterministic.
@@ -199,7 +205,7 @@ func TestFindByChatAgentProject(t *testing.T) {
 	mk("new", session.StatusRunning, base.Add(30*time.Minute))
 	mk("closed", session.StatusClosed, base.Add(59*time.Minute))
 
-	got, err := store.FindByChatAgentProject("chat-1", "claude", "/proj")
+	got, err := store.FindByChatAgentProject(ctx, "chat-1", "claude", "/proj")
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}
@@ -210,7 +216,7 @@ func TestFindByChatAgentProject(t *testing.T) {
 		t.Errorf("found %q, want %q (closed sessions must be skipped)", got.ID, "new")
 	}
 
-	missing, err := store.FindByChatAgentProject("chat-1", "claude", "/other")
+	missing, err := store.FindByChatAgentProject(ctx, "chat-1", "claude", "/other")
 	if err != nil {
 		t.Fatalf("find other: %v", err)
 	}
@@ -223,10 +229,11 @@ func TestFindByChatAgentProject(t *testing.T) {
 // transcript rather than sharing or mixing them.
 func TestListByChatSeparatesTranscripts(t *testing.T) {
 	store := newSessionStore(t)
+	ctx := context.Background()
 
 	for _, spec := range []struct{ id, msg string }{{"a", "alpha"}, {"b", "beta"}} {
 		sess := &session.Session{ID: spec.id, ChatID: "chat-1", Status: session.StatusRunning}
-		if err := store.Set(spec.id, sess); err != nil {
+		if err := store.Set(ctx, spec.id, sess); err != nil {
 			t.Fatalf("set %s: %v", spec.id, err)
 		}
 		if err := store.AppendMessage(spec.id, session.Message{Role: "user", Content: spec.msg}); err != nil {
@@ -234,7 +241,7 @@ func TestListByChatSeparatesTranscripts(t *testing.T) {
 		}
 	}
 
-	got, err := store.ListByChat("chat-1")
+	got, err := store.ListByChat(ctx, "chat-1")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -259,6 +266,7 @@ func TestListByChatSeparatesTranscripts(t *testing.T) {
 // binding lookup and defeat retention.
 func TestImportPreservesLastActivity(t *testing.T) {
 	store := newSessionStore(t)
+	ctx := context.Background()
 
 	old := time.Now().UTC().Add(-30 * 24 * time.Hour).Truncate(time.Second)
 	sess := &session.Session{
@@ -268,11 +276,11 @@ func TestImportPreservesLastActivity(t *testing.T) {
 		CreatedAt:    old,
 		LastActivity: old,
 	}
-	if err := store.Import(sess); err != nil {
+	if err := store.Import(ctx, sess); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 
-	got, err := store.Get("sess-1")
+	got, err := store.Get(ctx, "sess-1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
