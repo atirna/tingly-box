@@ -49,11 +49,11 @@ func (h *BotHandler) isWhitelisterPaired(groupChatID, botUUID string) bool {
 	if h == nil || h.chatStore == nil {
 		return false
 	}
-	chat, err := h.chatStore.GetChat(groupChatID)
+	chat, err := h.chatStore.GetChat(h.ctx, groupChatID)
 	if err != nil || chat == nil || chat.WhitelistedBy == "" {
 		return false
 	}
-	owners, err := h.chatStore.ListChatsByOwner(chat.WhitelistedBy, chat.Platform)
+	owners, err := h.chatStore.ListChatsByOwner(h.ctx, chat.WhitelistedBy, chat.Platform)
 	if err != nil {
 		return false
 	}
@@ -88,7 +88,7 @@ func (h *BotHandler) VerifyAndPair(botUUID, chatID, senderID, platform, code str
 		}).Warn("verify failed")
 		return errors.New(userFacingPairError(err))
 	}
-	if err := h.chatStore.SetPaired(chatID, platform, botUUID, senderID); err != nil {
+	if err := h.chatStore.SetPaired(h.ctx, chatID, platform, botUUID, senderID); err != nil {
 		return err
 	}
 	logrus.WithFields(logrus.Fields{

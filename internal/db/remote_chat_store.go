@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -140,12 +141,12 @@ func normalizeChat(chat *bot.Chat) error {
 // ---------- basic CRUD ----------
 
 // GetChat retrieves a chat by ID. A missing chat is (nil, nil).
-func (s *RemoteChatStore) GetChat(chatID string) (*bot.Chat, error) {
+func (s *RemoteChatStore) GetChat(ctx context.Context, chatID string) (*bot.Chat, error) {
 	if !s.ready() || chatID == "" {
 		return nil, nil
 	}
 	var rec RemoteChatRecord
-	if err := s.db.Where("chat_id = ?", chatID).First(&rec).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("chat_id = ?", chatID).First(&rec).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -161,11 +162,11 @@ func (s *RemoteChatStore) GetChat(chatID string) (*bot.Chat, error) {
 // than silently returning (and later overwriting) another platform's chat.
 // This is the guard against cross-platform chatID-string collisions leaking
 // platform A's chat into platform B.
-func (s *RemoteChatStore) GetOrCreateChat(chatID, platform string) (*bot.Chat, error) {
+func (s *RemoteChatStore) GetOrCreateChat(ctx context.Context, chatID, platform string) (*bot.Chat, error) {
 	if !s.ready() {
 		return nil, ErrStoreClosed
 	}
-	existing, err := s.GetChat(chatID)
+	existing, err := s.GetChat(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -183,21 +184,21 @@ func (s *RemoteChatStore) GetOrCreateChat(chatID, platform string) (*bot.Chat, e
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := s.UpsertChat(fresh); err != nil {
+	if err := s.UpsertChat(ctx, fresh); err != nil {
 		return nil, err
 	}
 	return fresh, nil
 }
 
 // UpsertChat creates or replaces a chat row.
-func (s *RemoteChatStore) UpsertChat(chat *bot.Chat) error {
+func (s *RemoteChatStore) UpsertChat(ctx context.Context, chat *bot.Chat) error {
 	if !s.ready() {
 		return ErrStoreClosed
 	}
 	if err := normalizeChat(chat); err != nil {
 		return err
 	}
-	return upsertChatRecord(s.db, chat)
+	return upsertChatRecord(s.db.WithContext(ctx), chat)
 }
 
 // ImportChat stores a chat exactly as given, without restamping UpdatedAt.
@@ -205,7 +206,7 @@ func (s *RemoteChatStore) UpsertChat(chat *bot.Chat) error {
 // Migration needs this for the same reason sessions do: UpdatedAt orders
 // ListChats, so stamping it on import would make every migrated chat look
 // equally and freshly active in the bot's chat list.
-func (s *RemoteChatStore) ImportChat(chat *bot.Chat) error {
+func (s *RemoteChatStore) ImportChat(ctx context.Context, chat *bot.Chat) error {
 	if !s.ready() {
 		return ErrStoreClosed
 	}
@@ -215,7 +216,7 @@ func (s *RemoteChatStore) ImportChat(chat *bot.Chat) error {
 	if chat.CurrentAgent == "" {
 		chat.CurrentAgent = DefaultChatAgent
 	}
-	return upsertChatRecord(s.db, chat)
+	return upsertChatRecord(s.db.WithContext(ctx), chat)
 }
 
 // upsertChatRecord writes a chat as a whole row.
@@ -236,7 +237,7 @@ func upsertChatRecord(tx *gorm.DB, chat *bot.Chat) error {
 // UpdateChat applies fn to an existing chat inside a transaction, so a
 // concurrent writer cannot interleave between the read and the write.
 // A missing chat is a no-op, matching the store this replaces.
-func (s *RemoteChatStore) UpdateChat(chatID string, fn func(*bot.Chat)) error {
+func (s *RemoteChatStore) UpdateChat(ctx context.Context, chatID string, fn func(*bot.Chat)) error {
 	if !s.ready() {
 		return ErrStoreClosed
 	}
@@ -247,7 +248,7 @@ func (s *RemoteChatStore) UpdateChat(chatID string, fn func(*bot.Chat)) error {
 	// No SELECT ... FOR UPDATE here: SQLite has no row locks, and the write
 	// at the end of the transaction is what serializes concurrent updaters
 	// (busy_timeout covers the upgrade contention).
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var rec RemoteChatRecord
 		err := tx.Where("chat_id = ?", chatID).First(&rec).Error
 		if err != nil {
@@ -274,7 +275,7 @@ func (s *RemoteChatStore) UpdateChat(chatID string, fn func(*bot.Chat)) error {
 // GetOrCreateChat followed by UpdateChat, as those used to, cost two
 // transactions and read the row twice, and on a fresh chat wrote it twice with
 // the first write immediately overwritten.
-func (s *RemoteChatStore) mutate(chatID, platform string, fn func(*bot.Chat)) error {
+func (s *RemoteChatStore) mutate(ctx context.Context, chatID, platform string, fn func(*bot.Chat)) error {
 	if !s.ready() {
 		return ErrStoreClosed
 	}
@@ -282,7 +283,7 @@ func (s *RemoteChatStore) mutate(chatID, platform string, fn func(*bot.Chat)) er
 		return ErrChatIDRequired
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var chat *bot.Chat
 
 		var rec RemoteChatRecord
@@ -313,14 +314,14 @@ func (s *RemoteChatStore) mutate(chatID, platform string, fn func(*bot.Chat)) er
 // project binding) is gone; a new message from the same chat recreates it
 // fresh via the normal auto-create path. Sessions are untouched. Deleting a
 // missing chat is a no-op.
-func (s *RemoteChatStore) DeleteChat(chatID string) error {
+func (s *RemoteChatStore) DeleteChat(ctx context.Context, chatID string) error {
 	if !s.ready() {
 		return ErrStoreClosed
 	}
 	if chatID == "" {
 		return ErrChatIDRequired
 	}
-	if err := s.db.Where("chat_id = ?", chatID).Delete(&RemoteChatRecord{}).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("chat_id = ?", chatID).Delete(&RemoteChatRecord{}).Error; err != nil {
 		return fmt.Errorf("delete chat %s: %w", chatID, err)
 	}
 	return nil
@@ -329,8 +330,8 @@ func (s *RemoteChatStore) DeleteChat(chatID string) error {
 // SetChatDisabled toggles the inbound blocklist flag. A missing chat is a
 // no-op (there is nothing to block; the flag would be erased by the next
 // auto-create anyway).
-func (s *RemoteChatStore) SetChatDisabled(chatID string, disabled bool) error {
-	return s.UpdateChat(chatID, func(chat *bot.Chat) {
+func (s *RemoteChatStore) SetChatDisabled(ctx context.Context, chatID string, disabled bool) error {
+	return s.UpdateChat(ctx, chatID, func(chat *bot.Chat) {
 		chat.Disabled = disabled
 		if disabled {
 			chat.DisabledAt = time.Now().UTC()
@@ -341,8 +342,8 @@ func (s *RemoteChatStore) SetChatDisabled(chatID string, disabled bool) error {
 }
 
 // IsChatDisabled reports the blocklist flag. Missing chat → false.
-func (s *RemoteChatStore) IsChatDisabled(chatID string) bool {
-	chat, err := s.GetChat(chatID)
+func (s *RemoteChatStore) IsChatDisabled(ctx context.Context, chatID string) bool {
+	chat, err := s.GetChat(ctx, chatID)
 	if err != nil || chat == nil {
 		return false
 	}
@@ -353,8 +354,8 @@ func (s *RemoteChatStore) IsChatDisabled(chatID string) bool {
 
 // BindProject binds a project to a chat, creating the chat if needed, and
 // pushes the path onto the chat's MRU history.
-func (s *RemoteChatStore) BindProject(chatID, platform, projectPath, ownerID string) error {
-	return s.mutate(chatID, platform, func(chat *bot.Chat) {
+func (s *RemoteChatStore) BindProject(ctx context.Context, chatID, platform, projectPath, ownerID string) error {
+	return s.mutate(ctx, chatID, platform, func(chat *bot.Chat) {
 		chat.Platform = platform
 		chat.OwnerID = ownerID
 		chat.PushProjectHistory(projectPath)
@@ -363,8 +364,8 @@ func (s *RemoteChatStore) BindProject(chatID, platform, projectPath, ownerID str
 
 // ListChatProjectPaths returns the per-chat MRU list of project paths (newest
 // first), falling back to [ProjectPath] for chats with no history yet.
-func (s *RemoteChatStore) ListChatProjectPaths(chatID string) ([]string, error) {
-	chat, err := s.GetChat(chatID)
+func (s *RemoteChatStore) ListChatProjectPaths(ctx context.Context, chatID string) ([]string, error) {
+	chat, err := s.GetChat(ctx, chatID)
 	if err != nil || chat == nil {
 		return nil, err
 	}
@@ -380,8 +381,8 @@ func (s *RemoteChatStore) ListChatProjectPaths(chatID string) ([]string, error) 
 }
 
 // GetProjectPath retrieves the project path bound to a chat.
-func (s *RemoteChatStore) GetProjectPath(chatID string) (string, bool, error) {
-	chat, err := s.GetChat(chatID)
+func (s *RemoteChatStore) GetProjectPath(ctx context.Context, chatID string) (string, bool, error) {
+	chat, err := s.GetChat(ctx, chatID)
 	if err != nil {
 		return "", false, err
 	}
@@ -392,12 +393,12 @@ func (s *RemoteChatStore) GetProjectPath(chatID string) (string, bool, error) {
 }
 
 // ListChatsByOwner lists a user's chats on a platform that have a project bound.
-func (s *RemoteChatStore) ListChatsByOwner(ownerID, platform string) ([]*bot.Chat, error) {
+func (s *RemoteChatStore) ListChatsByOwner(ctx context.Context, ownerID, platform string) ([]*bot.Chat, error) {
 	if !s.ready() {
 		return nil, ErrStoreClosed
 	}
 	var recs []RemoteChatRecord
-	if err := s.db.
+	if err := s.db.WithContext(ctx).
 		Where("owner_id = ? AND platform = ? AND project_path <> ''", ownerID, platform).
 		Find(&recs).Error; err != nil {
 		return nil, fmt.Errorf("list chats by owner: %w", err)
@@ -414,7 +415,7 @@ func (s *RemoteChatStore) ListChatsByOwner(ownerID, platform string) ([]*bot.Cha
 // are dropped at the source (see bot.ChatStoreInterface.ListChats for why).
 // Ordered newest-first by updated_at, with chat_id as a stable tiebreaker, so
 // the most recently active chats surface at the top.
-func (s *RemoteChatStore) ListChats(platform string, includeDisabled bool) ([]*bot.Chat, error) {
+func (s *RemoteChatStore) ListChats(ctx context.Context, platform string, includeDisabled bool) ([]*bot.Chat, error) {
 	if !s.ready() {
 		return nil, ErrStoreClosed
 	}
@@ -422,7 +423,7 @@ func (s *RemoteChatStore) ListChats(platform string, includeDisabled bool) ([]*b
 	// Literal equality, including for the empty platform: callers always pass
 	// a real platform, and "" selecting exactly the unattributed records is
 	// the contract the interface documents.
-	q := s.db.Where("platform = ?", platform)
+	q := s.db.WithContext(ctx).Where("platform = ?", platform)
 	if !includeDisabled {
 		// NULL-safe: rows that predate the disabled column carry NULL, which
 		// `disabled = false` would silently drop (NULL never compares equal).
@@ -445,23 +446,23 @@ func (s *RemoteChatStore) ListChats(platform string, includeDisabled bool) ([]*b
 // ---------- whitelist ----------
 
 // AddToWhitelist whitelists a chat, creating it if needed.
-func (s *RemoteChatStore) AddToWhitelist(chatID, platform, addedBy string) error {
-	return s.mutate(chatID, platform, func(chat *bot.Chat) {
+func (s *RemoteChatStore) AddToWhitelist(ctx context.Context, chatID, platform, addedBy string) error {
+	return s.mutate(ctx, chatID, platform, func(chat *bot.Chat) {
 		chat.IsWhitelisted = true
 		chat.WhitelistedBy = addedBy
 	})
 }
 
 // RemoveFromWhitelist clears a chat's whitelist flag.
-func (s *RemoteChatStore) RemoveFromWhitelist(chatID string) error {
-	return s.UpdateChat(chatID, func(chat *bot.Chat) {
+func (s *RemoteChatStore) RemoveFromWhitelist(ctx context.Context, chatID string) error {
+	return s.UpdateChat(ctx, chatID, func(chat *bot.Chat) {
 		chat.IsWhitelisted = false
 	})
 }
 
 // IsWhitelisted reports whether a chat is whitelisted.
-func (s *RemoteChatStore) IsWhitelisted(chatID string) bool {
-	chat, err := s.GetChat(chatID)
+func (s *RemoteChatStore) IsWhitelisted(ctx context.Context, chatID string) bool {
+	chat, err := s.GetChat(ctx, chatID)
 	if err != nil || chat == nil {
 		return false
 	}
@@ -471,15 +472,15 @@ func (s *RemoteChatStore) IsWhitelisted(chatID string) bool {
 // ---------- bash cwd ----------
 
 // SetBashCwd sets the bash working directory for a chat.
-func (s *RemoteChatStore) SetBashCwd(chatID, cwd string) error {
-	return s.UpdateChat(chatID, func(chat *bot.Chat) {
+func (s *RemoteChatStore) SetBashCwd(ctx context.Context, chatID, cwd string) error {
+	return s.UpdateChat(ctx, chatID, func(chat *bot.Chat) {
 		chat.BashCwd = cwd
 	})
 }
 
 // GetBashCwd retrieves the bash working directory for a chat.
-func (s *RemoteChatStore) GetBashCwd(chatID string) (string, bool, error) {
-	chat, err := s.GetChat(chatID)
+func (s *RemoteChatStore) GetBashCwd(ctx context.Context, chatID string) (string, bool, error) {
+	chat, err := s.GetChat(ctx, chatID)
 	if err != nil {
 		return "", false, err
 	}
@@ -494,16 +495,16 @@ func (s *RemoteChatStore) GetBashCwd(chatID string) (string, bool, error) {
 // SetCurrentAgent sets the chat's current agent, creating the chat row if it
 // doesn't exist yet — without the auto-create, handoff state was silently
 // dropped for any chat that hadn't been bound or paired first.
-func (s *RemoteChatStore) SetCurrentAgent(chatID, platform, agentType string) error {
-	return s.mutate(chatID, platform, func(chat *bot.Chat) {
+func (s *RemoteChatStore) SetCurrentAgent(ctx context.Context, chatID, platform, agentType string) error {
+	return s.mutate(ctx, chatID, platform, func(chat *bot.Chat) {
 		chat.CurrentAgent = agentType
 	})
 }
 
 // GetCurrentAgent retrieves the chat's current agent, defaulting to Smart
 // Guide as the entry point.
-func (s *RemoteChatStore) GetCurrentAgent(chatID string) (string, error) {
-	chat, err := s.GetChat(chatID)
+func (s *RemoteChatStore) GetCurrentAgent(ctx context.Context, chatID string) (string, error) {
+	chat, err := s.GetChat(ctx, chatID)
 	if err != nil {
 		return DefaultChatAgent, err
 	}
@@ -517,11 +518,11 @@ func (s *RemoteChatStore) GetCurrentAgent(chatID string) (string, error) {
 
 // SetPaired marks a chat as paired with the given bot and sender, creating the
 // chat if needed.
-func (s *RemoteChatStore) SetPaired(chatID, platform, botUUID, senderID string) error {
+func (s *RemoteChatStore) SetPaired(ctx context.Context, chatID, platform, botUUID, senderID string) error {
 	if chatID == "" || botUUID == "" {
 		return fmt.Errorf("chat_id and bot_uuid are required")
 	}
-	return s.mutate(chatID, platform, func(chat *bot.Chat) {
+	return s.mutate(ctx, chatID, platform, func(chat *bot.Chat) {
 		chat.IsPaired = true
 		chat.PairedBotUUID = botUUID
 		chat.PairedSenderID = senderID
@@ -534,8 +535,8 @@ func (s *RemoteChatStore) SetPaired(chatID, platform, botUUID, senderID string) 
 
 // ClearPaired removes any pairing recorded on the chat, preserving the rest of
 // its state.
-func (s *RemoteChatStore) ClearPaired(chatID string) error {
-	return s.UpdateChat(chatID, func(chat *bot.Chat) {
+func (s *RemoteChatStore) ClearPaired(ctx context.Context, chatID string) error {
+	return s.UpdateChat(ctx, chatID, func(chat *bot.Chat) {
 		chat.IsPaired = false
 		chat.PairedBotUUID = ""
 		chat.PairedSenderID = ""
@@ -544,8 +545,8 @@ func (s *RemoteChatStore) ClearPaired(chatID string) error {
 }
 
 // IsChatPaired reports whether the chat is paired with the given bot UUID.
-func (s *RemoteChatStore) IsChatPaired(chatID, botUUID string) bool {
-	chat, err := s.GetChat(chatID)
+func (s *RemoteChatStore) IsChatPaired(ctx context.Context, chatID, botUUID string) bool {
+	chat, err := s.GetChat(ctx, chatID)
 	if err != nil || chat == nil {
 		return false
 	}

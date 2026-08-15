@@ -104,7 +104,7 @@ func TestImportMovesChatsAndSessions(t *testing.T) {
 		t.Fatalf("import: %v", err)
 	}
 
-	chat, err := chatStore.GetChat("chat-1")
+	chat, err := chatStore.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get chat: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestImportIsIdempotent(t *testing.T) {
 	}
 
 	// The system moves on.
-	if err := chatStore.BindProject("chat-1", "telegram", "/current", "owner"); err != nil {
+	if err := chatStore.BindProject(context.Background(), "chat-1", "telegram", "/current", "owner"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 
@@ -206,7 +206,7 @@ func TestImportIsIdempotent(t *testing.T) {
 		t.Fatalf("second import: %v", err)
 	}
 
-	got, ok, err := chatStore.GetProjectPath("chat-1")
+	got, ok, err := chatStore.GetProjectPath(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}

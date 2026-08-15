@@ -31,7 +31,7 @@ func DisabledChatGate(chatStore ChatStoreInterface) OnMessage {
 		if chatID == "" || chatStore == nil {
 			return false
 		}
-		if chatStore.IsChatDisabled(chatID) {
+		if chatStore.IsChatDisabled(context.Background(), chatID) {
 			logrus.Debugf("chat %s is disabled, dropping message before dispatch", chatID)
 			return true
 		}
@@ -325,7 +325,7 @@ func persistWeixinContextToken(chatStore ChatStoreInterface) OnMessage {
 		if target == "" {
 			return false
 		}
-		if err := chatStore.UpdateChat(target, func(c *Chat) {
+		if err := chatStore.UpdateChat(context.Background(), target, func(c *Chat) {
 			c.ContextToken = token
 		}); err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{

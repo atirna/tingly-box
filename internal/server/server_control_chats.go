@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -55,7 +56,7 @@ func (m *botChatManager) resolveReachableChat(botUUID, chatID string) (bot.ChatS
 	if err != nil {
 		return nil, err
 	}
-	c, err := store.GetChat(chatID)
+	c, err := store.GetChat(context.Background(), chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +93,7 @@ func (m *botChatManager) ListChats(botUUID string, includeDisabled bool) ([]noti
 	// ListChats scopes at the source: only records whose Platform field
 	// equals this bot's channel platform are returned, so unattributed or
 	// cross-platform chats never reach the API surface.
-	all, err := store.ListChats(platform, includeDisabled)
+	all, err := store.ListChats(context.Background(), platform, includeDisabled)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +128,7 @@ func (m *botChatManager) DeleteChat(botUUID, chatID string) error {
 	if err != nil {
 		return err
 	}
-	return store.DeleteChat(chatID)
+	return store.DeleteChat(context.Background(), chatID)
 }
 
 // SetChatDisabled backs PUT /bots/:bot/chats/:chat_id/disabled.
@@ -136,7 +137,7 @@ func (m *botChatManager) SetChatDisabled(botUUID, chatID string, disabled bool) 
 	if err != nil {
 		return err
 	}
-	return store.SetChatDisabled(chatID, disabled)
+	return store.SetChatDisabled(context.Background(), chatID, disabled)
 }
 
 // IsChatDisabled backs the outbound blocklist check used by POST
@@ -147,7 +148,7 @@ func (m *botChatManager) IsChatDisabled(chatID string) bool {
 	if err != nil {
 		return false
 	}
-	return store.IsChatDisabled(chatID)
+	return store.IsChatDisabled(context.Background(), chatID)
 }
 
 // botChatProvider is the narrow surface botChatManager needs from the imbot

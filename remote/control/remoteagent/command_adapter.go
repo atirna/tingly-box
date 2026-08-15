@@ -41,7 +41,7 @@ func (a *botHandlerAdapter) SendText(chatID, text string) error {
 
 // GetProjectPath gets the current project path for a chat.
 func (a *botHandlerAdapter) GetProjectPath(chatID string) (string, error) {
-	projectPath, _, err := a.handler.chatStore.GetProjectPath(chatID)
+	projectPath, _, err := a.handler.chatStore.GetProjectPath(a.handler.ctx, chatID)
 	return projectPath, err
 }
 
@@ -132,23 +132,23 @@ func (a *botHandlerAdapter) GetVerbose(chatID string) bool {
 
 // IsWhitelisted checks if a group is whitelisted.
 func (a *botHandlerAdapter) IsWhitelisted(groupID string) bool {
-	return a.handler.chatStore.IsWhitelisted(groupID)
+	return a.handler.chatStore.IsWhitelisted(a.handler.ctx, groupID)
 }
 
 // AddToWhitelist adds a group to whitelist.
 func (a *botHandlerAdapter) AddToWhitelist(groupID, platform, userID string) error {
-	return a.handler.chatStore.AddToWhitelist(groupID, platform, userID)
+	return a.handler.chatStore.AddToWhitelist(a.handler.ctx, groupID, platform, userID)
 }
 
 // GetBashCwd gets the bash working directory.
 func (a *botHandlerAdapter) GetBashCwd(chatID string) (string, error) {
-	cwd, _, err := a.handler.chatStore.GetBashCwd(chatID)
+	cwd, _, err := a.handler.chatStore.GetBashCwd(a.handler.ctx, chatID)
 	return cwd, err
 }
 
 // SetBashCwd sets the bash working directory.
 func (a *botHandlerAdapter) SetBashCwd(chatID, path string) error {
-	return a.handler.chatStore.SetBashCwd(chatID, path)
+	return a.handler.chatStore.SetBashCwd(a.handler.ctx, chatID, path)
 }
 
 // BuildHelpText renders the command registry's help listing.
@@ -170,7 +170,7 @@ func (a *botHandlerAdapter) GetBashAllowlist() map[string]struct{} {
 
 // ListChatProjectPaths returns the MRU project-path history for a chat.
 func (a *botHandlerAdapter) ListChatProjectPaths(chatID string) ([]string, error) {
-	return a.handler.chatStore.ListChatProjectPaths(chatID)
+	return a.handler.chatStore.ListChatProjectPaths(a.handler.ctx, chatID)
 }
 
 // VerifyAndPair runs pairing-code verification and persists the binding.

@@ -178,7 +178,7 @@ func (h *BotHandler) handleCustomPathPrompt(hCtx HandlerContext) {
 	// Ensure state exists
 	state := h.directoryBrowser.GetState(hCtx.ChatID)
 	if state == nil {
-		currentPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+		currentPath, _, _ := h.chatStore.GetProjectPath(h.ctx, hCtx.ChatID)
 		var err error
 		state, err = h.directoryBrowser.StartAt(hCtx.ChatID, currentPath)
 		if err != nil {

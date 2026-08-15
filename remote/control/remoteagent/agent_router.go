@@ -46,7 +46,7 @@ func (r *AgentRouter) Execute(ctx context.Context, agentType agentboot.AgentType
 	}
 
 	// 1. Resolve project path
-	projectPath := r.deps.resolveProjectPath(req.HCtx.ChatID, req.ProjectPath)
+	projectPath := r.deps.resolveProjectPath(ctx, req.HCtx.ChatID, req.ProjectPath)
 
 	// 2. Resolve session (session-based agents only; SmartGuide uses chatID)
 	var sessionID string

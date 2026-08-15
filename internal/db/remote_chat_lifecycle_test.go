@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -14,20 +15,20 @@ import (
 func TestDeleteChatRemovesRow(t *testing.T) {
 	store := newChatStore(t)
 
-	if err := store.BindProject("chat-1", "telegram", "/proj", "owner"); err != nil {
+	if err := store.BindProject(context.Background(), "chat-1", "telegram", "/proj", "owner"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if err := store.SetPaired("chat-1", "telegram", "bot-uuid", "sender"); err != nil {
+	if err := store.SetPaired(context.Background(), "chat-1", "telegram", "bot-uuid", "sender"); err != nil {
 		t.Fatalf("pair: %v", err)
 	}
-	if err := store.AddToWhitelist("chat-1", "telegram", "admin"); err != nil {
+	if err := store.AddToWhitelist(context.Background(), "chat-1", "telegram", "admin"); err != nil {
 		t.Fatalf("whitelist: %v", err)
 	}
 
-	if err := store.DeleteChat("chat-1"); err != nil {
+	if err := store.DeleteChat(context.Background(), "chat-1"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	chat, err := store.GetChat("chat-1")
+	chat, err := store.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get after delete: %v", err)
 	}
@@ -37,7 +38,7 @@ func TestDeleteChatRemovesRow(t *testing.T) {
 
 	// Natural recreate: the chat messaging again mints a fresh row with none
 	// of the old state.
-	fresh, err := store.GetOrCreateChat("chat-1", "telegram")
+	fresh, err := store.GetOrCreateChat(context.Background(), "chat-1", "telegram")
 	if err != nil {
 		t.Fatalf("recreate: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestDeleteChatRemovesRow(t *testing.T) {
 // doesn't exist (or was already deleted) is not an error.
 func TestDeleteChatMissingIsNoop(t *testing.T) {
 	store := newChatStore(t)
-	if err := store.DeleteChat("never-existed"); err != nil {
+	if err := store.DeleteChat(context.Background(), "never-existed"); err != nil {
 		t.Errorf("delete missing: %v", err)
 	}
 }
@@ -58,7 +59,7 @@ func TestDeleteChatMissingIsNoop(t *testing.T) {
 // TestDeleteChatRequiresID keeps the validation the store inherited.
 func TestDeleteChatRequiresID(t *testing.T) {
 	store := newChatStore(t)
-	if err := store.DeleteChat(""); !errors.Is(err, ErrChatIDRequired) {
+	if err := store.DeleteChat(context.Background(), ""); !errors.Is(err, ErrChatIDRequired) {
 		t.Errorf("delete with empty id: err = %v, want ErrChatIDRequired", err)
 	}
 }
@@ -70,16 +71,16 @@ func TestDeleteChatRequiresID(t *testing.T) {
 func TestSetChatDisabledRoundTrips(t *testing.T) {
 	store := newChatStore(t)
 
-	if _, err := store.GetOrCreateChat("chat-1", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "chat-1", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.SetChatDisabled("chat-1", true); err != nil {
+	if err := store.SetChatDisabled(context.Background(), "chat-1", true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if !store.IsChatDisabled("chat-1") {
+	if !store.IsChatDisabled(context.Background(), "chat-1") {
 		t.Fatal("chat should be disabled")
 	}
-	chat, err := store.GetChat("chat-1")
+	chat, err := store.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -87,13 +88,13 @@ func TestSetChatDisabledRoundTrips(t *testing.T) {
 		t.Error("DisabledAt not stamped on disable")
 	}
 
-	if err := store.SetChatDisabled("chat-1", false); err != nil {
+	if err := store.SetChatDisabled(context.Background(), "chat-1", false); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if store.IsChatDisabled("chat-1") {
+	if store.IsChatDisabled(context.Background(), "chat-1") {
 		t.Error("disable flag was not cleared")
 	}
-	chat, err = store.GetChat("chat-1")
+	chat, err = store.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -108,27 +109,27 @@ func TestSetChatDisabledRoundTrips(t *testing.T) {
 func TestDisabledSurvivesStateWrites(t *testing.T) {
 	store := newChatStore(t)
 
-	if _, err := store.GetOrCreateChat("chat-1", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "chat-1", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.SetChatDisabled("chat-1", true); err != nil {
+	if err := store.SetChatDisabled(context.Background(), "chat-1", true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 
-	if err := store.SetPaired("chat-1", "telegram", "bot-uuid", "sender"); err != nil {
+	if err := store.SetPaired(context.Background(), "chat-1", "telegram", "bot-uuid", "sender"); err != nil {
 		t.Fatalf("pair: %v", err)
 	}
-	if err := store.AddToWhitelist("chat-1", "telegram", "admin"); err != nil {
+	if err := store.AddToWhitelist(context.Background(), "chat-1", "telegram", "admin"); err != nil {
 		t.Fatalf("whitelist: %v", err)
 	}
-	if err := store.BindProject("chat-1", "telegram", "/proj", "owner"); err != nil {
+	if err := store.BindProject(context.Background(), "chat-1", "telegram", "/proj", "owner"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if err := store.SetCurrentAgent("chat-1", "telegram", "claude"); err != nil {
+	if err := store.SetCurrentAgent(context.Background(), "chat-1", "telegram", "claude"); err != nil {
 		t.Fatalf("agent: %v", err)
 	}
 
-	if !store.IsChatDisabled("chat-1") {
+	if !store.IsChatDisabled(context.Background(), "chat-1") {
 		t.Error("disable flag was cleared by a state write")
 	}
 }
@@ -137,7 +138,7 @@ func TestDisabledSurvivesStateWrites(t *testing.T) {
 // a chat the store has never seen is not blocked.
 func TestIsChatDisabledUnknownIsFalse(t *testing.T) {
 	store := newChatStore(t)
-	if store.IsChatDisabled("never-seen") {
+	if store.IsChatDisabled(context.Background(), "never-seen") {
 		t.Error("unknown chat reported disabled")
 	}
 }
@@ -146,10 +147,10 @@ func TestIsChatDisabledUnknownIsFalse(t *testing.T) {
 // chat that doesn't exist changes nothing and creates nothing.
 func TestSetChatDisabledMissingIsNoop(t *testing.T) {
 	store := newChatStore(t)
-	if err := store.SetChatDisabled("nope", true); err != nil {
+	if err := store.SetChatDisabled(context.Background(), "nope", true); err != nil {
 		t.Fatalf("disable missing: %v", err)
 	}
-	chat, err := store.GetChat("nope")
+	chat, err := store.GetChat(context.Background(), "nope")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -165,17 +166,17 @@ func TestSetChatDisabledMissingIsNoop(t *testing.T) {
 func TestListChatsExcludesDisabled(t *testing.T) {
 	store := newChatStore(t)
 
-	if _, err := store.GetOrCreateChat("visible", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "visible", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := store.GetOrCreateChat("blocked", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "blocked", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.SetChatDisabled("blocked", true); err != nil {
+	if err := store.SetChatDisabled(context.Background(), "blocked", true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 
-	chats, err := store.ListChats("telegram", false)
+	chats, err := store.ListChats(context.Background(), "telegram", false)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestListChatsExcludesDisabled(t *testing.T) {
 		t.Errorf("default list = %+v, want just the visible chat", chats)
 	}
 
-	all, err := store.ListChats("telegram", true)
+	all, err := store.ListChats(context.Background(), "telegram", true)
 	if err != nil {
 		t.Fatalf("list all: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestListChatsExcludesDisabled(t *testing.T) {
 func TestListChatsIncludesLegacyNullDisabled(t *testing.T) {
 	store := newChatStore(t)
 
-	if _, err := store.GetOrCreateChat("legacy", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "legacy", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	// Simulate the pre-migration state: NULL, not false.
@@ -207,7 +208,7 @@ func TestListChatsIncludesLegacyNullDisabled(t *testing.T) {
 		t.Fatalf("null out disabled: %v", err)
 	}
 
-	chats, err := store.ListChats("telegram", false)
+	chats, err := store.ListChats(context.Background(), "telegram", false)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

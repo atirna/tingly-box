@@ -69,7 +69,7 @@ func TestAuthorizationGateKeepsUnpairedDirectPeerDeniedWhenPairingRequired(t *te
 
 func TestAuthorizationGateMigratesLegacyPairedDirectPeer(t *testing.T) {
 	sm, setting, msg := directAuthorizationFixture(t)
-	require.NoError(t, sm.RemoteChats().SetPaired(msg.Recipient.ID, setting.Platform, setting.UUID, msg.Sender.ID))
+	require.NoError(t, sm.RemoteChats().SetPaired(context.Background(), msg.Recipient.ID, setting.Platform, setting.UUID, msg.Sender.ID))
 	gate := bot.AuthorizationGate(sm.BotAccess(), access.NewEvaluator(sm.BotAccess()), sm.RemoteChats(), true, nil, nil)
 	require.False(t, gate(msg, imbot.Platform(setting.Platform), setting.UUID), "legacy paired direct message must remain authorized")
 

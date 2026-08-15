@@ -1,6 +1,7 @@
 package remoteagent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -15,6 +16,7 @@ import (
 // SmartGuideCompletionCallback handles completion events for SmartGuide agent
 // It saves messages to session, updates project path if changed, and sends response + action keyboard
 type SmartGuideCompletionCallback struct {
+	ctx            context.Context
 	hCtx           HandlerContext
 	chatStore      bot.ChatStoreInterface
 	tbSessionStore *smart_guide2.SessionStore
@@ -81,8 +83,8 @@ func (c *SmartGuideCompletionCallback) OnComplete(result *smart_guide2.Completio
 	currentWorkingDir := c.agent.GetExecutor().GetWorkingDirectory()
 	if currentWorkingDir != "" {
 		// Get current stored values
-		storedBashCwd, hasBashCwd, _ := c.chatStore.GetBashCwd(c.hCtx.ChatID)
-		storedProjectPath, _, _ := c.chatStore.GetProjectPath(c.hCtx.ChatID)
+		storedBashCwd, hasBashCwd, _ := c.chatStore.GetBashCwd(c.ctx, c.hCtx.ChatID)
+		storedProjectPath, _, _ := c.chatStore.GetProjectPath(c.ctx, c.hCtx.ChatID)
 
 		// Determine what needs to be updated
 		updateProjectPath := (currentWorkingDir != storedProjectPath)
@@ -98,7 +100,7 @@ func (c *SmartGuideCompletionCallback) OnComplete(result *smart_guide2.Completio
 				"updateBashCwd":     updateBashCwd,
 			}).Info("SmartGuide: Syncing working directory to chat store")
 
-			if err := c.chatStore.UpdateChat(c.hCtx.ChatID, func(ch *bot.Chat) {
+			if err := c.chatStore.UpdateChat(c.ctx, c.hCtx.ChatID, func(ch *bot.Chat) {
 				// Only update ProjectPath if it actually changed (change_workdir case)
 				if updateProjectPath {
 					ch.ProjectPath = currentWorkingDir
@@ -193,7 +195,7 @@ func executionErrorMessage(err error) string {
 // getCurrentAgent retrieves the current agent for a chat
 // Returns "tingly-box" as default (Smart Guide is now the entry point)
 func (h *BotHandler) getCurrentAgent(chatID string) (agentboot.AgentType, error) {
-	currentAgent, err := h.chatStore.GetCurrentAgent(chatID)
+	currentAgent, err := h.chatStore.GetCurrentAgent(h.ctx, chatID)
 	if err != nil {
 		return agentTinglyBox, err
 	}
@@ -209,7 +211,7 @@ func (h *BotHandler) getCurrentAgent(chatID string) (agentboot.AgentType, error)
 // forwarded so fresh chats — those not yet created by /cd or /bind — get
 // a row with the correct platform on the first handoff.
 func (h *BotHandler) setCurrentAgent(chatID, platform string, agentType agentboot.AgentType) error {
-	return h.chatStore.SetCurrentAgent(chatID, platform, string(agentType))
+	return h.chatStore.SetCurrentAgent(h.ctx, chatID, platform, string(agentType))
 }
 
 // handleHandoff performs a handoff from one agent to another
@@ -221,7 +223,7 @@ func (h *BotHandler) handleHandoff(hCtx HandlerContext, toAgent agentboot.AgentT
 	}
 
 	// Get project path
-	projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+	projectPath, _, _ := h.chatStore.GetProjectPath(h.ctx, hCtx.ChatID)
 
 	// Create handoff state (no sessionID needed - sessions are managed per-agent)
 	handoffState := &smart_guide2.HandoffState{
@@ -323,7 +325,7 @@ func (h *BotHandler) routeToAgent(hCtx HandlerContext, text string) error {
 // getProjectPath returns the project path bound to the current chat (direct
 // and group chats share the same chat-id key in the store).
 func (h *BotHandler) getProjectPath(hCtx HandlerContext) (string, bool) {
-	projectPath, hasBound, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+	projectPath, hasBound, _ := h.chatStore.GetProjectPath(h.ctx, hCtx.ChatID)
 	if hasBound && projectPath != "" {
 		return projectPath, true
 	}

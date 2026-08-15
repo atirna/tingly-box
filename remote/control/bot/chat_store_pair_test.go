@@ -1,6 +1,7 @@
 package bot_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -25,25 +26,25 @@ func TestSetPaired_RoundTrip(t *testing.T) {
 		plat    = "telegram"
 	)
 
-	if store.IsChatPaired(chatID, botUUID) {
+	if store.IsChatPaired(context.Background(), chatID, botUUID) {
 		t.Fatalf("expected unpaired before SetPaired")
 	}
-	if err := store.SetPaired(chatID, plat, botUUID, sender); err != nil {
+	if err := store.SetPaired(context.Background(), chatID, plat, botUUID, sender); err != nil {
 		t.Fatalf("SetPaired: %v", err)
 	}
-	if !store.IsChatPaired(chatID, botUUID) {
+	if !store.IsChatPaired(context.Background(), chatID, botUUID) {
 		t.Fatalf("expected paired after SetPaired")
 	}
-	if store.IsChatPaired(chatID, "other-bot") {
+	if store.IsChatPaired(context.Background(), chatID, "other-bot") {
 		t.Fatalf("pairing must be scoped to bot UUID")
 	}
 
 	// Survive a reopen through an independent connection.
 	store2 := openStore(t, tmpDir)
-	if !store2.IsChatPaired(chatID, botUUID) {
+	if !store2.IsChatPaired(context.Background(), chatID, botUUID) {
 		t.Fatalf("pairing did not persist across reload")
 	}
-	chat, err := store2.GetChat(chatID)
+	chat, err := store2.GetChat(context.Background(), chatID)
 	if err != nil || chat == nil {
 		t.Fatalf("GetChat after reload: chat=%v err=%v", chat, err)
 	}
@@ -70,18 +71,18 @@ func TestClearPaired_DropsBindingPreservesOtherFields(t *testing.T) {
 
 	// Pair it and bind a project path so we can later confirm that ClearPaired
 	// only resets pairing fields.
-	if err := store.SetPaired(chatID, "discord", "bot-2", "carol"); err != nil {
+	if err := store.SetPaired(context.Background(), chatID, "discord", "bot-2", "carol"); err != nil {
 		t.Fatalf("SetPaired: %v", err)
 	}
-	if err := store.BindProject(chatID, "discord", "/tmp/project", "carol"); err != nil {
+	if err := store.BindProject(context.Background(), chatID, "discord", "/tmp/project", "carol"); err != nil {
 		t.Fatalf("BindProject: %v", err)
 	}
 
-	if err := store.ClearPaired(chatID); err != nil {
+	if err := store.ClearPaired(context.Background(), chatID); err != nil {
 		t.Fatalf("ClearPaired: %v", err)
 	}
 
-	chat, err := store.GetChat(chatID)
+	chat, err := store.GetChat(context.Background(), chatID)
 	if err != nil || chat == nil {
 		t.Fatalf("GetChat: chat=%v err=%v", chat, err)
 	}

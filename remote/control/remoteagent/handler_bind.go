@@ -19,7 +19,7 @@ func (h *BotHandler) handleProjectSwitch(hCtx HandlerContext, projectPath string
 	}
 
 	// Bind the project to this chat
-	if err := h.chatStore.BindProject(hCtx.ChatID, string(hCtx.Platform), projectPath, hCtx.SenderID); err != nil {
+	if err := h.chatStore.BindProject(h.ctx, hCtx.ChatID, string(hCtx.Platform), projectPath, hCtx.SenderID); err != nil {
 		h.SendText(hCtx, "Failed to switch project")
 		return
 	}
@@ -48,7 +48,7 @@ func (h *BotHandler) handleProjectSwitch(hCtx HandlerContext, projectPath string
 func (h *BotHandler) handleBindInteractive(hCtx HandlerContext) {
 	// Start from the currently-bound project path so the user lands in a
 	// familiar spot; falls back to home when nothing is bound yet.
-	currentPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+	currentPath, _, _ := h.chatStore.GetProjectPath(h.ctx, hCtx.ChatID)
 	_, err := h.directoryBrowser.StartAt(hCtx.ChatID, currentPath)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to start directory browser")
@@ -90,13 +90,13 @@ func (h *BotHandler) completeBind(hCtx HandlerContext, projectPath string) {
 	platform := string(hCtx.Platform)
 
 	// Bind project to chat using ChatStore
-	if err := h.chatStore.BindProject(hCtx.ChatID, platform, expandedPath, hCtx.SenderID); err != nil {
+	if err := h.chatStore.BindProject(h.ctx, hCtx.ChatID, platform, expandedPath, hCtx.SenderID); err != nil {
 		h.SendText(hCtx, fmt.Sprintf("Failed to bind project: %v", err))
 		return
 	}
 
 	// Also update bash cwd to match the new project path
-	if err := h.chatStore.SetBashCwd(hCtx.ChatID, expandedPath); err != nil {
+	if err := h.chatStore.SetBashCwd(h.ctx, hCtx.ChatID, expandedPath); err != nil {
 		logrus.WithError(err).Warn("Failed to update bash cwd after project bind")
 	}
 

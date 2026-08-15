@@ -93,7 +93,7 @@ func AuthorizationGate(store AccessStore, authorizer access.Authorizer, legacyCh
 				return false
 			}
 			if chat.PeerActorID == "" {
-				legacyPaired := legacyChats != nil && legacyChats.IsChatPaired(externalTarget, botUUID)
+				legacyPaired := legacyChats != nil && legacyChats.IsChatPaired(ctx, externalTarget, botUUID)
 				// Pairing-disabled Bots historically accepted their direct peer
 				// immediately. Materialize that trust as explicit policy instead
 				// of leaving the new authorizer stuck on discovered-chat deny.

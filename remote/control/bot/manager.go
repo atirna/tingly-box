@@ -203,7 +203,7 @@ func runBotWithSettings(ctx context.Context, setting BotSetting, chatStore ChatS
 				if chatStore == nil {
 					return ""
 				}
-				ch, err := chatStore.GetChat(target)
+				ch, err := chatStore.GetChat(context.Background(), target)
 				if err != nil || ch == nil {
 					return ""
 				}

@@ -1,6 +1,7 @@
 package bot_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -42,11 +43,11 @@ func TestUpdateChatPersistsImmediately(t *testing.T) {
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
-	if err := store.UpsertChat(chat); err != nil {
+	if err := store.UpsertChat(context.Background(), chat); err != nil {
 		t.Fatalf("Failed to upsert chat: %v", err)
 	}
 
-	if err := store.UpdateChat(chatID, func(c *bot.Chat) {
+	if err := store.UpdateChat(context.Background(), chatID, func(c *bot.Chat) {
 		c.ProjectPath = projectPath
 		c.BashCwd = projectPath
 	}); err != nil {
@@ -56,7 +57,7 @@ func TestUpdateChatPersistsImmediately(t *testing.T) {
 	// connection, so reading back through it proves the write reached disk.
 	reopened := openStore(t, dir)
 
-	got, err := reopened.GetChat(chatID)
+	got, err := reopened.GetChat(context.Background(), chatID)
 	if err != nil {
 		t.Fatalf("Failed to read chat back: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestUpsertChatPersistsImmediately(t *testing.T) {
 		projectPath = "/another/test/path"
 	)
 
-	if err := store.UpsertChat(&bot.Chat{
+	if err := store.UpsertChat(context.Background(), &bot.Chat{
 		ChatID:       chatID,
 		Platform:     "telegram",
 		ProjectPath:  projectPath,
@@ -97,7 +98,7 @@ func TestUpsertChatPersistsImmediately(t *testing.T) {
 	// connection, so reading back through it proves the write reached disk.
 	reopened := openStore(t, dir)
 
-	got, err := reopened.GetChat(chatID)
+	got, err := reopened.GetChat(context.Background(), chatID)
 	if err != nil {
 		t.Fatalf("Failed to read chat back: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestSetCurrentAgentPersistsImmediately(t *testing.T) {
 
 	const chatID = "test-chat-789"
 
-	if err := store.UpsertChat(&bot.Chat{
+	if err := store.UpsertChat(context.Background(), &bot.Chat{
 		ChatID:    chatID,
 		Platform:  "telegram",
 		CreatedAt: time.Now().UTC(),
@@ -128,14 +129,14 @@ func TestSetCurrentAgentPersistsImmediately(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Failed to upsert chat: %v", err)
 	}
-	if err := store.SetCurrentAgent(chatID, "telegram", "claude"); err != nil {
+	if err := store.SetCurrentAgent(context.Background(), chatID, "telegram", "claude"); err != nil {
 		t.Fatalf("Failed to set current agent: %v", err)
 	}
 	// A second store manager over the same directory is a genuinely separate
 	// connection, so reading back through it proves the write reached disk.
 	reopened := openStore(t, dir)
 
-	got, err := reopened.GetCurrentAgent(chatID)
+	got, err := reopened.GetCurrentAgent(context.Background(), chatID)
 	if err != nil {
 		t.Fatalf("Failed to read current agent back: %v", err)
 	}
@@ -152,11 +153,11 @@ func TestSetCurrentAgentCreatesMissingChat(t *testing.T) {
 	store := openStore(t, t.TempDir())
 
 	const chatID = "tg-fresh-chat-1"
-	if err := store.SetCurrentAgent(chatID, "telegram", "claude"); err != nil {
+	if err := store.SetCurrentAgent(context.Background(), chatID, "telegram", "claude"); err != nil {
 		t.Fatalf("SetCurrentAgent on missing chat: %v", err)
 	}
 
-	got, err := store.GetCurrentAgent(chatID)
+	got, err := store.GetCurrentAgent(context.Background(), chatID)
 	if err != nil {
 		t.Fatalf("GetCurrentAgent: %v", err)
 	}
@@ -164,7 +165,7 @@ func TestSetCurrentAgentCreatesMissingChat(t *testing.T) {
 		t.Fatalf("current agent not persisted: got %q, want \"claude\"", got)
 	}
 
-	chat, err := store.GetChat(chatID)
+	chat, err := store.GetChat(context.Background(), chatID)
 	if err != nil || chat == nil {
 		t.Fatalf("chat row not created: chat=%v err=%v", chat, err)
 	}

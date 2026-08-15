@@ -1,6 +1,7 @@
 package bot_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -25,12 +26,12 @@ func TestListChats_ScopesToPlatform(t *testing.T) {
 		{ChatID: "dc:1", Platform: "discord", CreatedAt: now, UpdatedAt: now},
 		{ChatID: "orphan", Platform: "", CreatedAt: now, UpdatedAt: now},
 	} {
-		if err := store.UpsertChat(c); err != nil {
+		if err := store.UpsertChat(context.Background(), c); err != nil {
 			t.Fatalf("UpsertChat(%s): %v", c.ChatID, err)
 		}
 	}
 
-	got, err := store.ListChats("telegram", false)
+	got, err := store.ListChats(context.Background(), "telegram", false)
 	if err != nil {
 		t.Fatalf("ListChats: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestListChats_ScopesToPlatform(t *testing.T) {
 
 	// An unattributed record cannot be proven to belong to any bot, so asking
 	// for the empty platform must not hand it out either.
-	if got, err := store.ListChats("", false); err != nil {
+	if got, err := store.ListChats(context.Background(), "", false); err != nil {
 		t.Fatalf("ListChats(\"\"): %v", err)
 	} else if len(got) != 1 || got[0].ChatID != "orphan" {
 		// Documenting the current contract: "" matches only records whose
@@ -58,12 +59,12 @@ func TestListChats_NewestFirst(t *testing.T) {
 
 	inserted := []string{"first", "second", "third"}
 	for _, id := range inserted {
-		if err := store.UpsertChat(&bot.Chat{ChatID: id, Platform: "telegram"}); err != nil {
+		if err := store.UpsertChat(context.Background(), &bot.Chat{ChatID: id, Platform: "telegram"}); err != nil {
 			t.Fatalf("UpsertChat(%s): %v", id, err)
 		}
 	}
 
-	got, err := store.ListChats("telegram", false)
+	got, err := store.ListChats(context.Background(), "telegram", false)
 	if err != nil {
 		t.Fatalf("ListChats: %v", err)
 	}
@@ -85,16 +86,16 @@ func TestListChats_NewestFirst(t *testing.T) {
 func TestGetOrCreateChat_RefusesCrossPlatformCollision(t *testing.T) {
 	store := newTestChatStore(t)
 
-	if _, err := store.GetOrCreateChat("12345", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "12345", "telegram"); err != nil {
 		t.Fatalf("first GetOrCreateChat: %v", err)
 	}
 
-	if _, err := store.GetOrCreateChat("12345", "discord"); err == nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "12345", "discord"); err == nil {
 		t.Fatal("expected an error for a cross-platform chatID collision")
 	}
 
 	// The original record must be untouched.
-	chat, err := store.GetChat("12345")
+	chat, err := store.GetChat(context.Background(), "12345")
 	if err != nil {
 		t.Fatalf("GetChat: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestGetOrCreateChat_RefusesCrossPlatformCollision(t *testing.T) {
 
 	// Same platform still resolves, and an unattributed record is adoptable
 	// (BindProject stamps the platform onto legacy records).
-	if _, err := store.GetOrCreateChat("12345", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "12345", "telegram"); err != nil {
 		t.Fatalf("same-platform GetOrCreateChat: %v", err)
 	}
 }

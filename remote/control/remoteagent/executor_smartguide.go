@@ -122,8 +122,8 @@ func (e *SmartGuideExecutor) Execute(ctx context.Context, req PreparedRequest) e
 		ToolCtx:          toolCtx,
 		SessionLog:       sessionLog,
 		GetStatusFunc: func(chatID string) (*smart_guide2.StatusInfo, error) {
-			projectPath, _, _ := e.deps.ChatStore.GetProjectPath(chatID)
-			workingDir, hasWD, _ := e.deps.ChatStore.GetBashCwd(chatID)
+			projectPath, _, _ := e.deps.ChatStore.GetProjectPath(ctx, chatID)
+			workingDir, hasWD, _ := e.deps.ChatStore.GetBashCwd(ctx, chatID)
 			if !hasWD {
 				workingDir = projectPath
 			}
@@ -134,11 +134,11 @@ func (e *SmartGuideExecutor) Execute(ctx context.Context, req PreparedRequest) e
 				ProjectPath:    projectPath,
 				WorkingDir:     workingDir,
 				HasRunningTask: false,
-				Whitelisted:    e.deps.ChatStore.IsWhitelisted(chatID),
+				Whitelisted:    e.deps.ChatStore.IsWhitelisted(ctx, chatID),
 			}, nil
 		},
 		GetProjectFunc: func(chatID string) (string, bool, error) {
-			return e.deps.ChatStore.GetProjectPath(chatID)
+			return e.deps.ChatStore.GetProjectPath(ctx, chatID)
 		},
 		UpdateProjectFunc: func(chatID string, newProjectPath string) error {
 			logrus.WithFields(logrus.Fields{
@@ -146,7 +146,7 @@ func (e *SmartGuideExecutor) Execute(ctx context.Context, req PreparedRequest) e
 				"oldPath": projectPath,
 				"newPath": newProjectPath,
 			}).Info("updateProjectFunc called - persisting to chat store")
-			return e.deps.ChatStore.UpdateChat(chatID, func(chat *bot.Chat) {
+			return e.deps.ChatStore.UpdateChat(ctx, chatID, func(chat *bot.Chat) {
 				chat.PushProjectHistory(newProjectPath)
 				chat.BashCwd = newProjectPath
 			})
@@ -171,7 +171,7 @@ func (e *SmartGuideExecutor) Execute(ctx context.Context, req PreparedRequest) e
 
 	// Set working directory from BashCwd (preferred) or projectPath (fallback)
 	// This ensures bash cd changes are persisted across agent executions
-	workingDir, hasWD, _ := e.deps.ChatStore.GetBashCwd(req.HCtx.ChatID)
+	workingDir, hasWD, _ := e.deps.ChatStore.GetBashCwd(ctx, req.HCtx.ChatID)
 	if !hasWD || workingDir == "" {
 		workingDir = projectPath
 	}
@@ -191,6 +191,7 @@ func (e *SmartGuideExecutor) Execute(ctx context.Context, req PreparedRequest) e
 
 	// 7. Create completion callback
 	completionCallback := &SmartGuideCompletionCallback{
+		ctx:            ctx,
 		hCtx:           req.HCtx,
 		chatStore:      e.deps.ChatStore,
 		tbSessionStore: e.deps.TBSessionStore,

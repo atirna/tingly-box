@@ -135,14 +135,14 @@ func importChats(path string, store *RemoteChatStore) error {
 		}
 		// Existing rows win: a chat already in the database was written by
 		// the current code path and is newer than anything in the file.
-		existing, err := store.GetChat(chat.ChatID)
+		existing, err := store.GetChat(context.Background(), chat.ChatID)
 		if err != nil {
 			return err
 		}
 		if existing != nil {
 			continue
 		}
-		if err := store.ImportChat(chat); err != nil {
+		if err := store.ImportChat(context.Background(), chat); err != nil {
 			return fmt.Errorf("upsert chat %s: %w", chat.ChatID, err)
 		}
 		imported++

@@ -1,6 +1,7 @@
 package bot_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/imbot"
@@ -22,10 +23,10 @@ func newIncomingMessage(chatID, text string) imbot.Message {
 func TestDisabledChatGate_ClaimsBeforeAnyoneElse(t *testing.T) {
 	store := openStore(t, t.TempDir())
 	const chatID = "disabled-chat"
-	if _, err := store.GetOrCreateChat(chatID, "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), chatID, "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.SetChatDisabled(chatID, true); err != nil {
+	if err := store.SetChatDisabled(context.Background(), chatID, true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 
@@ -58,7 +59,7 @@ func TestDisabledChatGate_PassesThroughEnabledChats(t *testing.T) {
 	}
 
 	const chatID = "enabled-chat"
-	if _, err := store.GetOrCreateChat(chatID, "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), chatID, "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	msg := newIncomingMessage(chatID, "hi")

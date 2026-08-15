@@ -36,7 +36,7 @@ func (h *BotHandler) HandleMessage(msg imbot.Message, platform imbot.Platform, b
 	// see remoteagent.BootForTest), which never enters manager.go's dispatch
 	// chain. Two paths into the handler → two gates; see the spec
 	// (bot-chat-lifecycle-collapse §3b).
-	if h.chatStore.IsChatDisabled(chatID) {
+	if h.chatStore.IsChatDisabled(h.ctx, chatID) {
 		logrus.Debugf("chat %s is disabled, dropping message", chatID)
 		return
 	}
@@ -183,7 +183,7 @@ func (h *BotHandler) handlePairingGate(hCtx HandlerContext) bool {
 	if !h.botSetting.IsRequirePairing() {
 		return false
 	}
-	if h.chatStore.IsChatPaired(hCtx.ChatID, hCtx.BotUUID) {
+	if h.chatStore.IsChatPaired(h.ctx, hCtx.ChatID, hCtx.BotUUID) {
 		return false
 	}
 	if isBindCommand(hCtx.Text()) {
@@ -206,7 +206,7 @@ func (h *BotHandler) handlePairingGate(hCtx HandlerContext) bool {
 // is themselves paired in DM. Returns true when the message is rejected (a
 // hint was sent).
 func (h *BotHandler) handleWhitelistGate(hCtx HandlerContext) bool {
-	if !h.chatStore.IsWhitelisted(hCtx.ChatID) {
+	if !h.chatStore.IsWhitelisted(h.ctx, hCtx.ChatID) {
 		logrus.Debugf("Group %s is not whitelisted, ignoring message", hCtx.ChatID)
 		h.SendText(hCtx, fmt.Sprintf("This group is not enabled. Please DM the bot with `%s %s` to enable.", cmdJoinPrimary, hCtx.ChatID))
 		return true

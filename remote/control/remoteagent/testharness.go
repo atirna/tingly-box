@@ -168,7 +168,7 @@ func (h *TestHarness) MintPairingCode() (code string, expiresAt time.Time) {
 // post-pairing behavior can skip the /bind handshake without bypassing
 // the real persistence path — exercising any future bug in SetPaired.
 func (h *TestHarness) MarkChatPaired(chatID, senderID string) {
-	if err := h.ChatStore.SetPaired(chatID, h.Setting.Platform, h.Setting.UUID, senderID); err != nil {
+	if err := h.ChatStore.SetPaired(context.Background(), chatID, h.Setting.Platform, h.Setting.UUID, senderID); err != nil {
 		panic(err)
 	}
 }
@@ -176,13 +176,13 @@ func (h *TestHarness) MarkChatPaired(chatID, senderID string) {
 // WhitelistGroup adds a group chat to the bot's whitelist (required for
 // the bot to respond to group messages).
 func (h *TestHarness) WhitelistGroup(chatID, ownerID string) {
-	chat, err := h.ChatStore.GetOrCreateChat(chatID, h.Setting.Platform)
+	chat, err := h.ChatStore.GetOrCreateChat(context.Background(), chatID, h.Setting.Platform)
 	if err != nil {
 		panic(err)
 	}
 	chat.IsWhitelisted = true
 	chat.WhitelistedBy = ownerID
-	if err := h.ChatStore.UpsertChat(chat); err != nil {
+	if err := h.ChatStore.UpsertChat(context.Background(), chat); err != nil {
 		panic(err)
 	}
 }
@@ -193,7 +193,7 @@ func (h *TestHarness) WhitelistGroup(chatID, ownerID string) {
 // the harness honest: any regression in the persistence path — e.g. a
 // silent no-op on a missing chat row — surfaces as a test failure.
 func (h *TestHarness) SetCurrentAgent(chatID, agentType string) {
-	if err := h.ChatStore.SetCurrentAgent(chatID, h.Setting.Platform, agentType); err != nil {
+	if err := h.ChatStore.SetCurrentAgent(context.Background(), chatID, h.Setting.Platform, agentType); err != nil {
 		panic(err)
 	}
 }

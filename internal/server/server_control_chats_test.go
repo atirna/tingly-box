@@ -58,13 +58,13 @@ func newChatWiring(t *testing.T) (*channel.Registry, *chatTestProvider, *db.Remo
 func TestChatLister_ExcludesPairedElsewhere(t *testing.T) {
 	reg, provider, store := newChatWiring(t)
 
-	if _, err := store.GetOrCreateChat("unpaired", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "unpaired", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.SetPaired("mine", "telegram", "bot-1", "sender"); err != nil {
+	if err := store.SetPaired(context.Background(), "mine", "telegram", "bot-1", "sender"); err != nil {
 		t.Fatalf("pair mine: %v", err)
 	}
-	if err := store.SetPaired("theirs", "telegram", "bot-2", "sender"); err != nil {
+	if err := store.SetPaired(context.Background(), "theirs", "telegram", "bot-2", "sender"); err != nil {
 		t.Fatalf("pair theirs: %v", err)
 	}
 
@@ -87,13 +87,13 @@ func TestChatLister_ExcludesPairedElsewhere(t *testing.T) {
 func TestChatLister_DisabledHiddenUnlessAsked(t *testing.T) {
 	reg, provider, store := newChatWiring(t)
 
-	if _, err := store.GetOrCreateChat("open", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "open", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := store.GetOrCreateChat("blocked", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "blocked", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.SetChatDisabled("blocked", true); err != nil {
+	if err := store.SetChatDisabled(context.Background(), "blocked", true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 
@@ -125,13 +125,13 @@ func TestChatLister_DisabledHiddenUnlessAsked(t *testing.T) {
 func TestChatDeleter_AllowsReachableAndRefusesForeign(t *testing.T) {
 	reg, provider, store := newChatWiring(t)
 
-	if _, err := store.GetOrCreateChat("locked-chat", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "locked-chat", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.SetPaired("theirs", "telegram", "bot-2", "sender"); err != nil {
+	if err := store.SetPaired(context.Background(), "theirs", "telegram", "bot-2", "sender"); err != nil {
 		t.Fatalf("pair: %v", err)
 	}
-	if _, err := store.GetOrCreateChat("mine", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "mine", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -150,11 +150,11 @@ func TestChatDeleter_AllowsReachableAndRefusesForeign(t *testing.T) {
 	if err := mgr.DeleteChat("bot-1", "mine"); err != nil {
 		t.Fatalf("deleting own chat: %v", err)
 	}
-	if chat, _ := store.GetChat("mine"); chat != nil {
+	if chat, _ := store.GetChat(context.Background(), "mine"); chat != nil {
 		t.Errorf("chat survived delete: %+v", chat)
 	}
 	// The foreign chat is untouched.
-	if chat, _ := store.GetChat("theirs"); chat == nil {
+	if chat, _ := store.GetChat(context.Background(), "theirs"); chat == nil {
 		t.Error("foreign chat was deleted")
 	}
 }
@@ -163,10 +163,10 @@ func TestChatDeleter_AllowsReachableAndRefusesForeign(t *testing.T) {
 func TestChatDisabler_ScopedToReachable(t *testing.T) {
 	reg, provider, store := newChatWiring(t)
 
-	if err := store.SetPaired("theirs", "telegram", "bot-2", "sender"); err != nil {
+	if err := store.SetPaired(context.Background(), "theirs", "telegram", "bot-2", "sender"); err != nil {
 		t.Fatalf("pair: %v", err)
 	}
-	if _, err := store.GetOrCreateChat("mine", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "mine", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestChatDisabler_ScopedToReachable(t *testing.T) {
 	if err := mgr.SetChatDisabled("bot-1", "mine", true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if !store.IsChatDisabled("mine") {
+	if !store.IsChatDisabled(context.Background(), "mine") {
 		t.Error("chat not disabled")
 	}
 

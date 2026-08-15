@@ -1,6 +1,7 @@
 package remoteagent_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -55,9 +56,9 @@ func TestDisabledChatDroppedSilently(t *testing.T) {
 	// Disable through the store, as the API path does. The row must exist —
 	// SetChatDisabled deliberately no-ops on missing chats (the HTTP layer
 	// 404s first via resolveReachableChat).
-	_, err := harness.ChatStore.GetOrCreateChat(chat.ChatID, harness.Setting.Platform)
+	_, err := harness.ChatStore.GetOrCreateChat(context.Background(), chat.ChatID, harness.Setting.Platform)
 	require.NoError(t, err)
-	require.NoError(t, harness.ChatStore.SetChatDisabled(chat.ChatID, true))
+	require.NoError(t, harness.ChatStore.SetChatDisabled(context.Background(), chat.ChatID, true))
 
 	chat.SendText("hello?")
 	chat.SendText("/help")
@@ -65,7 +66,7 @@ func TestDisabledChatDroppedSilently(t *testing.T) {
 	chat.ExpectIdle(700 * time.Millisecond)
 
 	// Re-enable restores normal handling.
-	require.NoError(t, harness.ChatStore.SetChatDisabled(chat.ChatID, false))
+	require.NoError(t, harness.ChatStore.SetChatDisabled(context.Background(), chat.ChatID, false))
 	chat.SendText("/help")
 	chat.WaitAnySend(3 * time.Second)
 }

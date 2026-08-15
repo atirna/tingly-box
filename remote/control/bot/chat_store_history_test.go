@@ -1,6 +1,7 @@
 package bot_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/remote/control/bot"
@@ -10,14 +11,14 @@ func TestListChatProjectPaths_FallbackToProjectPath(t *testing.T) {
 	dir := t.TempDir()
 	store := openStore(t, dir)
 	// Simulate a legacy chat written before ProjectHistory existed.
-	if err := store.UpsertChat(&bot.Chat{
+	if err := store.UpsertChat(context.Background(), &bot.Chat{
 		ChatID:      "legacy",
 		Platform:    "telegram",
 		ProjectPath: "/legacy/path",
 	}); err != nil {
 		t.Fatalf("UpsertChat: %v", err)
 	}
-	got, err := store.ListChatProjectPaths("legacy")
+	got, err := store.ListChatProjectPaths(context.Background(), "legacy")
 	if err != nil {
 		t.Fatalf("ListChatProjectPaths: %v", err)
 	}
@@ -29,16 +30,16 @@ func TestListChatProjectPaths_FallbackToProjectPath(t *testing.T) {
 func TestBindProject_RecordsHistoryPerChat(t *testing.T) {
 	dir := t.TempDir()
 	store := openStore(t, dir)
-	if err := store.BindProject("c1", "telegram", "/a", "alice"); err != nil {
+	if err := store.BindProject(context.Background(), "c1", "telegram", "/a", "alice"); err != nil {
 		t.Fatalf("BindProject /a: %v", err)
 	}
-	if err := store.BindProject("c1", "telegram", "/b", "alice"); err != nil {
+	if err := store.BindProject(context.Background(), "c1", "telegram", "/b", "alice"); err != nil {
 		t.Fatalf("BindProject /b: %v", err)
 	}
-	if err := store.BindProject("c1", "telegram", "/a", "alice"); err != nil {
+	if err := store.BindProject(context.Background(), "c1", "telegram", "/a", "alice"); err != nil {
 		t.Fatalf("BindProject /a (re-bind): %v", err)
 	}
-	got, err := store.ListChatProjectPaths("c1")
+	got, err := store.ListChatProjectPaths(context.Background(), "c1")
 	if err != nil {
 		t.Fatalf("ListChatProjectPaths: %v", err)
 	}

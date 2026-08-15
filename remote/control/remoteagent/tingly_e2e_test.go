@@ -244,7 +244,7 @@ func Test_ProjectPick(t *testing.T) {
 	chat := alice.OpenDM(harness.Setting.UUID)
 
 	tmp := t.TempDir()
-	require.NoError(t, harness.ChatStore.BindProject(chat.ChatID, "tingly", tmp, alice.ID))
+	require.NoError(t, harness.ChatStore.BindProject(context.Background(), chat.ChatID, "tingly", tmp, alice.ID))
 
 	chat.SendText("/project")
 	evt := chat.WaitText(3 * time.Second)

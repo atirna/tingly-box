@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"time"
 
 	"github.com/tingly-dev/tingly-box/imbot"
@@ -160,25 +161,25 @@ func (c *Chat) PushProjectHistory(path string) {
 // bot package independent of where chats are actually stored.
 type ChatStoreInterface interface {
 	// GetChat retrieves a chat by ID
-	GetChat(chatID string) (*Chat, error)
+	GetChat(ctx context.Context, chatID string) (*Chat, error)
 
 	// GetOrCreateChat gets a chat or creates it if not exists
-	GetOrCreateChat(chatID, platform string) (*Chat, error)
+	GetOrCreateChat(ctx context.Context, chatID, platform string) (*Chat, error)
 
 	// UpsertChat creates or updates a chat
-	UpsertChat(chat *Chat) error
+	UpsertChat(ctx context.Context, chat *Chat) error
 
 	// UpdateChat updates specific fields of a chat
-	UpdateChat(chatID string, fn func(*Chat)) error
+	UpdateChat(ctx context.Context, chatID string, fn func(*Chat)) error
 
 	// BindProject binds a project to a chat
-	BindProject(chatID, platform, projectPath, ownerID string) error
+	BindProject(ctx context.Context, chatID, platform, projectPath, ownerID string) error
 
 	// GetProjectPath retrieves the project path for a chat
-	GetProjectPath(chatID string) (string, bool, error)
+	GetProjectPath(ctx context.Context, chatID string) (string, bool, error)
 
 	// ListChatsByOwner lists all chats owned by a user
-	ListChatsByOwner(ownerID, platform string) ([]*Chat, error)
+	ListChatsByOwner(ctx context.Context, ownerID, platform string) ([]*Chat, error)
 
 	// ListChats returns the chat records this bot can reach on the given
 	// platform — i.e. those whose Platform field is set AND equals platform.
@@ -189,61 +190,61 @@ type ChatStoreInterface interface {
 	// set. Used by the GET /bots/:bot/chats API so callers of the
 	// notify/interact endpoints can discover the channel-native chat_id they
 	// must pass in the request body.
-	ListChats(platform string, includeDisabled bool) ([]*Chat, error)
+	ListChats(ctx context.Context, platform string, includeDisabled bool) ([]*Chat, error)
 
 	// ListChatProjectPaths returns the MRU project-path history for a chat.
-	ListChatProjectPaths(chatID string) ([]string, error)
+	ListChatProjectPaths(ctx context.Context, chatID string) ([]string, error)
 
 	// AddToWhitelist adds a chat to the whitelist
-	AddToWhitelist(chatID, platform, addedBy string) error
+	AddToWhitelist(ctx context.Context, chatID, platform, addedBy string) error
 
 	// RemoveFromWhitelist removes a chat from the whitelist
-	RemoveFromWhitelist(chatID string) error
+	RemoveFromWhitelist(ctx context.Context, chatID string) error
 
 	// IsWhitelisted checks if a chat is whitelisted
-	IsWhitelisted(chatID string) bool
+	IsWhitelisted(ctx context.Context, chatID string) bool
 
 	// SetBashCwd sets the bash working directory for a chat
-	SetBashCwd(chatID, cwd string) error
+	SetBashCwd(ctx context.Context, chatID, cwd string) error
 
 	// GetBashCwd retrieves the bash working directory for a chat
-	GetBashCwd(chatID string) (string, bool, error)
+	GetBashCwd(ctx context.Context, chatID string) (string, bool, error)
 
 	// SetCurrentAgent sets the current agent for a chat. Creates the chat
 	// row if it doesn't yet exist so that @cc/@tb handoff state persists
 	// even on fresh chats that haven't been bound (/cd) or paired (/bind)
 	// yet. Pass an empty platform when the caller doesn't have one — the
 	// field will be filled in later by BindProject/SetPaired.
-	SetCurrentAgent(chatID, platform, agentType string) error
+	SetCurrentAgent(ctx context.Context, chatID, platform, agentType string) error
 
 	// GetCurrentAgent retrieves the current agent for a chat
-	GetCurrentAgent(chatID string) (string, error)
+	GetCurrentAgent(ctx context.Context, chatID string) (string, error)
 
 	// SetPaired marks a chat as paired with a specific bot UUID and sender.
 	// The chat is created if it does not yet exist.
-	SetPaired(chatID, platform, botUUID, senderID string) error
+	SetPaired(ctx context.Context, chatID, platform, botUUID, senderID string) error
 
 	// ClearPaired removes the pairing on a chat. Other state on the chat is
 	// preserved.
-	ClearPaired(chatID string) error
+	ClearPaired(ctx context.Context, chatID string) error
 
 	// IsChatPaired reports whether the chat is paired with the given bot UUID.
-	IsChatPaired(chatID, botUUID string) bool
+	IsChatPaired(ctx context.Context, chatID, botUUID string) bool
 
 	// DeleteChat hard-deletes the chat row. All chat state (pairing,
 	// whitelist, project binding) is gone; a new message from the same chat
 	// recreates it fresh via the normal auto-create path. Sessions are
 	// untouched. Deleting a missing chat is a no-op.
-	DeleteChat(chatID string) error
+	DeleteChat(ctx context.Context, chatID string) error
 
 	// SetChatDisabled toggles the inbound blocklist flag. A disabled chat's
 	// messages are dropped before any handler runs and the chat is excluded
 	// from the reachable list. The row survives auto-create paths — only an
 	// explicit enable clears the flag.
-	SetChatDisabled(chatID string, disabled bool) error
+	SetChatDisabled(ctx context.Context, chatID string, disabled bool) error
 
 	// IsChatDisabled reports the blocklist flag. Missing chat → false.
-	IsChatDisabled(chatID string) bool
+	IsChatDisabled(ctx context.Context, chatID string) bool
 }
 
 // The SQLite-backed store (internal/data/db.RemoteChatStore) satisfies this

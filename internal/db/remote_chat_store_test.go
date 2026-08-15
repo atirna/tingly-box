@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/remote/control/bot"
@@ -35,10 +36,10 @@ func TestConcurrentStoresDoNotClobber(t *testing.T) {
 	first := openChatStoreAt(t, dir)
 	second := openChatStoreAt(t, dir)
 
-	if err := first.BindProject("chat-a", "telegram", "/proj/a", "owner-a"); err != nil {
+	if err := first.BindProject(context.Background(), "chat-a", "telegram", "/proj/a", "owner-a"); err != nil {
 		t.Fatalf("bind on first: %v", err)
 	}
-	if err := second.BindProject("chat-b", "feishu", "/proj/b", "owner-b"); err != nil {
+	if err := second.BindProject(context.Background(), "chat-b", "feishu", "/proj/b", "owner-b"); err != nil {
 		t.Fatalf("bind on second: %v", err)
 	}
 
@@ -53,7 +54,7 @@ func TestConcurrentStoresDoNotClobber(t *testing.T) {
 		{second, "chat-a", "/proj/a"},
 		{second, "chat-b", "/proj/b"},
 	} {
-		got, ok, err := probe.store.GetProjectPath(probe.chatID)
+		got, ok, err := probe.store.GetProjectPath(context.Background(), probe.chatID)
 		if err != nil {
 			t.Fatalf("get %s: %v", probe.chatID, err)
 		}
@@ -70,32 +71,32 @@ func TestConcurrentStoresDoNotClobber(t *testing.T) {
 func TestClearingFlagsPersists(t *testing.T) {
 	store := newChatStore(t)
 
-	if err := store.AddToWhitelist("chat-1", "telegram", "admin"); err != nil {
+	if err := store.AddToWhitelist(context.Background(), "chat-1", "telegram", "admin"); err != nil {
 		t.Fatalf("whitelist: %v", err)
 	}
-	if !store.IsWhitelisted("chat-1") {
+	if !store.IsWhitelisted(context.Background(), "chat-1") {
 		t.Fatal("chat should be whitelisted")
 	}
-	if err := store.RemoveFromWhitelist("chat-1"); err != nil {
+	if err := store.RemoveFromWhitelist(context.Background(), "chat-1"); err != nil {
 		t.Fatalf("unwhitelist: %v", err)
 	}
-	if store.IsWhitelisted("chat-1") {
+	if store.IsWhitelisted(context.Background(), "chat-1") {
 		t.Error("whitelist flag was not cleared")
 	}
 
-	if err := store.SetPaired("chat-1", "telegram", "bot-uuid", "sender-1"); err != nil {
+	if err := store.SetPaired(context.Background(), "chat-1", "telegram", "bot-uuid", "sender-1"); err != nil {
 		t.Fatalf("pair: %v", err)
 	}
-	if !store.IsChatPaired("chat-1", "bot-uuid") {
+	if !store.IsChatPaired(context.Background(), "chat-1", "bot-uuid") {
 		t.Fatal("chat should be paired")
 	}
-	if err := store.ClearPaired("chat-1"); err != nil {
+	if err := store.ClearPaired(context.Background(), "chat-1"); err != nil {
 		t.Fatalf("clear pairing: %v", err)
 	}
-	if store.IsChatPaired("chat-1", "bot-uuid") {
+	if store.IsChatPaired(context.Background(), "chat-1", "bot-uuid") {
 		t.Error("pairing was not cleared")
 	}
-	chat, err := store.GetChat("chat-1")
+	chat, err := store.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -109,20 +110,20 @@ func TestClearingFlagsPersists(t *testing.T) {
 func TestClearPairedPreservesOtherState(t *testing.T) {
 	store := newChatStore(t)
 
-	if err := store.BindProject("chat-1", "telegram", "/proj", "owner"); err != nil {
+	if err := store.BindProject(context.Background(), "chat-1", "telegram", "/proj", "owner"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if err := store.AddToWhitelist("chat-1", "telegram", "admin"); err != nil {
+	if err := store.AddToWhitelist(context.Background(), "chat-1", "telegram", "admin"); err != nil {
 		t.Fatalf("whitelist: %v", err)
 	}
-	if err := store.SetPaired("chat-1", "telegram", "bot-uuid", "sender"); err != nil {
+	if err := store.SetPaired(context.Background(), "chat-1", "telegram", "bot-uuid", "sender"); err != nil {
 		t.Fatalf("pair: %v", err)
 	}
-	if err := store.ClearPaired("chat-1"); err != nil {
+	if err := store.ClearPaired(context.Background(), "chat-1"); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 
-	chat, err := store.GetChat("chat-1")
+	chat, err := store.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestUpdateChatMissingIsNoop(t *testing.T) {
 	store := newChatStore(t)
 
 	called := false
-	if err := store.UpdateChat("nope", func(c *bot.Chat) { called = true }); err != nil {
+	if err := store.UpdateChat(context.Background(), "nope", func(c *bot.Chat) { called = true }); err != nil {
 		t.Fatalf("update missing: %v", err)
 	}
 	if called {
@@ -153,10 +154,10 @@ func TestUpdateChatMissingIsNoop(t *testing.T) {
 func TestSetCurrentAgentCreatesChat(t *testing.T) {
 	store := newChatStore(t)
 
-	if err := store.SetCurrentAgent("fresh-chat", "telegram", "claude"); err != nil {
+	if err := store.SetCurrentAgent(context.Background(), "fresh-chat", "telegram", "claude"); err != nil {
 		t.Fatalf("set agent: %v", err)
 	}
-	got, err := store.GetCurrentAgent("fresh-chat")
+	got, err := store.GetCurrentAgent(context.Background(), "fresh-chat")
 	if err != nil {
 		t.Fatalf("get agent: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestSetCurrentAgentCreatesChat(t *testing.T) {
 func TestGetCurrentAgentDefaults(t *testing.T) {
 	store := newChatStore(t)
 
-	got, err := store.GetCurrentAgent("unknown")
+	got, err := store.GetCurrentAgent(context.Background(), "unknown")
 	if err != nil {
 		t.Fatalf("get agent: %v", err)
 	}
@@ -184,17 +185,17 @@ func TestGetCurrentAgentDefaults(t *testing.T) {
 func TestListChatsByOwnerFiltersUnbound(t *testing.T) {
 	store := newChatStore(t)
 
-	if err := store.BindProject("bound", "telegram", "/proj", "owner-1"); err != nil {
+	if err := store.BindProject(context.Background(), "bound", "telegram", "/proj", "owner-1"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if _, err := store.GetOrCreateChat("unbound", "telegram"); err != nil {
+	if _, err := store.GetOrCreateChat(context.Background(), "unbound", "telegram"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.BindProject("other-owner", "telegram", "/proj", "owner-2"); err != nil {
+	if err := store.BindProject(context.Background(), "other-owner", "telegram", "/proj", "owner-2"); err != nil {
 		t.Fatalf("bind other: %v", err)
 	}
 
-	chats, err := store.ListChatsByOwner("owner-1", "telegram")
+	chats, err := store.ListChatsByOwner(context.Background(), "owner-1", "telegram")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -207,7 +208,7 @@ func TestListChatsByOwnerFiltersUnbound(t *testing.T) {
 func TestUpsertRequiresChatID(t *testing.T) {
 	store := newChatStore(t)
 
-	if err := store.UpsertChat(&bot.Chat{}); err == nil {
+	if err := store.UpsertChat(context.Background(), &bot.Chat{}); err == nil {
 		t.Error("expected an error upserting a chat with no ID")
 	}
 }
@@ -221,16 +222,16 @@ func TestContextTokenRoundTrip(t *testing.T) {
 	store := openChatStoreAt(t, dir)
 
 	// Create the chat (UpdateChat is a no-op on a missing row), then set the token.
-	if err := store.BindProject("chat-1", "weixin", "/proj", "owner"); err != nil {
+	if err := store.BindProject(context.Background(), "chat-1", "weixin", "/proj", "owner"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if err := store.UpdateChat("chat-1", func(c *bot.Chat) {
+	if err := store.UpdateChat(context.Background(), "chat-1", func(c *bot.Chat) {
 		c.ContextToken = "tok-from-inbound"
 	}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
-	got, err := store.GetChat("chat-1")
+	got, err := store.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -241,7 +242,7 @@ func TestContextTokenRoundTrip(t *testing.T) {
 	// A fresh store over the same database dir sees the persisted token
 	// (restart simulation: the in-memory cache is gone, the DB row survives).
 	store2 := openChatStoreAt(t, dir)
-	got2, err := store2.GetChat("chat-1")
+	got2, err := store2.GetChat(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get after reopen: %v", err)
 	}

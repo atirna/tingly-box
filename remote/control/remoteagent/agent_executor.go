@@ -78,11 +78,11 @@ func (d *ExecutorDependencies) GetBotSettingOrCache() bot.BotSetting {
 }
 
 // resolveProjectPath resolves project path: override > ChatStore > default.
-func (d *ExecutorDependencies) resolveProjectPath(chatID string, override string) string {
+func (d *ExecutorDependencies) resolveProjectPath(ctx context.Context, chatID string, override string) string {
 	if override != "" {
 		return override
 	}
-	if p, ok, _ := d.ChatStore.GetProjectPath(chatID); ok && p != "" {
+	if p, ok, _ := d.ChatStore.GetProjectPath(ctx, chatID); ok && p != "" {
 		return p
 	}
 	return d.ResolveDefaultProjectPath()

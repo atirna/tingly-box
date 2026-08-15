@@ -29,10 +29,10 @@ func TestManagerChatStoreIsShared(t *testing.T) {
 		t.Fatal("ChatStore returned distinct instances; bots would not share state")
 	}
 
-	if err := first.BindProject("chat-1", "telegram", "/proj", "owner"); err != nil {
+	if err := first.BindProject(context.Background(), "chat-1", "telegram", "/proj", "owner"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	path, ok, err := second.GetProjectPath("chat-1")
+	path, ok, err := second.GetProjectPath(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatalf("get project path: %v", err)
 	}

@@ -107,7 +107,7 @@ func (h *BotHandler) handleClearCommand(hCtx HandlerContext) {
 		return
 
 	case agentClaudeCode, agentMock:
-		projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+		projectPath, _, _ := h.chatStore.GetProjectPath(h.ctx, hCtx.ChatID)
 
 		defaultPath := h.defaultProjectPath()
 		if projectPath == "" {
@@ -187,8 +187,8 @@ func (h *BotHandler) handleBotProjectCommand(hCtx HandlerContext) {
 		return
 	}
 
-	currentPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
-	projectPaths, _ := h.chatStore.ListChatProjectPaths(hCtx.ChatID)
+	currentPath, _, _ := h.chatStore.GetProjectPath(h.ctx, hCtx.ChatID)
+	projectPaths, _ := h.chatStore.ListChatProjectPaths(h.ctx, hCtx.ChatID)
 
 	text := buildProjectText(currentPath, projectPaths)
 	keyboard := buildProjectKeyboard(currentPath, projectPaths)

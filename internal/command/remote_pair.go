@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/sirupsen/logrus"
@@ -55,11 +56,11 @@ func RemotePairRevoke(appManager *AppManager, botUUID, chatID string) error {
 	defer sm.Close()
 	chatStore := sm.RemoteChats()
 
-	if !chatStore.IsChatPaired(chatID, botUUID) {
+	if !chatStore.IsChatPaired(context.Background(), chatID, botUUID) {
 		fmt.Printf("Chat %s is not paired with bot %s.\n", chatID, botUUID)
 		return nil
 	}
-	if err := chatStore.ClearPaired(chatID); err != nil {
+	if err := chatStore.ClearPaired(context.Background(), chatID); err != nil {
 		return err
 	}
 	logrus.WithFields(logrus.Fields{
