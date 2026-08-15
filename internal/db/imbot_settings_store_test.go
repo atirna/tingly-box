@@ -1,6 +1,9 @@
 package db
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // legacyImBotSettingsRecord is ImBotSettingsRecord as it was before
 // auth_config and bash_allowlist moved to `serializer:json`: both were
@@ -41,7 +44,7 @@ func TestImBotSettingsStore_ReadsLegacyJSONStringRows(t *testing.T) {
 	defer store.Close()
 
 	t.Run("decodes legacy auth and allowlist", func(t *testing.T) {
-		got, err := store.GetSettingsByUUID("full")
+		got, err := store.GetSettingsByUUID(context.Background(), "full")
 		if err != nil {
 			t.Fatalf("GetSettingsByUUID: %v", err)
 		}
@@ -58,7 +61,7 @@ func TestImBotSettingsStore_ReadsLegacyJSONStringRows(t *testing.T) {
 	})
 
 	t.Run("empty legacy columns read as absent, Auth stays non-nil", func(t *testing.T) {
-		got, err := store.GetSettingsByUUID("bare")
+		got, err := store.GetSettingsByUUID(context.Background(), "bare")
 		if err != nil {
 			t.Fatalf("GetSettingsByUUID: %v", err)
 		}
@@ -74,7 +77,7 @@ func TestImBotSettingsStore_ReadsLegacyJSONStringRows(t *testing.T) {
 	})
 
 	t.Run("ListSettings decodes every row", func(t *testing.T) {
-		all, err := store.ListSettings()
+		all, err := store.ListSettings(context.Background())
 		if err != nil {
 			t.Fatalf("ListSettings: %v", err)
 		}
@@ -96,7 +99,7 @@ func TestImBotSettingsStore_RoundTrip(t *testing.T) {
 	}
 	defer store.Close()
 
-	created, err := store.CreateSettings(Settings{
+	created, err := store.CreateSettings(context.Background(), Settings{
 		Name: "rt", Platform: "telegram", AuthType: "token",
 		Auth:          map[string]string{"token": "abc"},
 		BashAllowlist: []string{"ls"},
@@ -106,7 +109,7 @@ func TestImBotSettingsStore_RoundTrip(t *testing.T) {
 		t.Fatalf("CreateSettings: %v", err)
 	}
 
-	got, err := store.GetSettingsByUUID(created.UUID)
+	got, err := store.GetSettingsByUUID(context.Background(), created.UUID)
 	if err != nil {
 		t.Fatalf("GetSettingsByUUID: %v", err)
 	}
@@ -117,7 +120,7 @@ func TestImBotSettingsStore_RoundTrip(t *testing.T) {
 		t.Errorf("BashAllowlist = %v, want [ls]", got.BashAllowlist)
 	}
 
-	if err := store.UpdateSettings("no-such-uuid", Settings{Name: "x"}); err == nil {
+	if err := store.UpdateSettings(context.Background(), "no-such-uuid", Settings{Name: "x"}); err == nil {
 		t.Error("UpdateSettings on a missing row returned nil, want an error")
 	}
 }
@@ -132,7 +135,7 @@ func TestImBotSettingsStore_UpdateIsPartial(t *testing.T) {
 	}
 	defer store.Close()
 
-	created, err := store.CreateSettings(Settings{
+	created, err := store.CreateSettings(context.Background(), Settings{
 		Name: "orig", Platform: "telegram", AuthType: "token",
 		Auth:               map[string]string{"token": "orig-token"},
 		BashAllowlist:      []string{"ls", "cat"},
@@ -149,11 +152,11 @@ func TestImBotSettingsStore_UpdateIsPartial(t *testing.T) {
 	}
 
 	// Update only the name; everything else is zero and must survive.
-	if err := store.UpdateSettings(created.UUID, Settings{Name: "renamed", Enabled: true}); err != nil {
+	if err := store.UpdateSettings(context.Background(), created.UUID, Settings{Name: "renamed", Enabled: true}); err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
 
-	got, err := store.GetSettingsByUUID(created.UUID)
+	got, err := store.GetSettingsByUUID(context.Background(), created.UUID)
 	if err != nil {
 		t.Fatalf("GetSettingsByUUID: %v", err)
 	}
@@ -180,10 +183,10 @@ func TestImBotSettingsStore_UpdateIsPartial(t *testing.T) {
 	}
 
 	t.Run("an unset Scenarios clears the stored value (the documented exception)", func(t *testing.T) {
-		if err := store.UpdateSettings(created.UUID, Settings{Enabled: true}); err != nil {
+		if err := store.UpdateSettings(context.Background(), created.UUID, Settings{Enabled: true}); err != nil {
 			t.Fatalf("UpdateSettings: %v", err)
 		}
-		got, err := store.GetSettingsByUUID(created.UUID)
+		got, err := store.GetSettingsByUUID(context.Background(), created.UUID)
 		if err != nil {
 			t.Fatalf("GetSettingsByUUID: %v", err)
 		}
@@ -193,14 +196,14 @@ func TestImBotSettingsStore_UpdateIsPartial(t *testing.T) {
 	})
 
 	t.Run("replacing auth and allowlist works", func(t *testing.T) {
-		if err := store.UpdateSettings(created.UUID, Settings{
+		if err := store.UpdateSettings(context.Background(), created.UUID, Settings{
 			Auth:          map[string]string{"token": "new-token"},
 			BashAllowlist: []string{"echo"},
 			Enabled:       true,
 		}); err != nil {
 			t.Fatalf("UpdateSettings: %v", err)
 		}
-		got, err := store.GetSettingsByUUID(created.UUID)
+		got, err := store.GetSettingsByUUID(context.Background(), created.UUID)
 		if err != nil {
 			t.Fatalf("GetSettingsByUUID: %v", err)
 		}
@@ -221,7 +224,7 @@ func TestImBotSettingsStore_UpdateIsPartial(t *testing.T) {
 			created.UUID).Error; err != nil {
 			t.Fatalf("seed debug/verbose: %v", err)
 		}
-		if err := store.UpdateSettings(created.UUID, Settings{Name: "again", Enabled: true}); err != nil {
+		if err := store.UpdateSettings(context.Background(), created.UUID, Settings{Name: "again", Enabled: true}); err != nil {
 			t.Fatalf("UpdateSettings: %v", err)
 		}
 		var rec ImBotSettingsRecord

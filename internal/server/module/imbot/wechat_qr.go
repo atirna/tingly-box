@@ -2,6 +2,7 @@
 package imbot
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -111,7 +112,7 @@ func (h *WeChatQRLoginHandler) QRStart(c *gin.Context) {
 	// Validate bot existence if not a temporary UUID (for new bot creation)
 	// Temp UUIDs start with "temp-" for deferred bot creation
 	if !strings.HasPrefix(botUUID, "temp-") {
-		existing, err := h.settingsStore.GetSettingsByUUID(botUUID)
+		existing, err := h.settingsStore.GetSettingsByUUID(c.Request.Context(), botUUID)
 		if err != nil {
 			logrus.WithError(err).WithField("bot", botUUID).Error("Failed to check bot existence")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate bot"})
@@ -242,7 +243,7 @@ func (h *WeChatQRLoginHandler) QRStatus(c *gin.Context) {
 
 	case "confirmed":
 		// Save credentials to database (create bot if it doesn't exist yet)
-		realUUID, err := h.saveCredentials(session, statusResp)
+		realUUID, err := h.saveCredentials(c.Request.Context(), session, statusResp)
 		if err != nil {
 			logrus.WithError(err).WithField("bot", botUUID).Error("Failed to save credentials")
 			c.JSON(http.StatusInternalServerError, QRStatusResponse{
@@ -293,7 +294,7 @@ func (h *WeChatQRLoginHandler) QRCancel(c *gin.Context) {
 
 // saveCredentials saves the Weixin credentials to the database.
 // If the bot doesn't exist yet (temp UUID), it creates a new record and returns the real UUID.
-func (h *WeChatQRLoginHandler) saveCredentials(session *qrSession, status *weixin.QRStatus) (string, error) {
+func (h *WeChatQRLoginHandler) saveCredentials(ctx context.Context, session *qrSession, status *weixin.QRStatus) (string, error) {
 	authConfig := map[string]string{
 		"token":    status.BotToken,
 		"bot_id":   status.IlinkBotID,
@@ -302,7 +303,7 @@ func (h *WeChatQRLoginHandler) saveCredentials(session *qrSession, status *weixi
 	}
 
 	// Check if bot already exists in DB
-	existing, err := h.settingsStore.GetSettingsByUUID(session.botUUID)
+	existing, err := h.settingsStore.GetSettingsByUUID(ctx, session.botUUID)
 	if err != nil {
 		return "", fmt.Errorf("get bot setting: %w", err)
 	}
@@ -311,7 +312,7 @@ func (h *WeChatQRLoginHandler) saveCredentials(session *qrSession, status *weixi
 		// Bot exists — update credentials
 		existing.Auth = authConfig
 		existing.AuthType = "qr"
-		if err := h.settingsStore.UpdateSettings(existing.UUID, existing); err != nil {
+		if err := h.settingsStore.UpdateSettings(ctx, existing.UUID, existing); err != nil {
 			return "", fmt.Errorf("update bot setting: %w", err)
 		}
 		logrus.WithFields(logrus.Fields{
@@ -330,7 +331,7 @@ func (h *WeChatQRLoginHandler) saveCredentials(session *qrSession, status *weixi
 	if name == "" {
 		name = platform + " Bot"
 	}
-	created, err := h.settingsStore.CreateSettings(db.Settings{
+	created, err := h.settingsStore.CreateSettings(ctx, db.Settings{
 		Name:     name,
 		Platform: platform,
 		AuthType: "qr",

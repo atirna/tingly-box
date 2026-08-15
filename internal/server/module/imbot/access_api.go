@@ -177,7 +177,7 @@ func (h *Handler) PutCapability(c *gin.Context) {
 		return
 	}
 	capability := access.BotCapability{BotUUID: c.Param("bot"), Name: name, Enabled: req.Enabled, Config: req.Config}
-	botSettings, err := h.store.GetSettingsByUUID(capability.BotUUID)
+	botSettings, err := h.store.GetSettingsByUUID(c.Request.Context(), capability.BotUUID)
 	if err != nil || botSettings.UUID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "bot not found"})
 		return
@@ -203,7 +203,7 @@ func (h *Handler) PutCapability(c *gin.Context) {
 		desiredBotEnabled = false
 	}
 	if desiredBotEnabled != botSettings.Enabled {
-		if err := h.store.SetEnabled(capability.BotUUID, desiredBotEnabled); err != nil {
+		if err := h.store.SetEnabled(c.Request.Context(), capability.BotUUID, desiredBotEnabled); err != nil {
 			accessError(c, err)
 			return
 		}

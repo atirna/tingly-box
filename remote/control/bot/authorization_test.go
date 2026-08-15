@@ -23,7 +23,7 @@ func directAuthorizationFixture(t *testing.T) (*db.StoreManager, db.Settings, im
 	sm, err := db.NewStoreManager(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sm.Close() })
-	setting, err := sm.ImBotSettings().CreateSettings(db.Settings{Name: "direct", Platform: "weixin", Enabled: true})
+	setting, err := sm.ImBotSettings().CreateSettings(context.Background(), db.Settings{Name: "direct", Platform: "weixin", Enabled: true})
 	require.NoError(t, err)
 	require.NoError(t, sm.BotAccess().PutCapability(context.Background(), access.BotCapability{BotUUID: setting.UUID, Name: access.CapabilityRemoteControl, Enabled: true}))
 	sm.BotAccess().SetTransportFactsSource(authorizationOnlineTransport{})

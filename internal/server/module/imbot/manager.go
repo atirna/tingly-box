@@ -21,6 +21,23 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/tbclient"
 )
 
+// backgroundSettingsReader adapts *db.ImBotSettingsStore to
+// adapter.SettingsReader, which is ctx-free: it backs bot.SettingsStore, a
+// long-lived runtime-facing interface consulted well outside any one
+// request's lifetime (bot startup, periodic sync). context.Background() is
+// therefore the correct context here, not a shortcut.
+type backgroundSettingsReader struct {
+	store *db.ImBotSettingsStore
+}
+
+func (r backgroundSettingsReader) GetSettingsByUUID(uuid string) (db.Settings, error) {
+	return r.store.GetSettingsByUUID(context.Background(), uuid)
+}
+
+func (r backgroundSettingsReader) ListEnabledSettings() ([]db.Settings, error) {
+	return r.store.ListEnabledSettings(context.Background())
+}
+
 // BotManager manages the lifecycle of ImBot instances.
 // It encapsulates the internal bot.Manager and provides a clean interface
 // for the imbotsettings module to control bot lifecycle.
@@ -102,7 +119,13 @@ func NewBotManager(ctx context.Context, cfg *config.Config, channelRegistry *cha
 	// mapping db.Settings → bot.BotSetting at the boundary (see
 	// remote/control/adapter). The raw *db.ImBotSettingsStore is kept for
 	// host-side reads that still want db.Settings.
-	settingsStore := adapter.NewSettingsStore(store)
+	//
+	// bot.SettingsStore (and the adapter.SettingsReader it is built from)
+	// predates ctx propagation and is a runtime-facing wrapper interface, not
+	// a direct db consumer — see the ctx-propagation scope boundary in
+	// .design/db.md. backgroundSettingsReader supplies context.Background()
+	// at this boundary instead of cascading ctx into that interface.
+	settingsStore := adapter.NewSettingsStore(backgroundSettingsReader{store})
 	remoteAgentConsumer := remoteagent.NewConsumer(sessionMgr, agentService, tbClient, settingsStore)
 
 	// Create internal bot manager
@@ -143,7 +166,7 @@ func (bm *BotManager) StartBot(ctx context.Context, uuid string) error {
 	}
 
 	// Check if settings exist
-	settings, err := bm.store.GetSettingsByUUID(uuid)
+	settings, err := bm.store.GetSettingsByUUID(ctx, uuid)
 	if err != nil {
 		return fmt.Errorf("failed to get settings: %w", err)
 	}
@@ -189,7 +212,7 @@ func (bm *BotManager) StopBot(uuid string) error {
 	}
 
 	// Check if settings exist
-	settings, err := bm.store.GetSettingsByUUID(uuid)
+	settings, err := bm.store.GetSettingsByUUID(context.Background(), uuid)
 	if err != nil {
 		return fmt.Errorf("failed to get settings: %w", err)
 	}
@@ -252,7 +275,7 @@ func (bm *BotManager) StartAllEnabled(ctx context.Context) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	settings, err := bm.store.ListSettings()
+	settings, err := bm.store.ListSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list settings: %w", err)
 	}
@@ -321,7 +344,7 @@ func (bm *BotManager) GetStatus() []BotStatus {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
-	settings, err := bm.store.ListSettings()
+	settings, err := bm.store.ListSettings(context.Background())
 	if err != nil {
 		logrus.WithError(err).Error("Failed to list settings for status")
 		return nil

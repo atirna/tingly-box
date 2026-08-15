@@ -78,7 +78,7 @@ func (h *FeishuRegHandler) QRStart(c *gin.Context) {
 
 	// Validate bot existence unless this is a deferred (temp-) creation.
 	if !strings.HasPrefix(botUUID, "temp-") {
-		existing, err := h.settingsStore.GetSettingsByUUID(botUUID)
+		existing, err := h.settingsStore.GetSettingsByUUID(c.Request.Context(), botUUID)
 		if err != nil {
 			logrus.WithError(err).WithField("bot", botUUID).Error("Failed to check bot existence")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate bot"})
@@ -219,7 +219,7 @@ func (h *FeishuRegHandler) QRStatus(c *gin.Context) {
 
 	case "confirmed":
 		sess.saveOnce.Do(func() {
-			sess.savedUUID, sess.saveErr = h.saveCredentials(sess, result, platform)
+			sess.savedUUID, sess.saveErr = h.saveCredentials(c.Request.Context(), sess, result, platform)
 		})
 		if sess.saveErr != nil {
 			logrus.WithError(sess.saveErr).WithField("bot", botUUID).Error("Failed to save Feishu credentials")
@@ -284,7 +284,7 @@ func (h *FeishuRegHandler) QRCancel(c *gin.Context) {
 // saveCredentials persists the App ID / App Secret returned by RegisterApp.
 // If the bot already exists it updates the record in place; otherwise (deferred
 // temp- creation) it creates a new, disabled bot and returns the real UUID.
-func (h *FeishuRegHandler) saveCredentials(sess *feishuRegSession, result *feishu.RegistrationResult, platform string) (string, error) {
+func (h *FeishuRegHandler) saveCredentials(ctx context.Context, sess *feishuRegSession, result *feishu.RegistrationResult, platform string) (string, error) {
 	if result == nil {
 		return "", fmt.Errorf("empty registration result")
 	}
@@ -302,14 +302,14 @@ func (h *FeishuRegHandler) saveCredentials(sess *feishuRegSession, result *feish
 		"clientSecret": result.ClientSecret,
 	}
 
-	existing, err := h.settingsStore.GetSettingsByUUID(sess.botUUID)
+	existing, err := h.settingsStore.GetSettingsByUUID(ctx, sess.botUUID)
 	if err != nil {
 		return "", fmt.Errorf("get bot setting: %w", err)
 	}
 	if existing.UUID != "" {
 		existing.Auth = authConfig
 		existing.AuthType = "oauth"
-		if err := h.settingsStore.UpdateSettings(existing.UUID, existing); err != nil {
+		if err := h.settingsStore.UpdateSettings(ctx, existing.UUID, existing); err != nil {
 			return "", fmt.Errorf("update bot setting: %w", err)
 		}
 		logrus.WithField("bot", existing.UUID).Info("Feishu credentials updated via one-click registration")
@@ -320,7 +320,7 @@ func (h *FeishuRegHandler) saveCredentials(sess *feishuRegSession, result *feish
 	if name == "" {
 		name = platform + " Bot"
 	}
-	created, err := h.settingsStore.CreateSettings(db.Settings{
+	created, err := h.settingsStore.CreateSettings(ctx, db.Settings{
 		Name:     name,
 		Platform: platform,
 		AuthType: "oauth",

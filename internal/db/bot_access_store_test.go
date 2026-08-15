@@ -17,7 +17,7 @@ func (onlineTransport) TransportFacts(string, access.CapabilityName, access.Acti
 
 func createAccessBot(t *testing.T, sm *StoreManager, name string) Settings {
 	t.Helper()
-	bot, err := sm.ImBotSettings().CreateSettings(Settings{Name: name, Platform: "telegram", AuthType: "token", Auth: map[string]string{"token": "test"}, Enabled: true})
+	bot, err := sm.ImBotSettings().CreateSettings(context.Background(), Settings{Name: name, Platform: "telegram", AuthType: "token", Auth: map[string]string{"token": "test"}, Enabled: true})
 	require.NoError(t, err)
 	return bot
 }
@@ -173,7 +173,7 @@ func TestBotAccessStoreSetDirectChatPermissionsAtomic(t *testing.T) {
 	store := sm.BotAccess()
 	ctx := context.Background()
 
-	bot, err := sm.ImBotSettings().CreateSettings(Settings{Name: "batch", Platform: "telegram", Enabled: true})
+	bot, err := sm.ImBotSettings().CreateSettings(context.Background(), Settings{Name: "batch", Platform: "telegram", Enabled: true})
 	require.NoError(t, err)
 	chat, err := store.DiscoverDirectChat(ctx, bot.UUID, "telegram", "chat-1")
 	require.NoError(t, err)

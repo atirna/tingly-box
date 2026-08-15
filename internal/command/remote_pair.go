@@ -17,7 +17,7 @@ func RemotePairEnable(appManager *AppManager, botUUID string, enable bool) error
 	if err != nil {
 		return err
 	}
-	setting, err := store.GetSettingsByUUID(botUUID)
+	setting, err := store.GetSettingsByUUID(context.Background(), botUUID)
 	if err != nil {
 		return err
 	}
@@ -26,7 +26,7 @@ func RemotePairEnable(appManager *AppManager, botUUID string, enable bool) error
 	}
 	v := enable
 	setting.RequirePairing = &v
-	if err := store.UpdateSettings(botUUID, setting); err != nil {
+	if err := store.UpdateSettings(context.Background(), botUUID, setting); err != nil {
 		return err
 	}
 	state := "enabled"
@@ -80,7 +80,7 @@ func RemotePairStatus(appManager *AppManager, botUUID string) error {
 	if err != nil {
 		return err
 	}
-	setting, err := store.GetSettingsByUUID(botUUID)
+	setting, err := store.GetSettingsByUUID(context.Background(), botUUID)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -62,12 +63,12 @@ func newImBotSettingsStore(conn storeConn) (*ImBotSettingsStore, error) {
 }
 
 // ListSettings returns all ImBot configurations.
-func (s *ImBotSettingsStore) ListSettings() ([]Settings, error) {
+func (s *ImBotSettingsStore) ListSettings(ctx context.Context) ([]Settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var records []ImBotSettingsRecord
-	if err := s.db.Order("created_at DESC").Find(&records).Error; err != nil {
+	if err := s.db.WithContext(ctx).Order("created_at DESC").Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("failed to list settings: %w", err)
 	}
 
@@ -80,12 +81,12 @@ func (s *ImBotSettingsStore) ListSettings() ([]Settings, error) {
 }
 
 // ListEnabledSettings returns all enabled ImBot configurations.
-func (s *ImBotSettingsStore) ListEnabledSettings() ([]Settings, error) {
+func (s *ImBotSettingsStore) ListEnabledSettings(ctx context.Context) ([]Settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var records []ImBotSettingsRecord
-	if err := s.db.Where("enabled = ?", true).Order("created_at DESC").Find(&records).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Order("created_at DESC").Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("failed to list enabled settings: %w", err)
 	}
 
@@ -98,12 +99,12 @@ func (s *ImBotSettingsStore) ListEnabledSettings() ([]Settings, error) {
 }
 
 // GetSettingsByUUID returns a single ImBot configuration by UUID.
-func (s *ImBotSettingsStore) GetSettingsByUUID(uuid string) (Settings, error) {
+func (s *ImBotSettingsStore) GetSettingsByUUID(ctx context.Context, uuid string) (Settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var record ImBotSettingsRecord
-	if err := s.db.Where("bot_uuid = ?", uuid).First(&record).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("bot_uuid = ?", uuid).First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return Settings{Auth: make(map[string]string)}, nil
 		}
@@ -114,7 +115,7 @@ func (s *ImBotSettingsStore) GetSettingsByUUID(uuid string) (Settings, error) {
 }
 
 // CreateSettings creates a new ImBot configuration.
-func (s *ImBotSettingsStore) CreateSettings(settings Settings) (Settings, error) {
+func (s *ImBotSettingsStore) CreateSettings(ctx context.Context, settings Settings) (Settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -146,7 +147,7 @@ func (s *ImBotSettingsStore) CreateSettings(settings Settings) (Settings, error)
 		UpdatedAt:          settings.UpdatedAt,
 	}
 
-	if err := s.db.Create(&record).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return Settings{Auth: make(map[string]string)}, fmt.Errorf("failed to create settings: %w", err)
 	}
 
@@ -155,7 +156,7 @@ func (s *ImBotSettingsStore) CreateSettings(settings Settings) (Settings, error)
 
 // UpdateSettings updates an existing ImBot configuration.
 // Only updates fields that are non-zero/empty in the settings struct.
-func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) error {
+func (s *ImBotSettingsStore) UpdateSettings(ctx context.Context, uuid string, settings Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -170,7 +171,7 @@ func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) erro
 	// stored value alone) and preserves the columns Settings does not model
 	// at all, such as debug and verbose.
 	var record ImBotSettingsRecord
-	if err := s.db.Where("bot_uuid = ?", uuid).First(&record).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("bot_uuid = ?", uuid).First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("imbot settings with uuid %s not found", uuid)
 		}
@@ -221,7 +222,7 @@ func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) erro
 	record.Enabled = settings.Enabled
 	record.UpdatedAt = settings.UpdatedAt
 
-	if err := s.db.Save(&record).Error; err != nil {
+	if err := s.db.WithContext(ctx).Save(&record).Error; err != nil {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
 
@@ -229,11 +230,11 @@ func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) erro
 }
 
 // DeleteSettings deletes an ImBot configuration.
-func (s *ImBotSettingsStore) DeleteSettings(uuid string) error {
+func (s *ImBotSettingsStore) DeleteSettings(ctx context.Context, uuid string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	result := s.db.Where("bot_uuid = ?", uuid).Delete(&ImBotSettingsRecord{})
+	result := s.db.WithContext(ctx).Where("bot_uuid = ?", uuid).Delete(&ImBotSettingsRecord{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete settings: %w", result.Error)
 	}
@@ -246,12 +247,12 @@ func (s *ImBotSettingsStore) DeleteSettings(uuid string) error {
 }
 
 // ToggleSettings toggles the enabled status of an ImBot configuration.
-func (s *ImBotSettingsStore) ToggleSettings(uuid string) (bool, error) {
+func (s *ImBotSettingsStore) ToggleSettings(ctx context.Context, uuid string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var record ImBotSettingsRecord
-	if err := s.db.Where("bot_uuid = ?", uuid).First(&record).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("bot_uuid = ?", uuid).First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, fmt.Errorf("imbot settings with uuid %s not found", uuid)
 		}
@@ -259,7 +260,7 @@ func (s *ImBotSettingsStore) ToggleSettings(uuid string) (bool, error) {
 	}
 
 	newEnabled := !record.Enabled
-	result := s.db.Model(&record).Update("enabled", newEnabled)
+	result := s.db.WithContext(ctx).Model(&record).Update("enabled", newEnabled)
 	if result.Error != nil {
 		return false, fmt.Errorf("failed to toggle settings: %w", result.Error)
 	}
@@ -270,11 +271,11 @@ func (s *ImBotSettingsStore) ToggleSettings(uuid string) (bool, error) {
 // SetEnabled writes the Bot's explicit lifecycle gate without touching any
 // other settings. Capability lifecycle reconciliation uses this narrow method
 // so it cannot accidentally clear partial-update fields such as scenarios.
-func (s *ImBotSettingsStore) SetEnabled(uuid string, enabled bool) error {
+func (s *ImBotSettingsStore) SetEnabled(ctx context.Context, uuid string, enabled bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	result := s.db.Model(&ImBotSettingsRecord{}).
+	result := s.db.WithContext(ctx).Model(&ImBotSettingsRecord{}).
 		Where("bot_uuid = ?", uuid).
 		Updates(map[string]interface{}{"enabled": enabled, "updated_at": time.Now()})
 	if result.Error != nil {

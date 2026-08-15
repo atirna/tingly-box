@@ -50,7 +50,7 @@ func (h *Handler) GetPairingCode(c *gin.Context) {
 		return
 	}
 
-	settings, err := h.store.GetSettingsByUUID(uuid)
+	settings, err := h.store.GetSettingsByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -113,7 +113,7 @@ func (h *Handler) RotatePairingCode(c *gin.Context) {
 		return
 	}
 
-	settings, err := h.store.GetSettingsByUUID(uuid)
+	settings, err := h.store.GetSettingsByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

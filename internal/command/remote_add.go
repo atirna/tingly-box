@@ -117,7 +117,7 @@ func runRemoteAddInteractive(reader *bufio.Reader, appManager *AppManager) error
 	}
 
 	// Save the bot configuration
-	created, err := store.CreateSettings(setting)
+	created, err := store.CreateSettings(context.Background(), setting)
 	if err != nil {
 		return fmt.Errorf("failed to save bot configuration: %w", err)
 	}

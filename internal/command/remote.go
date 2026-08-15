@@ -144,7 +144,7 @@ func (m *MCPBuiltinCmdKong) Run(appManager *AppManager) error {
 
 // selectBotInteractively shows a list of bots and lets user select one
 func selectBotInteractively(store *db.ImBotSettingsStore) (string, error) {
-	settings, err := store.ListSettings()
+	settings, err := store.ListSettings(context.Background())
 	if err != nil {
 		return "", fmt.Errorf("failed to list bot settings: %w", err)
 	}
@@ -516,7 +516,7 @@ func runRemoteList(appManager *AppManager) error {
 		return err
 	}
 
-	settings, err := store.ListSettings()
+	settings, err := store.ListSettings(context.Background())
 	if err != nil {
 		return err
 	}
@@ -571,7 +571,7 @@ func runRemoteStart(appManager *AppManager, uuid, dataPath, provider, model stri
 	}
 
 	// Get bot settings
-	setting, err := store.GetSettingsByUUID(botUUID)
+	setting, err := store.GetSettingsByUUID(context.Background(), botUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get bot settings: %w", err)
 	}
@@ -604,7 +604,7 @@ func runRemoteStart(appManager *AppManager, uuid, dataPath, provider, model stri
 				// Update settings
 				setting.SmartGuideProvider = provider
 				setting.SmartGuideModel = model
-				if err := store.UpdateSettings(botUUID, setting); err != nil {
+				if err := store.UpdateSettings(context.Background(), botUUID, setting); err != nil {
 					logrus.WithError(err).Warn("Failed to save SmartGuide configuration to store")
 				}
 			}
@@ -672,7 +672,7 @@ func runRemoteConfig(appManager *AppManager, uuid string, show bool, provider, m
 		return err
 	}
 
-	setting, err := store.GetSettingsByUUID(botUUID)
+	setting, err := store.GetSettingsByUUID(context.Background(), botUUID)
 	if err != nil {
 		return err
 	}
@@ -724,7 +724,7 @@ func runRemoteConfig(appManager *AppManager, uuid string, show bool, provider, m
 	// Update settings
 	setting.SmartGuideProvider = provider
 	setting.SmartGuideModel = model
-	if err := store.UpdateSettings(botUUID, setting); err != nil {
+	if err := store.UpdateSettings(context.Background(), botUUID, setting); err != nil {
 		return err
 	}
 

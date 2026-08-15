@@ -33,7 +33,7 @@ func TestPutCapabilityReconcilesBotEnabledState(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = stores.Close() })
 
-	botSettings, err := stores.ImBotSettings().CreateSettings(db.Settings{
+	botSettings, err := stores.ImBotSettings().CreateSettings(context.Background(), db.Settings{
 		Name: "lifecycle", Platform: "telegram", AuthType: "token",
 		Auth: map[string]string{"token": "test"}, Enabled: true,
 	})
@@ -49,14 +49,14 @@ func TestPutCapabilityReconcilesBotEnabledState(t *testing.T) {
 	// The last consumer going away turns the otherwise-unused Bot off.
 	response := putCapabilityForTest(t, router, botSettings.UUID, access.CapabilityRemoteControl, false)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
-	stored, err := stores.ImBotSettings().GetSettingsByUUID(botSettings.UUID)
+	stored, err := stores.ImBotSettings().GetSettingsByUUID(context.Background(), botSettings.UUID)
 	require.NoError(t, err)
 	require.False(t, stored.Enabled)
 
 	// The first consumer coming back starts the Bot again.
 	response = putCapabilityForTest(t, router, botSettings.UUID, access.CapabilityNotify, true)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
-	stored, err = stores.ImBotSettings().GetSettingsByUUID(botSettings.UUID)
+	stored, err = stores.ImBotSettings().GetSettingsByUUID(context.Background(), botSettings.UUID)
 	require.NoError(t, err)
 	require.True(t, stored.Enabled)
 
@@ -65,10 +65,10 @@ func TestPutCapabilityReconcilesBotEnabledState(t *testing.T) {
 	require.NoError(t, stores.BotAccess().PutCapability(context.Background(), access.BotCapability{
 		BotUUID: botSettings.UUID, Name: access.CapabilityRemoteControl, Enabled: true,
 	}))
-	require.NoError(t, stores.ImBotSettings().SetEnabled(botSettings.UUID, false))
+	require.NoError(t, stores.ImBotSettings().SetEnabled(context.Background(), botSettings.UUID, false))
 	response = putCapabilityForTest(t, router, botSettings.UUID, access.CapabilityRemoteControl, false)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
-	stored, err = stores.ImBotSettings().GetSettingsByUUID(botSettings.UUID)
+	stored, err = stores.ImBotSettings().GetSettingsByUUID(context.Background(), botSettings.UUID)
 	require.NoError(t, err)
 	require.False(t, stored.Enabled)
 }

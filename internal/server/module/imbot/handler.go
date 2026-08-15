@@ -75,7 +75,7 @@ func (h *Handler) ListSettings(c *gin.Context) {
 		return
 	}
 
-	settings, err := h.store.ListSettings()
+	settings, err := h.store.ListSettings(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -102,7 +102,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		return
 	}
 
-	settings, err := h.store.GetSettingsByUUID(uuid)
+	settings, err := h.store.GetSettingsByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -179,7 +179,7 @@ func (h *Handler) CreateSettings(c *gin.Context) {
 		RequirePairing:     req.RequirePairing,
 	}
 
-	created, err := h.store.CreateSettings(settings)
+	created, err := h.store.CreateSettings(c.Request.Context(), settings)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -197,7 +197,7 @@ func (h *Handler) CreateSettings(c *gin.Context) {
 		}
 		for name, value := range initial {
 			if err := h.accessStore.PutCapability(c.Request.Context(), access.BotCapability{BotUUID: created.UUID, Name: name, Enabled: value.Enabled, Config: value.Config}); err != nil {
-				_ = h.store.DeleteSettings(created.UUID)
+				_ = h.store.DeleteSettings(c.Request.Context(), created.UUID)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create bot capabilities", "details": err.Error()})
 				return
 			}
@@ -238,7 +238,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 
 	// Get current settings to check if enabled status is changing
-	currentSettings, err := h.store.GetSettingsByUUID(uuid)
+	currentSettings, err := h.store.GetSettingsByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -359,7 +359,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	// store writes the scenarios column unconditionally).
 	settings.Scenarios = currentSettings.Scenarios
 
-	if err := h.store.UpdateSettings(uuid, settings); err != nil {
+	if err := h.store.UpdateSettings(c.Request.Context(), uuid, settings); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -406,7 +406,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 
 	// Fetch updated settings
-	updated, err := h.store.GetSettingsByUUID(uuid)
+	updated, err := h.store.GetSettingsByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -443,7 +443,7 @@ func (h *Handler) DeleteSettings(c *gin.Context) {
 		}()
 	}
 
-	if err := h.store.DeleteSettings(uuid); err != nil {
+	if err := h.store.DeleteSettings(c.Request.Context(), uuid); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -471,7 +471,7 @@ func (h *Handler) ToggleSettings(c *gin.Context) {
 		return
 	}
 
-	newStatus, err := h.store.ToggleSettings(uuid)
+	newStatus, err := h.store.ToggleSettings(c.Request.Context(), uuid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
