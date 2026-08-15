@@ -642,19 +642,63 @@ func (s *BotAccessStore) ListGroupActors(ctx context.Context, botUUID, groupID s
 	if err := s.db.WithContext(ctx).Where("group_id = ?", groupID).Order("created_at").Find(&bindings).Error; err != nil {
 		return nil, err
 	}
+	if len(bindings) == 0 {
+		return []access.GroupActor{}, nil
+	}
+
+	// Two batched reads, not one actor lookup plus one permission lookup per
+	// binding -- that shape cost 2N+1 queries, so listing a 20-actor group
+	// took 41 round trips. Deliberately IN queries rather than gorm
+	// associations: these records are keyed compositely (a permission is
+	// keyed on group_id, actor_id, capability, action, and referenced by a
+	// composite foreign key) over hand-written DDL that gorm does not
+	// generate, which is where its association support is weakest.
+	actorIDs := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		actorIDs = append(actorIDs, b.ActorID)
+	}
+
+	var actorRows []remoteActorRecord
+	if err := s.db.WithContext(ctx).Where("id IN ?", actorIDs).Find(&actorRows).Error; err != nil {
+		return nil, err
+	}
+	actors := make(map[string]remoteActorRecord, len(actorRows))
+	for _, a := range actorRows {
+		actors[a.ID] = a
+	}
+
+	// One ordered scan grouped in Go. Ordering by capability, action here
+	// preserves the per-actor order the per-binding queries produced, since
+	// grouping keeps relative order within each actor.
+	var permRows []groupActorPermissionRecord
+	if err := s.db.WithContext(ctx).
+		Where("group_id = ? AND actor_id IN ?", groupID, actorIDs).
+		Order("capability, action").Find(&permRows).Error; err != nil {
+		return nil, err
+	}
+	permsByActor := make(map[string][]access.Permission, len(actorRows))
+	for _, p := range permRows {
+		permsByActor[p.ActorID] = append(permsByActor[p.ActorID], access.Permission{
+			Capability: access.CapabilityName(p.Capability),
+			Action:     access.ActionName(p.Action),
+			Effect:     access.AccessEffect(p.Effect),
+			UpdatedAt:  p.UpdatedAt,
+		})
+	}
+
 	out := make([]access.GroupActor, 0, len(bindings))
 	for _, b := range bindings {
-		var ar remoteActorRecord
-		if err := s.db.WithContext(ctx).Where("id = ?", b.ActorID).First(&ar).Error; err != nil {
-			return nil, err
+		ar, ok := actors[b.ActorID]
+		if !ok {
+			// A binding pointing at a missing actor is a broken foreign key,
+			// not an empty result. The per-binding First this replaced failed
+			// the whole call in that case; keep it wrapping the same sentinel
+			// so callers matching on it still match.
+			return nil, fmt.Errorf("group %s binding references missing actor %s: %w", groupID, b.ActorID, gorm.ErrRecordNotFound)
 		}
-		var prs []groupActorPermissionRecord
-		if err := s.db.WithContext(ctx).Where("group_id = ? AND actor_id = ?", groupID, b.ActorID).Order("capability, action").Find(&prs).Error; err != nil {
-			return nil, err
-		}
-		perms := make([]access.Permission, 0, len(prs))
-		for _, p := range prs {
-			perms = append(perms, access.Permission{Capability: access.CapabilityName(p.Capability), Action: access.ActionName(p.Action), Effect: access.AccessEffect(p.Effect), UpdatedAt: p.UpdatedAt})
+		perms := permsByActor[b.ActorID]
+		if perms == nil {
+			perms = make([]access.Permission, 0)
 		}
 		out = append(out, access.GroupActor{GroupID: groupID, Actor: actorFromRecord(ar), Label: b.Label, Permissions: perms, CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt})
 	}
