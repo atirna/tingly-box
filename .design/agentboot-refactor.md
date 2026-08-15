@@ -637,3 +637,42 @@ data is shown to a user (IM formatting is chat-surface specific, not a
 concern of a Claude Code CLI wrapper). Verified: `go build`, `go vet`, and
 `go test` green in both the `agentboot` module and the root module's
 `remote/control/...` tree.
+
+## 11. Public API elevation (2026-08-15)
+
+§8 judged API existence by "used by tingly-box or by tests" — an informal,
+easy-to-drift rule enforced only by whoever remembers to check before adding
+an export. With a second production consumer of the Claude integration now
+on the table (team-wide reuse, not just the remote-control bot), that rule
+needed to become a checkable contract instead of tribal knowledge. Two
+changes, both grounded in grepping every actual `agentboot` import site in
+the root `tingly-box` module rather than guessing:
+
+1. **Compiler-enforced internal boundary.** `process/`, `protocol/`,
+   `history/`, and `claude/session` had zero consumers outside this module —
+   confirmed, not assumed. Moved to `internal/process`, `internal/protocol`,
+   `internal/history`, and `claude/internal/session`. Go's `internal/`
+   visibility rule now makes it impossible for `tingly-box` code to import
+   them, so the boundary survives future refactors even if nobody reads this
+   doc first. Import-path-only change; no package renames, no behavior
+   change, no in-module caller touched beyond its import line.
+2. **README `## Public API` section**, listing exactly what `tingly-box`
+   imports today: the `AgentService` façade + `ExecutionHandle`/`StreamEvent`
+   surface, the Claude message model (`MessageEvent.Raw`'s concrete types,
+   accepted as non-neutral per §8), Claude production config
+   (`Config`/`PermissionMode`/`ContextKey*`), and the
+   `NewAgentWithFactory`/`Driver`/`Transport`/`claude/fixture` test-harness
+   seam. This is the reviewable contract: a change to anything on that list
+   is a breaking change for `tingly-box`; anything reachable only through
+   `internal/` is free to refactor.
+
+Deliberately not done: no semver git tag. `agentboot` is consumed exclusively
+through the repo's `go.work` path replacement, never `go get` at a pinned
+version, so a tag would track nothing a consumer's build actually resolves
+against — it would be a label with no enforcement behind it, the same
+failure mode this section exists to fix. If `agentboot` is ever published or
+consumed via a real module version, revisit this.
+
+Verified: `go build`, `go vet`, and `go test` green in both the `agentboot`
+module and the root module (`go build ./...`,
+`go test ./remote/control/...`).
