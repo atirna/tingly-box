@@ -465,12 +465,28 @@ belongs in its own ticket, not bundled with a codec change.
 
 ### Suggested order
 
+All three are done. Context propagation (below) is deliberately left for
+its own change.
+
 1. ~~`serializer:json`, one store per commit, each re-auditing that store's
    `WHERE` clauses over the converted columns.~~ Done for `provider_store`,
    `provider_model` and `imbot_settings_store`; `remote_chat_store`
    deliberately skipped. See **Outcome** above.
-2. `usage_record` filter scopes + the column whitelist.
-3. The `ListGroupActors` `IN` batching.
+2. ~~`usage_record` filter scopes + the column whitelist.~~ Done. Six
+   rebuilt-by-hand `WHERE` blocks (four in `usage_record.go`, two in
+   `usage_daily.go`) collapsed to `withinTimeRange` + `withColumnFilters`,
+   with the typed `UsageStatsQuery` and the map form rendering to the same
+   columns. Filter keys are validated against a closed column set — a
+   smaller one for `usage_daily`, which has fewer dimensions — and an
+   unknown key is an **error, not a dropped filter**: dropping one widens
+   the result set, and for `user_id` that means returning another user's
+   records. Keys are also sorted, so the generated SQL no longer varies
+   with Go's randomized map iteration.
+3. ~~The `ListGroupActors` `IN` batching.~~ Done: 2N+2 → 4 queries,
+   measured 42 → 4 at N=20. The test asserts the count via a counting gorm
+   logger rather than trusting the shape by inspection, so a future
+   per-actor query is caught. Associations were not used, for the
+   composite-key reasons above.
 
 Not recommended as part of this: removing the manual `CreatedAt`/`UpdatedAt`
 assignments. GORM does fill them (probed: `Create` sets both; `Updates(map)`,
