@@ -279,18 +279,26 @@ Probe results writing through the serializer:
 | `[]string{}` | `""` | `"[]"` |
 | `[]string{"x"}` | `"[\"x\"]"` | `"[\"x\"]"` |
 
-That breaks any predicate that tests these columns as strings.
-`ModelStore.GetAllProviders` (`provider_model.go:225`) does exactly that:
+So **every predicate over a serialized column has to be re-audited** — but
+re-audited, not reflexively rewritten. `ModelStore.GetAllProviders`
+(`provider_model.go:225`) is the one that looked broken:
 
 ```go
 ms.db.Where("models <> ''").Find(&records)
 ```
 
-Against a mixed table the probe counted **3 of 5** rows — it excluded the
-`NULL` row (because `NULL <> ''` is `NULL`, not true) *and* wrongly matched
-the `"[]"` row, reporting a provider with an empty model list as having
-models. So the migration is mechanical per column but **every `WHERE` over a
-serialized column has to be re-audited**, not just the codec.
+On inspection it survives the encoding change untouched. SQL's three-valued
+logic excludes `NULL` from `<> ''` already (comparing `NULL` to anything
+yields `NULL`, not true), and `NULL` is exactly the new spelling of "absent"
+— so the rows it drops are the rows it should drop. A stored-but-empty
+`"[]"` still matches, as it did before. Verified by running both
+`models <> ''` and `models IS NOT NULL AND models <> ''` against a table
+holding all four values: identical result sets.
+
+The check that genuinely does break is the **Go-side** one. After decoding,
+a stored `"[]"` and a never-written column are both an empty slice, so
+`record.Models == ""` (`GetProviderInfo`) can no longer tell them apart and
+needs a different discriminator.
 
 **Scope it to the four AutoMigrate-owned stores.** `bot_access_store.go`
 declares its tables with hand-written DDL where the JSON columns are
