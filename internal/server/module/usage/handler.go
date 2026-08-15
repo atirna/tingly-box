@@ -50,7 +50,7 @@ func (h *Handler) GetStats(c *gin.Context) {
 		query.Limit = 100
 	}
 
-	stats, err := h.usageStore.GetAggregatedStats(query)
+	stats, err := h.usageStore.GetAggregatedStats(c.Request.Context(), query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -124,7 +124,7 @@ func (h *Handler) GetTimeSeries(c *gin.Context) {
 		filters["user_id"] = userID
 	}
 
-	data, err := h.usageStore.GetTimeSeries(interval, startTime, endTime, filters)
+	data, err := h.usageStore.GetTimeSeries(c.Request.Context(), interval, startTime, endTime, filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -195,7 +195,7 @@ func (h *Handler) GetRecords(c *gin.Context) {
 		filters["user_id"] = userID
 	}
 
-	records, total, err := h.usageStore.GetRecords(startTime, endTime, filters, limit, offset)
+	records, total, err := h.usageStore.GetRecords(c.Request.Context(), startTime, endTime, filters, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -267,7 +267,7 @@ func (h *Handler) GetPerformanceSummary(c *gin.Context) {
 		filters["user_id"] = userID
 	}
 
-	summary, err := h.usageStore.GetPerformanceSummary(startTime, endTime, filters)
+	summary, err := h.usageStore.GetPerformanceSummary(c.Request.Context(), startTime, endTime, filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -304,7 +304,7 @@ func (h *Handler) DeleteOldRecords(c *gin.Context) {
 	}
 
 	cutoffDate := time.Now().AddDate(0, 0, -req.OlderThanDays)
-	deleted, err := h.usageStore.DeleteOlderThan(cutoffDate)
+	deleted, err := h.usageStore.DeleteOlderThan(c.Request.Context(), cutoffDate)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

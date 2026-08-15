@@ -446,6 +446,15 @@ func (ph *ProtocolHandler) updateServiceStats(rule *typ.Rule, provider *typ.Prov
 
 // persistRequestOutcome saves service and usage (either may be nil) via
 // db.RecordRequestOutcome, which commits both in a single transaction.
+//
+// Deliberately passes context.Background(), not the inbound request's
+// context: this runs after the response outcome is already decided,
+// including for a client that disconnected mid-request -- itself a status
+// this package records ("canceled"/"client_disconnected"). The request
+// context is already canceled in that case, and gorm.WithContext refuses to
+// even start a write against a canceled context, which would silently drop
+// the very audit row the disconnect is supposed to produce. See
+// RecordRequestOutcome's doc comment.
 func (ph *ProtocolHandler) persistRequestOutcome(service *loadbalance.Service, usage *db.UsageRecord) {
 	if ph.deps.Config == nil {
 		return
@@ -454,7 +463,7 @@ func (ph *ProtocolHandler) persistRequestOutcome(service *loadbalance.Service, u
 	if sm == nil {
 		return
 	}
-	_ = db.RecordRequestOutcome(sm.Stats(), sm.Usage(), service, usage)
+	_ = db.RecordRequestOutcome(context.Background(), sm.Stats(), sm.Usage(), service, usage)
 }
 
 // reportHealthStatus reports the health status of a service based on request outcome.

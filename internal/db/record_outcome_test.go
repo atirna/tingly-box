@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,16 +14,17 @@ func TestRecordRequestOutcome_SavesBoth(t *testing.T) {
 	sm, err := NewStoreManager(t.TempDir())
 	require.NoError(t, err)
 	defer sm.Close()
+	ctx := context.Background()
 
 	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
 	usage := &UsageRecord{ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai"}
 
-	require.NoError(t, RecordRequestOutcome(sm.Stats(), sm.Usage(), service, usage))
+	require.NoError(t, RecordRequestOutcome(ctx, sm.Stats(), sm.Usage(), service, usage))
 
-	_, found := sm.Stats().Get("p1", "m1")
+	_, found := sm.Stats().Get(ctx, "p1", "m1")
 	assert.True(t, found)
 
-	records, total, err := sm.Usage().GetRecords(usage.Timestamp.Add(-1), usage.Timestamp.Add(1), nil, 10, 0)
+	records, total, err := sm.Usage().GetRecords(ctx, usage.Timestamp.Add(-1), usage.Timestamp.Add(1), nil, 10, 0)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, total)
 	require.Len(t, records, 1)
@@ -33,11 +35,12 @@ func TestRecordRequestOutcome_NilStatsStore(t *testing.T) {
 	sm, err := NewStoreManager(t.TempDir())
 	require.NoError(t, err)
 	defer sm.Close()
+	ctx := context.Background()
 
 	usage := &UsageRecord{ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai"}
-	require.NoError(t, RecordRequestOutcome(nil, sm.Usage(), nil, usage))
+	require.NoError(t, RecordRequestOutcome(ctx, nil, sm.Usage(), nil, usage))
 
-	_, total, err := sm.Usage().GetRecords(usage.Timestamp.Add(-1), usage.Timestamp.Add(1), nil, 10, 0)
+	_, total, err := sm.Usage().GetRecords(ctx, usage.Timestamp.Add(-1), usage.Timestamp.Add(1), nil, 10, 0)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, total)
 }
@@ -46,11 +49,12 @@ func TestRecordRequestOutcome_NilUsageStore(t *testing.T) {
 	sm, err := NewStoreManager(t.TempDir())
 	require.NoError(t, err)
 	defer sm.Close()
+	ctx := context.Background()
 
 	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
-	require.NoError(t, RecordRequestOutcome(sm.Stats(), nil, service, nil))
+	require.NoError(t, RecordRequestOutcome(ctx, sm.Stats(), nil, service, nil))
 
-	_, found := sm.Stats().Get("p1", "m1")
+	_, found := sm.Stats().Get(ctx, "p1", "m1")
 	assert.True(t, found)
 }
 
@@ -61,7 +65,7 @@ func TestRecordRequestOutcome_NilStatsStore_NilUsage(t *testing.T) {
 	require.NoError(t, err)
 	defer sm.Close()
 
-	assert.NoError(t, RecordRequestOutcome(nil, sm.Usage(), nil, nil))
+	assert.NoError(t, RecordRequestOutcome(context.Background(), nil, sm.Usage(), nil, nil))
 }
 
 // TestRecordRequestOutcome_AtomicRollback: a usage write that fails (a
@@ -70,16 +74,17 @@ func TestRecordRequestOutcome_AtomicRollback(t *testing.T) {
 	sm, err := NewStoreManager(t.TempDir())
 	require.NoError(t, err)
 	defer sm.Close()
+	ctx := context.Background()
 
 	statsStore, usageStore := sm.Stats(), sm.Usage()
-	require.NoError(t, usageStore.RecordUsage(&UsageRecord{ID: 999, ProviderUUID: "seed", ProviderName: "seed", Model: "seed", Scenario: "openai"}))
+	require.NoError(t, usageStore.RecordUsage(ctx, &UsageRecord{ID: 999, ProviderUUID: "seed", ProviderName: "seed", Model: "seed", Scenario: "openai"}))
 
 	service := &loadbalance.Service{Provider: "p1", Model: "m1", Active: true}
 	conflicting := &UsageRecord{ID: 999, ProviderUUID: "p1", ProviderName: "p1", Model: "m1", Scenario: "openai"}
 
-	err = RecordRequestOutcome(statsStore, usageStore, service, conflicting)
+	err = RecordRequestOutcome(ctx, statsStore, usageStore, service, conflicting)
 	assert.Error(t, err)
 
-	_, found := statsStore.Get("p1", "m1")
+	_, found := statsStore.Get(ctx, "p1", "m1")
 	assert.False(t, found, "stats write from the same call must have rolled back with the failed usage write")
 }

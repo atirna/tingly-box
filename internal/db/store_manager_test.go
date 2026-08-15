@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -296,7 +297,7 @@ func TestStoreManager_StoreOperations(t *testing.T) {
 		Status:       "success",
 	}
 
-	if err := usageStore.RecordUsage(record); err != nil {
+	if err := usageStore.RecordUsage(context.Background(), record); err != nil {
 		t.Fatalf("Failed to record usage: %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -68,13 +69,13 @@ func dailyWindow(start, end, now time.Time) (time.Time, time.Time) {
 // table itself is the source of truth, so concurrent stats/timeseries
 // requests never contend on a lock just to check it, and the answer can't go
 // stale across a restart.
-func (us *UsageStore) ensureDailyAggregates(firstDay, lastDayEx time.Time) error {
-	missing, err := us.missingAggregatedDays(firstDay, lastDayEx)
+func (us *UsageStore) ensureDailyAggregates(ctx context.Context, firstDay, lastDayEx time.Time) error {
+	missing, err := us.missingAggregatedDays(ctx, firstDay, lastDayEx)
 	if err != nil {
 		return err
 	}
 	for _, day := range missing {
-		if _, err := us.aggregateDay(day.Format(dailyDateLayout), day); err != nil {
+		if _, err := us.aggregateDay(ctx, day.Format(dailyDateLayout), day); err != nil {
 			return err
 		}
 	}
@@ -83,10 +84,10 @@ func (us *UsageStore) ensureDailyAggregates(firstDay, lastDayEx time.Time) error
 
 // missingAggregatedDays returns the UTC days in [firstDay, lastDayEx) that
 // have no usage_daily rows yet.
-func (us *UsageStore) missingAggregatedDays(firstDay, lastDayEx time.Time) ([]time.Time, error) {
+func (us *UsageStore) missingAggregatedDays(ctx context.Context, firstDay, lastDayEx time.Time) ([]time.Time, error) {
 	us.mu.RLock()
 	var have []string
-	err := us.db.Model(&UsageDailyRecord{}).
+	err := us.db.WithContext(ctx).Model(&UsageDailyRecord{}).
 		Where("date >= ? AND date < ?", firstDay.Format(dailyDateLayout), lastDayEx.Format(dailyDateLayout)).
 		Distinct("date").
 		Pluck("date", &have).Error
@@ -110,7 +111,7 @@ func (us *UsageStore) missingAggregatedDays(firstDay, lastDayEx time.Time) ([]ti
 }
 
 // aggregateDay (re)builds the usage_daily rows for one UTC day.
-func (us *UsageStore) aggregateDay(key string, dayStart time.Time) (int64, error) {
+func (us *UsageStore) aggregateDay(ctx context.Context, key string, dayStart time.Time) (int64, error) {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 
@@ -121,7 +122,7 @@ func (us *UsageStore) aggregateDay(key string, dayStart time.Time) (int64, error
 	scanEnd := dayStart.Add(24*time.Hour + dstScanPad).In(time.Local)
 
 	var rows int64
-	err := us.db.Transaction(func(tx *gorm.DB) error {
+	err := us.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("date = ?", key).Delete(&UsageDailyRecord{}).Error; err != nil {
 			return err
 		}
@@ -155,7 +156,7 @@ func (us *UsageStore) aggregateDay(key string, dayStart time.Time) (int64, error
 
 // aggregatedStatsFromDaily serves GetAggregatedStats from usage_daily when the
 // query shape allows it. Returns handled=false to fall back to the raw scan.
-func (us *UsageStore) aggregatedStatsFromDaily(q UsageStatsQuery) ([]AggregatedStat, bool, error) {
+func (us *UsageStore) aggregatedStatsFromDaily(ctx context.Context, q UsageStatsQuery) ([]AggregatedStat, bool, error) {
 	switch q.GroupBy {
 	case "model", "provider", "user", "daily":
 	default:
@@ -173,7 +174,7 @@ func (us *UsageStore) aggregatedStatsFromDaily(q UsageStatsQuery) ([]AggregatedS
 	if lastDayEx.Sub(firstDay) < minDailySpan {
 		return nil, false, nil
 	}
-	if err := us.ensureDailyAggregates(firstDay, lastDayEx); err != nil {
+	if err := us.ensureDailyAggregates(ctx, firstDay, lastDayEx); err != nil {
 		logrus.WithError(err).Warn("usage: daily aggregation failed; falling back to raw scan")
 		return nil, false, nil
 	}
@@ -201,7 +202,7 @@ func (us *UsageStore) aggregatedStatsFromDaily(q UsageStatsQuery) ([]AggregatedS
 	}
 
 	// Complete days from the pre-aggregation table.
-	daily, err := us.dailyStatBuckets(q, firstDay, lastDayEx)
+	daily, err := us.dailyStatBuckets(ctx, q, firstDay, lastDayEx)
 	if err != nil {
 		return nil, true, err
 	}
@@ -211,7 +212,7 @@ func (us *UsageStore) aggregatedStatsFromDaily(q UsageStatsQuery) ([]AggregatedS
 	if q.StartTime.Before(firstDay) {
 		edge := q
 		edge.EndTime = firstDay.Add(-time.Nanosecond).In(time.Local)
-		buckets, err := us.rawAggBuckets(edge, false)
+		buckets, err := us.rawAggBuckets(ctx, edge, false)
 		if err != nil {
 			return nil, true, err
 		}
@@ -220,7 +221,7 @@ func (us *UsageStore) aggregatedStatsFromDaily(q UsageStatsQuery) ([]AggregatedS
 	if q.EndTime.After(lastDayEx) {
 		edge := q
 		edge.StartTime = lastDayEx.In(time.Local)
-		buckets, err := us.rawAggBuckets(edge, false)
+		buckets, err := us.rawAggBuckets(ctx, edge, false)
 		if err != nil {
 			return nil, true, err
 		}
@@ -246,7 +247,7 @@ func (us *UsageStore) aggregatedStatsFromDaily(q UsageStatsQuery) ([]AggregatedS
 
 // dailyStatBuckets aggregates usage_daily rows over [firstDay, lastDayEx)
 // with the grouping/filters of the given query.
-func (us *UsageStore) dailyStatBuckets(q UsageStatsQuery, firstDay, lastDayEx time.Time) ([]aggBucket, error) {
+func (us *UsageStore) dailyStatBuckets(ctx context.Context, q UsageStatsQuery, firstDay, lastDayEx time.Time) ([]aggBucket, error) {
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
@@ -266,7 +267,7 @@ func (us *UsageStore) dailyStatBuckets(q UsageStatsQuery, firstDay, lastDayEx ti
 		groupBy = "provider_uuid, provider_name, model"
 	}
 
-	db := us.db.Model(&UsageDailyRecord{}).
+	db := us.db.WithContext(ctx).Model(&UsageDailyRecord{}).
 		Where("date >= ? AND date < ?", firstDay.Format(dailyDateLayout), lastDayEx.Format(dailyDateLayout)).
 		Scopes(withColumnFilters(q.dailyFilterMap()))
 
@@ -344,7 +345,7 @@ func sortAggBuckets(list []aggBucket, sortBy, sortOrder string) {
 
 // timeSeriesFromDaily serves day-interval time series from usage_daily when
 // the query shape allows it. Returns handled=false to fall back to raw.
-func (us *UsageStore) timeSeriesFromDaily(interval string, start, end time.Time, filters map[string]string) ([]TimeSeriesData, bool, error) {
+func (us *UsageStore) timeSeriesFromDaily(ctx context.Context, interval string, start, end time.Time, filters map[string]string) ([]TimeSeriesData, bool, error) {
 	if interval != "day" || start.IsZero() || end.IsZero() {
 		return nil, false, nil
 	}
@@ -360,7 +361,7 @@ func (us *UsageStore) timeSeriesFromDaily(interval string, start, end time.Time,
 	if lastDayEx.Sub(firstDay) < minDailySpan {
 		return nil, false, nil
 	}
-	if err := us.ensureDailyAggregates(firstDay, lastDayEx); err != nil {
+	if err := us.ensureDailyAggregates(ctx, firstDay, lastDayEx); err != nil {
 		logrus.WithError(err).Warn("usage: daily aggregation failed; falling back to raw scan")
 		return nil, false, nil
 	}
@@ -369,7 +370,7 @@ func (us *UsageStore) timeSeriesFromDaily(interval string, start, end time.Time,
 
 	// Partial leading day from the raw table.
 	if start.Before(firstDay) {
-		lead, err := us.rawTimeSeries("day", start, firstDay.Add(-time.Nanosecond).In(time.Local), filters)
+		lead, err := us.rawTimeSeries(ctx, "day", start, firstDay.Add(-time.Nanosecond).In(time.Local), filters)
 		if err != nil {
 			return nil, true, err
 		}
@@ -377,7 +378,7 @@ func (us *UsageStore) timeSeriesFromDaily(interval string, start, end time.Time,
 	}
 
 	// Complete days from the pre-aggregation table.
-	body, err := us.dailyTimeSeries(firstDay, lastDayEx, filters)
+	body, err := us.dailyTimeSeries(ctx, firstDay, lastDayEx, filters)
 	if err != nil {
 		return nil, true, err
 	}
@@ -385,7 +386,7 @@ func (us *UsageStore) timeSeriesFromDaily(interval string, start, end time.Time,
 
 	// Partial trailing days (today + grace window) from the raw table.
 	if end.After(lastDayEx) {
-		tail, err := us.rawTimeSeries("day", lastDayEx.In(time.Local), end, filters)
+		tail, err := us.rawTimeSeries(ctx, "day", lastDayEx.In(time.Local), end, filters)
 		if err != nil {
 			return nil, true, err
 		}
@@ -442,14 +443,14 @@ func (q UsageStatsQuery) dailyFilterMap() map[string]string {
 }
 
 // dailyTimeSeries returns one bucket per date from usage_daily.
-func (us *UsageStore) dailyTimeSeries(firstDay, lastDayEx time.Time, filters map[string]string) ([]TimeSeriesData, error) {
+func (us *UsageStore) dailyTimeSeries(ctx context.Context, firstDay, lastDayEx time.Time, filters map[string]string) ([]TimeSeriesData, error) {
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
 	if err := validateDailyFilterColumns(filters); err != nil {
 		return nil, err
 	}
-	db := us.db.Model(&UsageDailyRecord{}).
+	db := us.db.WithContext(ctx).Model(&UsageDailyRecord{}).
 		Where("date >= ? AND date < ?", firstDay.Format(dailyDateLayout), lastDayEx.Format(dailyDateLayout)).
 		Scopes(withColumnFilters(filters))
 

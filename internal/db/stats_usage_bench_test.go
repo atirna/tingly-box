@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -41,12 +42,13 @@ func BenchmarkStatsStore_UpdateFromService(b *testing.B) {
 		Weight:   1,
 		Active:   true,
 	}
+	ctx := context.Background()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		service.RecordUsage(10, 20)
-		if err := store.UpdateFromService(service); err != nil {
+		if err := store.UpdateFromService(ctx, service); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -57,6 +59,7 @@ func BenchmarkStatsStore_UpdateFromService(b *testing.B) {
 // completed request (the proxy's usage audit log).
 func BenchmarkUsageStore_RecordUsage(b *testing.B) {
 	store := newUsageStoreForTest(b)
+	ctx := context.Background()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -75,7 +78,7 @@ func BenchmarkUsageStore_RecordUsage(b *testing.B) {
 			Status:       "success",
 			LatencyMs:    120,
 		}
-		if err := store.RecordUsage(record); err != nil {
+		if err := store.RecordUsage(ctx, record); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -98,12 +101,13 @@ func BenchmarkStatsAndUsage_Combined(b *testing.B) {
 		Weight:   1,
 		Active:   true,
 	}
+	ctx := context.Background()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		service.RecordUsage(10, 20)
-		if err := statsStore.UpdateFromService(service); err != nil {
+		if err := statsStore.UpdateFromService(ctx, service); err != nil {
 			b.Fatal(err)
 		}
 		record := &UsageRecord{
@@ -120,7 +124,7 @@ func BenchmarkStatsAndUsage_Combined(b *testing.B) {
 			Status:       "success",
 			LatencyMs:    120,
 		}
-		if err := usageStore.RecordUsage(record); err != nil {
+		if err := usageStore.RecordUsage(ctx, record); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -143,6 +147,7 @@ func BenchmarkStatsAndUsage_RecordRequestOutcome(b *testing.B) {
 		Weight:   1,
 		Active:   true,
 	}
+	ctx := context.Background()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -162,7 +167,7 @@ func BenchmarkStatsAndUsage_RecordRequestOutcome(b *testing.B) {
 			Status:       "success",
 			LatencyMs:    120,
 		}
-		if err := RecordRequestOutcome(statsStore, usageStore, service, record); err != nil {
+		if err := RecordRequestOutcome(ctx, statsStore, usageStore, service, record); err != nil {
 			b.Fatal(err)
 		}
 	}

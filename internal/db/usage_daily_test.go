@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 // `days` days (several providers/models/users, errors, streamed, cache).
 func seedUsageRecords(t *testing.T, store *UsageStore, days int) int {
 	t.Helper()
+	ctx := context.Background()
 
 	providers := []struct{ uuid, name string }{
 		{"prov-a", "Provider A"},
@@ -45,7 +47,7 @@ func seedUsageRecords(t *testing.T, store *UsageStore, days int) int {
 					LatencyMs:        200 + h*3,
 					Streamed:         h%2 == 0,
 				}
-				if err := store.RecordUsage(rec); err != nil {
+				if err := store.RecordUsage(ctx, rec); err != nil {
 					t.Fatalf("RecordUsage failed: %v", err)
 				}
 				count++
@@ -68,6 +70,7 @@ func TestAggregatedStatsDailyMatchesRaw(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 	seedUsageRecords(t, store, 8)
 
 	now := time.Now()
@@ -81,7 +84,7 @@ func TestAggregatedStatsDailyMatchesRaw(t *testing.T) {
 			SortOrder: "desc",
 		}
 
-		merged, handled, err := store.aggregatedStatsFromDaily(query)
+		merged, handled, err := store.aggregatedStatsFromDaily(ctx, query)
 		if err != nil {
 			t.Fatalf("[%s] aggregatedStatsFromDaily failed: %v", groupBy, err)
 		}
@@ -89,7 +92,7 @@ func TestAggregatedStatsDailyMatchesRaw(t *testing.T) {
 			t.Fatalf("[%s] expected daily path to handle a 7-day query", groupBy)
 		}
 
-		buckets, err := store.rawAggBuckets(query, true)
+		buckets, err := store.rawAggBuckets(ctx, query, true)
 		if err != nil {
 			t.Fatalf("[%s] rawAggBuckets failed: %v", groupBy, err)
 		}
@@ -136,6 +139,7 @@ func TestAggregatedStatsDailyWithFilters(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 	seedUsageRecords(t, store, 6)
 
 	now := time.Now()
@@ -150,7 +154,7 @@ func TestAggregatedStatsDailyWithFilters(t *testing.T) {
 		SortOrder: "desc",
 	}
 
-	merged, handled, err := store.aggregatedStatsFromDaily(query)
+	merged, handled, err := store.aggregatedStatsFromDaily(ctx, query)
 	if err != nil {
 		t.Fatalf("aggregatedStatsFromDaily failed: %v", err)
 	}
@@ -158,7 +162,7 @@ func TestAggregatedStatsDailyWithFilters(t *testing.T) {
 		t.Fatal("expected daily path to handle filtered query")
 	}
 
-	buckets, err := store.rawAggBuckets(query, true)
+	buckets, err := store.rawAggBuckets(ctx, query, true)
 	if err != nil {
 		t.Fatalf("rawAggBuckets failed: %v", err)
 	}
@@ -186,12 +190,13 @@ func TestTimeSeriesDailyMatchesRaw(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 	seedUsageRecords(t, store, 8)
 
 	now := time.Now()
 	start := now.Add(-7 * 24 * time.Hour)
 
-	merged, handled, err := store.timeSeriesFromDaily("day", start, now, nil)
+	merged, handled, err := store.timeSeriesFromDaily(ctx, "day", start, now, nil)
 	if err != nil {
 		t.Fatalf("timeSeriesFromDaily failed: %v", err)
 	}
@@ -199,7 +204,7 @@ func TestTimeSeriesDailyMatchesRaw(t *testing.T) {
 		t.Fatal("expected daily path to handle a 7-day day-interval query")
 	}
 
-	raw, err := store.rawTimeSeries("day", start, now, nil)
+	raw, err := store.rawTimeSeries(ctx, "day", start, now, nil)
 	if err != nil {
 		t.Fatalf("rawTimeSeries failed: %v", err)
 	}
@@ -240,10 +245,11 @@ func TestPublicAPIsUseDailyPathTransparently(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 	total := seedUsageRecords(t, store, 4)
 
 	now := time.Now()
-	stats, err := store.GetAggregatedStats(UsageStatsQuery{
+	stats, err := store.GetAggregatedStats(ctx, UsageStatsQuery{
 		GroupBy:   "model",
 		StartTime: now.Add(-30 * 24 * time.Hour),
 		EndTime:   now,
@@ -262,7 +268,7 @@ func TestPublicAPIsUseDailyPathTransparently(t *testing.T) {
 		t.Fatalf("GetAggregatedStats total requests = %d, want %d", got, total)
 	}
 
-	series, err := store.GetTimeSeries("day", now.Add(-30*24*time.Hour), now, nil)
+	series, err := store.GetTimeSeries(ctx, "day", now.Add(-30*24*time.Hour), now, nil)
 	if err != nil {
 		t.Fatalf("GetTimeSeries failed: %v", err)
 	}
@@ -284,16 +290,17 @@ func TestDeleteOlderThanPurgesDailyAggregates(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 	seedUsageRecords(t, store, 6)
 
 	now := time.Now()
 	// Populate the daily table.
-	if _, _, err := store.timeSeriesFromDaily("day", now.Add(-5*24*time.Hour), now, nil); err != nil {
+	if _, _, err := store.timeSeriesFromDaily(ctx, "day", now.Add(-5*24*time.Hour), now, nil); err != nil {
 		t.Fatalf("timeSeriesFromDaily failed: %v", err)
 	}
 
 	cutoff := now.Add(-3 * 24 * time.Hour)
-	if _, err := store.DeleteOlderThan(cutoff); err != nil {
+	if _, err := store.DeleteOlderThan(ctx, cutoff); err != nil {
 		t.Fatalf("DeleteOlderThan failed: %v", err)
 	}
 
@@ -308,11 +315,11 @@ func TestDeleteOlderThanPurgesDailyAggregates(t *testing.T) {
 	}
 
 	// Query again after deletion: totals must match a raw scan.
-	mergedSeries, handled, err := store.timeSeriesFromDaily("day", now.Add(-5*24*time.Hour), now, nil)
+	mergedSeries, handled, err := store.timeSeriesFromDaily(ctx, "day", now.Add(-5*24*time.Hour), now, nil)
 	if err != nil || !handled {
 		t.Fatalf("timeSeriesFromDaily after delete: handled=%v err=%v", handled, err)
 	}
-	rawSeries, err := store.rawTimeSeries("day", now.Add(-5*24*time.Hour), now, nil)
+	rawSeries, err := store.rawTimeSeries(ctx, "day", now.Add(-5*24*time.Hour), now, nil)
 	if err != nil {
 		t.Fatalf("rawTimeSeries failed: %v", err)
 	}
@@ -336,13 +343,14 @@ func TestGetRecordsTotalWithoutFullCount(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 	total := seedUsageRecords(t, store, 1)
 
 	start := time.Now().Add(-2 * 24 * time.Hour)
 	end := time.Now()
 
 	// Page smaller than result set: COUNT path.
-	records, gotTotal, err := store.GetRecords(start, end, nil, 3, 0)
+	records, gotTotal, err := store.GetRecords(ctx, start, end, nil, 3, 0)
 	if err != nil {
 		t.Fatalf("GetRecords failed: %v", err)
 	}
@@ -351,7 +359,7 @@ func TestGetRecordsTotalWithoutFullCount(t *testing.T) {
 	}
 
 	// Page larger than result set: fast path total.
-	records, gotTotal, err = store.GetRecords(start, end, nil, 500, 0)
+	records, gotTotal, err = store.GetRecords(ctx, start, end, nil, 500, 0)
 	if err != nil {
 		t.Fatalf("GetRecords failed: %v", err)
 	}
@@ -367,6 +375,7 @@ func TestGetPerformanceSummary(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 	now := time.Now()
 
 	records := []UsageRecord{
@@ -376,12 +385,12 @@ func TestGetPerformanceSummary(t *testing.T) {
 		{ProviderUUID: "prov-b", ProviderName: "B", Model: "m", Scenario: "default", UserID: "admin", Timestamp: now, OutputTokens: 30, Status: "success", Streamed: false, LatencyMs: 300},                                    // completion only
 	}
 	for i := range records {
-		if err := store.RecordUsage(&records[i]); err != nil {
+		if err := store.RecordUsage(ctx, &records[i]); err != nil {
 			t.Fatalf("RecordUsage failed: %v", err)
 		}
 	}
 
-	summary, err := store.GetPerformanceSummary(now.Add(-time.Hour), now.Add(time.Minute), map[string]string{"provider_uuid": "prov-a"})
+	summary, err := store.GetPerformanceSummary(ctx, now.Add(-time.Hour), now.Add(time.Minute), map[string]string{"provider_uuid": "prov-a"})
 	if err != nil {
 		t.Fatalf("GetPerformanceSummary failed: %v", err)
 	}
@@ -427,13 +436,14 @@ func TestUpgradeAddingSummedColumnKeepsAggregates(t *testing.T) {
 	}
 	defer sm.Close()
 	store := sm.Usage()
+	ctx := context.Background()
 
 	// Pre-upgrade traffic: the column does not exist yet, so nothing writes it.
 	seedUsageRecordsWithoutWrites(t, store, 8)
 
 	now := time.Now()
 	start := now.Add(-7 * 24 * time.Hour)
-	if _, _, err := store.timeSeriesFromDaily("day", start, now, nil); err != nil {
+	if _, _, err := store.timeSeriesFromDaily(ctx, "day", start, now, nil); err != nil {
 		t.Fatalf("timeSeriesFromDaily failed: %v", err)
 	}
 	var before int64
@@ -467,11 +477,11 @@ func TestUpgradeAddingSummedColumnKeepsAggregates(t *testing.T) {
 	}
 
 	// And the zero-filled column agrees with a raw scan of the same days.
-	merged, handled, err := store.timeSeriesFromDaily("day", start, now, nil)
+	merged, handled, err := store.timeSeriesFromDaily(ctx, "day", start, now, nil)
 	if err != nil || !handled {
 		t.Fatalf("timeSeriesFromDaily after upgrade: handled=%v err=%v", handled, err)
 	}
-	raw, err := store.rawTimeSeries("day", start, now, nil)
+	raw, err := store.rawTimeSeries(ctx, "day", start, now, nil)
 	if err != nil {
 		t.Fatalf("rawTimeSeries failed: %v", err)
 	}
@@ -495,6 +505,7 @@ func TestUpgradeAddingSummedColumnKeepsAggregates(t *testing.T) {
 // existed.
 func seedUsageRecordsWithoutWrites(t *testing.T, store *UsageStore, days int) {
 	t.Helper()
+	ctx := context.Background()
 	now := time.Now()
 	for d := 0; d < days; d++ {
 		for h := 0; h < 24; h += 5 {
@@ -512,7 +523,7 @@ func seedUsageRecordsWithoutWrites(t *testing.T, store *UsageStore, days int) {
 				Status:          "success",
 				LatencyMs:       200 + h*3,
 			}
-			if err := store.RecordUsage(rec); err != nil {
+			if err := store.RecordUsage(ctx, rec); err != nil {
 				t.Fatalf("RecordUsage failed: %v", err)
 			}
 		}

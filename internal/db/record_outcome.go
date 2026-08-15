@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -16,15 +17,24 @@ import (
 //
 // service and/or usage may be nil (only one side has something to persist);
 // statsStore and/or usageStore may be nil (store not initialized).
-func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, service *loadbalance.Service, usage *UsageRecord) error {
+//
+// Callers should not pass the inbound request's context here. This runs
+// after the response is already decided -- including for a client that
+// disconnected mid-request, which is itself a status this package records
+// ("canceled"/"client_disconnected"). A context already canceled by that
+// disconnect would make gorm refuse the write before it starts, silently
+// dropping the exact audit row the cancellation should have produced. Pass
+// context.Background(), or a context scoped to the server's own lifecycle
+// (e.g. shutdown), not the request's.
+func RecordRequestOutcome(ctx context.Context, statsStore *StatsStore, usageStore *UsageStore, service *loadbalance.Service, usage *UsageRecord) error {
 	if statsStore == nil {
 		if usageStore == nil || usage == nil {
 			return nil
 		}
-		return usageStore.RecordUsage(usage)
+		return usageStore.RecordUsage(ctx, usage)
 	}
 	if usageStore == nil {
-		return statsStore.UpdateFromService(service)
+		return statsStore.UpdateFromService(ctx, service)
 	}
 
 	// Build both records before taking any lock -- neither builder touches
@@ -39,7 +49,7 @@ func RecordRequestOutcome(statsStore *StatsStore, usageStore *UsageStore, servic
 	usageStore.mu.Lock()
 	defer usageStore.mu.Unlock()
 
-	return statsStore.db.Transaction(func(tx *gorm.DB) error {
+	return statsStore.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if statsRecord != nil {
 			if err := tx.Save(statsRecord).Error; err != nil {
 				return fmt.Errorf("failed to save service stats: %w", err)

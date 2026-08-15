@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -168,7 +169,7 @@ func (c *Config) saveMigration() {
 func (c *Config) rekeyRuleUUIDState(migrationID string, renames map[string]string) {
 	for oldUUID, newUUID := range renames {
 		if c.usageStore != nil {
-			if err := c.usageStore.RenameRuleUUID(oldUUID, newUUID); err != nil {
+			if err := c.usageStore.RenameRuleUUID(context.Background(), oldUUID, newUUID); err != nil {
 				logrus.WithError(err).Warnf("Migration %s: failed to rename usage records %s -> %s", migrationID, oldUUID, newUUID)
 			}
 		}

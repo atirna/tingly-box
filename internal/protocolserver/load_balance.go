@@ -1,6 +1,7 @@
 package protocolserver
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -242,7 +243,10 @@ func (lb *LoadBalancer) ClearServiceStats(provider, model string) {
 	if lb.config != nil {
 		if sm := lb.config.StoreManager(); sm != nil {
 			if store := sm.Stats(); store != nil {
-				if err := store.ClearService(provider, model); err != nil {
+				// ClearServiceStats itself takes no ctx (admin action, not on a
+				// request-serving path), so there is nothing meaningful to
+				// thread through from here.
+				if err := store.ClearService(context.Background(), provider, model); err != nil {
 					logrus.Warnf("[load_balancer] failed to clear persisted stats for %s/%s: %v", provider, model, err)
 				}
 			}
@@ -283,7 +287,7 @@ func (lb *LoadBalancer) ClearAllStats() {
 	if lb.config != nil {
 		if sm := lb.config.StoreManager(); sm != nil {
 			if store := sm.Stats(); store != nil {
-				_ = store.ClearAll()
+				_ = store.ClearAll(context.Background())
 			}
 		}
 	}

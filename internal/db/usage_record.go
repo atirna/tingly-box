@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -171,7 +172,7 @@ func ensureUsageDailySchema(db *gorm.DB) error {
 }
 
 // RecordUsage records a single usage event
-func (us *UsageStore) RecordUsage(record *UsageRecord) error {
+func (us *UsageStore) RecordUsage(ctx context.Context, record *UsageRecord) error {
 	if record == nil {
 		return errors.New("record cannot be nil")
 	}
@@ -181,7 +182,7 @@ func (us *UsageStore) RecordUsage(record *UsageRecord) error {
 
 	prepareUsageRecord(record)
 
-	return us.db.Create(record).Error
+	return us.db.WithContext(ctx).Create(record).Error
 }
 
 // prepareUsageRecord fills in RecordUsage's defaults without touching the
@@ -200,11 +201,11 @@ func prepareUsageRecord(record *UsageRecord) {
 
 // RenameRuleUUID re-attributes historical usage records from oldUUID to
 // newUUID so per-rule usage stats survive a rule UUID normalization.
-func (us *UsageStore) RenameRuleUUID(oldUUID, newUUID string) error {
+func (us *UsageStore) RenameRuleUUID(ctx context.Context, oldUUID, newUUID string) error {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 
-	return us.db.Model(&UsageRecord{}).
+	return us.db.WithContext(ctx).Model(&UsageRecord{}).
 		Where("rule_uuid = ?", oldUUID).
 		Update("rule_uuid", newUUID).Error
 }
@@ -345,12 +346,12 @@ func (q UsageStatsQuery) filterMap() map[string]string {
 // several completed days it combines the usage_daily pre-aggregation table
 // with a raw scan of only the partial edge days (see usage_daily.go), so
 // dashboard loads stay fast regardless of how many raw records accumulate.
-func (us *UsageStore) GetAggregatedStats(query UsageStatsQuery) ([]AggregatedStat, error) {
-	if stats, ok, err := us.aggregatedStatsFromDaily(query); ok {
+func (us *UsageStore) GetAggregatedStats(ctx context.Context, query UsageStatsQuery) ([]AggregatedStat, error) {
+	if stats, ok, err := us.aggregatedStatsFromDaily(ctx, query); ok {
 		return stats, err
 	}
 
-	buckets, err := us.rawAggBuckets(query, true)
+	buckets, err := us.rawAggBuckets(ctx, query, true)
 	if err != nil {
 		return nil, err
 	}
@@ -410,11 +411,11 @@ func (b aggBucket) toAggregatedStat() AggregatedStat {
 // rawAggBuckets aggregates directly over usage_records. When applyLimit is
 // false, sorting/limiting is left to the caller (used for edge-day scans that
 // are merged with usage_daily results afterwards).
-func (us *UsageStore) rawAggBuckets(query UsageStatsQuery, applyLimit bool) ([]aggBucket, error) {
+func (us *UsageStore) rawAggBuckets(ctx context.Context, query UsageStatsQuery, applyLimit bool) ([]aggBucket, error) {
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
-	db := us.db.Model(&UsageRecord{}).Scopes(
+	db := us.db.WithContext(ctx).Model(&UsageRecord{}).Scopes(
 		withinTimeRange(query.StartTime, query.EndTime),
 		withStatsFilters(query),
 	)
@@ -494,15 +495,15 @@ type TimeSeriesData struct {
 // GetTimeSeries returns time-series data for usage. Day-interval queries
 // spanning several completed days are served from usage_daily with raw scans
 // only for the partial edge days (see usage_daily.go).
-func (us *UsageStore) GetTimeSeries(interval string, startTime, endTime time.Time, filters map[string]string) ([]TimeSeriesData, error) {
-	if data, ok, err := us.timeSeriesFromDaily(interval, startTime, endTime, filters); ok {
+func (us *UsageStore) GetTimeSeries(ctx context.Context, interval string, startTime, endTime time.Time, filters map[string]string) ([]TimeSeriesData, error) {
+	if data, ok, err := us.timeSeriesFromDaily(ctx, interval, startTime, endTime, filters); ok {
 		return data, err
 	}
-	return us.rawTimeSeries(interval, startTime, endTime, filters)
+	return us.rawTimeSeries(ctx, interval, startTime, endTime, filters)
 }
 
 // rawTimeSeries aggregates time buckets directly over usage_records.
-func (us *UsageStore) rawTimeSeries(interval string, startTime, endTime time.Time, filters map[string]string) ([]TimeSeriesData, error) {
+func (us *UsageStore) rawTimeSeries(ctx context.Context, interval string, startTime, endTime time.Time, filters map[string]string) ([]TimeSeriesData, error) {
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
@@ -523,7 +524,7 @@ func (us *UsageStore) rawTimeSeries(interval string, startTime, endTime time.Tim
 	if err := validateFilterColumns(filters); err != nil {
 		return nil, err
 	}
-	db := us.db.Model(&UsageRecord{}).Scopes(
+	db := us.db.WithContext(ctx).Model(&UsageRecord{}).Scopes(
 		withinTimeRange(startTime, endTime),
 		withColumnFilters(filters),
 	)
@@ -585,7 +586,7 @@ func (us *UsageStore) rawTimeSeries(interval string, startTime, endTime time.Tim
 }
 
 // GetRecords returns individual usage records (for debugging/audit)
-func (us *UsageStore) GetRecords(startTime, endTime time.Time, filters map[string]string, limit, offset int) ([]UsageRecord, int64, error) {
+func (us *UsageStore) GetRecords(ctx context.Context, startTime, endTime time.Time, filters map[string]string, limit, offset int) ([]UsageRecord, int64, error) {
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
@@ -593,7 +594,7 @@ func (us *UsageStore) GetRecords(startTime, endTime time.Time, filters map[strin
 		return nil, 0, err
 	}
 	base := func() *gorm.DB {
-		return us.db.Model(&UsageRecord{}).Scopes(
+		return us.db.WithContext(ctx).Model(&UsageRecord{}).Scopes(
 			withinTimeRange(startTime, endTime),
 			withColumnFilters(filters),
 		)
@@ -636,14 +637,14 @@ func TokensPerSecond(outputTokens, latencyMs, ttftMs int) float64 {
 // GetPerformanceSummary calculates percentiles across the complete filtered
 // range. Only successful requests participate: failures and cancellations have
 // different completion semantics and would distort the user-experience view.
-func (us *UsageStore) GetPerformanceSummary(startTime, endTime time.Time, filters map[string]string) (PerformanceSummary, error) {
+func (us *UsageStore) GetPerformanceSummary(ctx context.Context, startTime, endTime time.Time, filters map[string]string) (PerformanceSummary, error) {
 	us.mu.RLock()
 	defer us.mu.RUnlock()
 
 	if err := validateFilterColumns(filters); err != nil {
 		return PerformanceSummary{}, err
 	}
-	query := us.db.Model(&UsageRecord{}).
+	query := us.db.WithContext(ctx).Model(&UsageRecord{}).
 		Select("latency_ms", "ttft_ms", "output_tokens", "streamed").
 		Where("status = ?", "success").
 		Scopes(
@@ -718,25 +719,25 @@ func percentileFloat(sorted []float64, p float64) float64 {
 
 // DeleteOlderThan deletes records older than the specified date, together
 // with the daily aggregates derived from them so both views stay consistent.
-func (us *UsageStore) DeleteOlderThan(cutoffDate time.Time) (int64, error) {
+func (us *UsageStore) DeleteOlderThan(ctx context.Context, cutoffDate time.Time) (int64, error) {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 
-	result := us.db.Where("timestamp < ?", cutoffDate).Delete(&UsageRecord{})
+	result := us.db.WithContext(ctx).Where("timestamp < ?", cutoffDate).Delete(&UsageRecord{})
 	if result.Error == nil {
 		// Include the boundary day: its aggregate now over-counts deleted
 		// records and will be rebuilt from the remaining raw rows on the
 		// next query.
-		us.db.Where("date <= ?", cutoffDate.UTC().Format(dailyDateLayout)).Delete(&UsageDailyRecord{})
+		us.db.WithContext(ctx).Where("date <= ?", cutoffDate.UTC().Format(dailyDateLayout)).Delete(&UsageDailyRecord{})
 	}
 	return result.RowsAffected, result.Error
 }
 
 // AggregateToDaily (re)builds the usage_daily rows for the UTC day containing
 // the given time. It returns the number of aggregate rows written.
-func (us *UsageStore) AggregateToDaily(date time.Time) (int64, error) {
+func (us *UsageStore) AggregateToDaily(ctx context.Context, date time.Time) (int64, error) {
 	day := utcDayStart(date)
-	return us.aggregateDay(day.Format(dailyDateLayout), day)
+	return us.aggregateDay(ctx, day.Format(dailyDateLayout), day)
 }
 
 // Helper functions

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"maps"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 // SQL, so an unknown key must be refused rather than reaching the driver.
 func TestUsageFilterColumnValidation(t *testing.T) {
 	store := newUsageStoreForTest(t)
+	ctx := context.Background()
 	seedUsageRecords(t, store, 2)
 
 	start := time.Now().Add(-72 * time.Hour)
@@ -22,13 +24,13 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 	t.Run("accepts known columns", func(t *testing.T) {
 		ok := map[string]string{"provider_uuid": "prov-a", "model": "model-x", "user_id": "admin"}
 
-		if _, _, err := store.GetRecords(start, end, ok, 10, 0); err != nil {
+		if _, _, err := store.GetRecords(ctx, start, end, ok, 10, 0); err != nil {
 			t.Errorf("GetRecords: %v", err)
 		}
-		if _, err := store.GetTimeSeries("hour", start, end, ok); err != nil {
+		if _, err := store.GetTimeSeries(ctx, "hour", start, end, ok); err != nil {
 			t.Errorf("GetTimeSeries: %v", err)
 		}
-		if _, err := store.GetPerformanceSummary(start, end, ok); err != nil {
+		if _, err := store.GetPerformanceSummary(ctx, start, end, ok); err != nil {
 			t.Errorf("GetPerformanceSummary: %v", err)
 		}
 	})
@@ -36,15 +38,15 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 	t.Run("rejects an unknown column", func(t *testing.T) {
 		bad := map[string]string{"provider_uuid": "prov-a", "not_a_column": "x"}
 
-		if _, _, err := store.GetRecords(start, end, bad, 10, 0); err == nil {
+		if _, _, err := store.GetRecords(ctx, start, end, bad, 10, 0); err == nil {
 			t.Error("GetRecords accepted an unknown filter column")
 		} else if !strings.Contains(err.Error(), "not_a_column") {
 			t.Errorf("GetRecords error = %v, want it to name the column", err)
 		}
-		if _, err := store.GetTimeSeries("hour", start, end, bad); err == nil {
+		if _, err := store.GetTimeSeries(ctx, "hour", start, end, bad); err == nil {
 			t.Error("GetTimeSeries accepted an unknown filter column")
 		}
-		if _, err := store.GetPerformanceSummary(start, end, bad); err == nil {
+		if _, err := store.GetPerformanceSummary(ctx, start, end, bad); err == nil {
 			t.Error("GetPerformanceSummary accepted an unknown filter column")
 		}
 	})
@@ -53,7 +55,7 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 	// interpolated. It has to be refused before it reaches the driver.
 	t.Run("rejects a key carrying SQL", func(t *testing.T) {
 		injected := map[string]string{"1=1 OR user_id": "admin"}
-		if _, _, err := store.GetRecords(start, end, injected, 10, 0); err == nil {
+		if _, _, err := store.GetRecords(ctx, start, end, injected, 10, 0); err == nil {
 			t.Error("GetRecords accepted a filter key carrying SQL")
 		}
 	})
@@ -62,18 +64,18 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 	// result set -- for user_id, into another user's records. The narrowing
 	// this protects is real: filtering by user_id returns strictly fewer rows.
 	t.Run("a typo'd key errors instead of widening the result", func(t *testing.T) {
-		scoped, _, err := store.GetRecords(start, end, map[string]string{"user_id": "admin"}, 1000, 0)
+		scoped, _, err := store.GetRecords(ctx, start, end, map[string]string{"user_id": "admin"}, 1000, 0)
 		if err != nil {
 			t.Fatalf("GetRecords: %v", err)
 		}
-		unscoped, _, err := store.GetRecords(start, end, nil, 1000, 0)
+		unscoped, _, err := store.GetRecords(ctx, start, end, nil, 1000, 0)
 		if err != nil {
 			t.Fatalf("GetRecords: %v", err)
 		}
 		if len(scoped) >= len(unscoped) {
 			t.Fatalf("seed is not discriminating: scoped=%d unscoped=%d", len(scoped), len(unscoped))
 		}
-		if _, _, err := store.GetRecords(start, end, map[string]string{"user_idd": "admin"}, 1000, 0); err == nil {
+		if _, _, err := store.GetRecords(ctx, start, end, map[string]string{"user_idd": "admin"}, 1000, 0); err == nil {
 			t.Errorf("a typo'd user_id key was accepted; it would have returned all %d rows", len(unscoped))
 		}
 	})
@@ -83,6 +85,7 @@ func TestUsageFilterColumnValidation(t *testing.T) {
 // through shared scopes did not change what they return.
 func TestUsageFilterScopesPreserveResults(t *testing.T) {
 	store := newUsageStoreForTest(t)
+	ctx := context.Background()
 	seedUsageRecords(t, store, 3)
 
 	start := time.Now().Add(-96 * time.Hour)
@@ -90,7 +93,7 @@ func TestUsageFilterScopesPreserveResults(t *testing.T) {
 	filters := map[string]string{"provider_uuid": "prov-a", "user_id": "admin"}
 
 	t.Run("GetRecords honours every filter", func(t *testing.T) {
-		records, total, err := store.GetRecords(start, end, filters, 1000, 0)
+		records, total, err := store.GetRecords(ctx, start, end, filters, 1000, 0)
 		if err != nil {
 			t.Fatalf("GetRecords: %v", err)
 		}
@@ -108,7 +111,7 @@ func TestUsageFilterScopesPreserveResults(t *testing.T) {
 	})
 
 	t.Run("stats filters match the map form", func(t *testing.T) {
-		viaStruct, err := store.GetAggregatedStats(UsageStatsQuery{
+		viaStruct, err := store.GetAggregatedStats(ctx, UsageStatsQuery{
 			GroupBy:   "model",
 			StartTime: start,
 			EndTime:   end,
@@ -119,7 +122,7 @@ func TestUsageFilterScopesPreserveResults(t *testing.T) {
 			t.Fatalf("GetAggregatedStats: %v", err)
 		}
 
-		records, _, err := store.GetRecords(start, end, filters, 100000, 0)
+		records, _, err := store.GetRecords(ctx, start, end, filters, 100000, 0)
 		if err != nil {
 			t.Fatalf("GetRecords: %v", err)
 		}
@@ -144,7 +147,7 @@ func TestUsageFilterScopesPreserveResults(t *testing.T) {
 			"user_id": "admin", "status": "success", "scenario": "default",
 		}
 		render := func() string {
-			return store.db.Session(&gorm.Session{DryRun: true}).
+			return store.db.WithContext(ctx).Session(&gorm.Session{DryRun: true}).
 				Model(&UsageRecord{}).
 				Scopes(withinTimeRange(start, end), withColumnFilters(many)).
 				Find(&[]UsageRecord{}).Statement.SQL.String()

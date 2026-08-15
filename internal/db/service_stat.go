@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -66,12 +67,12 @@ func (ss *StatsStore) ServiceKey(provider, model string) string {
 }
 
 // Get returns stats for a specific provider/model combination.
-func (ss *StatsStore) Get(provider, model string) (loadbalance.ServiceStats, bool) {
+func (ss *StatsStore) Get(ctx context.Context, provider, model string) (loadbalance.ServiceStats, bool) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
 	var record ServiceStatsRecord
-	err := ss.db.Where("provider = ? AND model = ?", provider, model).
+	err := ss.db.WithContext(ctx).Where("provider = ? AND model = ?", provider, model).
 		First(&record).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -85,7 +86,7 @@ func (ss *StatsStore) Get(provider, model string) (loadbalance.ServiceStats, boo
 }
 
 // UpdateFromService stores the current stats from a service into the store.
-func (ss *StatsStore) UpdateFromService(service *loadbalance.Service) error {
+func (ss *StatsStore) UpdateFromService(ctx context.Context, service *loadbalance.Service) error {
 	record := buildStatsRecordFromService(service)
 	if record == nil {
 		return nil
@@ -94,7 +95,7 @@ func (ss *StatsStore) UpdateFromService(service *loadbalance.Service) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
-	return ss.db.Save(record).Error
+	return ss.db.WithContext(ctx).Save(record).Error
 }
 
 // buildStatsRecordFromService builds the ServiceStatsRecord UpdateFromService
@@ -142,12 +143,12 @@ func buildStatsRecordFromService(service *loadbalance.Service) *ServiceStatsReco
 }
 
 // HydrateRules injects stored stats into the provided rules and initializes missing entries.
-func (ss *StatsStore) HydrateRules(rules []typ.Rule) error {
+func (ss *StatsStore) HydrateRules(ctx context.Context, rules []typ.Rule) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
 	var records []ServiceStatsRecord
-	if err := ss.db.Find(&records).Error; err != nil {
+	if err := ss.db.WithContext(ctx).Find(&records).Error; err != nil {
 		return err
 	}
 
@@ -185,7 +186,7 @@ func (ss *StatsStore) HydrateRules(rules []typ.Rule) error {
 	}
 
 	if len(missing) > 0 {
-		if err := ss.db.CreateInBatches(missing, 100).Error; err != nil {
+		if err := ss.db.WithContext(ctx).CreateInBatches(missing, 100).Error; err != nil {
 			return err
 		}
 	}
@@ -194,20 +195,20 @@ func (ss *StatsStore) HydrateRules(rules []typ.Rule) error {
 }
 
 // ClearAll removes all persisted stats.
-func (ss *StatsStore) ClearAll() error {
+func (ss *StatsStore) ClearAll(ctx context.Context) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
-	return ss.db.Exec("DELETE FROM service_stats").Error
+	return ss.db.WithContext(ctx).Exec("DELETE FROM service_stats").Error
 }
 
 // ClearService removes persisted stats for a single provider:model. No error
 // if no rows matched (the service simply had no recorded stats).
-func (ss *StatsStore) ClearService(provider, model string) error {
+func (ss *StatsStore) ClearService(ctx context.Context, provider, model string) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
-	return ss.db.Where("provider = ? AND model = ?", provider, model).
+	return ss.db.WithContext(ctx).Where("provider = ? AND model = ?", provider, model).
 		Delete(&ServiceStatsRecord{}).Error
 }
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -455,9 +456,13 @@ func (c *Config) Save() error {
 }
 
 // RefreshStatsFromStore hydrates service stats from the SQLite store.
+//
+// Called from process startup and config hot-reload, neither of which is
+// serving an HTTP request, so there is no request context to thread through
+// -- context.Background() is the correct value here, not a substitute for one.
 func (c *Config) RefreshStatsFromStore() error {
 	if c.statsStore != nil {
-		if err := c.statsStore.HydrateRules(c.Rules); err != nil {
+		if err := c.statsStore.HydrateRules(context.Background(), c.Rules); err != nil {
 			return err
 		}
 	}
