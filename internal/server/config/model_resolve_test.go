@@ -59,7 +59,7 @@ func TestResolveProviderModels_CacheHit_NotRefetched(t *testing.T) {
 	cfg := newResolveTestConfig(t)
 	p := codexResolveProvider()
 	require.NoError(t, cfg.AddProvider(p))
-	require.NoError(t, cfg.GetModelManager().SaveModels(p, []string{"cached-only"}, db.ModelSourceAPI))
+	require.NoError(t, cfg.GetModelManager().SaveModels(context.Background(), p, []string{"cached-only"}, db.ModelSourceAPI))
 
 	got, err := cfg.ResolveProviderModels(false, false, p.UUID)
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestResolveProviderModels_ForceRefresh_BypassesCache(t *testing.T) {
 	cfg := newResolveTestConfig(t)
 	p := codexResolveProvider()
 	require.NoError(t, cfg.AddProvider(p))
-	require.NoError(t, cfg.GetModelManager().SaveModels(p, []string{"stale-cached"}, db.ModelSourceAPI))
+	require.NoError(t, cfg.GetModelManager().SaveModels(context.Background(), p, []string{"stale-cached"}, db.ModelSourceAPI))
 
 	got, err := cfg.ResolveProviderModels(true, false, p.UUID)
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestResolveProviderModels_ClaudeCode_BannedByDefault(t *testing.T) {
 	assert.Equal(t, ModelListSourceTemplate, got.Source, "banned fetch falls back to template")
 
 	// The ban must be recorded for triage — not just silently swallowed.
-	lastErr, exists := cfg.GetModelManager().GetFetchFailure(p.UUID)
+	lastErr, exists := cfg.GetModelManager().GetFetchFailure(context.Background(), p.UUID)
 	require.True(t, exists, "expected a recorded fetch failure for the banned Claude Code fetch")
 	assert.Contains(t, lastErr, "Claude Code upstream")
 }
@@ -151,6 +151,6 @@ func TestResolveProviderModels_ClaudeCode_ForceLiftsBan(t *testing.T) {
 	assert.Equal(t, ModelListSourceAPI, got.Source)
 	assert.Equal(t, []string{"claude-upstream"}, got.Models)
 
-	_, exists := cfg.GetModelManager().GetFetchFailure(p.UUID)
+	_, exists := cfg.GetModelManager().GetFetchFailure(context.Background(), p.UUID)
 	assert.False(t, exists)
 }

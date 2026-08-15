@@ -337,7 +337,7 @@ func TestProviderUseCase_RefreshModels_BypassesCache(t *testing.T) {
 	// only the latter proves the force-refresh path actually bypasses cache and
 	// re-resolves through the template fallback.
 	const poison = "POISONED-CACHE-ONLY"
-	if err := cfg.GetModelManager().SaveModels(p, []string{poison}, db.ModelSourceAPI); err != nil {
+	if err := cfg.GetModelManager().SaveModels(context.Background(), p, []string{poison}, db.ModelSourceAPI); err != nil {
 		t.Fatalf("SaveModels: %v", err)
 	}
 

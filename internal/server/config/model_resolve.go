@@ -52,6 +52,10 @@ type ResolvedModels struct {
 // list. This method always fetches on a cache miss — callers that must not
 // touch the network (e.g. TUI render) should read the cache/template directly.
 func (c *Config) ResolveProviderModels(forceRefresh, forceUpstream bool, uid string) (ResolvedModels, error) {
+	// Config's own API is not (yet) request-context-aware -- see .design/db.md
+	// on internal/db's ctx propagation. context.Background() here is the same
+	// choice every other Config method makes.
+	ctx := context.Background()
 	provider, provErr := c.GetProviderByUUID(uid)
 
 	finalize := func(models []string, src ModelListSource) ResolvedModels {
@@ -59,7 +63,7 @@ func (c *Config) ResolveProviderModels(forceRefresh, forceUpstream bool, uid str
 			SortProviderModels(provider, models)
 		}
 		lastUpdated := ""
-		if _, updated, exists := c.modelManager.GetProviderInfo(uid); exists {
+		if _, updated, exists := c.modelManager.GetProviderInfo(ctx, uid); exists {
 			lastUpdated = updated
 		}
 		return ResolvedModels{Models: models, Source: src, LastUpdated: lastUpdated}
@@ -68,7 +72,7 @@ func (c *Config) ResolveProviderModels(forceRefresh, forceUpstream bool, uid str
 	// A forced upstream fetch re-queries the real upstream by definition, so it
 	// bypasses the DB cache. (forceRefresh alone also bypasses it.)
 	if !forceRefresh && !forceUpstream {
-		if cached := c.modelManager.GetModels(uid); len(cached) > 0 {
+		if cached := c.modelManager.GetModels(ctx, uid); len(cached) > 0 {
 			return finalize(cached, ModelListSourceCache), nil
 		}
 	}
@@ -88,7 +92,7 @@ func (c *Config) ResolveProviderModels(forceRefresh, forceUpstream bool, uid str
 
 	// Step 3: Upstream API (persisted on success).
 	if err := c.fetchAndSaveAPIModels(provider, forceUpstream); err == nil {
-		if fresh := c.modelManager.GetModels(uid); len(fresh) > 0 {
+		if fresh := c.modelManager.GetModels(ctx, uid); len(fresh) > 0 {
 			return finalize(fresh, ModelListSourceAPI), nil
 		}
 	}
@@ -110,10 +114,10 @@ func (c *Config) ResolveProviderModels(forceRefresh, forceUpstream bool, uid str
 // when the endpoint is unsupported or the call fails; the caller falls back to
 // the template. It never persists template data.
 func (c *Config) fetchAndSaveAPIModels(provider *typ.Provider, forceUpstream bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	fetchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	lister, err := c.newModelLister(ctx, provider)
+	lister, err := c.newModelLister(fetchCtx, provider)
 	if err != nil || lister == nil {
 		logrus.Errorf("Failed to create client for provider %s: %v", provider.Name, err)
 		return fmt.Errorf("failed to create client for provider %s: %w", provider.Name, err)
@@ -125,12 +129,19 @@ func (c *Config) fetchAndSaveAPIModels(provider *typ.Provider, forceUpstream boo
 	if provider.IsClaudeCodeProvider() && !forceUpstream {
 		apiErr = errors.New("model listing from Claude Code upstream is disabled")
 	} else {
-		result, apiErr = lister.ListModels(ctx)
+		result, apiErr = lister.ListModels(fetchCtx)
 	}
+
+	// Deliberately context.Background() below, not fetchCtx: these persist a
+	// diagnostic/cache record of what just happened to the upstream call, and
+	// must survive it even when the reason we're persisting IS that fetchCtx's
+	// own 30s deadline just expired. Reusing fetchCtx here would make gorm
+	// refuse the write in exactly the timeout case this is meant to record.
+	persistCtx := context.Background()
 
 	if apiErr != nil {
 		// Unsupported endpoints are expected but still useful during triage.
-		if persistErr := c.modelManager.SaveFetchFailure(provider, apiErr.Error(), modelListRaw(result)); persistErr != nil {
+		if persistErr := c.modelManager.SaveFetchFailure(persistCtx, provider, apiErr.Error(), modelListRaw(result)); persistErr != nil {
 			logrus.Warnf("Failed to persist model fetch failure for %s: %v", provider.Name, persistErr)
 		}
 
@@ -141,7 +152,7 @@ func (c *Config) fetchAndSaveAPIModels(provider *typ.Provider, forceUpstream boo
 
 	if result == nil || len(result.Models) == 0 {
 		errMsg := fmt.Sprintf("provider %s returned no models", provider.Name)
-		if persistErr := c.modelManager.SaveFetchFailure(provider, errMsg, modelListRaw(result)); persistErr != nil {
+		if persistErr := c.modelManager.SaveFetchFailure(persistCtx, provider, errMsg, modelListRaw(result)); persistErr != nil {
 			logrus.Warnf("Failed to persist model fetch failure for %s: %v", provider.Name, persistErr)
 		}
 		return errors.New(errMsg)
@@ -154,7 +165,7 @@ func (c *Config) fetchAndSaveAPIModels(provider *typ.Provider, forceUpstream boo
 	// boundary so cached order is irrelevant. Raw is the genuine upstream
 	// payload, marshalled for persistence/triage.
 	SortProviderModels(provider, result.Models)
-	return c.modelManager.SaveModelsWithRaw(provider, result.Models, db.ModelSourceAPI, marshalRaw(result.Raw))
+	return c.modelManager.SaveModelsWithRaw(persistCtx, provider, result.Models, db.ModelSourceAPI, marshalRaw(result.Raw))
 }
 
 func modelListRaw(result *client.ModelListResult) json.RawMessage {
@@ -207,7 +218,7 @@ func (c *Config) FetchAndSaveProviderModels(uid string) error {
 		if provider.VModelDetail != nil {
 			models = provider.VModelDetail.Models
 		}
-		return c.modelManager.SaveModels(provider, models, db.ModelSourceAPI)
+		return c.modelManager.SaveModels(context.Background(), provider, models, db.ModelSourceAPI)
 	}
 
 	apiErr := c.fetchAndSaveAPIModels(provider, false)

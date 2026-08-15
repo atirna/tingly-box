@@ -140,7 +140,7 @@ func TestGetProviderModelsByUUID_ClaudeCode_NonEmptyCache_NotPollutedByTemplate(
 	// the embedded template (e.g. the model was retired upstream). The handler
 	// must trust upstream and not resurrect the template-only model.
 	upstream := []string{"claude-sonnet-4-5"}
-	require.NoError(t, cfg.GetModelManager().SaveModels(provider, upstream, db.ModelSourceAPI))
+	require.NoError(t, cfg.GetModelManager().SaveModels(context.Background(), provider, upstream, db.ModelSourceAPI))
 
 	resp := getProviderModels(t, cfg, provider.UUID)
 
@@ -161,7 +161,7 @@ func TestGetProviderModelsByUUID_ClaudeCode_FullCache_NoMergeNeeded(t *testing.T
 
 	templateModels, err := cfg.GetTemplateManager().GetEmbeddedModelsForProvider(provider)
 	require.NoError(t, err)
-	require.NoError(t, cfg.GetModelManager().SaveModels(provider, templateModels, db.ModelSourceAPI))
+	require.NoError(t, cfg.GetModelManager().SaveModels(context.Background(), provider, templateModels, db.ModelSourceAPI))
 
 	resp := getProviderModels(t, cfg, provider.UUID)
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -299,7 +300,7 @@ func (c *Config) DeleteProvider(uuid string) error {
 
 	// Delete the associated model file
 	if c.modelManager != nil {
-		_ = c.modelManager.RemoveProvider(uuid)
+		_ = c.modelManager.RemoveProvider(context.Background(), uuid)
 	}
 
 	// Remove services referencing this provider from all rules before notifying hooks

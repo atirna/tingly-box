@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"time"
@@ -45,25 +46,26 @@ func TestModelStore_ReadsLegacyModelRows(t *testing.T) {
 		t.Fatalf("NewModelStore over legacy db: %v", err)
 	}
 	defer store.Close()
+	ctx := context.Background()
 
 	t.Run("GetModels decodes a legacy list", func(t *testing.T) {
-		got := store.GetModels("has-models", 0)
+		got := store.GetModels(ctx, "has-models", 0)
 		if len(got) != 2 || got[0] != "gpt-4" || got[1] != "gpt-4o" {
 			t.Errorf("GetModels = %v, want [gpt-4 gpt-4o]", got)
 		}
 	})
 
 	t.Run("GetModels on a never-fetched row is empty", func(t *testing.T) {
-		if got := store.GetModels("never-fetched", 0); len(got) != 0 {
+		if got := store.GetModels(ctx, "never-fetched", 0); len(got) != 0 {
 			t.Errorf("GetModels = %v, want empty", got)
 		}
 	})
 
 	t.Run("GetModelCount", func(t *testing.T) {
-		if got := store.GetModelCount("has-models"); got != 2 {
+		if got := store.GetModelCount(ctx, "has-models"); got != 2 {
 			t.Errorf("GetModelCount = %d, want 2", got)
 		}
-		if got := store.GetModelCount("empty-list"); got != 0 {
+		if got := store.GetModelCount(ctx, "empty-list"); got != 0 {
 			t.Errorf("GetModelCount(empty-list) = %d, want 0", got)
 		}
 	})
@@ -71,7 +73,7 @@ func TestModelStore_ReadsLegacyModelRows(t *testing.T) {
 	// The predicate has to keep the legacy "" row out while letting the
 	// legacy "[]" and "[...]" rows in -- the behaviour it had pre-migration.
 	t.Run("GetAllProviders excludes never-fetched", func(t *testing.T) {
-		got := store.GetAllProviders()
+		got := store.GetAllProviders(ctx)
 		if !slices.Contains(got, "has-models") {
 			t.Errorf("GetAllProviders = %v, want it to contain has-models", got)
 		}
@@ -84,19 +86,19 @@ func TestModelStore_ReadsLegacyModelRows(t *testing.T) {
 	})
 
 	t.Run("HasModels", func(t *testing.T) {
-		if !store.HasModels("has-models") {
+		if !store.HasModels(ctx, "has-models") {
 			t.Error("HasModels(has-models) = false, want true")
 		}
-		if store.HasModels("never-fetched") {
+		if store.HasModels(ctx, "never-fetched") {
 			t.Error("HasModels(never-fetched) = true, want false")
 		}
 	})
 
 	t.Run("GetProviderInfo", func(t *testing.T) {
-		if _, _, ok := store.GetProviderInfo("has-models"); !ok {
+		if _, _, ok := store.GetProviderInfo(ctx, "has-models"); !ok {
 			t.Error("GetProviderInfo(has-models) not found, want found")
 		}
-		if _, _, ok := store.GetProviderInfo("never-fetched"); ok {
+		if _, _, ok := store.GetProviderInfo(ctx, "never-fetched"); ok {
 			t.Error("GetProviderInfo(never-fetched) found, want not found")
 		}
 	})
@@ -111,18 +113,19 @@ func TestModelStore_NewRowsMatchPredicate(t *testing.T) {
 		t.Fatalf("NewModelStore: %v", err)
 	}
 	defer store.Close()
+	ctx := context.Background()
 
 	withModels := &typ.Provider{UUID: "with", Name: "with", APIBase: "https://w"}
 	emptyList := &typ.Provider{UUID: "empty", Name: "empty", APIBase: "https://e"}
 	failedOnly := &typ.Provider{UUID: "failed", Name: "failed", APIBase: "https://f"}
 
-	if err := store.SaveModels(withModels, []string{"m1", "m2"}, ModelSourceAPI); err != nil {
+	if err := store.SaveModels(ctx, withModels, []string{"m1", "m2"}, ModelSourceAPI); err != nil {
 		t.Fatalf("SaveModels: %v", err)
 	}
-	if err := store.SaveModels(emptyList, []string{}, ModelSourceAPI); err != nil {
+	if err := store.SaveModels(ctx, emptyList, []string{}, ModelSourceAPI); err != nil {
 		t.Fatalf("SaveModels empty: %v", err)
 	}
-	if err := store.SaveFetchFailure(failedOnly, "boom", nil, time.Time{}); err != nil {
+	if err := store.SaveFetchFailure(ctx, failedOnly, "boom", nil, time.Time{}); err != nil {
 		t.Fatalf("SaveFetchFailure: %v", err)
 	}
 
@@ -155,7 +158,7 @@ func TestModelStore_NewRowsMatchPredicate(t *testing.T) {
 	})
 
 	t.Run("GetAllProviders", func(t *testing.T) {
-		got := store.GetAllProviders()
+		got := store.GetAllProviders(ctx)
 		if !slices.Contains(got, "with") {
 			t.Errorf("GetAllProviders = %v, want it to contain with", got)
 		}
@@ -168,37 +171,37 @@ func TestModelStore_NewRowsMatchPredicate(t *testing.T) {
 	})
 
 	t.Run("HasModels", func(t *testing.T) {
-		if !store.HasModels("with") {
+		if !store.HasModels(ctx, "with") {
 			t.Error("HasModels(with) = false, want true")
 		}
-		if store.HasModels("failed") {
+		if store.HasModels(ctx, "failed") {
 			t.Error("HasModels(failed) = true, want false")
 		}
 	})
 
 	// A failure-only write must not clobber a previously fetched list.
 	t.Run("failure-only write preserves the stale list", func(t *testing.T) {
-		if err := store.SaveFetchFailure(withModels, "later boom", nil, time.Time{}); err != nil {
+		if err := store.SaveFetchFailure(ctx, withModels, "later boom", nil, time.Time{}); err != nil {
 			t.Fatalf("SaveFetchFailure: %v", err)
 		}
-		got := store.GetModels("with", 0)
+		got := store.GetModels(ctx, "with", 0)
 		if len(got) != 2 || got[0] != "m1" {
 			t.Errorf("GetModels after failure = %v, want the stale [m1 m2]", got)
 		}
-		if lastErr, ok := store.GetFetchFailure("with"); !ok || lastErr != "later boom" {
+		if lastErr, ok := store.GetFetchFailure(ctx, "with"); !ok || lastErr != "later boom" {
 			t.Errorf("GetFetchFailure = %q,%v, want \"later boom\",true", lastErr, ok)
 		}
 	})
 
 	// And a later success must clear the error it left behind.
 	t.Run("success clears the recorded failure", func(t *testing.T) {
-		if err := store.SaveModels(withModels, []string{"m3"}, ModelSourceAPI); err != nil {
+		if err := store.SaveModels(ctx, withModels, []string{"m3"}, ModelSourceAPI); err != nil {
 			t.Fatalf("SaveModels: %v", err)
 		}
-		if lastErr, ok := store.GetFetchFailure("with"); ok {
+		if lastErr, ok := store.GetFetchFailure(ctx, "with"); ok {
 			t.Errorf("GetFetchFailure = %q, want cleared", lastErr)
 		}
-		if got := store.GetModels("with", 0); len(got) != 1 || got[0] != "m3" {
+		if got := store.GetModels(ctx, "with", 0); len(got) != 1 || got[0] != "m3" {
 			t.Errorf("GetModels = %v, want [m3]", got)
 		}
 	})

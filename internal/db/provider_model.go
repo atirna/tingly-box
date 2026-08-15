@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,32 +76,32 @@ func newModelStore(conn storeConn) (*ModelStore, error) {
 }
 
 // SaveModels saves models for a provider by UUID
-func (ms *ModelStore) SaveModels(provider *typ.Provider, models []string, source ModelSource) error {
-	return ms.saveModels(provider, models, source, nil, nil, time.Time{})
+func (ms *ModelStore) SaveModels(ctx context.Context, provider *typ.Provider, models []string, source ModelSource) error {
+	return ms.saveModels(ctx, provider, models, source, nil, nil, time.Time{})
 }
 
 // SaveModelsWithRaw saves a successful real upstream fetch: the model list plus
 // the raw payload, and clears any prior error fields. source should be
 // ModelSourceAPI. A nil raw leaves RawResponse unset.
-func (ms *ModelStore) SaveModelsWithRaw(provider *typ.Provider, models []string, source ModelSource, raw json.RawMessage) error {
-	return ms.saveModels(provider, models, source, raw, nil, time.Time{})
+func (ms *ModelStore) SaveModelsWithRaw(ctx context.Context, provider *typ.Provider, models []string, source ModelSource, raw json.RawMessage) error {
+	return ms.saveModels(ctx, provider, models, source, raw, nil, time.Time{})
 }
 
 // SaveFetchFailure records a fetch error for a provider without overwriting a
 // pre-existing Models list (a stale list from a prior successful fetch is more
 // useful than empty). lastErr is the error string; whenAt is the capture time
 // (pass time.Time{} to use now). A nil/empty lastErr clears nothing.
-func (ms *ModelStore) SaveFetchFailure(provider *typ.Provider, lastErr string, raw json.RawMessage, whenAt time.Time) error {
+func (ms *ModelStore) SaveFetchFailure(ctx context.Context, provider *typ.Provider, lastErr string, raw json.RawMessage, whenAt time.Time) error {
 	if lastErr == "" {
 		return nil
 	}
-	return ms.saveModels(provider, nil, "", raw, &lastErr, whenAt)
+	return ms.saveModels(ctx, provider, nil, "", raw, &lastErr, whenAt)
 }
 
 // saveModels is the single write path. It upserts the provider's row. When
 // models is nil (a failure-only write), the existing Models/Source values are
 // preserved and only the error/raw fields are touched.
-func (ms *ModelStore) saveModels(provider *typ.Provider, models []string, source ModelSource, raw json.RawMessage, lastErr *string, whenAt time.Time) error {
+func (ms *ModelStore) saveModels(ctx context.Context, provider *typ.Provider, models []string, source ModelSource, raw json.RawMessage, lastErr *string, whenAt time.Time) error {
 	if provider == nil {
 		return errors.New("provider cannot be nil")
 	}
@@ -156,21 +157,21 @@ func (ms *ModelStore) saveModels(provider *typ.Provider, models []string, source
 	}
 
 	var existing ProviderModelRecord
-	err := ms.db.Where("provider_uuid = ?", provider.UUID).First(&existing).Error
+	err := ms.db.WithContext(ctx).Where("provider_uuid = ?", provider.UUID).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		record := ProviderModelRecord{
 			ProviderUUID: provider.UUID,
 			CreatedAt:    now,
 		}
 		applyWrite(&record)
-		if err := ms.db.Create(&record).Error; err != nil {
+		if err := ms.db.WithContext(ctx).Create(&record).Error; err != nil {
 			return fmt.Errorf("failed to create model record: %w", err)
 		}
 	} else if err != nil {
 		return fmt.Errorf("failed to query existing record: %w", err)
 	} else {
 		applyWrite(&existing)
-		if err := ms.db.Save(&existing).Error; err != nil {
+		if err := ms.db.WithContext(ctx).Save(&existing).Error; err != nil {
 			return fmt.Errorf("failed to update model record: %w", err)
 		}
 	}
@@ -200,12 +201,12 @@ func hasStoredModelList(db *gorm.DB) *gorm.DB {
 // GetModels returns models for a provider by UUID.
 // All records use the same TTL (1 hour), regardless of source.
 // If multiple records exist (api + template), the most recently updated is returned.
-func (ms *ModelStore) GetModels(providerUUID string, ttl time.Duration) []string {
+func (ms *ModelStore) GetModels(ctx context.Context, providerUUID string, ttl time.Duration) []string {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var record ProviderModelRecord
-	if err := ms.db.Where("provider_uuid = ?", providerUUID).
+	if err := ms.db.WithContext(ctx).Where("provider_uuid = ?", providerUUID).
 		Order("last_updated DESC").
 		First(&record).Error; err != nil {
 		return []string{}
@@ -222,12 +223,12 @@ func (ms *ModelStore) GetModels(providerUUID string, ttl time.Duration) []string
 }
 
 // GetAllProviders returns all provider UUIDs that have models
-func (ms *ModelStore) GetAllProviders() []string {
+func (ms *ModelStore) GetAllProviders(ctx context.Context) []string {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var records []ProviderModelRecord
-	if err := ms.db.Scopes(hasStoredModelList).Find(&records).Error; err != nil {
+	if err := ms.db.WithContext(ctx).Scopes(hasStoredModelList).Find(&records).Error; err != nil {
 		return []string{}
 	}
 
@@ -240,12 +241,12 @@ func (ms *ModelStore) GetAllProviders() []string {
 }
 
 // HasModels checks if a provider has models
-func (ms *ModelStore) HasModels(providerUUID string) bool {
+func (ms *ModelStore) HasModels(ctx context.Context, providerUUID string) bool {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var count int64
-	if err := ms.db.Model(&ProviderModelRecord{}).
+	if err := ms.db.WithContext(ctx).Model(&ProviderModelRecord{}).
 		Where("provider_uuid = ?", providerUUID).
 		Scopes(hasStoredModelList).
 		Count(&count).Error; err != nil {
@@ -256,20 +257,20 @@ func (ms *ModelStore) HasModels(providerUUID string) bool {
 }
 
 // RemoveProvider removes all models for a provider by UUID
-func (ms *ModelStore) RemoveProvider(providerUUID string) error {
+func (ms *ModelStore) RemoveProvider(ctx context.Context, providerUUID string) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
-	return ms.db.Where("provider_uuid = ?", providerUUID).Delete(&ProviderModelRecord{}).Error
+	return ms.db.WithContext(ctx).Where("provider_uuid = ?", providerUUID).Delete(&ProviderModelRecord{}).Error
 }
 
 // GetProviderInfo returns basic info about a provider (apiBase, lastUpdated, exists)
-func (ms *ModelStore) GetProviderInfo(providerUUID string) (apiBase string, lastUpdated string, exists bool) {
+func (ms *ModelStore) GetProviderInfo(ctx context.Context, providerUUID string) (apiBase string, lastUpdated string, exists bool) {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var record ProviderModelRecord
-	err := ms.db.Where("provider_uuid = ?", providerUUID).First(&record).Error
+	err := ms.db.WithContext(ctx).Where("provider_uuid = ?", providerUUID).First(&record).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) || err != nil {
 		return "", "", false
@@ -288,12 +289,12 @@ func (ms *ModelStore) GetProviderInfo(providerUUID string) (apiBase string, last
 
 // GetModelsBySource returns models for a provider by UUID, filtered by source.
 // Records are only returned if they match the source AND are within the TTL.
-func (ms *ModelStore) GetModelsBySource(providerUUID string, source ModelSource, ttl time.Duration) []string {
+func (ms *ModelStore) GetModelsBySource(ctx context.Context, providerUUID string, source ModelSource, ttl time.Duration) []string {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var record ProviderModelRecord
-	if err := ms.db.Where("provider_uuid = ? AND source = ?", providerUUID, source).First(&record).Error; err != nil {
+	if err := ms.db.WithContext(ctx).Where("provider_uuid = ? AND source = ?", providerUUID, source).First(&record).Error; err != nil {
 		return []string{}
 	}
 
@@ -308,12 +309,12 @@ func (ms *ModelStore) GetModelsBySource(providerUUID string, source ModelSource,
 }
 
 // GetModelCount returns the number of models for a provider
-func (ms *ModelStore) GetModelCount(providerUUID string) int {
+func (ms *ModelStore) GetModelCount(ctx context.Context, providerUUID string) int {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var record ProviderModelRecord
-	if err := ms.db.Where("provider_uuid = ?", providerUUID).First(&record).Error; err != nil {
+	if err := ms.db.WithContext(ctx).Where("provider_uuid = ?", providerUUID).First(&record).Error; err != nil {
 		return 0
 	}
 
@@ -321,12 +322,12 @@ func (ms *ModelStore) GetModelCount(providerUUID string) int {
 }
 
 // GetAllModelRecords returns all provider records (with metadata)
-func (ms *ModelStore) GetAllModelRecords() []ProviderModelRecord {
+func (ms *ModelStore) GetAllModelRecords(ctx context.Context) []ProviderModelRecord {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var records []ProviderModelRecord
-	if err := ms.db.Find(&records).Error; err != nil {
+	if err := ms.db.WithContext(ctx).Find(&records).Error; err != nil {
 		return []ProviderModelRecord{}
 	}
 
@@ -334,12 +335,12 @@ func (ms *ModelStore) GetAllModelRecords() []ProviderModelRecord {
 }
 
 // GetRawResponse returns the cached raw upstream payload for a provider, or "".
-func (ms *ModelStore) GetRawResponse(providerUUID string) string {
+func (ms *ModelStore) GetRawResponse(ctx context.Context, providerUUID string) string {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var record ProviderModelRecord
-	if err := ms.db.Where("provider_uuid = ?", providerUUID).First(&record).Error; err != nil {
+	if err := ms.db.WithContext(ctx).Where("provider_uuid = ?", providerUUID).First(&record).Error; err != nil {
 		return ""
 	}
 	if record.RawResponse == nil {
@@ -350,12 +351,12 @@ func (ms *ModelStore) GetRawResponse(providerUUID string) string {
 
 // GetFetchFailure returns the last recorded fetch error for a provider, if any.
 // Useful for triage and for tests asserting that a fetch was blocked/failed.
-func (ms *ModelStore) GetFetchFailure(providerUUID string) (lastErr string, exists bool) {
+func (ms *ModelStore) GetFetchFailure(ctx context.Context, providerUUID string) (lastErr string, exists bool) {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
 
 	var record ProviderModelRecord
-	if err := ms.db.Where("provider_uuid = ?", providerUUID).First(&record).Error; err != nil {
+	if err := ms.db.WithContext(ctx).Where("provider_uuid = ?", providerUUID).First(&record).Error; err != nil {
 		return "", false
 	}
 	if record.LastError == nil {

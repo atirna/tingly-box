@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,6 +29,7 @@ func setupTestStore(t *testing.T) *ModelStore {
 // TestGetModelsTemplateTTL tests that template-sourced models respect TTL
 func TestGetModelsTemplateTTL(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 
 	provider := &typ.Provider{
 		UUID:    "test-uuid",
@@ -37,11 +39,11 @@ func TestGetModelsTemplateTTL(t *testing.T) {
 	models := []string{"template-model-1", "template-model-2"}
 
 	// Save template models
-	err := store.SaveModels(provider, models, ModelSourceTemplate)
+	err := store.SaveModels(ctx, provider, models, ModelSourceTemplate)
 	require.NoError(t, err)
 
 	// Fresh template cache should return models
-	result := store.GetModels(provider.UUID, 24*time.Hour)
+	result := store.GetModels(ctx, provider.UUID, 24*time.Hour)
 	assert.Equal(t, models, result)
 
 	// Note: Can't test expiration without manual timestamp manipulation
@@ -51,6 +53,7 @@ func TestGetModelsTemplateTTL(t *testing.T) {
 // TestGetModelsAPITTL tests that API-sourced models respect TTL
 func TestGetModelsAPITTL(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 
 	provider := &typ.Provider{
 		UUID:    "test-uuid",
@@ -60,29 +63,31 @@ func TestGetModelsAPITTL(t *testing.T) {
 	models := []string{"api-model-1"}
 
 	// Save API models
-	err := store.SaveModels(provider, models, ModelSourceAPI)
+	err := store.SaveModels(ctx, provider, models, ModelSourceAPI)
 	require.NoError(t, err)
 
 	// Fresh API cache should return models
-	result := store.GetModels(provider.UUID, 1*time.Hour)
+	result := store.GetModels(ctx, provider.UUID, 1*time.Hour)
 	assert.Equal(t, models, result)
 
 	// Expired API cache should return empty
-	result = store.GetModels(provider.UUID, 1*time.Nanosecond)
+	result = store.GetModels(ctx, provider.UUID, 1*time.Nanosecond)
 	assert.Empty(t, result)
 }
 
 // TestGetModelsNoCache tests that no stored models returns empty
 func TestGetModelsNoCache(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 
-	result := store.GetModels("non-existent", 1*time.Hour)
+	result := store.GetModels(ctx, "non-existent", 1*time.Hour)
 	assert.Empty(t, result)
 }
 
 // TestSaveModelsOverwrite tests that saving new models overwrites existing
 func TestSaveModelsOverwrite(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 
 	provider := &typ.Provider{
 		UUID:    "test-uuid",
@@ -92,20 +97,20 @@ func TestSaveModelsOverwrite(t *testing.T) {
 
 	// Save initial models
 	models1 := []string{"model-1"}
-	err := store.SaveModels(provider, models1, ModelSourceAPI)
+	err := store.SaveModels(ctx, provider, models1, ModelSourceAPI)
 	require.NoError(t, err)
 
 	// Overwrite with new models
 	models2 := []string{"model-2", "model-3"}
-	err = store.SaveModels(provider, models2, ModelSourceTemplate)
+	err = store.SaveModels(ctx, provider, models2, ModelSourceTemplate)
 	require.NoError(t, err)
 
 	// Should get new models
-	result := store.GetModels(provider.UUID, 1*time.Hour)
+	result := store.GetModels(ctx, provider.UUID, 1*time.Hour)
 	assert.Equal(t, models2, result)
 
 	// Source should be updated
-	record := store.GetAllModelRecords()
+	record := store.GetAllModelRecords(ctx)
 	require.Len(t, record, 1)
 	assert.Equal(t, ModelSourceTemplate, record[0].Source)
 }
@@ -113,6 +118,7 @@ func TestSaveModelsOverwrite(t *testing.T) {
 // TestRemoveProviderModels tests removal of provider models
 func TestRemoveProviderModels(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 
 	provider := &typ.Provider{
 		UUID:    "test-uuid",
@@ -122,19 +128,19 @@ func TestRemoveProviderModels(t *testing.T) {
 	models := []string{"model-1"}
 
 	// Save models
-	err := store.SaveModels(provider, models, ModelSourceAPI)
+	err := store.SaveModels(ctx, provider, models, ModelSourceAPI)
 	require.NoError(t, err)
 
 	// Verify exists
-	result := store.GetModels(provider.UUID, 1*time.Hour)
+	result := store.GetModels(ctx, provider.UUID, 1*time.Hour)
 	assert.NotEmpty(t, result)
 
 	// Remove
-	err = store.RemoveProvider(provider.UUID)
+	err = store.RemoveProvider(ctx, provider.UUID)
 	require.NoError(t, err)
 
 	// Verify gone
-	result = store.GetModels(provider.UUID, 1*time.Hour)
+	result = store.GetModels(ctx, provider.UUID, 1*time.Hour)
 	assert.Empty(t, result)
 }
 
@@ -142,6 +148,7 @@ func TestRemoveProviderModels(t *testing.T) {
 // both the model list and the raw payload, and clears any prior error.
 func TestSaveModelsWithRaw(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 
 	provider := &typ.Provider{
 		UUID:    "raw-uuid",
@@ -150,18 +157,18 @@ func TestSaveModelsWithRaw(t *testing.T) {
 	}
 
 	// Seed a prior failure so we can verify SaveModelsWithRaw clears it.
-	require.NoError(t, store.SaveFetchFailure(provider, "boom", nil, time.Time{}))
+	require.NoError(t, store.SaveFetchFailure(ctx, provider, "boom", nil, time.Time{}))
 
 	models := []string{"m-1", "m-2"}
 	raw := []byte(`{"data":[{"id":"m-1"},{"id":"m-2"}]}`)
-	require.NoError(t, store.SaveModelsWithRaw(provider, models, ModelSourceAPI, raw))
+	require.NoError(t, store.SaveModelsWithRaw(ctx, provider, models, ModelSourceAPI, raw))
 
 	// Models + raw persisted.
-	assert.Equal(t, models, store.GetModels(provider.UUID, time.Hour))
-	assert.Equal(t, string(raw), store.GetRawResponse(provider.UUID))
+	assert.Equal(t, models, store.GetModels(ctx, provider.UUID, time.Hour))
+	assert.Equal(t, string(raw), store.GetRawResponse(ctx, provider.UUID))
 
 	// Prior error cleared.
-	records := store.GetAllModelRecords()
+	records := store.GetAllModelRecords(ctx)
 	require.Len(t, records, 1)
 	assert.Nil(t, records[0].LastError)
 	assert.Nil(t, records[0].LastErrorAt)
@@ -172,6 +179,7 @@ func TestSaveModelsWithRaw(t *testing.T) {
 // empty — while still recording the error and any partial raw body.
 func TestSaveFetchFailure_PreservesModels(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 
 	provider := &typ.Provider{
 		UUID:    "fail-uuid",
@@ -179,15 +187,15 @@ func TestSaveFetchFailure_PreservesModels(t *testing.T) {
 		APIBase: "https://api.test.com",
 	}
 	models := []string{"cached-1"}
-	require.NoError(t, store.SaveModels(provider, models, ModelSourceAPI))
+	require.NoError(t, store.SaveModels(ctx, provider, models, ModelSourceAPI))
 
 	raw := []byte(`{"error":"404"}`)
-	require.NoError(t, store.SaveFetchFailure(provider, "upstream returned 404", raw, time.Time{}))
+	require.NoError(t, store.SaveFetchFailure(ctx, provider, "upstream returned 404", raw, time.Time{}))
 
 	// Existing models must survive.
-	assert.Equal(t, models, store.GetModels(provider.UUID, time.Hour))
+	assert.Equal(t, models, store.GetModels(ctx, provider.UUID, time.Hour))
 
-	records := store.GetAllModelRecords()
+	records := store.GetAllModelRecords(ctx)
 	require.Len(t, records, 1)
 	require.NotNil(t, records[0].LastError)
 	assert.Equal(t, "upstream returned 404", *records[0].LastError)
@@ -199,21 +207,23 @@ func TestSaveFetchFailure_PreservesModels(t *testing.T) {
 // no-op (the public guard in SaveFetchFailure).
 func TestSaveFetchFailure_EmptyErrorIsNoop(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 	provider := &typ.Provider{UUID: "noop-uuid", Name: "P", APIBase: "x"}
-	require.NoError(t, store.SaveFetchFailure(provider, "", []byte(`{}`), time.Time{}))
-	assert.Empty(t, store.GetAllModelRecords())
+	require.NoError(t, store.SaveFetchFailure(ctx, provider, "", []byte(`{}`), time.Time{}))
+	assert.Empty(t, store.GetAllModelRecords(ctx))
 }
 
 func TestSaveFetchFailure_DoesNotCreateModelCache(t *testing.T) {
 	store := setupTestStore(t)
+	ctx := context.Background()
 	provider := &typ.Provider{UUID: "failure-only", Name: "P", APIBase: "x"}
-	require.NoError(t, store.SaveFetchFailure(provider, "upstream failed", nil, time.Time{}))
+	require.NoError(t, store.SaveFetchFailure(ctx, provider, "upstream failed", nil, time.Time{}))
 
-	assert.False(t, store.HasModels(provider.UUID))
-	assert.Empty(t, store.GetAllProviders())
-	_, updated, exists := store.GetProviderInfo(provider.UUID)
+	assert.False(t, store.HasModels(ctx, provider.UUID))
+	assert.Empty(t, store.GetAllProviders(ctx))
+	_, updated, exists := store.GetProviderInfo(ctx, provider.UUID)
 	assert.False(t, exists)
 	assert.Empty(t, updated)
-	_, failureExists := store.GetFetchFailure(provider.UUID)
+	_, failureExists := store.GetFetchFailure(ctx, provider.UUID)
 	assert.True(t, failureExists)
 }

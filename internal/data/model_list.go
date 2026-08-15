@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -28,49 +29,49 @@ func NewModelListManager(store *db.ModelStore) *ModelListManager {
 
 // SaveModels saves models for a provider by UUID to the database.
 // source should be db.ModelSourceAPI or db.ModelSourceTemplate.
-func (mm *ModelListManager) SaveModels(provider *typ.Provider, models []string, source db.ModelSource) error {
-	return mm.modelStore.SaveModels(provider, models, source)
+func (mm *ModelListManager) SaveModels(ctx context.Context, provider *typ.Provider, models []string, source db.ModelSource) error {
+	return mm.modelStore.SaveModels(ctx, provider, models, source)
 }
 
 // SaveModelsWithRaw saves a successful real upstream fetch (model list + raw
 // payload) and clears any prior error fields.
-func (mm *ModelListManager) SaveModelsWithRaw(provider *typ.Provider, models []string, source db.ModelSource, raw json.RawMessage) error {
-	return mm.modelStore.SaveModelsWithRaw(provider, models, source, raw)
+func (mm *ModelListManager) SaveModelsWithRaw(ctx context.Context, provider *typ.Provider, models []string, source db.ModelSource, raw json.RawMessage) error {
+	return mm.modelStore.SaveModelsWithRaw(ctx, provider, models, source, raw)
 }
 
 // SaveFetchFailure records a fetch error without clobbering an existing model
 // list. raw is optional (the upstream body, when available).
-func (mm *ModelListManager) SaveFetchFailure(provider *typ.Provider, lastErr string, raw json.RawMessage) error {
-	return mm.modelStore.SaveFetchFailure(provider, lastErr, raw, time.Time{})
+func (mm *ModelListManager) SaveFetchFailure(ctx context.Context, provider *typ.Provider, lastErr string, raw json.RawMessage) error {
+	return mm.modelStore.SaveFetchFailure(ctx, provider, lastErr, raw, time.Time{})
 }
 
 // GetModels returns models for a provider by reading from database.
 // Returns empty if the cached record is older than ModelCacheTTL.
-func (mm *ModelListManager) GetModels(uid string) []string {
-	return mm.modelStore.GetModels(uid, ModelCacheTTL)
+func (mm *ModelListManager) GetModels(ctx context.Context, uid string) []string {
+	return mm.modelStore.GetModels(ctx, uid, ModelCacheTTL)
 }
 
 // GetAllProviders returns all provider UUIDs that have models
-func (mm *ModelListManager) GetAllProviders() []string {
-	return mm.modelStore.GetAllProviders()
+func (mm *ModelListManager) GetAllProviders(ctx context.Context) []string {
+	return mm.modelStore.GetAllProviders(ctx)
 }
 
 // HasModels checks if a provider has models in the database
-func (mm *ModelListManager) HasModels(providerUUID string) bool {
-	return mm.modelStore.HasModels(providerUUID)
+func (mm *ModelListManager) HasModels(ctx context.Context, providerUUID string) bool {
+	return mm.modelStore.HasModels(ctx, providerUUID)
 }
 
 // RemoveProvider removes a provider's models from the database
-func (mm *ModelListManager) RemoveProvider(providerUUID string) error {
-	return mm.modelStore.RemoveProvider(providerUUID)
+func (mm *ModelListManager) RemoveProvider(ctx context.Context, providerUUID string) error {
+	return mm.modelStore.RemoveProvider(ctx, providerUUID)
 }
 
 // GetProviderInfo returns basic info about a provider by reading from database
-func (mm *ModelListManager) GetProviderInfo(uid string) (apiBase string, lastUpdated string, exists bool) {
-	return mm.modelStore.GetProviderInfo(uid)
+func (mm *ModelListManager) GetProviderInfo(ctx context.Context, uid string) (apiBase string, lastUpdated string, exists bool) {
+	return mm.modelStore.GetProviderInfo(ctx, uid)
 }
 
 // GetFetchFailure returns the last recorded fetch error for a provider, if any.
-func (mm *ModelListManager) GetFetchFailure(uid string) (string, bool) {
-	return mm.modelStore.GetFetchFailure(uid)
+func (mm *ModelListManager) GetFetchFailure(ctx context.Context, uid string) (string, bool) {
+	return mm.modelStore.GetFetchFailure(ctx, uid)
 }

@@ -69,7 +69,7 @@ func TestAvailableModels_PrefersDBOverTemplate(t *testing.T) {
 	mgr := newTUIHarness(t)
 	p := addTestProvider(t, mgr, "openai", "https://api.openai.com", protocol.APIStyleOpenAI)
 
-	if err := mgr.GetGlobalConfig().GetModelManager().SaveModels(p, []string{"dbm-1", "dbm-2"}, db.ModelSourceAPI); err != nil {
+	if err := mgr.GetGlobalConfig().GetModelManager().SaveModels(context.Background(), p, []string{"dbm-1", "dbm-2"}, db.ModelSourceAPI); err != nil {
 		t.Fatalf("SaveModels: %v", err)
 	}
 
