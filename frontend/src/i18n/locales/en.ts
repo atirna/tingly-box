@@ -1305,6 +1305,7 @@ export default {
       "colCacheWrite": "Cache Write",
       "colInput": "Input",
       "colOutput": "Output",
+      "colReasoning": "Reasoning",
       "colLatency": "Latency",
       "colTTFT": "TTFT",
       "colTPS": "TPS",

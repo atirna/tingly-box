@@ -1305,6 +1305,7 @@ export default {
       "colCacheWrite": "缓存写入",
       "colInput": "输入",
       "colOutput": "输出",
+      "colReasoning": "推理",
       "colLatency": "延迟",
       "colTTFT": "TTFT",
       "colTPS": "TPS",
