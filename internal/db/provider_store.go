@@ -1,9 +1,10 @@
 package db
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -26,12 +27,12 @@ type ProviderRecord struct {
 	Source   string `gorm:"column:source;default:'user'"` // "user" (default) or "builtin"
 
 	// Configuration fields
-	NoKeyRequired bool   `gorm:"column:no_key_required;default:false"`
-	Enabled       bool   `gorm:"column:enabled;default:true"`
-	ProxyURL      string `gorm:"column:proxy_url"`
-	Timeout       int64  `gorm:"column:timeout"`
-	Tags          string `gorm:"column:tags;type:text"` // JSON array
-	LastUpdated   string `gorm:"column:last_updated"`
+	NoKeyRequired bool     `gorm:"column:no_key_required;default:false"`
+	Enabled       bool     `gorm:"column:enabled;default:true"`
+	ProxyURL      string   `gorm:"column:proxy_url"`
+	Timeout       int64    `gorm:"column:timeout"`
+	Tags          []string `gorm:"column:tags;type:text;serializer:json"`
+	LastUpdated   string   `gorm:"column:last_updated"`
 
 	// Dual-mode optional fields. Independent of APIBase/APIStyle.
 	APIBaseOpenAI    string `gorm:"column:api_base_openai"`
@@ -44,21 +45,22 @@ type ProviderRecord struct {
 	// Credential fields - stored with provider as a unit
 	// For api_key auth: stores the API key
 	// For oauth auth: stores OAuth access token
-	Token             string `gorm:"column:token"`                        // API key or access token
-	OAuthProviderType string `gorm:"column:oauth_provider_type"`          // For oauth: provider type
-	OAuthUserID       string `gorm:"column:oauth_user_id"`                // For oauth: user ID
-	OAuthRefreshToken string `gorm:"column:oauth_refresh_token"`          // For oauth: refresh token
-	OAuthExpiresAt    string `gorm:"column:oauth_expires_at"`             // For oauth: token expiration (RFC3339)
-	OAuthExtraFields  string `gorm:"column:oauth_extra_fields;type:text"` // For oauth: JSON
+	Token             string `gorm:"column:token"`               // API key or access token
+	OAuthProviderType string `gorm:"column:oauth_provider_type"` // For oauth: provider type
+	OAuthUserID       string `gorm:"column:oauth_user_id"`       // For oauth: user ID
+	OAuthRefreshToken string `gorm:"column:oauth_refresh_token"` // For oauth: refresh token
+	OAuthExpiresAt    string `gorm:"column:oauth_expires_at"`    // For oauth: token expiration (RFC3339)
 
-	// VModel-specific fields (only populated when AuthType == "vmodel")
-	VModelDetail string `gorm:"column:vmodel_detail;type:text"` // JSON-encoded typ.VModelDetail
+	OAuthExtraFields map[string]any `gorm:"column:oauth_extra_fields;type:text;serializer:json"`
+
+	// VModelDetail is only populated when AuthType == "vmodel".
+	VModelDetail *typ.VModelDetail `gorm:"column:vmodel_detail;type:text;serializer:json"`
 
 	// Credential holds multi-field credentials for non-bearer auth types
-	// (aws_sigv4, azure_key, gcp_sa). JSON-encoded typ.CredentialBundle.
-	// Empty for api_key/oauth/vmodel. Added additively; AutoMigrate creates
-	// the column on existing databases with no backfill required.
-	Credential string `gorm:"column:credential;type:text"`
+	// (aws_sigv4, azure_key, gcp_sa). Nil for api_key/oauth/vmodel. Added
+	// additively; AutoMigrate creates the column on existing databases with
+	// no backfill required.
+	Credential *typ.CredentialBundle `gorm:"column:credential;type:text;serializer:json"`
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
@@ -67,6 +69,62 @@ type ProviderRecord struct {
 // TableName specifies the table name for GORM
 func (ProviderRecord) TableName() string {
 	return "providers"
+}
+
+// The four JSON-backed columns above used to be `string` fields that every
+// caller marshalled and unmarshalled by hand. `serializer:json` does that
+// now, which surfaces codec errors that were previously discarded -- but it
+// also removes a property the string encoding provided by accident: because
+// unmarshalling allocated fresh values on every read, each caller got a
+// private copy of the tags/map/struct.
+//
+// ProviderStore caches *ProviderRecord and hands out typ.Provider built from
+// it, so without that copy the cache would be sharing mutable state with
+// every caller. That is not hypothetical: the OAuth callback handler does
+// `provider.OAuthDetail.ExtraFields["id_token"] = ...` on a provider it read
+// from the store (internal/server/module/oauth/handler.go), which would
+// otherwise write straight into the cached record -- persisting even if the
+// subsequent UpdateProvider failed.
+//
+// The clone helpers below keep that isolation explicit at both boundaries:
+// toProvider clones on the way out, toRecord/updateRecordFromProvider clone
+// on the way in. Empty is normalized to nil so the column stays NULL rather
+// than "[]"/"{}" -- "absent" must not read back as "present but empty".
+
+func cloneStrings(s []string) []string {
+	if len(s) == 0 {
+		return nil
+	}
+	return slices.Clone(s)
+}
+
+func cloneExtraFields(m map[string]any) map[string]any {
+	if len(m) == 0 {
+		return nil
+	}
+	return maps.Clone(m)
+}
+
+func cloneVModelDetail(d *typ.VModelDetail) *typ.VModelDetail {
+	if d == nil {
+		return nil
+	}
+	out := *d
+	out.Models = cloneStrings(d.Models)
+	return &out
+}
+
+func cloneCredential(c *typ.CredentialBundle) *typ.CredentialBundle {
+	if c == nil {
+		return nil
+	}
+	out := *c
+	if len(c.Fields) > 0 {
+		out.Fields = maps.Clone(c.Fields)
+	} else {
+		out.Fields = nil
+	}
+	return &out
 }
 
 // toProvider converts a ProviderRecord to typ.Provider
@@ -88,10 +146,7 @@ func (r *ProviderRecord) toProvider() *typ.Provider {
 		OpenAIEndpointMode: ai.OpenAIEndpointMode(r.OpenAIEndpointMode),
 	}
 
-	// Parse tags JSON
-	if r.Tags != "" {
-		json.Unmarshal([]byte(r.Tags), &provider.Tags)
-	}
+	provider.Tags = cloneStrings(r.Tags)
 
 	// Set credentials based on auth type
 	switch provider.AuthType {
@@ -102,24 +157,12 @@ func (r *ProviderRecord) toProvider() *typ.Provider {
 			UserID:       r.OAuthUserID,
 			RefreshToken: r.OAuthRefreshToken,
 			ExpiresAt:    r.OAuthExpiresAt,
-		}
-		if r.OAuthExtraFields != "" {
-			json.Unmarshal([]byte(r.OAuthExtraFields), &provider.OAuthDetail.ExtraFields)
+			ExtraFields:  cloneExtraFields(r.OAuthExtraFields),
 		}
 	case typ.AuthTypeVirtual:
-		if r.VModelDetail != "" {
-			var detail typ.VModelDetail
-			if err := json.Unmarshal([]byte(r.VModelDetail), &detail); err == nil {
-				provider.VModelDetail = &detail
-			}
-		}
+		provider.VModelDetail = cloneVModelDetail(r.VModelDetail)
 	case typ.AuthTypeAWSSigV4, typ.AuthTypeAzureKey, typ.AuthTypeGCPVertex:
-		if r.Credential != "" {
-			var bundle typ.CredentialBundle
-			if err := json.Unmarshal([]byte(r.Credential), &bundle); err == nil {
-				provider.Credential = &bundle
-			}
-		}
+		provider.Credential = cloneCredential(r.Credential)
 	case typ.AuthTypeAPIKey, "":
 		provider.Token = r.Token
 		provider.AuthType = typ.AuthTypeAPIKey
@@ -158,11 +201,7 @@ func toRecord(p *typ.Provider) *ProviderRecord {
 		record.OAuthExpiresAt = p.OAuthDetail.ExpiresAt
 	}
 
-	// Marshal tags to JSON
-	if len(p.Tags) > 0 {
-		tagsJSON, _ := json.Marshal(p.Tags)
-		record.Tags = string(tagsJSON)
-	}
+	record.Tags = cloneStrings(p.Tags)
 
 	// Set credentials based on auth type
 	switch p.AuthType {
@@ -170,21 +209,12 @@ func toRecord(p *typ.Provider) *ProviderRecord {
 		if p.OAuthDetail != nil {
 			record.Token = p.OAuthDetail.AccessToken
 			record.OAuthRefreshToken = p.OAuthDetail.RefreshToken
-			if p.OAuthDetail.ExtraFields != nil {
-				extraJSON, _ := json.Marshal(p.OAuthDetail.ExtraFields)
-				record.OAuthExtraFields = string(extraJSON)
-			}
+			record.OAuthExtraFields = cloneExtraFields(p.OAuthDetail.ExtraFields)
 		}
 	case typ.AuthTypeVirtual:
-		if p.VModelDetail != nil {
-			vmJSON, _ := json.Marshal(p.VModelDetail)
-			record.VModelDetail = string(vmJSON)
-		}
+		record.VModelDetail = cloneVModelDetail(p.VModelDetail)
 	case typ.AuthTypeAWSSigV4, typ.AuthTypeAzureKey, typ.AuthTypeGCPVertex:
-		if p.Credential != nil {
-			credJSON, _ := json.Marshal(p.Credential)
-			record.Credential = string(credJSON)
-		}
+		record.Credential = cloneCredential(p.Credential)
 	case typ.AuthTypeAPIKey, "":
 		record.Token = p.Token
 	}
@@ -209,13 +239,7 @@ func updateRecordFromProvider(record *ProviderRecord, p *typ.Provider) {
 	record.OpenAIEndpointMode = string(p.OpenAIEndpointMode)
 	record.UpdatedAt = time.Now()
 
-	// Marshal tags to JSON
-	if len(p.Tags) > 0 {
-		tagsJSON, _ := json.Marshal(p.Tags)
-		record.Tags = string(tagsJSON)
-	} else {
-		record.Tags = ""
-	}
+	record.Tags = cloneStrings(p.Tags)
 
 	// Set credentials based on auth type
 	switch p.AuthType {
@@ -226,50 +250,35 @@ func updateRecordFromProvider(record *ProviderRecord, p *typ.Provider) {
 			record.OAuthUserID = p.OAuthDetail.UserID
 			record.OAuthRefreshToken = p.OAuthDetail.RefreshToken
 			record.OAuthExpiresAt = p.OAuthDetail.ExpiresAt
-			if p.OAuthDetail.ExtraFields != nil {
-				extraJSON, _ := json.Marshal(p.OAuthDetail.ExtraFields)
-				record.OAuthExtraFields = string(extraJSON)
-			} else {
-				record.OAuthExtraFields = ""
-			}
+			record.OAuthExtraFields = cloneExtraFields(p.OAuthDetail.ExtraFields)
 		}
 	case typ.AuthTypeVirtual:
-		if p.VModelDetail != nil {
-			vmJSON, _ := json.Marshal(p.VModelDetail)
-			record.VModelDetail = string(vmJSON)
-		} else {
-			record.VModelDetail = ""
-		}
+		record.VModelDetail = cloneVModelDetail(p.VModelDetail)
 		record.Token = ""
 		record.OAuthProviderType = ""
 		record.OAuthUserID = ""
 		record.OAuthRefreshToken = ""
 		record.OAuthExpiresAt = ""
-		record.OAuthExtraFields = ""
-		record.Credential = ""
+		record.OAuthExtraFields = nil
+		record.Credential = nil
 	case typ.AuthTypeAWSSigV4, typ.AuthTypeAzureKey, typ.AuthTypeGCPVertex:
-		if p.Credential != nil {
-			credJSON, _ := json.Marshal(p.Credential)
-			record.Credential = string(credJSON)
-		} else {
-			record.Credential = ""
-		}
+		record.Credential = cloneCredential(p.Credential)
 		record.Token = ""
 		record.OAuthProviderType = ""
 		record.OAuthUserID = ""
 		record.OAuthRefreshToken = ""
 		record.OAuthExpiresAt = ""
-		record.OAuthExtraFields = ""
-		record.VModelDetail = ""
+		record.OAuthExtraFields = nil
+		record.VModelDetail = nil
 	case typ.AuthTypeAPIKey, "":
 		record.Token = p.Token
 		record.OAuthProviderType = ""
 		record.OAuthUserID = ""
 		record.OAuthRefreshToken = ""
 		record.OAuthExpiresAt = ""
-		record.OAuthExtraFields = ""
-		record.VModelDetail = ""
-		record.Credential = ""
+		record.OAuthExtraFields = nil
+		record.VModelDetail = nil
+		record.Credential = nil
 	}
 }
 
@@ -501,8 +510,7 @@ func (ps *ProviderStore) UpdateCredential(uuid string, token string, oauthDetail
 			r.OAuthRefreshToken = oauthDetail.RefreshToken
 			r.OAuthExpiresAt = oauthDetail.ExpiresAt
 			if oauthDetail.ExtraFields != nil {
-				extraJSON, _ := json.Marshal(oauthDetail.ExtraFields)
-				r.OAuthExtraFields = string(extraJSON)
+				r.OAuthExtraFields = cloneExtraFields(oauthDetail.ExtraFields)
 			}
 		} else {
 			r.Token = token
@@ -525,12 +533,7 @@ func (ps *ProviderStore) UpdateCredentialBundle(uuid string, bundle *typ.Credent
 	defer ps.mu.Unlock()
 
 	_, err := ps.writeThroughLocked(uuid, func(r *ProviderRecord) {
-		if bundle != nil {
-			credJSON, _ := json.Marshal(bundle)
-			r.Credential = string(credJSON)
-		} else {
-			r.Credential = ""
-		}
+		r.Credential = cloneCredential(bundle)
 		r.UpdatedAt = time.Now()
 	})
 	if err != nil {
