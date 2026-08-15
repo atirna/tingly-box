@@ -218,3 +218,203 @@ message path**:
 4. **Write the benchmark first**, against the real production wiring, and
    profile before touching any code — don't reason about the win from first
    principles; measure it.
+
+## GORM feature adoption
+
+Status: **evaluation only** — nothing in this section is implemented yet.
+After the performance rounds above, the remaining question is where the
+stores still hand-roll something GORM already does. Every claim below was
+checked against gorm v1.31.2 / gorm.io/driver/sqlite v1.6.0 with throwaway
+probe tests and benchmarks (deleted after the numbers were taken), not read
+off the GORM docs.
+
+The short version: **one clear win (`serializer:json`), two small ones
+(query `Scopes`, an N+1 fix), and four features worth explicitly *not*
+adopting.** The "not" list matters as much as the "yes" list — the stores
+hand-roll several things on purpose, and that intent isn't obvious from the
+code.
+
+### Yes: `serializer:json` for the JSON-in-TEXT columns
+
+Eight columns across five stores hold JSON in a `string` field, marshalled
+and unmarshalled by hand at **27 call sites**:
+
+| Store | Columns | Sites |
+|---|---|---|
+| `provider_store.go` | `tags`, `oauth_extra_fields`, `vmodel_detail`, `credential` | 14 |
+| `imbot_settings_store.go` | `auth_config`, `bash_allowlist` | 6 |
+| `provider_model.go` | `models` | 4 |
+| `remote_chat_store.go` | `project_history` | 2 |
+| `bot_access_store.go` | `event_filter` | 1 |
+
+GORM's `serializer:json` tag replaces all of it — the field becomes its real
+type (`[]string`, `map[string]string`, `*typ.VModelDetail`) and GORM
+marshals on write / unmarshals on read:
+
+```go
+Tags []string `gorm:"column:tags;type:text;serializer:json"`
+```
+
+The bigger win isn't line count, it's **error handling**. All 14 of
+`provider_store.go`'s sites discard the JSON error, in three flavours: two
+bare unmarshals with no check at all (`:93`, `:107`), two that check and then
+silently fall through leaving the field nil (`:112`, `:119`), and ten writes
+that swallow it with `_` (`:163`, `:174`, `:180`, `:185`, `:214`, `:230`,
+`:238`, `:252`, `:504`, `:529`). A provider whose tags fail to marshal is
+silently persisted with no tags. Under the serializer, the failure surfaces
+through the normal `.Error` path.
+
+**Reads migrate cleanly — verified.** The concern is legacy rows: the
+current code writes `""` for "absent", which is not valid JSON.
+`JSONSerializer.Scan` guards on `len(bytes) > 0`, so a probe reading
+existing `""` rows through a serializer model returned a nil slice with no
+error. No backfill needed.
+
+**Writes change the on-disk representation — verified, and this is the trap.**
+Probe results writing through the serializer:
+
+| Go value | column before | column after |
+|---|---|---|
+| `nil` | `""` | `NULL` |
+| `[]string{}` | `""` | `"[]"` |
+| `[]string{"x"}` | `"[\"x\"]"` | `"[\"x\"]"` |
+
+That breaks any predicate that tests these columns as strings.
+`ModelStore.GetAllProviders` (`provider_model.go:225`) does exactly that:
+
+```go
+ms.db.Where("models <> ''").Find(&records)
+```
+
+Against a mixed table the probe counted **3 of 5** rows — it excluded the
+`NULL` row (because `NULL <> ''` is `NULL`, not true) *and* wrongly matched
+the `"[]"` row, reporting a provider with an empty model list as having
+models. So the migration is mechanical per column but **every `WHERE` over a
+serialized column has to be re-audited**, not just the codec.
+
+**Scope it to the four AutoMigrate-owned stores.** `bot_access_store.go`
+declares its tables with hand-written DDL where the JSON columns are
+`JSON NOT NULL DEFAULT '{}'`. `JSONSerializer.Value` returns SQL `NULL` for a
+nil value unless `NOT NULL` is in the *GORM tag* — and here the constraint
+lives in the DDL, which GORM can't see. A nil `Config` would hit the NOT NULL
+constraint at write time. Leave `bot_access_store`'s `rawJSONOrObject` helper
+alone; it exists for this reason.
+
+### Yes: `Scopes` for the repeated usage filter blocks
+
+`usage_record.go` rebuilds the same time-range + filter-map `WHERE` block
+four times — `rawAggBuckets` (`:324`), `rawTimeSeries` (`:456`),
+`GetRecords` (`:531`), `GetPerformanceSummary` (`:585`). A pair of
+`func(*gorm.DB) *gorm.DB` scopes collapses them.
+
+It also closes a latent hole. All four do:
+
+```go
+for key, value := range filters {
+    q = q.Where(key+" = ?", value)
+}
+```
+
+The map *key* is interpolated into SQL. This is **not** exploitable today —
+every caller in `internal/server/module/usage/handler.go` builds the map with
+hardcoded keys (`provider_uuid`, `model`, `scenario`, `status`, `user_id`)
+and only takes the *value* from the request. But the store has no way to
+enforce that, and the next caller won't know. A scope that whitelists the
+allowed columns makes it structurally safe rather than safe-by-convention.
+
+### Yes: the `ListGroupActors` N+1 — but with `IN`, not associations
+
+`bot_access_store.go:646-655` issues two queries per binding inside the loop
+(one `remote_actors` lookup, one `group_actor_permissions` lookup), so
+listing a group with 20 actors costs 41 queries. Two batched `Find`s with
+`IN (...)` plus a group-by in Go fixes it.
+
+**Do not reach for `Preload`/associations for this.** It would mean adding
+`has-many`/`belongs-to` tags to records whose keys are composite —
+`group_actor_permissions` is keyed on `(group_id, actor_id, capability,
+action)` and referenced by a composite foreign key. Composite-key
+associations are the weakest part of GORM's association support, and the
+tags would have to agree with DDL that GORM doesn't generate. The batched
+query is less code and no new coupling.
+
+### No: `PrepareStmt` — measured, no win
+
+The obvious candidate for the "batching still open" item above. Benchmarked
+both ways on the real `RecordRequestOutcome` write path and a
+`GetRecords` read, 300 iterations × 3 runs:
+
+| Benchmark | `PrepareStmt: false` | `PrepareStmt: true` |
+|---|---|---|
+| stats+usage write | 365–396 µs/op, 235 allocs | 357–370 µs/op, 250 allocs |
+| `GetRecords` read | 990 µs–1.12 ms/op, 2217 allocs | 986 µs–1.04 ms/op, 2151 allocs |
+
+Both deltas sit inside run-to-run variance, and the write path *gains* 15
+allocs/op. Consistent with the profiling above: the cost is statement
+execution and index maintenance, not SQL parsing, so caching the parse
+buys nothing. It would also add a per-connection statement cache that has to
+be invalidated across migrations. Not worth it.
+
+### No: replacing `bot_access_store`'s hand-written DDL with AutoMigrate
+
+The nine `CREATE TABLE` statements in `migrateBotAccessTables`
+(`bot_access_store.go:153`) carry things AutoMigrate cannot produce on
+SQLite:
+
+- `CHECK(effect IN ('allow','deny'))` on five tables
+- `CHECK((direct_chat_id IS NOT NULL) != (group_id IS NOT NULL))` — the
+  route XOR invariant
+- a **composite** foreign key: `FOREIGN KEY(group_id, actor_id) REFERENCES
+  remote_group_actors(group_id, actor_id) ON DELETE CASCADE`
+- `ON DELETE CASCADE` throughout
+
+SQLite cannot `ALTER TABLE ADD CONSTRAINT`, so these can only be declared at
+`CREATE TABLE` time. Converting to AutoMigrate would silently drop the
+database-level enforcement of the access model's invariants. Keep the DDL.
+
+### No: the generics API (`gorm.G[T]`)
+
+v1.31.2 ships `gorm.G[T](db).Where(...).Find(ctx)`, which gives type-safe
+results and a mandatory `context.Context`. But the existing code already gets
+its type safety from `Find(&typedSlice)`, so the only real gain is the forced
+ctx — and adopting it means rewriting every call site in the package. Revisit
+only if the context work below happens anyway.
+
+### No: soft delete (`gorm.DeletedAt`)
+
+Nothing here wants tombstones. `usage_records` has an explicit retention
+path (`DeleteOlderThan`), and the access tables depend on `ON DELETE CASCADE`
+actually removing rows — soft delete would break the cascade semantics the
+DDL relies on.
+
+### Adjacent, bigger than "ORM features": context propagation
+
+Worth recording because it kept surfacing during this evaluation.
+`bot_access_store` threads `context.Context` into GORM at 37 call sites.
+**Every other store in the package ignores context entirely** — 0
+`WithContext` calls across `api_token_store`, `imbot_settings_store`,
+`provider_model`, `provider_store`, `remote_chat_store`,
+`remote_session_store`, `service_stat`, `usage_daily`, `usage_record`. A
+cancelled or timed-out HTTP request cannot cancel the DB work it started.
+
+This is the highest-value item found, but it is not a local refactor: it
+changes public method signatures across the package and every caller. It
+belongs in its own ticket, not bundled with a codec change.
+
+### Suggested order
+
+1. `serializer:json`, **one store per PR**, each PR re-auditing that store's
+   `WHERE` clauses over the converted columns (`GetAllProviders` is the
+   known one). Start with `provider_store` — most sites, and it fixes the
+   swallowed JSON errors.
+2. `usage_record` filter scopes + the column whitelist.
+3. The `ListGroupActors` `IN` batching.
+
+Not recommended as part of this: removing the manual `CreatedAt`/`UpdatedAt`
+assignments. GORM does fill them (probed: `Create` sets both; `Updates(map)`,
+`Update(col, val)` and `OnConflict{UpdateAll: true}` all bump `updated_at`
+and the last preserves `created_at`) — so roughly 15 assignments are indeed
+redundant. But `OnConflict` with an explicit `clause.AssignmentColumns` list
+does **not** auto-bump (probed), which is why `bot_access_store.go:226` must
+keep listing `updated_at` by hand; and `remote_chat_store.normalizeChat`
+deliberately stamps UTC where GORM would use local time. The cleanup is
+small, the ways to get it subtly wrong are not.
