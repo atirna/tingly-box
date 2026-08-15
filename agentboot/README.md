@@ -245,8 +245,6 @@ agentboot/
     ├── accumulator.go    # Per-message accumulation
     ├── message.go        # Claude wire message types
     ├── content.go        # Content block decoding
-    ├── tool_renderer.go  # Tool-use rendering
-    ├── formatter.go      # Output formatting helpers
     ├── prompt_builder.go # Prompt assembly
     ├── session/          # Claude-specific session store (~/.claude/projects)
     └── examples/session/ # Session query example
