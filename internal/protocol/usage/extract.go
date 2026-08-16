@@ -62,23 +62,27 @@ func FromOpenAIResponses(u responses.ResponseUsage) *protocol.TokenUsage {
 // FromAnthropicMessage extracts normalized TokenUsage from an Anthropic v1
 // (non-beta) Message usage block. CacheCreationInputTokens is added to
 // InputTokens so the denominator covers all non-cache-read prompt cost.
+// ThinkingTokens (extended thinking) is a subset of OutputTokens, same
+// relationship as OpenAI's reasoning_tokens -- not subtracted.
 func FromAnthropicMessage(u anthropic.Usage) *protocol.TokenUsage {
-	return protocol.NewTokenUsageWithCacheDetails(
+	return protocol.NewTokenUsageFull(
 		int(u.InputTokens)+int(u.CacheCreationInputTokens),
 		int(u.OutputTokens),
 		int(u.CacheReadInputTokens),
 		int(u.CacheCreationInputTokens),
+		int(u.OutputTokensDetails.ThinkingTokens),
 	)
 }
 
 // FromAnthropicBetaMessage extracts normalized TokenUsage from an Anthropic
 // beta BetaMessage usage block. Same normalization as the non-beta path.
 func FromAnthropicBetaMessage(u anthropic.BetaUsage) *protocol.TokenUsage {
-	return protocol.NewTokenUsageWithCacheDetails(
+	return protocol.NewTokenUsageFull(
 		int(u.InputTokens)+int(u.CacheCreationInputTokens),
 		int(u.OutputTokens),
 		int(u.CacheReadInputTokens),
 		int(u.CacheCreationInputTokens),
+		int(u.OutputTokensDetails.ThinkingTokens),
 	)
 }
 

@@ -365,7 +365,10 @@ func (h *Handler) handleAnthropicStreaming(c *gin.Context, req *AnthropicMessage
 						usageMap["cache_creation_input_tokens"] = explicitUsage.CacheWriteTokens
 					}
 					if explicitUsage.ReasoningTokens > 0 {
-						usageMap["reasoning_tokens"] = explicitUsage.ReasoningTokens
+						// Anthropic nests this under output_tokens_details, not a flat key.
+						usageMap["output_tokens_details"] = map[string]interface{}{
+							"thinking_tokens": explicitUsage.ReasoningTokens,
+						}
 					}
 				} else {
 					// Estimate fallback, mirroring the non-streaming handler:

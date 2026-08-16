@@ -264,3 +264,46 @@ func TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesCacheWrite(t *te
 	assert.Equal(t, int64(11), result.Usage.CacheReadInputTokens)
 	assert.Equal(t, int64(17), result.Usage.OutputTokens)
 }
+
+// TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesReasoning checks
+// that ReasoningTokens (from OpenAI upstream, or Anthropic's own extended
+// thinking) survives into the assembled Anthropic response as
+// output_tokens_details.thinking_tokens.
+func TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesReasoning(t *testing.T) {
+	assembler := NewAnthropicStreamAssembler()
+	assembler.SetUsageFromTokenUsage(&ai.TokenUsage{
+		InputTokens:     42,
+		OutputTokens:    80,
+		ReasoningTokens: 30,
+	})
+	assembler.msgID = "msg_reasoning"
+	assembler.blocks[0] = anthropic.ContentBlockUnion{Type: "text", Text: "ok"}
+
+	result := assembler.Finish("model", 0, 0)
+	require.NotNil(t, result)
+	assert.Equal(t, int64(30), result.Usage.OutputTokensDetails.ThinkingTokens)
+}
+
+// TestAnthropicStreamAssembler_RecordV1Event_CarriesReasoning verifies a
+// native Anthropic message_delta with output_tokens_details.thinking_tokens
+// survives RecordV1Event into the assembled response.
+func TestAnthropicStreamAssembler_RecordV1Event_CarriesReasoning(t *testing.T) {
+	assembler := NewAnthropicStreamAssembler()
+
+	events := []string{
+		`{"type":"message_start","message":{"id":"msg_t","type":"message","role":"assistant"}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":100,"output_tokens":80,"output_tokens_details":{"thinking_tokens":30}}}`,
+	}
+	for _, raw := range events {
+		var evt anthropic.MessageStreamEventUnion
+		require.NoError(t, json.Unmarshal([]byte(raw), &evt))
+		assembler.RecordV1Event(&evt)
+	}
+
+	result := assembler.Finish("model", 0, 0)
+	require.NotNil(t, result)
+	assert.Equal(t, int64(80), result.Usage.OutputTokens)
+	assert.Equal(t, int64(30), result.Usage.OutputTokensDetails.ThinkingTokens)
+}

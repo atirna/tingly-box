@@ -40,6 +40,7 @@ export interface UsageRecord {
     total_tokens: number;
     cache_read_tokens: number;
     cache_write_tokens?: number;
+    reasoning_tokens?: number;
     status: string;
     error_code?: string;
     latency_ms: number;
@@ -141,6 +142,7 @@ function RequestTable({ records, total, page, rowsPerPage, statusFilter, loading
                             {showCacheWrite && <TableCell align="right">{t('dashboard.requestsView.colCacheWrite', { defaultValue: 'Cache Write' })}</TableCell>}
                             <TableCell align="right">{t('dashboard.requestsView.colInput', { defaultValue: 'Input' })}</TableCell>
                             <TableCell align="right">{t('dashboard.requestsView.colOutput', { defaultValue: 'Output' })}</TableCell>
+                            <TableCell align="right">{t('dashboard.requestsView.colReasoning', { defaultValue: 'Reasoning' })}</TableCell>
                             <TableCell align="right">{t('dashboard.requestsView.colLatency', { defaultValue: 'Latency' })}</TableCell>
                             <TableCell align="right">{t('dashboard.requestsView.colTTFT', { defaultValue: 'TTFT' })}</TableCell>
                             <TableCell align="right">{t('dashboard.requestsView.colTPS', { defaultValue: 'TPS' })}</TableCell>
@@ -151,7 +153,7 @@ function RequestTable({ records, total, page, rowsPerPage, statusFilter, loading
                     <TableBody>
                         {records.length === 0 && !loading ? (
                             <TableRow>
-                                <TableCell colSpan={11 + (showCacheWrite ? 1 : 0)} align="center" sx={{ py: 5 }}>
+                                <TableCell colSpan={12 + (showCacheWrite ? 1 : 0)} align="center" sx={{ py: 5 }}>
                                     <Typography variant="body2" sx={{
                                         color: "text.secondary"
                                     }}>{t('dashboard.requestsView.empty', { defaultValue: 'No requests found' })}</Typography>
@@ -227,6 +229,14 @@ function RequestTable({ records, total, page, rowsPerPage, statusFilter, loading
                                 <TableCell align="right">
                                     <Typography sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: TOKEN_COLORS.output.main }}>
                                         {fmtTokens(r.output_tokens)}
+                                    </Typography>
+                                </TableCell>
+
+                                {/* Reasoning (thinking) tokens — a subset of output, absent/zero shown as
+                                    "-" rather than 0 (Anthropic doesn't always report it separately). */}
+                                <TableCell align="right">
+                                    <Typography sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: (r.reasoning_tokens || 0) > 0 ? 'text.primary' : 'text.disabled' }}>
+                                        {(r.reasoning_tokens || 0) > 0 ? fmtTokens(r.reasoning_tokens || 0) : '-'}
                                     </Typography>
                                 </TableCell>
 

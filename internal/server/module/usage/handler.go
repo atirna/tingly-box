@@ -79,6 +79,7 @@ func (h *Handler) GetStats(c *gin.Context) {
 			StreamedRate:     s.StreamedRate,
 			CacheReadTokens:  s.CacheReadTokens,
 			CacheWriteTokens: s.CacheWriteTokens,
+			ReasoningTokens:  s.ReasoningTokens,
 		}
 	}
 
@@ -141,6 +142,7 @@ func (h *Handler) GetTimeSeries(c *gin.Context) {
 			OutputTokens:     d.OutputTokens,
 			CacheReadTokens:  d.CacheReadTokens,
 			CacheWriteTokens: d.CacheWriteTokens,
+			ReasoningTokens:  d.ReasoningTokens,
 			ErrorCount:       d.ErrorCount,
 			AvgLatencyMs:     d.AvgLatencyMs,
 		}
@@ -223,6 +225,7 @@ func (h *Handler) GetRecords(c *gin.Context) {
 			TotalTokens:      r.TotalTokens,
 			CacheReadTokens:  r.CacheReadTokens,
 			CacheWriteTokens: r.CacheWriteTokens,
+			ReasoningTokens:  r.ReasoningTokens,
 			Status:           r.Status,
 			ErrorCode:        r.ErrorCode,
 			LatencyMs:        r.LatencyMs,

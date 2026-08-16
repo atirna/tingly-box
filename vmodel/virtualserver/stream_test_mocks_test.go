@@ -116,7 +116,8 @@ func TestStreamTestMocks_AnthropicMessageDelta(t *testing.T) {
 			assert.EqualValues(t, 17, jsonNum(usage, "output_tokens"))
 			assert.EqualValues(t, 11, jsonNum(usage, "cache_read_input_tokens"))
 			assert.EqualValues(t, 5, jsonNum(usage, "cache_creation_input_tokens"))
-			assert.EqualValues(t, 9, jsonNum(usage, "reasoning_tokens"))
+			outputDetails := usage["output_tokens_details"].(map[string]interface{})
+			assert.EqualValues(t, 9, jsonNum(outputDetails, "thinking_tokens"))
 		})
 	}
 }

@@ -56,6 +56,8 @@ func (a *AnthropicAccumulator) Consume(evt *anthropic.MessageStreamEventUnion) {
 		parsed.Get("usage.cache_read_input_tokens").Int(),
 		evt.Message.Usage.CacheCreationInputTokens,
 		evt.Usage.CacheCreationInputTokens,
+		evt.Usage.OutputTokensDetails.ThinkingTokens,
+		parsed.Get("usage.output_tokens_details.thinking_tokens").Int(),
 	)
 }
 
@@ -76,6 +78,8 @@ func (a *AnthropicAccumulator) ConsumeBeta(evt *anthropic.BetaRawMessageStreamEv
 		0,
 		evt.Message.Usage.CacheCreationInputTokens,
 		evt.Usage.CacheCreationInputTokens,
+		evt.Usage.OutputTokensDetails.ThinkingTokens,
+		0,
 	)
 }
 
@@ -86,6 +90,7 @@ func (a *AnthropicAccumulator) ConsumeBeta(evt *anthropic.BetaRawMessageStreamEv
 //   - Output: delta path only
 //   - Cache read: prefer message_start, fall back to delta
 //   - Cache creation: added to inputTokens (normalization)
+//   - Reasoning (extended thinking): delta path only, subset of output
 func (a *AnthropicAccumulator) consumeRaw(
 	msgStartInput, msgStartInputRaw int64,
 	deltaInput, deltaInputRaw int64,
@@ -93,6 +98,7 @@ func (a *AnthropicAccumulator) consumeRaw(
 	msgStartCacheRead, deltaCacheRead int64,
 	msgStartCacheReadRaw, deltaCacheReadRaw int64,
 	msgStartCacheCreation, deltaCacheCreation int64,
+	deltaReasoning, deltaReasoningRaw int64,
 ) {
 	if a.usage == nil {
 		a.usage = protocol.ZeroTokenUsage()
@@ -149,6 +155,17 @@ func (a *AnthropicAccumulator) consumeRaw(
 	case deltaCacheCreation > 0:
 		a.usage.CacheWriteTokens = int(deltaCacheCreation)
 		a.usage.InputTokens += int(deltaCacheCreation)
+	}
+
+	// Reasoning (extended thinking) tokens — a subset of OutputTokens, not
+	// added on top of it. Delta path only, same as output tokens.
+	switch {
+	case deltaReasoning > 0:
+		a.usage.ReasoningTokens = int(deltaReasoning)
+		a.hasUsage = true
+	case deltaReasoningRaw > 0:
+		a.usage.ReasoningTokens = int(deltaReasoningRaw)
+		a.hasUsage = true
 	}
 }
 

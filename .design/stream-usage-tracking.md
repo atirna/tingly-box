@@ -65,7 +65,7 @@ type TokenUsage struct {
     OutputTokens     int `json:"output_tokens"`                // 输出/completion
     CacheReadTokens  int `json:"cache_read_tokens,omitempty"`  // cache read 命中（折扣的那半）
     CacheWriteTokens int `json:"cache_write_tokens,omitempty"` // cache write，⊂ InputTokens（溢价的那半）
-    ReasoningTokens  int `json:"reasoning_tokens,omitempty"`   // o1/o3 reasoning，是 OutputTokens 的子集
+    ReasoningTokens  int `json:"reasoning_tokens,omitempty"`   // OpenAI o1/o3/reasoning 或 Anthropic extended thinking，是 OutputTokens 的子集
     SystemTokens     int `json:"system_tokens,omitempty"`      // 模板/系统指令/框架开销
 }
 ```
@@ -149,7 +149,8 @@ ReasoningTokens  = reasoning_tokens                 // 仅作展示，是 Output
 | `input_tokens` | **仅未命中缓存**的 input | 不含任何 cache |
 | `cache_creation_input_tokens` | 本次**写入**缓存的 token（按写入价计费） | 与 input **并列**，独立不重叠 |
 | `cache_read_input_tokens` | 本次**命中读取**缓存的 token（便宜） | 与 input **并列**，独立不重叠 |
-| `output_tokens` | 本次**全部** output | **已含** thinking，无独立 reasoning 字段 |
+| `output_tokens` | 本次**全部** output | 父字段，**已含** thinking |
+| `output_tokens_details.thinking_tokens`（`Usage`/`BetaUsage` 均有，非 beta 字段） | extended thinking 消耗（含 thinking-block 分隔符 token） | ⊂ `output_tokens` 的**子集**，与 OpenAI `reasoning_tokens` 同构 |
 
 归一化计算（`FromAnthropicMessage` / `FromAnthropicBetaMessage`）：
 
@@ -157,11 +158,11 @@ ReasoningTokens  = reasoning_tokens                 // 仅作展示，是 Output
 InputTokens      = input_tokens + cache_creation_input_tokens  // 写入成本并进 input（进分母）
 CacheReadTokens = cache_read_input_tokens                      // 命中缓存（读）
 CacheWriteTokens = cache_creation_input_tokens                  // 写入明细，⊂ InputTokens
-OutputTokens     = output_tokens                                // thinking 已含在内
-ReasoningTokens  = 0                                            // Anthropic 不单列 reasoning
+OutputTokens     = output_tokens                                // thinking 已含在内，不减
+ReasoningTokens  = output_tokens_details.thinking_tokens        // 仅作展示，是 Output 的子集，不重复计入
 ```
 
-> 单测佐证：`input=100, creation=900, read=800, output=50` → `Input=1000, Cache=800, Output=50`。
+> 单测佐证：`input=100, creation=900, read=800, output=50` → `Input=1000, Cache=800, Output=50`；`input=100, output=80, reasoning=30` → `Reasoning=30`（不从 output 减掉）。见 `usage_test.go` 的 `TestFromAnthropicMessage`/`TestAnthropicAccumulator_ExtendedThinking`/`TestToAnthropicUsageMap_ReasoningTokens`。这条字段从「无对应字段」到「有但没接」到「已接上」的完整经过记在 §8.5。
 
 #### 归一化后的不变量（两侧统一）
 
@@ -200,7 +201,7 @@ usage.FromAnthropicBetaMessage(resp.Usage) // anthropic.BetaUsage
 ```
 
 OpenAI 侧：`InputTokens = prompt − cached`，cache read / cache write / reasoning 直接读 details。
-Anthropic 侧：`InputTokens = input + cache_creation`，`CacheReadTokens = cache_read`，`CacheWriteTokens = cache_creation`，无 reasoning。
+Anthropic 侧：`InputTokens = input + cache_creation`，`CacheReadTokens = cache_read`，`CacheWriteTokens = cache_creation`，`ReasoningTokens = output_tokens_details.thinking_tokens`。
 
 反向（`*TokenUsage` → wire）：
 
@@ -214,7 +215,7 @@ usage.ChatUsage(u) // → openai.CompletionUsage：PromptTokens = Input + Cache�
 Anthropic 把 usage 拆在两个事件里：
 
 - `message_start` → `input_tokens` / `cache_creation_input_tokens` / `cache_read_input_tokens`
-- `message_delta` → `output_tokens`（个别非标准 provider 也在这里塞 `input_tokens`）
+- `message_delta` → `output_tokens` / `output_tokens_details.thinking_tokens`（个别非标准 provider 也在这里塞 `input_tokens`）
 - **协议转换特例**：OpenAI → Anthropic 这类转换在流开始时拿不到权威 input usage，只能在上游终态事件拿到完整 usage；因此终态 `message_delta.usage` 可以携带完整 normalized usage（`input_tokens` / `output_tokens` / `cache_read_input_tokens`），这是为了保持对外 SSE、录制与计费同源一致。
 
 ```go
@@ -275,7 +276,7 @@ tiktoken：默认 `O200kBase`；流前用 `EstimateInputTokensSimple(req)`（`le
 | `HandleAnthropicV1NonStream` | `usage.FromAnthropicMessage` |
 | `HandleAnthropicV1BetaNonStream` | `usage.FromAnthropicBetaMessage` |
 | `nonstream/anthropic_to_openai.go` | inline（返回 wire `map[string]interface{}`，不是 `*TokenUsage`） |
-| `nonstream/openai_to_anthropic.go` | inline（同上）；reasoning 在 Anthropic 无对等字段 |
+| `nonstream/openai_to_anthropic.go` | inline（同上）；`anthropicUsageWire` 把 `ReasoningTokens` 写回 `output_tokens_details.thinking_tokens` |
 
 ### 3.2 `internal/protocol/stream/`
 
@@ -315,14 +316,14 @@ OpenAI→Anthropic converter 的终态收口在 `emitTerminalEvents()`：从 cou
 
 把流式事件攒成一个完整的 `anthropic.Message`。
 
-- `RecordV1Event` / `RecordV1BetaEvent`：处理 `message_start`（msgID/role）、`content_block_*`（攒 text/thinking/tool input）、`message_delta`（stop_reason + 若带 usage 则存 `usageData`，**含 `CacheReadInputTokens`**）
+- `RecordV1Event` / `RecordV1BetaEvent`：处理 `message_start`（msgID/role）、`content_block_*`（攒 text/thinking/tool input）、`message_delta`（stop_reason + 若带 usage 则存 `usageData`，**含 `CacheReadInputTokens` / `OutputTokensDetails.ThinkingTokens`**）
 - `SetUsage(in, out)`：原始计数（简单入口，优先用下面那个）
 - `SetUsageFromTokenUsage(u *ai.TokenUsage)`：canonical 入口
   - `UncachedInputTokens() → anthropic.Usage.InputTokens`（**注意不是 `InputTokens` 直传**：canonical 把写入成本折进了 `InputTokens`，而 Anthropic wire 的 `input_tokens` 不含它，直传会和下一行一起把写入计两次）
   - `OutputTokens → anthropic.Usage.OutputTokens`
   - `CacheReadTokens → anthropic.Usage.CacheReadInputTokens`
   - `CacheWriteTokens → anthropic.Usage.CacheCreationInputTokens`
-  - `ReasoningTokens` 丢弃（Anthropic 无对应字段，已计入 output）
+  - `ReasoningTokens > 0 → anthropic.Usage.OutputTokensDetails.ThinkingTokens`（Anthropic 自己的字段，不是"无对应字段"）
 - `Finish(model, in, out) → *anthropic.Message`：有 `SetUsage*` 数据就用它，否则回退入参
 
 ### 4.2 `streamRecorder`（`internal/server/recording_hooks.go`）
@@ -466,6 +467,23 @@ dev-stage 破坏式清理，按存在性条件执行：
 level=debug msg="OpenAI->Anthropic stream usage: model=... in=42 out=17 cache=11 reasoning=9 stop=stop"
 ```
 
+### 8.5 2026-08-15：Anthropic `thinking_tokens` 补齐
+
+`anthropic-sdk-go`（vendor 进来的 SDK）随 claude-opus-4-8 加了 `usage.output_tokens_details.thinking_tokens`——`Usage`/`BetaUsage` 都有，是**非 beta**字段，和 OpenAI 的 `reasoning_tokens` 同构（⊂ `output_tokens`，不重复计入）。但 `extract.go` 从未读过它：`FromAnthropicMessage`/`FromAnthropicBetaMessage` 一直硬编码 `ReasoningTokens=0`，本文档也曾据此把"Anthropic 不单列 reasoning"写成架构结论——那是基于旧版 SDK 的过时判断，不是 API 做不到，只是没人接。
+
+打通了两个方向：
+
+- **读入**（Anthropic → canonical）：`FromAnthropicMessage`/`FromAnthropicBetaMessage`（§2.1）；流式的 `AnthropicAccumulator` 读 `message_delta.usage.output_tokens_details.thinking_tokens`（§2.3）
+- **写出**（canonical → Anthropic wire）：`AnthropicStreamAssembler.SetUsageFromTokenUsage` / `RecordV1Event`（§4.1）；`ai.TokenUsage.ToAnthropicUsageMap`；`wire.AnthropicUsageWire` 新增 `AnthropicOutputTokensDetailsWire`，供 `nonstream/openai_to_anthropic.go` 的 `anthropicUsageWire` 使用（§3.1）——所以 OpenAI 上游的 `reasoning_tokens` 转成 Anthropic 形状响应时也能带出来，不只是原生 Anthropic 请求
+
+同时把这条数据接到了 dashboard：`usage_records`/`usage_daily` 加 `reasoning_tokens` 列，`AggregatedStat`/`TimeSeriesData`/`UsageRecordResponse` 三个 API 模型暴露它，前端在 output 列后面新增一列，值为 0/缺失时显示 `—`（不区分"Anthropic 恒测不到"和"真实测量为零"）。
+
+**唯一保留的真实限制**：这个字段是 SDK/API 层面新加的，历史请求／未升级到能上报它的模型或客户端仍拿不到；这是版本问题，不是"Anthropic 架构上做不到"。
+
+**未覆盖**：~~`vmodel/` 测试 mock（§9.1）没有跟着更新——`MockUsage.ReasoningTokens` 仍只在 OpenAI 侧渲染，Anthropic mock fixture 测不出 `thinking_tokens` 的覆盖率~~。已补：`vmodel/virtualserver` 的 `AnthropicUsage` 加了 `OutputTokensDetails`，`handleAnthropicStreaming` 的 `message_delta` 现在把 `explicitUsage.ReasoningTokens` 渲成 `output_tokens_details.thinking_tokens`（此前误渲成扁平的 `reasoning_tokens`，与真实 Anthropic wire 格式不符）；`TestStreamTestMocks_AnthropicMessageDelta` 同步更新断言。Anthropic 非流式路径（`handleAnthropicNonStreaming`）仍未接 `MockUsage`（OpenAI 非流式同样如此，是更早就有的通用限制，不只是 reasoning 的坑），需要时再补。
+
+单测：`internal/protocol/usage/usage_test.go`（`TestFromAnthropicMessage`/`TestAnthropicAccumulator_ExtendedThinking`/`TestToAnthropicUsageMap_ReasoningTokens`）、`internal/protocol/assembler/anthropic_assembler_test.go`（`TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesReasoning`/`TestAnthropicStreamAssembler_RecordV1Event_CarriesReasoning`）、`internal/protocol/nonstream/openai_usage_test.go`（`TestBuildAnthropicPayloadFromChat_ReasoningTokens`）。
+
 ---
 
 ## 9. vmodel 测试基建
@@ -480,7 +498,7 @@ type MockUsage struct {
     CompletionTokens  int64
     CachedInputTokens int64 // OpenAI cached_tokens / Anthropic cache_read
     CacheWriteTokens  int64 // Anthropic cache_creation / OpenAI cache_write_tokens
-    ReasoningTokens   int64 // OpenAI only
+    ReasoningTokens   int64 // OpenAI reasoning_tokens / Anthropic thinking_tokens — see §9.2 rendering
 }
 ```
 
@@ -556,8 +574,8 @@ anthropicvm.RegisterStreamTestMocks(svc.GetAnthropicRegistry())
 | `stream/anthropic_beta_to_openai_responses*.go` | ✅ | 同上，落在 `input_tokens_details` |
 | `stream/openai_chat_to_responses*.go` | ✅ | usage 持续抽取，无早退；cache_write 透传 |
 | `stream/openai_responses_to_chat*.go` | ✅ | 完整抽 input/output/cache read+write/reasoning |
-| `nonstream/openai_to_anthropic.go` | ✅ | cache_write → `cache_creation_input_tokens`；reasoning 在 Anthropic 无对等 |
-| `nonstream/anthropic_to_openai.go` | ✅ | cache_read/cache_creation 双向已映射；Anthropic 不发 reasoning |
+| `nonstream/openai_to_anthropic.go` | ✅ | cache_write → `cache_creation_input_tokens`；reasoning → `output_tokens_details.thinking_tokens` |
+| `nonstream/anthropic_to_openai.go` | ✅ | cache_read/cache_creation 双向已映射；Anthropic 自身的 `output_tokens_details.thinking_tokens` 经 `FromAnthropicMessage`/`FromAnthropicBetaMessage` 读入 |
 | `nonstream/openai_responses_to_chat.go` | ✅ | 完整 |
 | `stream/google_to_any.go` + `nonstream/google_to.go` | skip | Google SDK 无结构化 cache 子字段 |
 

@@ -1231,6 +1231,7 @@ export default {
       "joined": "Added {{value}}",
       "input": "Input",
       "output": "Output",
+      "reasoning": "Reasoning",
       "cacheRead": "Cache Read",
       "allModels": "All models",
       "modelMix": "Where their tokens went",
@@ -1304,6 +1305,7 @@ export default {
       "colCacheWrite": "Cache Write",
       "colInput": "Input",
       "colOutput": "Output",
+      "colReasoning": "Reasoning",
       "colLatency": "Latency",
       "colTTFT": "TTFT",
       "colTPS": "TPS",
@@ -1354,6 +1356,7 @@ export default {
       "cacheHit": "Cache Hit",
       "input": "Input Tokens",
       "output": "Output Tokens",
+      "reasoning": "Reasoning Tokens",
       "errorRate": "Error Rate"
     },
     "chart": {

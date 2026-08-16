@@ -234,3 +234,28 @@ func TestBuildAnthropicPayloadFromChat_CacheWriteTokens(t *testing.T) {
 		out.Usage.InputTokens+out.Usage.CacheReadInputTokens+out.Usage.CacheCreationInputTokens,
 		"the three fields must reconstruct the original prompt total")
 }
+
+// TestBuildAnthropicPayloadFromChat_ReasoningTokens verifies OpenAI
+// reasoning_tokens survives conversion into an Anthropic-shaped response as
+// usage.output_tokens_details.thinking_tokens.
+func TestBuildAnthropicPayloadFromChat_ReasoningTokens(t *testing.T) {
+	resp := &openai.ChatCompletion{
+		ID: "chatcmpl-4",
+		Choices: []openai.ChatCompletionChoice{
+			{Message: openai.ChatCompletionMessage{Role: "assistant", Content: "hi"}, FinishReason: "stop"},
+		},
+		Usage: openai.CompletionUsage{
+			PromptTokens:     200,
+			CompletionTokens: 80,
+			TotalTokens:      280,
+			CompletionTokensDetails: openai.CompletionUsageCompletionTokensDetails{
+				ReasoningTokens: 30,
+			},
+		},
+	}
+
+	out := HandleOpenAIChatToAnthropic(resp, "claude-x")
+	require.NotNil(t, out)
+	assert.EqualValues(t, 80, out.Usage.OutputTokens)
+	assert.EqualValues(t, 30, out.Usage.OutputTokensDetails.ThinkingTokens)
+}

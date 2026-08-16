@@ -432,6 +432,7 @@ export default function UserUsagePage() {
         cacheHit: t('dashboard.userUsage.cacheHit', { defaultValue: 'Cache Hit' }),
         input: t('dashboard.userUsage.input', { defaultValue: 'Input' }),
         output: t('dashboard.userUsage.output', { defaultValue: 'Output' }),
+        reasoning: t('dashboard.userUsage.reasoning', { defaultValue: 'Reasoning' }),
         errorRate: t('dashboard.userUsage.errorRate', { defaultValue: 'Error rate' }),
     };
     const userColumns: Array<{
