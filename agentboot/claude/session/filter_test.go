@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tingly-dev/tingly-box/agentboot/internal/history"
+	"github.com/tingly-dev/tingly-box/agentboot/history"
 )
 
 func TestDefaultSessionFilter(t *testing.T) {

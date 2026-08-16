@@ -3,7 +3,7 @@ package agentboot
 import (
 	"context"
 
-	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
+	"github.com/tingly-dev/tingly-box/agentboot/process"
 )
 
 // AgentDriver knows how to prepare the launch of an agent process.

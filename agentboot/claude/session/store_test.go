@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/agentboot/internal/history"
+	"github.com/tingly-dev/tingly-box/agentboot/history"
 )
 
 func TestNewStore(t *testing.T) {

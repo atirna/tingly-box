@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/tingly-dev/tingly-box/agentboot/internal/protocol"
+	"github.com/tingly-dev/tingly-box/agentboot/protocol"
 )
 
 // Execute starts the agent and returns an [ExecutionHandle] for the caller

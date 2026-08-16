@@ -9,7 +9,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/agentboot"
-	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
+	"github.com/tingly-dev/tingly-box/agentboot/process"
 )
 
 // Driver implements agentboot.AgentDriver for Claude Code CLI.

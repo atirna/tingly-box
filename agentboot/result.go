@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tingly-dev/tingly-box/agentboot/internal/protocol"
+	"github.com/tingly-dev/tingly-box/agentboot/protocol"
 )
 
 // Result represents the result of an agent execution.

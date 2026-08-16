@@ -644,34 +644,40 @@ concern of a Claude Code CLI wrapper). Verified: `go build`, `go vet`, and
 easy-to-drift rule enforced only by whoever remembers to check before adding
 an export. With a second production consumer of the Claude integration now
 on the table (team-wide reuse, not just the remote-control bot), that rule
-needed to become a checkable contract instead of tribal knowledge. Two
-changes, both grounded in grepping every actual `agentboot` import site in
-the root `tingly-box` module rather than guessing:
+needed to become a checkable contract instead of tribal knowledge.
 
-1. **Compiler-enforced internal boundary.** `process/`, `protocol/`,
-   `history/`, and `claude/session` had zero consumers outside this module —
-   confirmed, not assumed. Moved to `internal/process`, `internal/protocol`,
-   `internal/history`, and `claude/internal/session`. Go's `internal/`
-   visibility rule now makes it impossible for `tingly-box` code to import
-   them, so the boundary survives future refactors even if nobody reads this
-   doc first. Import-path-only change; no package renames, no behavior
-   change, no in-module caller touched beyond its import line.
-2. **README `## Public API` section**, listing exactly what `tingly-box`
-   imports today: the `AgentService` façade + `ExecutionHandle`/`StreamEvent`
-   surface, the Claude message model (`MessageEvent.Raw`'s concrete types,
-   accepted as non-neutral per §8), Claude production config
-   (`Config`/`PermissionMode`/`ContextKey*`), and the
-   `NewAgentWithFactory`/`Driver`/`Transport`/`claude/fixture` test-harness
-   seam. This is the reviewable contract: a change to anything on that list
-   is a breaking change for `tingly-box`; anything reachable only through
-   `internal/` is free to refactor.
+**Tried and reverted: `internal/` for `process`/`protocol`/`history`/
+`claude/session`.** All four had zero consumers outside this module —
+confirmed by grepping every `agentboot` import site in the root `tingly-box`
+module, not assumed. They were moved under `internal/process`,
+`internal/protocol`, `internal/history`, `claude/internal/session` (later
+consolidated to a single `internal/` root: `internal/claude/session`) to
+make the boundary compiler-enforced. On review this didn't clear its own
+bar: the packages have no consumer today, so the move blocked a purely
+hypothetical future violation, not an observed one, at the cost of directory
+nesting on a module that already has no external distribution (it's
+consumed exclusively via `go.work` path replacement, by one repo's worth of
+engineers, under the same `.design/` review discipline as everything else
+here). Reverted back to flat `process/`, `protocol/`, `history/`,
+`claude/session/`. If a real drift shows up in review — someone genuinely
+reaching past `AgentService` into engine internals — reconsider `internal/`
+at that point, backed by an actual instance instead of a hypothetical one.
+
+**Kept: the README `## Public API` section**, listing exactly what
+`tingly-box` imports today: the `AgentService` façade +
+`ExecutionHandle`/`StreamEvent` surface, the Claude message model
+(`MessageEvent.Raw`'s concrete types, accepted as non-neutral per §8),
+Claude production config (`Config`/`PermissionMode`/`ContextKey*`), and the
+`NewAgentWithFactory`/`Driver`/`Transport`/`claude/fixture` test-harness
+seam. This is the reviewable contract, kept by documentation and code review
+rather than the compiler — consistent with how the rest of this repo governs
+itself (`.design/*.md` + review, per `CLAUDE.md`).
 
 Deliberately not done: no semver git tag. `agentboot` is consumed exclusively
 through the repo's `go.work` path replacement, never `go get` at a pinned
 version, so a tag would track nothing a consumer's build actually resolves
-against — it would be a label with no enforcement behind it, the same
-failure mode this section exists to fix. If `agentboot` is ever published or
-consumed via a real module version, revisit this.
+against. If `agentboot` is ever published or consumed via a real module
+version, revisit this.
 
 Verified: `go build`, `go vet`, and `go test` green in both the `agentboot`
 module and the root module (`go build ./...`,

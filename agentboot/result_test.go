@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/tingly-dev/tingly-box/agentboot"
-	"github.com/tingly-dev/tingly-box/agentboot/internal/protocol"
+	"github.com/tingly-dev/tingly-box/agentboot/protocol"
 )
 
 // assistantEvent builds an assistant event in the real CLI shape:

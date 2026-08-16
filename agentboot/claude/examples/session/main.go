@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	ccsession "github.com/tingly-dev/tingly-box/agentboot/internal/claude/session"
+	ccsession "github.com/tingly-dev/tingly-box/agentboot/claude/session"
 )
 
 func main() {

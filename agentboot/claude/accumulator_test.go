@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tingly-dev/tingly-box/agentboot/internal/protocol"
+	"github.com/tingly-dev/tingly-box/agentboot/protocol"
 
 	"github.com/anthropics/anthropic-sdk-go"
 )

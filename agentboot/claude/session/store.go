@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tingly-dev/tingly-box/agentboot/internal/history"
+	"github.com/tingly-dev/tingly-box/agentboot/history"
 )
 
 // Store implements history.SessionReader for Claude Code history.

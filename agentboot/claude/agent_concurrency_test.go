@@ -12,7 +12,7 @@ import (
 
 	"github.com/tingly-dev/tingly-box/agentboot"
 	"github.com/tingly-dev/tingly-box/agentboot/claude"
-	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
+	"github.com/tingly-dev/tingly-box/agentboot/process"
 )
 
 // TestAgent_OverlappingExecutionsIsolateTransportContext reproduces the

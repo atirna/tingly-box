@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tingly-dev/tingly-box/agentboot/internal/history"
+	"github.com/tingly-dev/tingly-box/agentboot/history"
 )
 
 // --- NewAgentService() ---

@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
+	"github.com/tingly-dev/tingly-box/agentboot/process"
 )
 
 // Script is an ordered list of [Step]s the fixture emits to stdout when the

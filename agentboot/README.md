@@ -7,22 +7,22 @@ permission/ask routing behind one `AgentService` entry point.
 It is an internal library of tingly-box, kept as its own Go module so the
 dependency direction stays clean (agentboot never imports tingly-box
 internals). The execution core (`Runner` + `AgentDriver` + `AgentTransport` +
-`internal/process`/`internal/protocol`) is agent-neutral — that seam exists
-for testability (scripted fake processes) and as the extension point if
-another CLI agent is ever added — but Claude Code is the only implemented
-backend, and the message types consumers see are Claude's. AgentBoot does not
-embed the Python `claude-agent-sdk` and does not use Claude Desktop as an
-execution backend.
+`process`/`protocol`) is agent-neutral — that seam exists for testability
+(scripted fake processes) and as the extension point if another CLI agent is
+ever added — but Claude Code is the only implemented backend, and the message
+types consumers see are Claude's. AgentBoot does not embed the Python
+`claude-agent-sdk` and does not use Claude Desktop as an execution backend.
 
 ## Public API
 
-`internal/process`, `internal/protocol`, `internal/history`, and
-`claude/internal/session` are Go `internal` packages: nothing outside this
-module can import them, and today nothing outside this module does — grep the
-consumer tree before assuming otherwise if that ever needs revisiting. That
-boundary is enforced by the compiler, not just by convention. Everything else
-below is what tingly-box actually imports; treat this as the change-review
-checklist, not an aspiration.
+`process`, `protocol`, `history`, and `claude/session` are execution/storage
+plumbing with no consumer outside this module today — grep the consumer tree
+before assuming otherwise if that ever needs revisiting. That boundary is
+kept by convention and code review, not by the compiler: nothing currently
+needs the stronger guarantee a Go `internal/` package would give, and this
+module is only ever consumed from within the same repo via `go.work`, not
+published externally. Everything below is what tingly-box actually imports;
+treat this as the change-review checklist, not an aspiration.
 
 - **Production entry point** — `AgentService` (`NewService`, `Execute`, `Run`,
   `ListProjects`, `ListSessions`, `GetSession`, `GetSessionSummary`),
@@ -268,10 +268,9 @@ agentboot/
 ├── run.go                # High-level Prompter/MessageSink consumer
 ├── service.go            # AgentService — the single public entry point (registry + query + execute)
 ├── lifecycle.go          # Runtime LifecycleStore interface
-├── internal/
-│   ├── history/          # SessionReader + historical session types
-│   ├── process/          # LaunchSpec + process abstraction (OS/fake)
-│   └── protocol/         # Stream-JSON encoder / decoder + canonical Event
+├── history/              # SessionReader + historical session types
+├── process/              # LaunchSpec + process abstraction (OS/fake)
+├── protocol/             # Stream-JSON encoder / decoder + canonical Event
 └── claude/               # Claude Code agent implementation
     ├── agent.go          # claude.Agent (wraps Runner)
     ├── service.go        # Agent + Claude session-reader composition
@@ -284,7 +283,7 @@ agentboot/
     ├── message.go        # Claude wire message types
     ├── content.go        # Content block decoding
     ├── prompt_builder.go # Prompt assembly
-    ├── internal/session/ # Claude-specific session store (~/.claude/projects)
+    ├── session/          # Claude-specific session store (~/.claude/projects)
     ├── fixture/          # Scripted CLI output for the test-harness seam
     └── examples/session/ # Session query example
 ```

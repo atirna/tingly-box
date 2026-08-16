@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tingly-dev/tingly-box/agentboot/internal/process"
+	"github.com/tingly-dev/tingly-box/agentboot/process"
 )
 
 // Runner is a generic agent executor that composes an [AgentDriver] (process
