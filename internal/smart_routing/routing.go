@@ -535,11 +535,14 @@ func (r *Router) evaluateServiceCapacityOp(ctx *RequestContext, op *SmartOp) OpE
 	return res
 }
 
-// evaluateServiceQuotaOp compares the tightest (highest-used%) cached quota
-// across the rule's services' upstream providers (ctx.ServiceQuota,
-// pre-filtered per-rule by evaluateRule) against a threshold. Quota is read
-// from the local ai/quota cache, never fetched live — see
-// collectAllQuotaInfo in internal/routing/stage_smart_routing.go.
+// evaluateServiceQuotaOp compares the tightest (highest-used%) cached
+// *standard* quota across the rule's services' upstream providers
+// (ctx.ServiceQuota, pre-filtered per-rule by evaluateRule) against a
+// threshold. Quota is read from the local ai/quota cache, never fetched
+// live, and restricted to self-healing allowances (Kind == WindowKindLimit)
+// — see PctLimit and collectAllQuotaInfo in
+// internal/routing/stage_smart_routing.go; standing balances/credits are
+// deliberately excluded (see ServiceQuotaInfo in context.go).
 //
 // Aggregation is max, not average: mirrors ai/quota/semantic.go's own
 // window aggregation ("take the tightest, because that's the one that runs

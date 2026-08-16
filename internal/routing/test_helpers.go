@@ -164,11 +164,23 @@ func newMockQuotaProvider() *mockQuotaProvider {
 	return &mockQuotaProvider{usage: make(map[string]*quota.ProviderUsage)}
 }
 
-// setPct registers a single countable window at pct% used for providerUUID.
+// setPct registers a single countable, standard-quota (Kind=limit) window at
+// pct% used for providerUUID — mirrors how real fetchers (e.g. Anthropic's
+// 5h/7d) tag their periodic windows so service_quota picks it up.
 func (m *mockQuotaProvider) setPct(providerUUID string, pct float64) {
 	m.usage[providerUUID] = &quota.ProviderUsage{
 		ProviderUUID: providerUUID,
-		Windows:      []*quota.UsageWindow{{Limit: 100, UsedPercent: pct}},
+		Windows:      []*quota.UsageWindow{{Kind: quota.WindowKindLimit, Limit: 100, UsedPercent: pct}},
+	}
+}
+
+// setResourcePct registers a single countable but resource-kind (balance,
+// e.g. OpenRouter's key limit) window — used to prove service_quota ignores
+// it even though ai/quota's general Pct() would happily count it.
+func (m *mockQuotaProvider) setResourcePct(providerUUID string, pct float64) {
+	m.usage[providerUUID] = &quota.ProviderUsage{
+		ProviderUUID: providerUUID,
+		Windows:      []*quota.UsageWindow{{Kind: quota.WindowKindResource, Limit: 100, UsedPercent: pct}},
 	}
 }
 

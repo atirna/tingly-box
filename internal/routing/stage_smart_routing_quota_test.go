@@ -60,6 +60,29 @@ func TestSmartRouting_ServiceQuota_BelowThreshold_NoMatch(t *testing.T) {
 	require.Equal(t, services, narrowed, "under threshold must fall back to the rule's base pool")
 }
 
+// TestSmartRouting_ServiceQuota_IgnoresResourceKindWindows proves the
+// service_quota op does not trigger avoidance off a standing balance/credit
+// (Kind == WindowKindResource) even though it is fully countable — only
+// self-healing quota (Kind == WindowKindLimit) should drive this op. See
+// PctLimit in ai/quota/semantic.go and .design/quota-semantics.md §8.1.
+func TestSmartRouting_ServiceQuota_IgnoresResourceKindWindows(t *testing.T) {
+	services := []*loadbalance.Service{testService("prov-balance", "gpt-4", true)}
+	rule := testSmartRule("rule-1", "gpt-4", services, testServiceQuotaOp(smartrouting.OpServiceQuotaPctGe, "85"))
+	ctx := testContext(rule, "")
+	ctx.Request = testOpenAIRequest("gpt-4")
+
+	qp := newMockQuotaProvider()
+	qp.setResourcePct("prov-balance", 95) // a near-exhausted balance, not standard quota
+
+	stage := NewSmartRoutingStage(newMockAffinityStore())
+	stage.SetQuotaProvider(qp)
+
+	narrowed, final, err := stage.Evaluate(ctx, initialCandidateServices(ctx.Rule))
+	require.NoError(t, err)
+	require.Nil(t, final)
+	require.Equal(t, services, narrowed, "resource-kind usage must not trigger avoidance")
+}
+
 // TestSmartRouting_ServiceQuota_NoProviderWired_Passes ensures a
 // service_quota op does not block routing when no QuotaProvider was ever
 // set (e.g. quota manager failed to initialize) — the op is optional.

@@ -112,6 +112,16 @@ than being diluted by the others. Rules that want per-service or
 per-tier thresholds should use separate ops/rules instead of relying on
 this op to average across services.
 
+It only sees **standard, self-healing quota** (`ai/quota`'s `PctLimit()`,
+`Kind == WindowKindLimit`) — a standing balance/credit (OpenRouter's key
+limit, Kimi Code's booster wallet, KimiK2's credits) needs a manual top-up
+rather than time to recover, so it must not silently drive an "avoid this
+pool" decision meant to be temporary. A window only counts here when its
+fetcher explicitly tags it `Kind: WindowKindLimit`; an untagged window is
+excluded rather than assumed safe (unlike the general-purpose `Pct()`,
+which defaults an unset `Kind` to "limit" for backward compatibility with
+data written before the field existed).
+
 ### Claude Code request-kind detection
 
 When the scenario is `claude_code`, the SmartRoutingStage populates

@@ -268,6 +268,51 @@ func TestOrderingAndTieBreakAgreeOnUnsizedWindows(t *testing.T) {
 	}
 }
 
+func TestPctLimitExcludesResourceWindows(t *testing.T) {
+	// A near-exhausted balance must not read as standard quota running out —
+	// callers like smart-routing's service_quota need to react only to
+	// self-healing allowances, not to something that needs a manual top-up.
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(95, 0, func(w *UsageWindow) { w.Kind = WindowKindResource }),
+	}}
+
+	if pct, ok := usage.PctLimit(); ok {
+		t.Fatalf("PctLimit() = %v, %v; want unknown when only a resource window exists", pct, ok)
+	}
+}
+
+func TestPctLimitDoesNotDefaultUnsetKindToLimit(t *testing.T) {
+	// Unlike EffectiveKind()'s "unset Kind defaults to limit" fallback,
+	// PctLimit must require an explicit tag — a fetcher that forgot to (or
+	// deliberately did not, e.g. Anthropic's pay-as-you-go overage add-on)
+	// mark a window Kind: WindowKindLimit must not silently count.
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(95, 300, labelled("untagged")),
+	}}
+
+	if pct, ok := usage.PctLimit(); ok {
+		t.Fatalf("PctLimit() = %v, %v; want unknown for an untagged (Kind=\"\") window", pct, ok)
+	}
+	// Sanity check: Pct() (the general-purpose accessor) does count it —
+	// only PctLimit is strict.
+	if pct, ok := usage.Pct(); !ok || pct != 95 {
+		t.Fatalf("Pct() = %v, %v; want 95, true", pct, ok)
+	}
+}
+
+func TestPctLimitTakesTheTightestLimitWindow(t *testing.T) {
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(12, 300, func(w *UsageWindow) { w.Kind = WindowKindLimit; w.Label = "5h" }),
+		window(96, 10080, func(w *UsageWindow) { w.Kind = WindowKindLimit; w.Label = "7d" }),
+		window(99, 0, func(w *UsageWindow) { w.Kind = WindowKindResource }), // higher %, must be ignored
+	}}
+
+	pct, ok := usage.PctLimit()
+	if !ok || pct != 96 {
+		t.Fatalf("PctLimit() = %v, %v; want 96, true (resource window must not win)", pct, ok)
+	}
+}
+
 func TestWindowWithNoCapIsNotCountable(t *testing.T) {
 	// A fetcher reporting spend with no cap and no flag would otherwise
 	// contribute a fabricated 0% that sorts ahead of real windows.

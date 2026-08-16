@@ -80,6 +80,46 @@ func (p *ProviderUsage) Tightest() *UsageWindow {
 	return best
 }
 
+// PctLimit is Pct restricted to periodic-allowance windows (Kind ==
+// WindowKindLimit) — used by callers that must react only to quota that
+// recovers on its own, not to a standing balance/credit that requires a
+// manual top-up (smart-routing's service_quota op is the first of these;
+// see .design/quota-semantics.md §8.1).
+//
+// Deliberately stricter than EffectiveKind()'s "unset Kind defaults to
+// limit" fallback (kept only so pre-Kind display data still renders): here
+// a window with Kind left unset is excluded, not assumed safe. A fetcher
+// must explicitly tag Kind: WindowKindLimit for a window to participate —
+// silently letting an ambiguous or new window (an overage add-on, a
+// balance type someone forgot to flag) count as standard quota is the
+// dangerous direction to fail in, since it would drive an automatic
+// avoidance decision off something that may not even self-heal.
+func (p *ProviderUsage) PctLimit() (float64, bool) {
+	w := p.tightestOfKind(WindowKindLimit)
+	if w == nil {
+		return 0, false
+	}
+	return w.Percent(), true
+}
+
+// tightestOfKind is Tightest restricted to windows whose Kind is exactly
+// kind — no EffectiveKind fallback, so an unset Kind never matches.
+func (p *ProviderUsage) tightestOfKind(kind WindowKind) *UsageWindow {
+	if p == nil {
+		return nil
+	}
+	var best *UsageWindow
+	for _, w := range p.Windows {
+		if !w.Countable() || w.Kind != kind {
+			continue
+		}
+		if best == nil || tighter(w, best) {
+			best = w
+		}
+	}
+	return best
+}
+
 // RecoversAt returns when the binding window refills. It is nil when usage is
 // unknown, when the binding window is a resource (a top-up, not a reset, is
 // what brings it back), or when upstream did not report a reset time.

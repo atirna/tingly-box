@@ -159,6 +159,7 @@ func buildZaiProviderUsage(provider *ai.Provider, providerType quota.ProviderTyp
 
 		window := &quota.UsageWindow{
 			Type:          class.windowType,
+			Kind:          quota.WindowKindLimit, // recovers on its own; see PctLimit
 			Used:          used,
 			Limit:         total,
 			UsedPercent:   usedPercent,

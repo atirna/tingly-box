@@ -147,6 +147,7 @@ Unlimited bool       `json:"unlimited,omitempty"` // 真·无限制
 
 ```go
 func (p *ProviderUsage) Pct() (float64, bool)     // 最紧窗口的百分比；false = 整个 provider 不可知
+func (p *ProviderUsage) PctLimit() (float64, bool) // 同上,但只看 Kind==limit,严格不兜底(§8.1 用它)
 func (p *ProviderUsage) Tightest() *UsageWindow   // 卡住你的那个窗口（能说"卡在哪"）
 func (p *ProviderUsage) RecoversAt() *time.Time   // 额度 → ResetsAt；资源/不可知 → nil
 
@@ -276,8 +277,22 @@ quota 参与路由分两条线，管的是两件不重叠的事：smart op 管**
 `internal/smart_routing/README.md` "Switch to a cheaper pool once quota runs hot"。
 
 - **数据来源**：`ai/quota` 本地缓存（`Manager.GetQuotaNoCache`），按 `Service.Provider`
-  （provider UUID）查 `ProviderUsage.Pct()`。纯读库，路由热路径上不发起线上配额请求——
-  刷新节奏仍由 `Manager` 的后台 refresher 决定（见 §9.1 的新鲜度待定项，本次未处理）。
+  （provider UUID）查 `ProviderUsage.PctLimit()`（新增,不是 `Pct()`）。纯读库，路由热路径上
+  不发起线上配额请求——刷新节奏仍由 `Manager` 的后台 refresher 决定（见 §9.1 的新鲜度
+  待定项，本次未处理）。
+- **只算标准额度（`Kind=limit`），不算余额型资源（`Kind=resource`）**：`Pct()`/`Tightest()`
+  本身不区分 `Kind`——OpenRouter 的 key 余额、Kimi Code 的 booster 钱包、KimiK2 的
+  credits 只要有真实用量就会被 `Pct()` 一视同仁地计入,§7 的例子里 OpenRouter 余额
+  40% 就是被选中的"最紧"窗口。但余额耗尽的含义是"得充钱",不会自己恢复——用它触发
+  "不想用"这种应该是临时避让的判定,会变成一直避让,没有自愈信号。所以新增了
+  `PctLimit()`,只在 `Kind == WindowKindLimit` 的窗口里取最紧,资源型窗口整个不参与。
+  **`PctLimit()` 是严格判定,不吃 `EffectiveKind()` 的"未标默认按 limit"兜底**——那个
+  兜底是为了兼容 `Kind` 字段引入之前写入的旧数据,继续给展示层用；这里反过来,没显式
+  打 `Kind: WindowKindLimit` 标签的窗口一律排除,宁可漏判也不误判（Anthropic 的溢价额度
+  `extra_usage` 就是故意不打标签,排除在外——按小时/按次付费的加量,概念上更接近资源）。
+  各 fetcher 里真正会自愈的标准窗口（Anthropic 5h/7d、Codex current/weekly、Gemini 按模型
+  取最紧、Z.ai/GLM 限额、MiniMax 账户级窗口、Kimi Code weekly/limit_N）都已显式打上
+  `Kind: WindowKindLimit`。
 - **聚合方式：跨 service 取最紧（max），不取平均**。与 §3.3 同一个理由的延伸：一条规则
   代表一个可互换的 service 池，池里任何一个吃紧就该判定整个池吃紧，被没吃紧的稀释掉
   就会晚触发。想要"每个 service 独立阈值"或"分级降级"，应该拆成多条规则/多个 tier

@@ -364,7 +364,15 @@ func (s *SmartRoutingStage) collectAllCapacityInfo(rules []smartrouting.SmartRou
 // Deduplicates by serviceID; evaluateRule filters down to per-rule services.
 // Skipped entirely when no QuotaProvider is wired. A service is omitted
 // (not zeroed) when its provider has no cached usage yet or usage is not
-// countable (see ai/quota/semantic.go's Pct) — unknown must never read as 0%.
+// countable — unknown must never read as 0%.
+//
+// Uses usage.PctLimit(), not usage.Pct(): service_quota is meant to react
+// only to standard, self-healing quota (Kind == WindowKindLimit), not to a
+// standing balance/credit (Kind == WindowKindResource, e.g. OpenRouter's key
+// balance or Kimi Code's booster wallet) that needs a manual top-up rather
+// than time to recover. A rule that trips on balance depletion would keep
+// avoiding that pool indefinitely with no self-correcting signal — see
+// .design/quota-semantics.md §8.1.
 func (s *SmartRoutingStage) collectAllQuotaInfo(ctx context.Context, rules []smartrouting.SmartRouting) []smartrouting.ServiceQuotaInfo {
 	if s.quotaProvider == nil {
 		return nil
@@ -386,7 +394,7 @@ func (s *SmartRoutingStage) collectAllQuotaInfo(ctx context.Context, rules []sma
 			if err != nil || usage == nil {
 				continue
 			}
-			pct, ok := usage.Pct()
+			pct, ok := usage.PctLimit()
 			if !ok {
 				continue
 			}

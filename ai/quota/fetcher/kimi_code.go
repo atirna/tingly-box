@@ -262,6 +262,7 @@ func (f *KimiCodeFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*qu
 	if used, limit, ok := apiResp.Usage.values(); ok {
 		usage.AddWindow("weekly", &quota.UsageWindow{
 			Type:          quota.WindowTypeWeekly,
+			Kind:          quota.WindowKindLimit, // recovers on its own; see PctLimit
 			Used:          used,
 			Limit:         limit,
 			Unit:          quota.UsageUnitCredits,
@@ -290,6 +291,7 @@ func (f *KimiCodeFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*qu
 		}
 		usage.AddWindow(fmt.Sprintf("limit_%d", index+1), &quota.UsageWindow{
 			Type:          windowType,
+			Kind:          quota.WindowKindLimit, // recovers on its own; see PctLimit
 			Used:          used,
 			Limit:         limit,
 			Unit:          quota.UsageUnitCredits,
