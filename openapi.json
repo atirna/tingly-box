@@ -1699,6 +1699,39 @@
         }
       }
     },
+    "/api/v1/config/apply/dsh": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Generate and apply DeepSeek Harness (dsh) configuration from system state",
+        "description": "Generate and apply DeepSeek Harness (dsh) configuration from system state",
+        "operationId": "apiV1ConfigApplyDshPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyDshConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyDshConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/config/apply/opencode": {
       "post": {
         "tags": [
@@ -1765,6 +1798,28 @@
         }
       }
     },
+    "/api/v1/config/dsh": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get the currently applied DeepSeek Harness (dsh) preferences",
+        "description": "Get the currently applied DeepSeek Harness (dsh) preferences",
+        "operationId": "apiV1ConfigDshGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DshConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/config/preview/codex": {
       "post": {
         "tags": [
@@ -1791,6 +1846,39 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CodexConfigPreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/preview/dsh": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Generate DeepSeek Harness (dsh) configuration preview from system state",
+        "description": "Generate DeepSeek Harness (dsh) configuration preview from system state",
+        "operationId": "apiV1ConfigPreviewDshPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyDshConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DshConfigPreviewResponse"
                 }
               }
             }
@@ -1850,6 +1938,28 @@
         "summary": "Restore Codex configuration from the most recent backup",
         "description": "Restore Codex configuration from the most recent backup",
         "operationId": "apiV1ConfigRestoreCodexPost",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/restore/dsh": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Restore DeepSeek Harness (dsh) configuration from the most recent backup",
+        "description": "Restore DeepSeek Harness (dsh) configuration from the most recent backup",
+        "operationId": "apiV1ConfigRestoreDshPost",
         "responses": {
           "200": {
             "description": "Successful response",
@@ -7440,6 +7550,12 @@
             "description": "Field provider_uuid",
             "example": "uuid-123"
           },
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field reasoning_tokens",
+            "example": 12000
+          },
           "request_count": {
             "type": "integer",
             "format": "int64",
@@ -7501,7 +7617,8 @@
           "streamed_count",
           "streamed_rate",
           "cache_read_tokens",
-          "cache_write_tokens"
+          "cache_write_tokens",
+          "reasoning_tokens"
         ]
       },
       "ApplyClaudeConfigRequest": {
@@ -7626,6 +7743,49 @@
           "createdFiles",
           "updatedFiles",
           "backupPaths"
+        ]
+      },
+      "ApplyDshConfigRequest": {
+        "type": "object",
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/DshPrefs"
+          }
+        },
+        "required": [
+          "preferences"
+        ]
+      },
+      "ApplyDshConfigResponse": {
+        "type": "object",
+        "properties": {
+          "credentialsResult": {
+            "$ref": "#/components/schemas/ApplyResult"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "models": {
+            "type": "array",
+            "description": "Field models",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settingsResult": {
+            "$ref": "#/components/schemas/ApplyResult"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          }
+        },
+        "required": [
+          "success",
+          "settingsResult",
+          "credentialsResult",
+          "models"
         ]
       },
       "ApplyOpenCodeConfigResponse": {
@@ -8968,6 +9128,70 @@
           "skills_found",
           "locations"
         ]
+      },
+      "DshConfigPreviewResponse": {
+        "type": "object",
+        "properties": {
+          "credentialsYaml": {
+            "type": "string",
+            "description": "Field credentialsYaml"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "models": {
+            "type": "array",
+            "description": "Field models",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settingsYaml": {
+            "type": "string",
+            "description": "Field settingsYaml"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          }
+        },
+        "required": [
+          "success",
+          "settingsYaml",
+          "credentialsYaml",
+          "models"
+        ]
+      },
+      "DshConfigResponse": {
+        "type": "object",
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "description": "Field exists"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/DshPrefs"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          }
+        },
+        "required": [
+          "success",
+          "exists",
+          "preferences"
+        ]
+      },
+      "DshPrefs": {
+        "type": "object",
+        "properties": {
+          "default_input": {
+            "type": "string",
+            "description": "Field default_input"
+          }
+        }
       },
       "E2ERequest": {
         "type": "object",
@@ -14124,6 +14348,12 @@
             "description": "Field output_tokens",
             "example": 20000
           },
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field reasoning_tokens",
+            "example": 800
+          },
           "request_count": {
             "type": "integer",
             "format": "int64",
@@ -14150,6 +14380,7 @@
           "output_tokens",
           "cache_read_tokens",
           "cache_write_tokens",
+          "reasoning_tokens",
           "error_count",
           "avg_latency_ms"
         ]
@@ -15016,6 +15247,12 @@
             "description": "Field provider_uuid",
             "example": "uuid-123"
           },
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field reasoning_tokens",
+            "example": 50
+          },
           "request_model": {
             "type": "string",
             "description": "Field request_model",
@@ -15082,6 +15319,7 @@
           "total_tokens",
           "cache_read_tokens",
           "cache_write_tokens",
+          "reasoning_tokens",
           "status",
           "latency_ms",
           "ttft_ms",
