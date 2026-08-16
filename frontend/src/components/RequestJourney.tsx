@@ -109,54 +109,16 @@ const timed = (span: TraceSpan): TimedSpan => ({
     end: new Date(span.end_time).getTime(),
 });
 
-const contains = (outer: TimedSpan, inner: TimedSpan): boolean =>
-    outer.start <= inner.start && outer.end >= inner.end;
-
-// A failover attempt and the single upstream call inside it are the same event
-// described twice — same status, near-identical duration, one named by service
-// id and the other by host. Fold that pair so the journey states it once,
-// keeping both sets of facts.
-//
-// An attempt that made *several* upstream calls keeps them as their own rows:
-// an MCP tool loop turns one attempt into a call per iteration, and folding
-// would silently drop all but one of them.
-const foldUpstreamIntoAttempts = (spans: TimedSpan[]): TimedSpan[] => {
-    const attempts = spans.filter((s) => s.name === 'failover.attempt');
-    if (attempts.length === 0) return spans;
-
-    const upstreams = spans.filter((s) => s.name === 'upstream');
-    const foldedInto = new Map<string, TimedSpan>();
-    for (const attempt of attempts) {
-        const inner = upstreams.filter((u) => contains(attempt, u));
-        if (inner.length === 1) foldedInto.set(attempt.span_id, inner[0]);
-    }
-    const absorbed = new Set([...foldedInto.values()].map((s) => s.span_id));
-
-    return spans
-        .filter((s) => !absorbed.has(s.span_id))
-        .map((s) => {
-            const upstream = foldedInto.get(s.span_id);
-            if (!upstream) return s;
-            return { ...s, attributes: { ...s.attributes, ...upstream.attributes } };
-        });
-};
-
 // Presentation for the span names the gateway emits. Anything unrecognized
 // falls through to its raw span name rather than being hidden.
 const describeSpan = (span: TimedSpan): { name: string; detail: string } => {
     const attrs = span.attributes || {};
     const service = attrs['tingly.lb.service_id'];
-    const host = attrs['server.address'];
     switch (span.name) {
         case 'routing':
             return { name: 'routing', detail: [service, attrs['tingly.lb.tactic']].filter(Boolean).join('  ·  ') };
         case 'failover.attempt':
-            return {
-                name: `attempt ${attrs['tingly.failover.attempt'] || '?'}`,
-                detail: [service, host].filter(Boolean).join('  ·  '),
-            };
-        case 'upstream':
-            return { name: 'upstream', detail: host || '' };
+            return { name: `attempt ${attrs['tingly.failover.attempt'] || '?'}`, detail: service || '' };
         default:
             return { name: span.name, detail: '' };
     }
@@ -168,7 +130,7 @@ const buildRows = (events: ModelRequestEvent[], spans: TraceSpan[]): JourneyRow[
     const ids = new Set(spans.map((s) => s.span_id));
     const all = spans.map(timed);
     const children = all.filter((s) => s.parent_span_id && ids.has(s.parent_span_id));
-    const stageSpans = foldUpstreamIntoAttempts(children.length > 0 ? children : all.length > 1 ? all : []);
+    const stageSpans = children.length > 0 ? children : all.length > 1 ? all : [];
 
     const rows: JourneyRow[] = stageSpans.map((span) => {
         const { name, detail } = describeSpan(span);

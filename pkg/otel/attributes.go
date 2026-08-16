@@ -41,6 +41,4 @@ var (
 	AttrTinglyLBTactic        = attribute.Key("tingly.lb.tactic")
 	AttrTinglyFailoverAttempt = attribute.Key("tingly.failover.attempt")
 	AttrHTTPResponseStatus    = semconv.HTTPResponseStatusCodeKey
-	AttrHTTPRequestMethod     = semconv.HTTPRequestMethodKey
-	AttrServerAddress         = semconv.ServerAddressKey
 )

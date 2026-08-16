@@ -112,16 +112,31 @@ import 环。追踪元数据簇已被 `SetTrackingContext`/`GetTrackingContext` 
 {operation} {request model}   (root, kind CLIENT, 每 HTTP 请求一个, middleware 拥有)
  ├─ gen_ai.* 请求属性 + tingly.* 维度 + token usage 属性（trackUsage 回写）
  ├─ routing            (child) 选路 pipeline；attrs: tingly.lb.service_id / tingly.lb.tactic
- ├─ failover.attempt   (child, 仅多服务 failover 循环产生, 每次尝试一个)
- │    attrs: tingly.failover.attempt / tingly.lb.service_id / provider uuid
- │    outcome: committed → OK；retryable/terminal 失败 → error status + http status attr
- └─ upstream           (child, 每次真实上游 HTTP 调用一个)
-      attrs: server.address / http.request.method / http.response.status_code
+ └─ failover.attempt   (child, 仅多服务 failover 循环产生, 每次尝试一个)
+      attrs: tingly.failover.attempt / tingly.lb.service_id / provider uuid
+      outcome: committed → OK；retryable/terminal 失败 → error status + http status attr
 ```
 
-**为什么 routing / upstream 也要打点**：只有 root + attempt 时，**单服务请求（最常见）整条 trace 只有一个 span**——没有骨架，旅程视图无从渲染。routing 回答"选了谁、用什么 tactic"，upstream 吃掉 95% 的延迟，两者是诊断的最小可用集。transform 不单独建 span（亚毫秒级），它的日志事件在视图里作为注解挂到相邻阶段。
+**`upstream` span 推迟到下一批**（连同 `internal/client` 的出站 traceparent 注入）。
+原因有两条，第二条是决定性的：
 
-**upstream span 建在 transport 层**（`internal/client/otel_transport.go`，位于所有 vendor round tripper 之下）：一处覆盖全部 provider，且天然只圈住真实上游调用。它**在响应体关闭/读尽时才结束**，不是 RoundTrip 返回时——流式补全在响应头到达后还会吐几秒钟的 token，否则记录的是 TTFB 而非上游总时长。
+1. 统一行文法之后它不再是骨架的必需品——日志行是一等公民、同一种行形态，
+   少了 upstream span 只是把那一行从 STAGE 降级成 LOG（失去实测时长），叙事完整。
+   单服务请求的上游耗时可由行头总耗时减去 routing 得到；多服务时 attempt span
+   本就在测每次尝试的耗时。
+2. **以当时的形态发布是残缺的**：`NewClaudeClient` 从不设置 `WithHTTPClient`，
+   走 SDK 默认 transport，所以 Claude Code OAuth——最主要的 provider——根本不经过
+   那一层。发一个悄悄漏掉主路径的上游计时，比不发更糟：它让人以为时长数据是完整的。
+   下一批要连同"Claude Code 路径不走连接池"这个既有问题一起修（那条路径同时也
+   忽略 provider proxy_url、反而继承环境代理）。
+
+同批发现、但属既有缺陷、不在本 PR 范围：`AnthropicClient.applyRecordMode` 无守卫地写
+`c.httpClient.Transport`，而 ClaudeClient 的 `httpClient` 为 nil ⇒ **对 Claude Code
+provider 开启录制会 panic**（已用临时测试确证）。
+
+**为什么 routing 要打点**：只有 root + attempt 时，单服务请求（最常见）整条 trace
+只有一个 span。routing 回答"选了谁、用什么 tactic"，是骨架的最小可用集。transform
+不单独建 span（亚毫秒级），它的日志行本就是视图里的一等行。
 
 **打点集中在一处,不散落到 handler**:routing span 一度是 6 个 handler 里各一对手工括号
 （`endRouting := ph.startRoutingSpan(c)` … `endRouting(err)`）——新增端点就得有人记得补,
@@ -137,12 +152,6 @@ protocolserver **共用**的那些（auth / access log / CORS / gzip / IO 超时
 middleware——会成环。文件名从 `tracing_middleware.go` 改为 `tracing.go`，因为它装的
 不只是中间件。
 
-**上游 transport 的包裹为什么是独立一层**:连接池 `GetTransport` 返回具体的
-`*http.Transport`，调用方（含 `pool_test.go`）会读它的 `Proxy` 等字段配置连接行为，
-所以池不能替自己包裹；而基础 transport 恰好有两种形状——池直连、以及带引用计数的
-session-bound。因此打点层是这两处的公共下沿，`newPooledBaseTransport` 收敛了池直连那
-三处逐字重复的构造。**关闭不需要新开关**:`otel.Config.Enabled=false` 时不建 provider，
-请求上下文里没有 span，transport 首行判断即原样透传。
 
 **attempt / routing span 不换入 `c.Request` 的 context**：ambient span 必须始终是 root，token usage 才会落在 root 上（GenAI 约定要求）。代价是 upstream span 与 attempt span 是兄弟而非父子——视图侧按**时间包含关系**做嵌套展示，比改动语义更便宜且更稳。
 

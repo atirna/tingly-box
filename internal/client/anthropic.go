@@ -12,6 +12,7 @@ import (
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/tingly-dev/tingly-box/internal/constant"
 
+	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -131,7 +132,8 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 // inherited), UA resolution, logging. Shared with the Vertex path, which must
 // rebuild this chain under its OAuth transport (see vertexAnthropicOptions).
 func anthropicTransport(provider *typ.Provider, model string, sessionID typ.SessionID) http.RoundTripper {
-	var transport http.RoundTripper = &userAgentTransport{base: newPooledBaseTransport(provider, model, sessionID)}
+	base := GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID)
+	var transport http.RoundTripper = &userAgentTransport{base: base}
 	return wrapWithLogging(transport, provider)
 }
 
