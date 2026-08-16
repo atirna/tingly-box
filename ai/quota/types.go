@@ -134,7 +134,7 @@ type UsageWindow struct {
 	// Unlimited say why UsedPercent should not be read as a usage figure.
 	// Between them they replace the three-way ambiguity of Limit == 0
 	// (unlimited / unknown / no entitlement).
-	Kind      WindowKind `json:"kind,omitempty"`      // defaults to WindowKindLimit, see EffectiveKind()
+	Kind      WindowKind `json:"kind,omitempty"`      // no default; unset is treated as "not proven self-healing" everywhere (RecoversAt, display sort, PctLimit) — a fetcher must tag WindowKindLimit explicitly
 	Unknown   bool       `json:"unknown,omitempty"`   // upstream did not report usage; not the same as 0%
 	Unlimited bool       `json:"unlimited,omitempty"` // no cap at all
 

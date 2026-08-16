@@ -5,8 +5,13 @@ import (
 	"time"
 )
 
+// window builds a fixture defaulting to Kind: WindowKindLimit — most tests
+// in this file model an ordinary periodic allowance. Production code has no
+// such default (Kind must be tagged explicitly by the fetcher); tests that
+// need a resource or an untagged window override via opts (see
+// unclassified()) or build a literal UsageWindow directly.
 func window(pct float64, minutes int, opts ...func(*UsageWindow)) *UsageWindow {
-	w := &UsageWindow{UsedPercent: pct, WindowMinutes: minutes, Limit: 100, Used: pct}
+	w := &UsageWindow{Kind: WindowKindLimit, UsedPercent: pct, WindowMinutes: minutes, Limit: 100, Used: pct}
 	for _, opt := range opts {
 		opt(w)
 	}
@@ -15,6 +20,13 @@ func window(pct float64, minutes int, opts ...func(*UsageWindow)) *UsageWindow {
 
 func labelled(label string) func(*UsageWindow) {
 	return func(w *UsageWindow) { w.Label = label }
+}
+
+// unclassified clears Kind, simulating a fetcher that never tagged the
+// window — the case PctLimit/RecoversAt/windowRank must treat as "not
+// proven self-healing", not default to limit.
+func unclassified() func(*UsageWindow) {
+	return func(w *UsageWindow) { w.Kind = "" }
 }
 
 func TestPctTakesTheTightestWindow(t *testing.T) {
@@ -174,12 +186,36 @@ func TestBreakdownsDoNotAnswerForTheProvider(t *testing.T) {
 	}
 }
 
-func TestKindDefaultsToLimit(t *testing.T) {
-	if got := (&UsageWindow{}).EffectiveKind(); got != WindowKindLimit {
-		t.Fatalf("EffectiveKind() = %q; want %q", got, WindowKindLimit)
+func TestUnclassifiedKindDoesNotRecoverOnItsOwn(t *testing.T) {
+	// No default: a window nobody explicitly tagged Kind: WindowKindLimit
+	// must not promise a recovery time, same treatment as a resource.
+	expires := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(90, 300, unclassified(), func(w *UsageWindow) { w.ResetsAt = &expires }),
+	}}
+
+	if got := usage.RecoversAt(); got != nil {
+		t.Fatalf("RecoversAt() = %v; want nil for an untagged window", got)
 	}
-	if got := (&UsageWindow{Kind: WindowKindResource}).EffectiveKind(); got != WindowKindResource {
-		t.Fatalf("EffectiveKind() = %q; want %q", got, WindowKindResource)
+	// Pct() still counts it — only the "will it come back" claim is withheld.
+	if pct, ok := usage.Pct(); !ok || pct != 90 {
+		t.Fatalf("Pct() = %v, %v; want 90, true", pct, ok)
+	}
+}
+
+func TestUnclassifiedKindDoesNotJumpTheDisplayQueue(t *testing.T) {
+	// An untagged window must not outrank an explicitly-tagged limit window
+	// on the strength of a shorter period — the Kind tag gates the group,
+	// period only breaks ties within it.
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(50, 100, unclassified(), labelled("untagged-short")),
+		window(50, 500, labelled("tagged-limit")),
+	}}
+
+	usage.NormalizeWindows()
+
+	if got := usage.Windows[0].Label; got != "tagged-limit" {
+		t.Fatalf("first window = %q; want tagged-limit — an untagged window must not outrank a tagged one", got)
 	}
 }
 
@@ -230,8 +266,8 @@ func TestBalanceDefaultsToResource(t *testing.T) {
 		Type: WindowTypeBalance, Used: 30, Limit: 100, ResetsAt: &reset,
 	})
 
-	if w.EffectiveKind() != WindowKindResource {
-		t.Errorf("EffectiveKind() = %q; want resource", w.EffectiveKind())
+	if w.Kind != WindowKindResource {
+		t.Errorf("Kind = %q; want resource", w.Kind)
 	}
 	if usage.RecoversAt() != nil {
 		t.Error("a balance must not report a recovery time")
@@ -282,12 +318,11 @@ func TestPctLimitExcludesResourceWindows(t *testing.T) {
 }
 
 func TestPctLimitDoesNotDefaultUnsetKindToLimit(t *testing.T) {
-	// Unlike EffectiveKind()'s "unset Kind defaults to limit" fallback,
-	// PctLimit must require an explicit tag — a fetcher that forgot to (or
+	// PctLimit requires an explicit tag — a fetcher that forgot to (or
 	// deliberately did not, e.g. Anthropic's pay-as-you-go overage add-on)
 	// mark a window Kind: WindowKindLimit must not silently count.
 	usage := &ProviderUsage{Windows: []*UsageWindow{
-		window(95, 300, labelled("untagged")),
+		window(95, 300, unclassified(), labelled("untagged")),
 	}}
 
 	if pct, ok := usage.PctLimit(); ok {
