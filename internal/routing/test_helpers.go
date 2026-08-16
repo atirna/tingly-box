@@ -1,12 +1,14 @@
 package routing
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tingly-dev/tingly-box/ai/quota"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -148,6 +150,34 @@ func (m *mockAffinityStore) CountByService(serviceID string) int {
 		}
 	}
 	return count
+}
+
+// mockQuotaProvider implements QuotaProvider for testing service_quota.
+// usage maps providerUUID -> cached usage; a missing entry simulates "no
+// data yet" (GetQuotaNoCache's ErrUsageNotFound path), which the stage
+// treats as unknown and excludes from aggregation.
+type mockQuotaProvider struct {
+	usage map[string]*quota.ProviderUsage
+}
+
+func newMockQuotaProvider() *mockQuotaProvider {
+	return &mockQuotaProvider{usage: make(map[string]*quota.ProviderUsage)}
+}
+
+// setPct registers a single countable window at pct% used for providerUUID.
+func (m *mockQuotaProvider) setPct(providerUUID string, pct float64) {
+	m.usage[providerUUID] = &quota.ProviderUsage{
+		ProviderUUID: providerUUID,
+		Windows:      []*quota.UsageWindow{{Limit: 100, UsedPercent: pct}},
+	}
+}
+
+func (m *mockQuotaProvider) GetQuotaNoCache(_ context.Context, providerUUID string) (*quota.ProviderUsage, error) {
+	usage, ok := m.usage[providerUUID]
+	if !ok {
+		return nil, quota.ErrUsageNotFound
+	}
+	return usage, nil
 }
 
 // mockConfig implements ProviderResolver for ServiceSelector tests.

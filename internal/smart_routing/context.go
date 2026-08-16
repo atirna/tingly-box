@@ -20,6 +20,20 @@ type ServiceCapacityInfo struct {
 	ActiveCount int // active affinity sessions
 }
 
+// ServiceQuotaInfo holds cached quota usage for a single service's upstream
+// provider account (see ai/quota, .design/quota-semantics.md). Pct is the
+// provider's tightest countable window (ai/quota's ProviderUsage.Pct()) —
+// 0-100, already the "how much is used" answer, no further unit conversion.
+//
+// Entries only exist for services whose quota is currently known: unread
+// (cold cache), unreadable, or not-countable (Unknown/Unlimited windows)
+// providers are omitted rather than represented as 0%, so they cannot be
+// misread as "quota fully available".
+type ServiceQuotaInfo struct {
+	ServiceID string
+	Pct       float64
+}
+
 // RequestContext holds extracted request data for evaluation
 type RequestContext struct {
 	Model             string
@@ -50,6 +64,7 @@ type RequestContext struct {
 	// These fields are set per-rule inside evaluateRule to avoid cross-rule contamination.
 	ServiceStats    []loadbalance.ServiceStats // TTFT / latency snapshots
 	ServiceCapacity []ServiceCapacityInfo      // seat utilization info
+	ServiceQuota    []ServiceQuotaInfo         // cached upstream-provider quota usage (%)
 }
 
 // GetLatestUserMessage returns the latest user message
