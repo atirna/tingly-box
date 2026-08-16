@@ -32,7 +32,7 @@ func TestValidateCloudBundle_MissingBundle(t *testing.T) {
 
 func TestVertexAnthropicOptions_Validation(t *testing.T) {
 	// missing required fields → schema validation error
-	if _, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
+	if _, _, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPProjectID: "proj",
 	}), "m", typ.SessionID{}); err == nil {
 		t.Error("expected error for incomplete GCP bundle")
@@ -40,7 +40,7 @@ func TestVertexAnthropicOptions_Validation(t *testing.T) {
 
 	// complete bundle but malformed SA JSON → error (caught by schema
 	// validation), not a panic
-	_, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
+	_, _, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPServiceAccountJSON: "{not json",
 		ai.CredFieldGCPProjectID:          "proj",
 		ai.CredFieldGCPLocation:           "us-east5",
@@ -52,7 +52,7 @@ func TestVertexAnthropicOptions_Validation(t *testing.T) {
 	// valid bundle → adapter option plus our HTTP-client override, in that
 	// order (the override must come after so it wins over the adapter's
 	// google-built client and provider proxy semantics are preserved)
-	opts, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
+	opts, httpClient, err := vertexAnthropicOptions(context.Background(), cloudProvider("vertex", typ.AuthTypeGCPVertex, map[string]string{
 		ai.CredFieldGCPServiceAccountJSON: fakeSAJSON,
 		ai.CredFieldGCPProjectID:          "proj",
 		ai.CredFieldGCPLocation:           "us-east5",
@@ -62,6 +62,11 @@ func TestVertexAnthropicOptions_Validation(t *testing.T) {
 	}
 	if len(opts) != 2 {
 		t.Errorf("len(opts) = %d, want 2 (adapter + HTTP-client override)", len(opts))
+	}
+	// The returned client is what the caller stores on AnthropicClient.httpClient,
+	// so record mode wraps the chain requests actually travel.
+	if httpClient == nil {
+		t.Error("vertexAnthropicOptions must return the HTTP client it installs")
 	}
 }
 

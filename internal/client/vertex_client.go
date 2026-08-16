@@ -59,11 +59,20 @@ func validateCloudBundle(provider *typ.Provider) error {
 // token source and rewrites /v1/messages to the Vertex publisher endpoint; this
 // constructor supplies the credentials from the stored bundle.
 func NewVertexAnthropicClient(provider *typ.Provider, model string, sessionID typ.SessionID) (*AnthropicClient, error) {
-	opts, err := vertexAnthropicOptions(context.Background(), provider, model, sessionID)
+	opts, httpClient, err := vertexAnthropicOptions(context.Background(), provider, model, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	return NewAnthropicClient(provider, model, sessionID, opts...)
+	c, err := NewAnthropicClient(provider, model, sessionID, opts...)
+	if err != nil {
+		return nil, err
+	}
+	// The adapter options override the SDK's HTTP client with the SA-authed one,
+	// so the generic client NewAnthropicClient recorded is not the one requests
+	// travel through. Re-point the field at the live client: applyRecordMode and
+	// the probe wrappers both address the chain through it.
+	c.httpClient = httpClient
+	return c, nil
 }
 
 // vertexAnthropicOptions resolves the Vertex adapter RequestOptions from a
@@ -77,21 +86,25 @@ func NewVertexAnthropicClient(provider *typ.Provider, model string, sessionID ty
 // is middleware, auth is just a bearer from the token source), so we re-apply
 // an HTTP client of our own AFTER the adapter option: the same transport chain
 // generic Anthropic providers get, wrapped in oauth2.Transport for the token.
-func vertexAnthropicOptions(ctx context.Context, provider *typ.Provider, model string, sessionID typ.SessionID) ([]anthropicOption.RequestOption, error) {
+//
+// It returns the *http.Client it installs as well, so the caller can keep
+// AnthropicClient.httpClient pointing at the client the SDK really uses.
+func vertexAnthropicOptions(ctx context.Context, provider *typ.Provider, model string, sessionID typ.SessionID) ([]anthropicOption.RequestOption, *http.Client, error) {
 	if err := validateCloudBundle(provider); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	saJSON := provider.Credential.Field(ai.CredFieldGCPServiceAccountJSON)
 	creds, err := cachedGoogleCredentials(ctx, saJSON)
 	if err != nil {
-		return nil, fmt.Errorf("provider %q: invalid GCP service account JSON: %w", provider.Name, err)
+		return nil, nil, fmt.Errorf("provider %q: invalid GCP service account JSON: %w", provider.Name, err)
 	}
 	location := provider.Credential.Field(ai.CredFieldGCPLocation)
 	project := provider.Credential.Field(ai.CredFieldGCPProjectID)
+	httpClient := vertexAuthedHTTPClient(provider, model, sessionID, creds)
 	return []anthropicOption.RequestOption{
 		anthropicVertex.WithCredentials(ctx, location, project, creds),
-		anthropicOption.WithHTTPClient(vertexAuthedHTTPClient(provider, model, sessionID, creds)),
-	}, nil
+		anthropicOption.WithHTTPClient(httpClient),
+	}, httpClient, nil
 }
 
 // vertexAuthedHTTPClient layers the shared SA OAuth token source over the

@@ -10,6 +10,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicOption "github.com/anthropics/anthropic-sdk-go/option"
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
+	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/constant"
 
 	"github.com/tingly-dev/tingly-box/ai"
@@ -229,9 +230,20 @@ func (c *AnthropicClient) SetRecordSink(sink *obs.Sink) {
 	}
 }
 
-// applyRecordMode wraps the HTTP client with a record round tripper
+// applyRecordMode wraps the HTTP client with a record round tripper.
+//
+// httpClient must be the client the SDK actually sends through — every
+// constructor installs it via anthropicOption.WithHTTPClient and stores the same
+// pointer here. The nil branch is a backstop for a future constructor that
+// forgets: recording an upstream call is impossible without a transport to wrap,
+// and silently dropping recordings the user switched on is worse than a log
+// line, so say so instead of panicking.
 func (c *AnthropicClient) applyRecordMode() {
 	if c.recordSink == nil {
+		return
+	}
+	if c.httpClient == nil {
+		logrus.Warnf("Recording is enabled but provider %q has no HTTP client to wrap; upstream calls will not be recorded", c.provider.Name)
 		return
 	}
 	c.httpClient.Transport = NewRecordRoundTripper(c.httpClient.Transport, c.recordSink, c.provider)

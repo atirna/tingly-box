@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -63,6 +64,24 @@ func NewClaudeClient(ctx context.Context, provider *typ.Provider, model string, 
 	// Add beta query parameter
 	options = append(options, anthropicOption.WithQuery("beta", "true"))
 
+	// Claude Code traffic goes through the same session-bound transport as every
+	// other OAuth provider, instead of the SDK's http.DefaultClient. Three things
+	// depend on this client existing:
+	//   - provider.ProxyURL is honored, and env proxy is not silently inherited
+	//     (the project-wide default; opt in with the respect_env_proxy setting);
+	//   - the per-session transport policy already registered for
+	//     ai.IssuerClaudeCode actually takes effect;
+	//   - record mode has something to wrap — applyRecordMode layers the recorder
+	//     onto this client's Transport, and the SDK clients rebuilt in
+	//     Guard/GuardBeta inherit the same *http.Client pointer through the
+	//     copied options, so the recorder stays in the live chain.
+	// createSessionBoundTransport deliberately leaves the User-Agent alone, so
+	// the Claude Code handshake UA pinned in the headers above stays decisive.
+	httpClient := &http.Client{
+		Transport: createSessionBoundTransport(provider, sessionID),
+	}
+	options = append(options, anthropicOption.WithHTTPClient(httpClient))
+
 	// MENTION: must set timeout, otherwise nonstream and stream may work badly
 	timeout := time.Duration(provider.Timeout) * time.Second
 	if provider.Timeout <= 0 {
@@ -75,8 +94,9 @@ func NewClaudeClient(ctx context.Context, provider *typ.Provider, model string, 
 
 	// Wrap in AnthropicClient base
 	base := &AnthropicClient{
-		client:   anthropicClient,
-		provider: provider,
+		client:     anthropicClient,
+		provider:   provider,
+		httpClient: httpClient,
 	}
 
 	return &ClaudeClient{AnthropicClient: base}, nil
@@ -188,10 +208,14 @@ func (c *ClaudeClient) Guard(ctx context.Context, req *anthropic.MessageNewParam
 	// Create SDK client
 	anthropicClient := anthropic.NewClient(options...)
 
-	// Wrap in AnthropicClient base
+	// Wrap in AnthropicClient base. The rebuilt SDK client inherits the same
+	// *http.Client through the copied options, so the field must point at it too
+	// — that is what keeps record mode and the probe wrappers addressing the
+	// transport chain requests actually travel.
 	base := &AnthropicClient{
-		client:   anthropicClient,
-		provider: c.AnthropicClient.provider,
+		client:     anthropicClient,
+		provider:   c.AnthropicClient.provider,
+		httpClient: c.AnthropicClient.httpClient,
 	}
 
 	return base, reverseMap
@@ -243,10 +267,11 @@ func (c *ClaudeClient) GuardBeta(ctx context.Context, req *anthropic.BetaMessage
 	// Create SDK client
 	anthropicClient := anthropic.NewClient(options...)
 
-	// Wrap in AnthropicClient base
+	// Wrap in AnthropicClient base (see Guard for why httpClient is carried over).
 	base := &AnthropicClient{
-		client:   anthropicClient,
-		provider: c.AnthropicClient.provider,
+		client:     anthropicClient,
+		provider:   c.AnthropicClient.provider,
+		httpClient: c.AnthropicClient.httpClient,
 	}
 	return base, reverseMap
 }

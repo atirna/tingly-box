@@ -117,22 +117,43 @@ import 环。追踪元数据簇已被 `SetTrackingContext`/`GetTrackingContext` 
       outcome: committed → OK；retryable/terminal 失败 → error status + http status attr
 ```
 
-**`upstream` span 推迟到下一批**（连同 `internal/client` 的出站 traceparent 注入）。
-原因有两条，第二条是决定性的：
+**`upstream` span 推迟到下一批**（连同 `internal/client` 的出站 traceparent 注入）：
+统一行文法之后它不再是骨架的必需品——日志行是一等公民、同一种行形态，少了 upstream
+span 只是把那一行从 STAGE 降级成 LOG（失去实测时长），叙事完整。单服务请求的上游耗时
+可由行头总耗时减去 routing 得到；多服务时 attempt span 本就在测每次尝试的耗时。
 
-1. 统一行文法之后它不再是骨架的必需品——日志行是一等公民、同一种行形态，
-   少了 upstream span 只是把那一行从 STAGE 降级成 LOG（失去实测时长），叙事完整。
-   单服务请求的上游耗时可由行头总耗时减去 routing 得到；多服务时 attempt span
-   本就在测每次尝试的耗时。
-2. **以当时的形态发布是残缺的**：`NewClaudeClient` 从不设置 `WithHTTPClient`，
-   走 SDK 默认 transport，所以 Claude Code OAuth——最主要的 provider——根本不经过
-   那一层。发一个悄悄漏掉主路径的上游计时，比不发更糟：它让人以为时长数据是完整的。
-   下一批要连同"Claude Code 路径不走连接池"这个既有问题一起修（那条路径同时也
-   忽略 provider proxy_url、反而继承环境代理）。
+推迟原本还有一条决定性理由——`NewClaudeClient` 从不设置 `WithHTTPClient`，Claude Code
+OAuth（最主要的 provider）根本不经过传输链那一层，发一个悄悄漏掉主路径的上游计时比
+不发更糟。**这一条已单独修掉**（§7.2.1），所以下一批的 upstream span 是纯增量。
 
-同批发现、但属既有缺陷、不在本 PR 范围：`AnthropicClient.applyRecordMode` 无守卫地写
-`c.httpClient.Transport`，而 ClaudeClient 的 `httpClient` 为 nil ⇒ **对 Claude Code
-provider 开启录制会 panic**（已用临时测试确证）。
+### 7.2.1 `AnthropicClient.httpClient` 必须是 SDK 真正走的那个 client
+
+> 本节描述的修复**不在 trace span 那条改动里**：它动的是最热路径的真实传输行为
+> （连接池、代理语义），与观测改造的风险面完全不同，因而拆到
+> `claude/record-mode-http-client-gm0zqt` 单独走。
+
+既有缺陷，根因是同一条不变量被两处破坏：`applyRecordMode` 把录制器叠在
+`c.httpClient.Transport` 上，前提是这个字段就是 SDK 发请求用的 client。
+
+- **ClaudeClient：字段为 nil ⇒ panic。** `NewClaudeClient` 只建 SDK client、不建
+  `http.Client`，而 `ClientPool.GetAnthropicClient` 对**所有** Anthropic client 调用
+  `SetRecordSink` ⇒ 对 Claude Code provider 开启录制直接 nil 解引用。修法不是加个
+  nil 守卫（那只是把 panic 换成"录制悄悄没生效"），而是补齐本来就该有的传输链：
+  `createSessionBoundTransport` + `WithHTTPClient`。顺带修好三件同源的事——
+  `ProviderTransportPolicy` 里早已登记的 `ai.IssuerClaudeCode: TransportPerSession`
+  终于真正生效、`provider.ProxyURL` 不再被无视、环境代理不再被默认继承（与全局
+  `respect_env_proxy` 语义一致）。UA 不受影响：`createSessionBoundTransport` 明确
+  不碰 UA，Claude Code 的特种 UA 仍由 header 钉死（见 `.design/user-agent.md` §5）。
+  每请求重建 SDK client 的 `Guard`/`GuardBeta` 复制 options ⇒ 共享同一个
+  `*http.Client` 指针，录制器留在活跃链上（有测试钉住）。
+- **Vertex：字段过期 ⇒ 静默失效。** `vertexAnthropicOptions` 在 option 末尾用
+  SA-authed client 覆盖了通用 client，而字段仍指向被覆盖掉的那个 ⇒ 录制包了一个
+  没人用的 client。改为把安装的 client 一并返回、由构造函数回填字段。
+- `applyRecordMode` 保留 nil 分支作为兜底，但**记 warn 而非静默**：用户开了录制却
+  录不到，比一行日志更糟。
+
+**不变量**：任何新增的 Anthropic 构造路径，只要用 `WithHTTPClient` 覆盖了 HTTP client，
+就必须把同一个指针写回 `AnthropicClient.httpClient`——录制与 probe 包装都经由它寻址。
 
 **为什么 routing 要打点**：只有 root + attempt 时，单服务请求（最常见）整条 trace
 只有一个 span。routing 回答"选了谁、用什么 tactic"，是骨架的最小可用集。transform
