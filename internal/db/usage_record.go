@@ -37,11 +37,9 @@ type UsageRecord struct {
 	// alias it (`SUM(cache_input_tokens) as cache_read_tokens`) so Scan binds.
 	CacheReadTokens  int `gorm:"column:cache_input_tokens;default:0"`
 	CacheWriteTokens int `gorm:"column:cache_write_tokens;default:0"`
-	// ReasoningTokens counts thinking/reasoning tokens (OpenAI o1/o3/gpt-5.x
-	// reasoning models). It is a SUBSET of OutputTokens, not an addition to
-	// it -- OutputTokens already includes them upstream. Anthropic does not
-	// expose a separate thinking-token count at all, so this is always 0 for
-	// Anthropic-routed requests even when extended thinking was used.
+	// ReasoningTokens counts thinking/reasoning tokens (OpenAI reasoning
+	// models, Anthropic extended thinking). A SUBSET of OutputTokens, not
+	// an addition to it.
 	ReasoningTokens int `gorm:"column:reasoning_tokens;default:0"`
 	// System tokens (framework overhead, templates, etc.)
 	SystemTokens int    `gorm:"column:system_tokens;default:0"`

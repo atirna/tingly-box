@@ -480,7 +480,7 @@ level=debug msg="OpenAI->Anthropic stream usage: model=... in=42 out=17 cache=11
 
 **唯一保留的真实限制**：这个字段是 SDK/API 层面新加的，历史请求／未升级到能上报它的模型或客户端仍拿不到；这是版本问题，不是"Anthropic 架构上做不到"。
 
-**未覆盖**：`vmodel/` 测试 mock（§9.1）没有跟着更新——`MockUsage.ReasoningTokens` 仍只在 OpenAI 侧渲染，Anthropic mock fixture 测不出 `thinking_tokens` 的覆盖率；需要时再补 §9 的 mock 渲染逻辑。
+**未覆盖**：~~`vmodel/` 测试 mock（§9.1）没有跟着更新——`MockUsage.ReasoningTokens` 仍只在 OpenAI 侧渲染，Anthropic mock fixture 测不出 `thinking_tokens` 的覆盖率~~。已补：`vmodel/virtualserver` 的 `AnthropicUsage` 加了 `OutputTokensDetails`，`handleAnthropicStreaming` 的 `message_delta` 现在把 `explicitUsage.ReasoningTokens` 渲成 `output_tokens_details.thinking_tokens`（此前误渲成扁平的 `reasoning_tokens`，与真实 Anthropic wire 格式不符）；`TestStreamTestMocks_AnthropicMessageDelta` 同步更新断言。Anthropic 非流式路径（`handleAnthropicNonStreaming`）仍未接 `MockUsage`（OpenAI 非流式同样如此，是更早就有的通用限制，不只是 reasoning 的坑），需要时再补。
 
 单测：`internal/protocol/usage/usage_test.go`（`TestFromAnthropicMessage`/`TestAnthropicAccumulator_ExtendedThinking`/`TestToAnthropicUsageMap_ReasoningTokens`）、`internal/protocol/assembler/anthropic_assembler_test.go`（`TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesReasoning`/`TestAnthropicStreamAssembler_RecordV1Event_CarriesReasoning`）、`internal/protocol/nonstream/openai_usage_test.go`（`TestBuildAnthropicPayloadFromChat_ReasoningTokens`）。
 
@@ -498,7 +498,7 @@ type MockUsage struct {
     CompletionTokens  int64
     CachedInputTokens int64 // OpenAI cached_tokens / Anthropic cache_read
     CacheWriteTokens  int64 // Anthropic cache_creation / OpenAI cache_write_tokens
-    ReasoningTokens   int64 // OpenAI only — mock renderer not extended for Anthropic thinking_tokens, see §8.5
+    ReasoningTokens   int64 // OpenAI reasoning_tokens / Anthropic thinking_tokens — see §9.2 rendering
 }
 ```
 

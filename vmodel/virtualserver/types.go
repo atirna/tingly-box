@@ -71,8 +71,15 @@ type AnthropicContent struct {
 
 // AnthropicUsage holds token usage in Anthropic format.
 type AnthropicUsage struct {
-	InputTokens  int64 `json:"input_tokens"`
-	OutputTokens int64 `json:"output_tokens"`
+	InputTokens         int64                         `json:"input_tokens"`
+	OutputTokens        int64                         `json:"output_tokens"`
+	OutputTokensDetails *AnthropicOutputTokensDetails `json:"output_tokens_details,omitempty"`
+}
+
+// AnthropicOutputTokensDetails mirrors Anthropic's usage.output_tokens_details;
+// ThinkingTokens is a subset of OutputTokens (like OpenAI's reasoning_tokens).
+type AnthropicOutputTokensDetails struct {
+	ThinkingTokens int64 `json:"thinking_tokens"`
 }
 
 // AnthropicStreamEvent is a streaming event in Anthropic format.

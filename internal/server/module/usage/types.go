@@ -42,9 +42,7 @@ type AggregatedStat struct {
 	CacheReadTokens  int64   `json:"cache_read_tokens" example:"500000"`
 	CacheWriteTokens int64   `json:"cache_write_tokens" example:"75000"`
 	// ReasoningTokens is a subset of OutputTokens (thinking/reasoning
-	// tokens). Always 0 for Anthropic-routed requests -- Anthropic does not
-	// expose a separate thinking-token count, even when extended thinking
-	// was used.
+	// tokens); populated for both OpenAI and Anthropic.
 	ReasoningTokens int64 `json:"reasoning_tokens" example:"12000"`
 }
 
