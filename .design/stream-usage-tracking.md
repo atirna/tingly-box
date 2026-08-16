@@ -150,7 +150,7 @@ ReasoningTokens  = reasoning_tokens                 // 仅作展示，是 Output
 | `cache_creation_input_tokens` | 本次**写入**缓存的 token（按写入价计费） | 与 input **并列**，独立不重叠 |
 | `cache_read_input_tokens` | 本次**命中读取**缓存的 token（便宜） | 与 input **并列**，独立不重叠 |
 | `output_tokens` | 本次**全部** output | 父字段，**已含** thinking |
-| `output_tokens_details.thinking_tokens`（`Usage`/`BetaUsage` 均有，非 beta 字段，随 claude-opus-4-8 引入） | extended thinking 消耗（含 thinking-block 分隔符 token） | ⊂ `output_tokens` 的**子集**，与 OpenAI `reasoning_tokens` 同构 |
+| `output_tokens_details.thinking_tokens`（`Usage`/`BetaUsage` 均有，非 beta 字段） | extended thinking 消耗（含 thinking-block 分隔符 token） | ⊂ `output_tokens` 的**子集**，与 OpenAI `reasoning_tokens` 同构 |
 
 归一化计算（`FromAnthropicMessage` / `FromAnthropicBetaMessage`）：
 
@@ -201,7 +201,7 @@ usage.FromAnthropicBetaMessage(resp.Usage) // anthropic.BetaUsage
 ```
 
 OpenAI 侧：`InputTokens = prompt − cached`，cache read / cache write / reasoning 直接读 details。
-Anthropic 侧：`InputTokens = input + cache_creation`，`CacheReadTokens = cache_read`，`CacheWriteTokens = cache_creation`，`ReasoningTokens = output_tokens_details.thinking_tokens`（随 claude-opus-4-8 引入）。
+Anthropic 侧：`InputTokens = input + cache_creation`，`CacheReadTokens = cache_read`，`CacheWriteTokens = cache_creation`，`ReasoningTokens = output_tokens_details.thinking_tokens`。
 
 反向（`*TokenUsage` → wire）：
 
@@ -323,7 +323,7 @@ OpenAI→Anthropic converter 的终态收口在 `emitTerminalEvents()`：从 cou
   - `OutputTokens → anthropic.Usage.OutputTokens`
   - `CacheReadTokens → anthropic.Usage.CacheReadInputTokens`
   - `CacheWriteTokens → anthropic.Usage.CacheCreationInputTokens`
-  - `ReasoningTokens > 0 → anthropic.Usage.OutputTokensDetails.ThinkingTokens`（Anthropic 自己的字段，随 claude-opus-4-8 引入，不是"无对应字段"）
+  - `ReasoningTokens > 0 → anthropic.Usage.OutputTokensDetails.ThinkingTokens`（Anthropic 自己的字段，不是"无对应字段"）
 - `Finish(model, in, out) → *anthropic.Message`：有 `SetUsage*` 数据就用它，否则回退入参
 
 ### 4.2 `streamRecorder`（`internal/server/recording_hooks.go`）

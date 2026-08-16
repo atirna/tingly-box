@@ -149,8 +149,8 @@ func TestFromAnthropicMessage(t *testing.T) {
 			wantInput: 300, wantOutput: 80, wantCache: 0,
 		},
 		{
-			// output_tokens_details.thinking_tokens (added alongside
-			// claude-opus-4-8): a subset of output_tokens, not subtracted.
+			// output_tokens_details.thinking_tokens: a subset of
+			// output_tokens, not subtracted.
 			name:  "extended thinking",
 			input: 100, creation: 0, read: 0, output: 80, reasoning: 30,
 			wantInput: 100, wantOutput: 80, wantCache: 0, wantReasoning: 30,
@@ -282,8 +282,7 @@ func messageDeltaFullJSON(t *testing.T, inputTokens, outputTokens, cacheRead int
 }
 
 // thinkingDeltaJSON is outputOnlyDeltaJSON plus a
-// usage.output_tokens_details.thinking_tokens breakdown (extended thinking,
-// added alongside claude-opus-4-8).
+// usage.output_tokens_details.thinking_tokens breakdown (extended thinking).
 func thinkingDeltaJSON(t *testing.T, outputTokens, thinkingTokens int64) string {
 	t.Helper()
 	ev := map[string]interface{}{

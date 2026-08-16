@@ -218,10 +218,8 @@ func (a *AnthropicStreamAssembler) SetUsage(inputTokens, outputTokens int) {
 // ai.TokenUsage type. Cache-read input tokens are mapped to
 // anthropic.Usage.CacheReadInputTokens and cache writes to
 // CacheCreationInputTokens. ReasoningTokens maps to
-// Usage.OutputTokensDetails.ThinkingTokens -- Anthropic's own
-// usage.output_tokens_details.thinking_tokens field (added alongside
-// claude-opus-4-8), a genuine subset of OutputTokens like OpenAI's
-// reasoning_tokens, not something Anthropic lacks.
+// Usage.OutputTokensDetails.ThinkingTokens, a genuine subset of OutputTokens
+// like OpenAI's reasoning_tokens.
 //
 // InputTokens goes through UncachedInputTokens() because canonical usage folds
 // the cache-write cost into InputTokens while Anthropic's wire field excludes it.

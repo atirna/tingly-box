@@ -237,8 +237,7 @@ func TestBuildAnthropicPayloadFromChat_CacheWriteTokens(t *testing.T) {
 
 // TestBuildAnthropicPayloadFromChat_ReasoningTokens verifies OpenAI
 // reasoning_tokens survives conversion into an Anthropic-shaped response as
-// usage.output_tokens_details.thinking_tokens -- a real Anthropic wire field
-// (added alongside claude-opus-4-8), not something the protocol lacks.
+// usage.output_tokens_details.thinking_tokens.
 func TestBuildAnthropicPayloadFromChat_ReasoningTokens(t *testing.T) {
 	resp := &openai.ChatCompletion{
 		ID: "chatcmpl-4",

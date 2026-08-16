@@ -127,8 +127,7 @@ func (u *TokenUsage) ToAnthropicUsageMap() map[string]interface{} {
 	}
 	if u.ReasoningTokens > 0 {
 		// Mirrors Anthropic's own usage.output_tokens_details.thinking_tokens
-		// (added alongside claude-opus-4-8) -- a subset of output_tokens, not
-		// something Anthropic lacks.
+		// -- a subset of output_tokens.
 		usage["output_tokens_details"] = map[string]interface{}{
 			"thinking_tokens": u.ReasoningTokens,
 		}

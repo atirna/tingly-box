@@ -26,9 +26,8 @@ type AnthropicUsageWire struct {
 }
 
 // AnthropicOutputTokensDetailsWire mirrors Anthropic's own
-// usage.output_tokens_details (added alongside claude-opus-4-8):
-// thinking_tokens is a subset of output_tokens, same relationship as
-// OpenAI's completion_tokens_details.reasoning_tokens.
+// usage.output_tokens_details: thinking_tokens is a subset of output_tokens,
+// same relationship as OpenAI's completion_tokens_details.reasoning_tokens.
 type AnthropicOutputTokensDetailsWire struct {
 	ThinkingTokens int64 `json:"thinking_tokens"`
 }

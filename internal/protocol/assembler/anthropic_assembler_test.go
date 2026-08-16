@@ -268,8 +268,7 @@ func TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesCacheWrite(t *te
 // TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesReasoning checks
 // that ReasoningTokens (from OpenAI upstream, or Anthropic's own extended
 // thinking) survives into the assembled Anthropic response as
-// output_tokens_details.thinking_tokens -- a real Anthropic wire field
-// (added alongside claude-opus-4-8), not something Anthropic lacks.
+// output_tokens_details.thinking_tokens.
 func TestAnthropicStreamAssembler_SetUsageFromTokenUsage_CarriesReasoning(t *testing.T) {
 	assembler := NewAnthropicStreamAssembler()
 	assembler.SetUsageFromTokenUsage(&ai.TokenUsage{
