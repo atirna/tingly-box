@@ -6,9 +6,20 @@ import (
 	"path/filepath"
 )
 
-// expandUser resolves a leading "~" or "~/" in p against the current user's
-// home directory. Other paths are returned unchanged.
+// expandUser resolves a leading "~" or "~/" (against the user's home
+// directory) or "$DSH_HOME" (against dshHomeDir) in p. Other paths are
+// returned unchanged.
 func expandUser(p string) (string, error) {
+	if p == "$DSH_HOME" || hasPrefix(p, "$DSH_HOME/") {
+		home, err := dshHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if p == "$DSH_HOME" {
+			return home, nil
+		}
+		return filepath.Join(home, p[len("$DSH_HOME"):]), nil
+	}
 	if p == "~" || hasPrefix(p, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {

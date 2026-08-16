@@ -50,6 +50,16 @@ func ListAgentInfo() []AgentInfo {
 			},
 			Scenario: "codex",
 		},
+		{
+			Type:        AgentTypeDsh,
+			Name:        "DeepSeek Harness",
+			Description: "DeepSeek Harness CLI (dsh)",
+			ConfigFiles: []string{
+				"$DSH_HOME/settings.yaml",
+				"$DSH_HOME/.credentials.yaml",
+			},
+			Scenario: "dsh",
+		},
 	}
 }
 

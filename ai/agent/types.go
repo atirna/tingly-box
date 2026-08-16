@@ -12,6 +12,9 @@ const (
 
 	// AgentTypeCodex represents the OpenAI Codex CLI
 	AgentTypeCodex AgentType = "codex"
+
+	// AgentTypeDsh represents the DeepSeek Harness CLI
+	AgentTypeDsh AgentType = "dsh"
 )
 
 // String returns the string representation of AgentType
@@ -22,7 +25,7 @@ func (at AgentType) String() string {
 // IsValid checks if the AgentType is valid
 func (at AgentType) IsValid() bool {
 	switch at {
-	case AgentTypeClaudeCode, AgentTypeOpenCode, AgentTypeCodex:
+	case AgentTypeClaudeCode, AgentTypeOpenCode, AgentTypeCodex, AgentTypeDsh:
 		return true
 	default:
 		return false

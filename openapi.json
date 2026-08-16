@@ -1699,6 +1699,39 @@
         }
       }
     },
+    "/api/v1/config/apply/dsh": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Generate and apply DeepSeek Harness (dsh) configuration from system state",
+        "description": "Generate and apply DeepSeek Harness (dsh) configuration from system state",
+        "operationId": "apiV1ConfigApplyDshPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyDshConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyDshConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/config/apply/opencode": {
       "post": {
         "tags": [
@@ -1765,6 +1798,28 @@
         }
       }
     },
+    "/api/v1/config/dsh": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get the currently applied DeepSeek Harness (dsh) preferences",
+        "description": "Get the currently applied DeepSeek Harness (dsh) preferences",
+        "operationId": "apiV1ConfigDshGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DshConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/config/preview/codex": {
       "post": {
         "tags": [
@@ -1791,6 +1846,39 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CodexConfigPreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/preview/dsh": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Generate DeepSeek Harness (dsh) configuration preview from system state",
+        "description": "Generate DeepSeek Harness (dsh) configuration preview from system state",
+        "operationId": "apiV1ConfigPreviewDshPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyDshConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DshConfigPreviewResponse"
                 }
               }
             }
@@ -1850,6 +1938,28 @@
         "summary": "Restore Codex configuration from the most recent backup",
         "description": "Restore Codex configuration from the most recent backup",
         "operationId": "apiV1ConfigRestoreCodexPost",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/restore/dsh": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Restore DeepSeek Harness (dsh) configuration from the most recent backup",
+        "description": "Restore DeepSeek Harness (dsh) configuration from the most recent backup",
+        "operationId": "apiV1ConfigRestoreDshPost",
         "responses": {
           "200": {
             "description": "Successful response",
@@ -6515,6 +6625,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "force_upstream",
+            "in": "query",
+            "description": "Attempt the upstream models endpoint even when normally skipped",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -7584,6 +7703,49 @@
           "createdFiles",
           "updatedFiles",
           "backupPaths"
+        ]
+      },
+      "ApplyDshConfigRequest": {
+        "type": "object",
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/DshPrefs"
+          }
+        },
+        "required": [
+          "preferences"
+        ]
+      },
+      "ApplyDshConfigResponse": {
+        "type": "object",
+        "properties": {
+          "credentialsResult": {
+            "$ref": "#/components/schemas/ApplyResult"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "models": {
+            "type": "array",
+            "description": "Field models",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settingsResult": {
+            "$ref": "#/components/schemas/ApplyResult"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          }
+        },
+        "required": [
+          "success",
+          "settingsResult",
+          "credentialsResult",
+          "models"
         ]
       },
       "ApplyOpenCodeConfigResponse": {
@@ -8927,6 +9089,70 @@
           "locations"
         ]
       },
+      "DshConfigPreviewResponse": {
+        "type": "object",
+        "properties": {
+          "credentialsYaml": {
+            "type": "string",
+            "description": "Field credentialsYaml"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "models": {
+            "type": "array",
+            "description": "Field models",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settingsYaml": {
+            "type": "string",
+            "description": "Field settingsYaml"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          }
+        },
+        "required": [
+          "success",
+          "settingsYaml",
+          "credentialsYaml",
+          "models"
+        ]
+      },
+      "DshConfigResponse": {
+        "type": "object",
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "description": "Field exists"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/DshPrefs"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          }
+        },
+        "required": [
+          "success",
+          "exists",
+          "preferences"
+        ]
+      },
+      "DshPrefs": {
+        "type": "object",
+        "properties": {
+          "default_input": {
+            "type": "string",
+            "description": "Field default_input"
+          }
+        }
+      },
       "E2ERequest": {
         "type": "object",
         "properties": {
@@ -8980,6 +9206,11 @@
             "type": "string",
             "description": "Field test_mode"
           },
+          "thinking": {
+            "type": "string",
+            "description": "Field thinking",
+            "example": "medium"
+          },
           "token": {
             "type": "string",
             "description": "Field token"
@@ -8994,7 +9225,7 @@
         "type": "object",
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/ProbeResult"
+            "$ref": "#/components/schemas/Result"
           },
           "error": {
             "$ref": "#/components/schemas/errorDetail"
@@ -11892,135 +12123,6 @@
           "verdict"
         ]
       },
-      "ProbeResult": {
-        "type": "object",
-        "properties": {
-          "applied_flags": {
-            "type": "string",
-            "description": "Field applied_flags"
-          },
-          "completion_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field completion_tokens"
-          },
-          "content": {
-            "type": "string",
-            "description": "Field content"
-          },
-          "error_message": {
-            "type": "string",
-            "description": "Field error_message"
-          },
-          "latency_ms": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field latency_ms"
-          },
-          "matched_rule": {
-            "type": "string",
-            "description": "Field matched_rule"
-          },
-          "matched_rule_desc": {
-            "type": "string",
-            "description": "Field matched_rule_desc"
-          },
-          "matched_smart_rule": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field matched_smart_rule"
-          },
-          "message": {
-            "type": "string",
-            "description": "Field message"
-          },
-          "models_count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field models_count"
-          },
-          "prompt_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field prompt_tokens"
-          },
-          "request_url": {
-            "type": "string",
-            "description": "Field request_url"
-          },
-          "routing_source": {
-            "type": "string",
-            "description": "Field routing_source"
-          },
-          "selected_model": {
-            "type": "string",
-            "description": "Field selected_model"
-          },
-          "selected_provider": {
-            "type": "string",
-            "description": "Field selected_provider"
-          },
-          "selected_provider_uuid": {
-            "type": "string",
-            "description": "Field selected_provider_uuid"
-          },
-          "stream": {
-            "type": "boolean",
-            "description": "Field stream"
-          },
-          "success": {
-            "type": "boolean",
-            "description": "Field success"
-          },
-          "tool_calls": {
-            "type": "array",
-            "description": "Field tool_calls",
-            "items": {
-              "$ref": "#/components/schemas/ProbeToolCall"
-            }
-          },
-          "total_tokens": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Field total_tokens"
-          },
-          "upstream_api": {
-            "type": "string",
-            "description": "Field upstream_api"
-          },
-          "upstream_url": {
-            "type": "string",
-            "description": "Field upstream_url"
-          }
-        },
-        "required": [
-          "success",
-          "latency_ms"
-        ]
-      },
-      "ProbeToolCall": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Field id"
-          },
-          "input": {
-            "type": "object",
-            "description": "Field input",
-            "additionalProperties": {}
-          },
-          "name": {
-            "type": "string",
-            "description": "Field name"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "input"
-        ]
-      },
       "ProfileClaudeConfigData": {
         "type": "object",
         "properties": {
@@ -12754,6 +12856,95 @@
           "restoredFiles",
           "preRestoreBackups",
           "message"
+        ]
+      },
+      "Result": {
+        "type": "object",
+        "properties": {
+          "applied_flags": {
+            "type": "string",
+            "description": "Field applied_flags"
+          },
+          "content": {
+            "type": "string",
+            "description": "Field content"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Field error_message"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field latency_ms"
+          },
+          "matched_rule": {
+            "type": "string",
+            "description": "Field matched_rule"
+          },
+          "matched_rule_desc": {
+            "type": "string",
+            "description": "Field matched_rule_desc"
+          },
+          "matched_smart_rule": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field matched_smart_rule"
+          },
+          "message": {
+            "type": "string",
+            "description": "Field message"
+          },
+          "request_url": {
+            "type": "string",
+            "description": "Field request_url"
+          },
+          "routing_source": {
+            "type": "string",
+            "description": "Field routing_source"
+          },
+          "selected_model": {
+            "type": "string",
+            "description": "Field selected_model"
+          },
+          "selected_provider": {
+            "type": "string",
+            "description": "Field selected_provider"
+          },
+          "selected_provider_uuid": {
+            "type": "string",
+            "description": "Field selected_provider_uuid"
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Field stream"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          },
+          "tool_calls": {
+            "type": "array",
+            "description": "Field tool_calls",
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            }
+          },
+          "upstream_api": {
+            "type": "string",
+            "description": "Field upstream_api"
+          },
+          "upstream_url": {
+            "type": "string",
+            "description": "Field upstream_url"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/TokenUsage"
+          }
+        },
+        "required": [
+          "success",
+          "latency_ms"
         ]
       },
       "Route": {
@@ -14327,6 +14518,68 @@
         "required": [
           "token",
           "type"
+        ]
+      },
+      "TokenUsage": {
+        "type": "object",
+        "properties": {
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field cache_read_tokens"
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field cache_write_tokens"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field input_tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field output_tokens"
+          },
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field reasoning_tokens"
+          },
+          "system_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field system_tokens"
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens"
+        ]
+      },
+      "ToolCall": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Field id"
+          },
+          "input": {
+            "type": "object",
+            "description": "Field input",
+            "additionalProperties": {}
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "input"
         ]
       },
       "UpdateClientRequest": {

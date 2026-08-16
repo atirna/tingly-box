@@ -929,6 +929,16 @@ export default {
       "keepExisting": "Keep existing auth.json (don\u2019t modify)"
     }
   },
+  "dshConfig": {
+    "title": "Configure DeepSeek Harness",
+    "subtitle": "Configure dsh to use Tingly Box through `$DSH_HOME/settings.yaml` and `$DSH_HOME/.credentials.yaml`",
+    "resetTooltip": "Reset model capabilities to defaults",
+    "tabQuick": "Quick Config",
+    "tabManual": "Manual",
+    "applySuccess": "DeepSeek Harness configuration applied to $DSH_HOME",
+    "applyFailed": "Failed to apply configuration",
+    "modelsPreviewNote": "Model ids written to settings.yaml: {{models}}"
+  },
   "claudeCode": {
     "configModes": {
       "unified": {
@@ -1617,7 +1627,8 @@ export default {
       "applyStepDescription": "Point dsh's model provider plugin base URL and API key at the values above — see the dsh docs for the exact plugin config.",
       "openGuide": "View Config",
       "configTitle": "Configure DSH",
-      "modalDescription": "Point dsh's model provider plugin at the base URL and API key shown on this page, then check the repo below for dsh's plugin configuration options."
+      "modalDescription": "Point dsh's model provider plugin at the base URL and API key shown on this page, then check the repo below for dsh's plugin configuration options.",
+      "applyFailed": "Failed to apply configuration"
     }
   },
   "scenarioOverview": {

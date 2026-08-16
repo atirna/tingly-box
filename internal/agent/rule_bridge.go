@@ -42,6 +42,9 @@ const (
 
 	// AgentTypeCodex represents the OpenAI Codex CLI
 	AgentTypeCodex = aiagent.AgentTypeCodex
+
+	// AgentTypeDsh represents the DeepSeek Harness CLI
+	AgentTypeDsh = aiagent.AgentTypeDsh
 )
 
 // Re-export functions for backward compatibility
@@ -135,6 +138,21 @@ func (aa *AgentApply) ApplyAgent(req *ApplyAgentRequest) (*ApplyAgentResult, err
 			Prefs:        aiagent.DefaultCodexPrefs(),
 			WriteCatalog: true,
 		})
+	case AgentTypeDsh:
+		config, ok := aiagent.DefaultRegistry.Get(req.AgentType)
+		if !ok {
+			return nil, fmt.Errorf("dsh config not registered")
+		}
+		dshBaseURL := baseURL + "/tingly/dsh"
+		// Collect models with business logic
+		rawModels := aa.collectDshRuleModels()
+		models := CollectCodexModels(rawModels)
+		fileResult, err = config.Apply(&aiagent.DshParams{
+			DshBaseURL: dshBaseURL,
+			APIKey:     apiKey,
+			Models:     models,
+			Prefs:      aiagent.DefaultDshPrefs(),
+		})
 	}
 
 	if err != nil {
@@ -176,6 +194,8 @@ func (aa *AgentApply) createOrUpdateRules(agentType AgentType, providerUUID, mod
 		return aa.createOrUpdateOpenCodeRules(providerUUID, model)
 	case AgentTypeCodex:
 		return aa.createOrUpdateCodexRules(providerUUID, model)
+	case AgentTypeDsh:
+		return aa.createOrUpdateDshRules(providerUUID, model)
 	default:
 		return 0, 0, fmt.Errorf("agent type %s not implemented", agentType)
 	}
@@ -196,6 +216,19 @@ func (aa *AgentApply) collectCodexRuleModels() []string {
 	var models []string
 	for _, rule := range aa.config.GetRequestConfigs() {
 		if rule.GetScenario() != typ.ScenarioCodex || !rule.Active {
+			continue
+		}
+		models = append(models, rule.RequestModel)
+	}
+	return CollectCodexModels(models)
+}
+
+// collectDshRuleModels returns the request_models of every active rule under
+// the dsh scenario, deduplicated and in declaration order.
+func (aa *AgentApply) collectDshRuleModels() []string {
+	var models []string
+	for _, rule := range aa.config.GetRequestConfigs() {
+		if rule.GetScenario() != typ.ScenarioDsh || !rule.Active {
 			continue
 		}
 		models = append(models, rule.RequestModel)

@@ -11,6 +11,7 @@ import (
 //   - "cc", "claude", "claude-code" -> AgentTypeClaudeCode
 //   - "oc", "opencode" -> AgentTypeOpenCode
 //   - "cx", "codex" -> AgentTypeCodex
+//   - "dsh" -> AgentTypeDsh
 func ParseAgentType(input string) (AgentType, error) {
 	if input == "" {
 		return "", fmt.Errorf("agent type cannot be empty")
@@ -25,7 +26,9 @@ func ParseAgentType(input string) (AgentType, error) {
 		return AgentTypeOpenCode, nil
 	case "cx", "codex":
 		return AgentTypeCodex, nil
+	case "dsh":
+		return AgentTypeDsh, nil
 	default:
-		return "", fmt.Errorf("unknown agent type: %s (supported: cc/claude-code, oc/opencode, cx/codex)", input)
+		return "", fmt.Errorf("unknown agent type: %s (supported: cc/claude-code, oc/opencode, cx/codex, dsh)", input)
 	}
 }

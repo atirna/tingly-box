@@ -31,6 +31,13 @@ var CodexRequestModels = []string{
 	"tingly-codex",
 }
 
+// DshRequestModels defines the default request models for the dsh scenario.
+// Users typically add additional rules with their own request_model names;
+// this list only seeds the default rule when none exists yet.
+var DshRequestModels = []string{
+	"tingly-dsh",
+}
+
 // createOrUpdateClaudeCodeRules creates or updates all Claude Code rules.
 // For convenience, all tingly/cc-* rules are updated with the same provider + model.
 func (aa *AgentApply) createOrUpdateClaudeCodeRules(providerUUID, model string) (int, int, error) {
@@ -47,6 +54,13 @@ func (aa *AgentApply) createOrUpdateOpenCodeRules(providerUUID, model string) (i
 // needs *some* active rule to seed the generated config.toml.
 func (aa *AgentApply) createOrUpdateCodexRules(providerUUID, model string) (int, int, error) {
 	return aa.createOrUpdateRulesForScenario(typ.ScenarioCodex, "Codex", CodexRequestModels, providerUUID, model)
+}
+
+// createOrUpdateDshRules creates or updates the default dsh rule (tingly-dsh).
+// Other dsh rules the user has added by hand are left alone — dsh apply just
+// needs *some* active rule to seed the generated settings.yaml.
+func (aa *AgentApply) createOrUpdateDshRules(providerUUID, model string) (int, int, error) {
+	return aa.createOrUpdateRulesForScenario(typ.ScenarioDsh, "DeepSeek Harness", DshRequestModels, providerUUID, model)
 }
 
 // createOrUpdateRulesForScenario applies a single provider+model to every request

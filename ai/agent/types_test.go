@@ -79,8 +79,8 @@ func TestAgentTypeIsValid(t *testing.T) {
 func TestListAgentInfo(t *testing.T) {
 	infos := ListAgentInfo()
 
-	if len(infos) != 3 {
-		t.Errorf("ListAgentInfo() returned %d items, want 3", len(infos))
+	if len(infos) != 4 {
+		t.Errorf("ListAgentInfo() returned %d items, want 4", len(infos))
 	}
 
 	// Verify Claude Code
