@@ -29,6 +29,12 @@ func RegisterRoutes(router *swagger.RouteGroup, handler *Handler) {
 		swagger.WithResponseModel(CodexConfigResponse{}),
 	)
 
+	router.GET("/config/dsh", handler.GetDshConfig,
+		swagger.WithDescription("Get the currently applied DeepSeek Harness (dsh) preferences"),
+		swagger.WithTags("config"),
+		swagger.WithResponseModel(DshConfigResponse{}),
+	)
+
 	// Config apply endpoints - requires authentication (applied by caller)
 	router.POST("/config/apply/claude", handler.ApplyClaudeConfig,
 		swagger.WithDescription("Generate and apply Claude Code configuration from system state"),
@@ -50,6 +56,13 @@ func RegisterRoutes(router *swagger.RouteGroup, handler *Handler) {
 		swagger.WithResponseModel(ApplyCodexConfigResponse{}),
 	)
 
+	router.POST("/config/apply/dsh", handler.ApplyDshConfigFromState,
+		swagger.WithDescription("Generate and apply DeepSeek Harness (dsh) configuration from system state"),
+		swagger.WithTags("config"),
+		swagger.WithRequestModel(ApplyDshConfigRequest{}),
+		swagger.WithResponseModel(ApplyDshConfigResponse{}),
+	)
+
 	// Config preview endpoint - returns config for display without applying
 	router.GET("/config/preview/opencode", handler.GetOpenCodeConfigPreview,
 		swagger.WithDescription("Generate OpenCode configuration preview from system state"),
@@ -62,6 +75,13 @@ func RegisterRoutes(router *swagger.RouteGroup, handler *Handler) {
 		swagger.WithTags("config"),
 		swagger.WithRequestModel(ApplyCodexConfigRequest{}),
 		swagger.WithResponseModel(CodexConfigPreviewResponse{}),
+	)
+
+	router.POST("/config/preview/dsh", handler.GetDshConfigPreview,
+		swagger.WithDescription("Generate DeepSeek Harness (dsh) configuration preview from system state"),
+		swagger.WithTags("config"),
+		swagger.WithRequestModel(ApplyDshConfigRequest{}),
+		swagger.WithResponseModel(DshConfigPreviewResponse{}),
 	)
 
 	// Config restore endpoints - roll back to the most recent on-disk backup.
@@ -79,6 +99,12 @@ func RegisterRoutes(router *swagger.RouteGroup, handler *Handler) {
 
 	router.POST("/config/restore/codex", handler.RestoreCodexConfig,
 		swagger.WithDescription("Restore Codex configuration from the most recent backup"),
+		swagger.WithTags("config"),
+		swagger.WithResponseModel(RestoreConfigResponse{}),
+	)
+
+	router.POST("/config/restore/dsh", handler.RestoreDshConfig,
+		swagger.WithDescription("Restore DeepSeek Harness (dsh) configuration from the most recent backup"),
 		swagger.WithTags("config"),
 		swagger.WithResponseModel(RestoreConfigResponse{}),
 	)

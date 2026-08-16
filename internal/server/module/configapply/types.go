@@ -111,6 +111,42 @@ type CodexConfigPreviewResponse struct {
 	Message     string   `json:"message,omitempty"`
 }
 
+// ApplyDshConfigRequest is the request body for the DeepSeek Harness (dsh)
+// apply and preview endpoints. `preferences` is the typed, whitelisted set of
+// settings.yaml provider-stanza keys (see config.DshPrefs). nil means "use
+// built-in defaults".
+type ApplyDshConfigRequest struct {
+	Preferences *config.DshPrefs `json:"preferences"`
+}
+
+// ApplyDshConfigResponse is the response for ApplyDshConfigFromState.
+type ApplyDshConfigResponse struct {
+	Success           bool               `json:"success"`
+	SettingsResult    config.ApplyResult `json:"settingsResult"`
+	CredentialsResult config.ApplyResult `json:"credentialsResult"`
+	Models            []string           `json:"models"`
+	Message           string             `json:"message,omitempty"`
+}
+
+// DshConfigResponse returns the typed values currently persisted in the
+// user's $DSH_HOME/settings.yaml so the frontend can restore Apply state on
+// reopen. Routing/auth-owned fields (models, baseURL, the gateway token) are
+// NOT returned — same safety stance as CodexConfigResponse.
+type DshConfigResponse struct {
+	Success     bool            `json:"success"`
+	Exists      bool            `json:"exists"`
+	Preferences config.DshPrefs `json:"preferences"`
+}
+
+// DshConfigPreviewResponse is the response for GetDshConfigPreview.
+type DshConfigPreviewResponse struct {
+	Success         bool     `json:"success"`
+	SettingsYaml    string   `json:"settingsYaml"`
+	CredentialsYaml string   `json:"credentialsYaml"`
+	Models          []string `json:"models"`
+	Message         string   `json:"message,omitempty"`
+}
+
 // RestoreConfigResponse is the response for the restore endpoints. It mirrors
 // the agent.RestoreAgentResult so callers can drive UI from the same data
 // the CLI prints.

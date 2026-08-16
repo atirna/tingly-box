@@ -56,4 +56,5 @@ func init() {
 	DefaultRegistry.Register(AgentTypeClaudeCode, &ClaudeCodeConfig{})
 	DefaultRegistry.Register(AgentTypeOpenCode, &OpenCodeConfig{})
 	DefaultRegistry.Register(AgentTypeCodex, &CodexConfig{})
+	DefaultRegistry.Register(AgentTypeDsh, &DshConfig{})
 }

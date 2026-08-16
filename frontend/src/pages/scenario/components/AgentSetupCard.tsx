@@ -240,8 +240,12 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
     };
 
     const handleApplyWithStatusLine = async () => {
-        if (!onApplyWithStatusLine) return;
-        const result = await onApplyWithStatusLine();
+        // onApplyWithStatusLine is only provided by callers with an extra
+        // install-time toggle (e.g. Claude Code's status line); everyone else
+        // wires the plain onApply and expects the button to invoke it.
+        const apply = onApplyWithStatusLine ?? onApply;
+        if (!apply) return;
+        const result = await apply();
         setApplyResult(result);
         if (result.success) {
             localStorage.setItem(APPLY_DONE_KEY(agentKey), 'true');

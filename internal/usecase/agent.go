@@ -61,6 +61,8 @@ func (uc *AgentUseCase) RoutingKey(agentType agent.AgentType) (requestModel stri
 		return "tingly-opencode", typ.ScenarioOpenCode, nil
 	case agent.AgentTypeCodex:
 		return "tingly-codex", typ.ScenarioCodex, nil
+	case agent.AgentTypeDsh:
+		return "tingly-dsh", typ.ScenarioDsh, nil
 	default:
 		return "", "", ErrUnsupportedAgentType{AgentType: agentType}
 	}

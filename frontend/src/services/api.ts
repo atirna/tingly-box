@@ -536,6 +536,13 @@ export const api = {
         return controlApi((client, headers) => (client as any).GET('/api/v1/config/codex', {headers}));
     },
 
+    // Placeholder for the DeepSeek Harness (dsh) applied-config endpoint. Uses
+    // the generated client's runtime transport; remove the casts after the
+    // next OpenAPI client regeneration includes this route.
+    getAppliedDshConfig: async (): Promise<any> => {
+        return controlApi((client, headers) => (client as any).GET('/api/v1/config/dsh', {headers}));
+    },
+
     getProfiles: async (scenario: string): Promise<any> => {
         return controlApi((client, headers) => client.GET('/api/v1/scenario/{scenario}/profiles', {
             headers,
@@ -1161,6 +1168,50 @@ export const api = {
             return unwrap(response);
         } catch (error: any) {
             return { success: false, message: error?.message || 'Failed to preview Codex configuration' };
+        }
+    },
+
+    applyDshConfig: async (
+        preferences?: Record<string, string>,
+    ): Promise<any> => {
+        try {
+            const client = await getClient();
+            const headers = await getAuthHeaders();
+            const response = await (client as any).POST('/api/v1/config/apply/dsh', {
+                headers,
+                body: {
+                    preferences: preferences ?? {},
+                },
+            });
+            // Callers read `message` (not `error`) on this endpoint — keep the
+            // shape but carry the backend's real message instead of a generic.
+            if (response.error) {
+                return { success: false, message: errorMessage(response.error) };
+            }
+            return unwrap(response);
+        } catch (error: any) {
+            return { success: false, message: error?.message || 'Failed to apply DeepSeek Harness configuration' };
+        }
+    },
+
+    getDshConfigPreview: async (
+        preferences?: Record<string, string>,
+    ): Promise<any> => {
+        try {
+            const client = await getClient();
+            const headers = await getAuthHeaders();
+            const response = await (client as any).POST('/api/v1/config/preview/dsh', {
+                headers,
+                body: {
+                    preferences: preferences ?? {},
+                },
+            });
+            if (response.error) {
+                return { success: false, message: errorMessage(response.error) };
+            }
+            return unwrap(response);
+        } catch (error: any) {
+            return { success: false, message: error?.message || 'Failed to preview DeepSeek Harness configuration' };
         }
     },
 
