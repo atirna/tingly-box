@@ -3,7 +3,6 @@ package config
 import (
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/ai"
 
@@ -364,13 +363,6 @@ func normalizeRuleBasics(c *Config) bool {
 			}
 		}
 
-		if rule.UUID == "" {
-			uid, err := uuid.NewUUID()
-			if err == nil {
-				rule.UUID = uid.String()
-				needsSave = true
-			}
-		}
 		normalizedTactic := normalizeRuleTactic(rule)
 		if rule.LBTactic.Type != normalizedTactic.Type || !IsTacticValid(&rule.LBTactic) {
 			rule.LBTactic = normalizedTactic
@@ -387,7 +379,48 @@ func normalizeRuleBasics(c *Config) bool {
 		needsSave = true
 	}
 	c.Rules = valid
+	if ensureRuleUUIDs(c.Rules) {
+		needsSave = true
+	}
 	return needsSave
+}
+
+// ensureRuleUUIDs makes every rule carry a unique, non-empty UUID, the
+// invariant the rule store keys on. Empty UUIDs (very old configs) get a
+// fresh one; duplicates (hand-edited copy-pasted rule blocks) keep the first
+// occurrence and reassign the rest — both were routable under the file-based
+// loader, so both must survive. This is the single place UUID repair policy
+// lives: normalizeRuleBasics applies it every startup and the one-time legacy
+// import (hydrateRulesFromStore) applies it before first persisting to the
+// store; at runtime the rule mutators assign identity at the entry layer
+// (ensureRuleUUID) so no unkeyed rule ever reaches c.Rules. Returns whether
+// anything changed.
+// ensureRuleUUID assigns a fresh UUID to a caller-supplied rule that lacks
+// one — entry-layer identity assignment, matching the provider precedent
+// (AddProviderByName). The rule store keys rows by UUID, so a rule must
+// carry one before it reaches c.Rules or it could never persist.
+func ensureRuleUUID(rule *typ.Rule) {
+	if rule.UUID == "" {
+		rule.UUID = GenerateUUID()
+	}
+}
+
+func ensureRuleUUIDs(rules []typ.Rule) bool {
+	changed := false
+	seen := make(map[string]bool, len(rules))
+	for i := range rules {
+		rule := &rules[i]
+		if rule.UUID == "" || seen[rule.UUID] {
+			if rule.UUID != "" {
+				logrus.Warnf("Rule %q (scenario %s) duplicates UUID %s; assigning a new one",
+					rule.RequestModel, rule.Scenario, rule.UUID)
+			}
+			rule.UUID = GenerateUUID()
+			changed = true
+		}
+		seen[rule.UUID] = true
+	}
+	return changed
 }
 
 func normalizeRuleTactic(rule typ.Rule) typ.Tactic {

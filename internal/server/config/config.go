@@ -25,7 +25,19 @@ import (
 
 // Config represents the global configuration
 type Config struct {
-	Rules              []typ.Rule           `yaml:"rules" json:"rules"`                           // List of request configurations
+	// Rules is the in-memory working set of routing rules. It is hydrated from
+	// SQLite (db.RuleStore) at startup and written back through Save(); it is
+	// deliberately NOT serialized to config.json anymore — the database is the
+	// authority. The in-memory copy stays because the hot request path matches
+	// rules under RLock and services carry hydrated runtime stats.
+	Rules []typ.Rule `yaml:"rules" json:"-"`
+	// LegacyRules receives the file's "rules" array on load. It is consumed
+	// exactly once, by hydrateRulesFromStore (one-time import into the
+	// database on upgraded installs); after hydration the field stays nil and
+	// file rules are ignored on reload. The "rules" key itself keeps being
+	// written by Save() as a live mirror of Rules during the transition
+	// period, purely for downgrade compatibility — see Save().
+	LegacyRules        []typ.Rule           `yaml:"-" json:"rules"`
 	DefaultRequestID   int                  `yaml:"default_request_id" json:"default_request_id"` // Index of the default Rule
 	UserToken          string               `yaml:"user_token" json:"user_token"`                 // User token for UI and control API authentication
 	ModelToken         string               `yaml:"model_token" json:"model_token"`               // Model token for OpenAI and Anthropic API authentication
@@ -113,6 +125,18 @@ type Config struct {
 	providerUpdateHooks []ProviderUpdateHook
 	providerDeleteHooks []ProviderDeleteHook
 	hookMu              sync.RWMutex
+
+	// rulesHydrated flips once hydrateRulesFromStore has run; after that,
+	// rules appearing in config.json (e.g. hand edits picked up by the
+	// watcher's hot reload) are ignored — the database is authoritative.
+	rulesHydrated bool
+	// lastSyncedRules caches the JSON snapshot of Rules from the last
+	// successful store sync so Save() calls that didn't touch rules skip the
+	// database write entirely. Guarded by ruleSyncMu, not mu: several Save()
+	// call sites run without holding mu, so the sync bookkeeping needs its
+	// own lock to serialize concurrent Save() calls.
+	lastSyncedRules []byte
+	ruleSyncMu      sync.Mutex
 
 	mu sync.RWMutex
 }
@@ -219,25 +243,27 @@ func NewConfig(opts ...ConfigOption) (*Config, error) {
 			if err != nil {
 				return nil, err
 			}
-
-			// Run migration on fresh install to set up scenario defaults
-			if !options.enableMigration {
-				logrus.Warnf("migration disabled")
-			} else {
-				Migrate(cfg)
-				cfg.Save()
-			}
 		} else {
 			return nil, fmt.Errorf("failed to load global cfg: %w", err)
 		}
+	}
+
+	// Hydrate rules from the database (or migrate legacy JSON rules into it).
+	// Must run before Migrate so migration steps operate on the real rule set.
+	// Like migrateProvidersToDB, this is storage plumbing rather than a config
+	// migration, so it is not gated by enableMigration.
+	if err := cfg.hydrateRulesFromStore(); err != nil {
+		return nil, fmt.Errorf("failed to hydrate rules from store: %w", err)
+	}
+
+	// Run migration only once at startup (not on every load/reload)
+	// Skip migration if disabled (useful when using as a library)
+	if !options.enableMigration {
+		logrus.Warnf("migration disabled")
 	} else {
-		// Run migration only once at startup (not on every load/reload)
-		// Skip migration if disabled (useful when using as a library)
-		if !options.enableMigration {
-			logrus.Warnf("migration disabled")
-		} else {
-			Migrate(cfg)
-			cfg.Save()
+		Migrate(cfg)
+		if err := cfg.Save(); err != nil {
+			logrus.WithError(err).Warn("Failed to persist config after migration; in-memory state may diverge until the next successful save")
 		}
 	}
 
@@ -418,6 +444,19 @@ func (c *Config) load() error {
 	// Restore the config file path after unmarshaling
 	c.ConfigFile = configFile
 
+	// After the one-time hydration, the database is authoritative for rules.
+	// The "rules" array in config.json is Save()'s own downgrade-compat
+	// mirror — a reload of our own write matches the live rules and is
+	// dropped silently. A DIFFERING array means someone hand-edited the file
+	// expecting the pre-database behavior; tell them where rules live now
+	// instead of eating the edit without a trace.
+	if c.rulesHydrated {
+		if !rulesEquivalent(c.LegacyRules, c.Rules) {
+			logrus.Warn("Ignoring rule edits in config.json: rules are stored in the database now; manage them via the UI/API/CLI")
+		}
+		c.LegacyRules = nil
+	}
+
 	// Note: Migration is now only run at startup in NewConfigWithDir()
 	// Hot-reload (via watcher) does not trigger migration
 
@@ -447,10 +486,34 @@ func (c *Config) Save() error {
 			}
 		}
 	}
+	// Rules persist authoritatively in the database. Syncing here — inside
+	// the choke point every rule mutation already goes through — guarantees no
+	// write path can update the in-memory rules without also updating the
+	// store. The store MUST be written before the file: if the store sync
+	// fails during the one-time legacy import, aborting here leaves the file's
+	// legacy rules untouched so the next startup retries the import.
+	rulesSnapshot, err := c.syncRulesToStore()
+	if err != nil {
+		return err
+	}
+
+	// Transition-period dual write: the file keeps a live "rules" mirror
+	// (the same snapshot the sync produced) so downgrading to a pre-database
+	// version loses nothing — the old binary reads the array as before. The
+	// mirror is write-only; load() ignores it once hydrated. Scheduled for
+	// removal in a later release; see .design/rule-storage.md §5.
+	// Pre-hydration Saves get a nil snapshot and leave the marshaled
+	// LegacyRules value in place, so an unmigrated file's rules can never be
+	// overwritten with an empty list.
+	if rulesSnapshot != nil {
+		next["rules"] = json.RawMessage(rulesSnapshot)
+	}
+
 	out, err := json.MarshalIndent(next, "", "    ")
 	if err != nil {
 		return err
 	}
+
 	return os.WriteFile(c.ConfigFile, out, 0644)
 }
 
