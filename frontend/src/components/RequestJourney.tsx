@@ -1,24 +1,26 @@
 import { Box, Chip, Collapse, Stack, Typography } from '@mui/material';
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { CheckCircle, ErrorOutline, Circle } from '@/components/icons';
 import type { ModelRequestEvent } from '@/components/AILogViewer';
 
 // RequestJourney is the single answer to "how did this request go".
 //
-// It replaces what used to be two parallel accounts of the same story (a
-// trace waterfall plus a raw event timeline) that the reader had to join in
-// their head — see .design/ux-principles.md §1. The trace spans are the
-// spine: one line per pipeline stage, top to bottom in time order, with the
-// log events that belong to a stage hanging under it.
+// It replaces what used to be two parallel accounts of the same story (a trace
+// waterfall plus a raw event timeline) that the reader had to join in their
+// head — see .design/ux-principles.md §1.
 //
-// It is a list, not a chart. Duration bars only earn their space when the
-// reader needs to see overlap or concurrency; these stages are strictly
-// sequential, so an aligned column of durations compares them better than
-// bars — which spent 600px to render a 12ms stage as an invisible dot.
+// Everything the request produced — measured trace stages and log lines alike
+// — is rendered as ONE row shape, in time order:
+//
+//     [KIND]  name        detail                    → result      12 ms
+//
+// The kind badge carries what the record is, so subordination never needs an
+// indentation ladder; time order already puts a stage's log lines directly
+// under it. One shape means one way to read the list and one way to open a
+// detail, instead of the four the page used to mix (table row, stage row,
+// annotation sub-line, attribute dump).
 //
 // It degrades on purpose: with tracing off (or the trace evicted from the
-// in-memory ring) the stages come from each event's `stage` field instead,
-// so the page keeps its shape minus the timings.
+// in-memory ring) the log rows stand alone — same shape, minus the timings.
 
 export interface TraceSpan {
     trace_id: string;
@@ -39,24 +41,32 @@ export interface TraceDetail {
     dropped_spans?: number;
 }
 
-type StageStatus = 'ok' | 'error' | 'unset';
+type RowTone = 'ok' | 'error' | 'warning' | 'plain';
 
-interface JourneyStage {
+// One row per record. `stage` rows come from trace spans and carry a measured
+// duration; `log` rows come from the pipeline's log lines and do not.
+interface JourneyRow {
     key: string;
-    label: string;
-    facts: string[];
-    badge?: string;
-    status: StageStatus;
-    start: number; // epoch ms
-    end: number; // epoch ms
-    measured: boolean; // false for stages derived from events (no real duration)
-    attributes?: Record<string, string>;
-    annotations: ModelRequestEvent[];
-    // Derived once inside the memoized build rather than on every render:
-    // the list auto-refreshes every 5s, which would otherwise re-sort and
-    // re-scan each open stage indefinitely.
-    attrKeys: string[];
-    routingFields?: Record<string, any>;
+    kind: 'stage' | 'log';
+    name: string;
+    detail: string;
+    result?: string;
+    tone: RowTone;
+    start: number;
+    durationMs?: number;
+    // Full payload, rendered the same way whatever the row is.
+    payload: [string, string][];
+    // Smart routing's rule-by-rule evaluation: the one payload with real
+    // structure, kept structured but shown inside the same detail panel.
+    rules?: RoutingRule[];
+    matchedRule?: number;
+}
+
+interface RoutingRule {
+    rule_index: number;
+    description?: string;
+    matched?: boolean;
+    ops?: { position?: string; operation?: string; reason?: string }[];
 }
 
 interface RequestJourneyProps {
@@ -65,8 +75,8 @@ interface RequestJourneyProps {
     getTrace: (traceId: string) => Promise<TraceDetail | null>;
 }
 
-// Fields already stated by the row header, the stage line, or the rule
-// breakdown. Repeating them in the annotation dump is pure noise.
+// Fields already stated by the row header, the row line itself, or the rule
+// breakdown. Repeating them in the payload is pure noise.
 const SUPPRESSED_FIELDS = new Set([
     'request_id', 'source', 'stage', 'type', 'time', 'level', 'msg',
     'trace', 'request', 'trace_id',
@@ -89,17 +99,8 @@ const formatFieldValue = (key: string, value: unknown): string => {
     return String(value);
 };
 
-const spanStatus = (code?: string): StageStatus =>
-    code === 'Error' ? 'error' : code === 'Ok' ? 'ok' : 'unset';
-
-const eventTime = (e: ModelRequestEvent): number => new Date(e.time).getTime();
-
 const isErrorLevel = (level: string) => level === 'error' || level === 'fatal' || level === 'panic';
 
-const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
-
-// Spans arrive with ISO timestamps; every comparison below wants numbers, so
-// each span is parsed exactly once here rather than on every containment test.
 type TimedSpan = TraceSpan & { start: number; end: number };
 
 const timed = (span: TraceSpan): TimedSpan => ({
@@ -111,14 +112,14 @@ const timed = (span: TraceSpan): TimedSpan => ({
 const contains = (outer: TimedSpan, inner: TimedSpan): boolean =>
     outer.start <= inner.start && outer.end >= inner.end;
 
-// A failover attempt and the single upstream call inside it are the same
-// event described twice — same status, near-identical duration, one named by
-// service id and the other by host. Fold that pair so the journey states it
-// once, keeping both sets of facts.
+// A failover attempt and the single upstream call inside it are the same event
+// described twice — same status, near-identical duration, one named by service
+// id and the other by host. Fold that pair so the journey states it once,
+// keeping both sets of facts.
 //
-// An attempt that made *several* upstream calls keeps them as their own
-// lines: an MCP tool loop turns one attempt into a call per iteration, and
-// folding would silently drop all but one of them.
+// An attempt that made *several* upstream calls keeps them as their own rows:
+// an MCP tool loop turns one attempt into a call per iteration, and folding
+// would silently drop all but one of them.
 const foldUpstreamIntoAttempts = (spans: TimedSpan[]): TimedSpan[] => {
     const attempts = spans.filter((s) => s.name === 'failover.attempt');
     if (attempts.length === 0) return spans;
@@ -142,191 +143,146 @@ const foldUpstreamIntoAttempts = (spans: TimedSpan[]): TimedSpan[] => {
 
 // Presentation for the span names the gateway emits. Anything unrecognized
 // falls through to its raw span name rather than being hidden.
-const describeSpan = (span: TimedSpan): { label: string; facts: string[]; badge?: string } => {
+const describeSpan = (span: TimedSpan): { name: string; detail: string } => {
     const attrs = span.attributes || {};
-    const status = attrs['http.response.status_code'];
     const service = attrs['tingly.lb.service_id'];
+    const host = attrs['server.address'];
     switch (span.name) {
         case 'routing':
-            return {
-                label: 'Routing',
-                facts: [service, attrs['tingly.lb.tactic']].filter(Boolean) as string[],
-            };
+            return { name: 'routing', detail: [service, attrs['tingly.lb.tactic']].filter(Boolean).join('  ·  ') };
         case 'failover.attempt':
             return {
-                label: `Attempt ${attrs['tingly.failover.attempt'] || '?'}`,
-                // server.address is present only once an upstream call has
-                // been folded in, which is exactly when it should be shown.
-                facts: [service, attrs['server.address']].filter(Boolean) as string[],
-                badge: status,
+                name: `attempt ${attrs['tingly.failover.attempt'] || '?'}`,
+                detail: [service, host].filter(Boolean).join('  ·  '),
             };
         case 'upstream':
-            return {
-                label: 'Upstream',
-                facts: [attrs['server.address']].filter(Boolean) as string[],
-                badge: status,
-            };
+            return { name: 'upstream', detail: host || '' };
         default:
-            return { label: span.name, facts: [] };
+            return { name: span.name, detail: '' };
     }
 };
 
-const buildStages = (events: ModelRequestEvent[], spans: TraceSpan[]): JourneyStage[] => {
+const buildRows = (events: ModelRequestEvent[], spans: TraceSpan[]): JourneyRow[] => {
     // The root span is the request itself — the table row already states its
-    // outcome, so it never takes a line of its own.
+    // outcome, so it never takes a row of its own.
     const ids = new Set(spans.map((s) => s.span_id));
     const all = spans.map(timed);
     const children = all.filter((s) => s.parent_span_id && ids.has(s.parent_span_id));
     const stageSpans = foldUpstreamIntoAttempts(children.length > 0 ? children : all.length > 1 ? all : []);
 
-    const spanStages: JourneyStage[] = stageSpans
-        .map((span) => {
-            const { label, facts, badge } = describeSpan(span);
-            return {
-                key: span.span_id,
-                label,
-                facts,
-                badge,
-                status: spanStatus(span.status_code),
-                start: span.start,
-                end: span.end,
-                measured: true,
-                attrKeys: Object.keys(span.attributes || {}).sort(),
-                attributes: span.attributes,
-                annotations: [] as ModelRequestEvent[],
-            };
-        })
-        .sort((a, b) => a.start - b.start);
+    const rows: JourneyRow[] = stageSpans.map((span) => {
+        const { name, detail } = describeSpan(span);
+        const attrs = span.attributes || {};
+        return {
+            key: span.span_id,
+            kind: 'stage',
+            name,
+            detail,
+            result: attrs['http.response.status_code'] || span.status_message,
+            tone: span.status_code === 'Error' ? 'error' : span.status_code === 'Ok' ? 'ok' : 'plain',
+            start: span.start,
+            durationMs: span.end - span.start,
+            payload: Object.entries(attrs).sort(([a], [b]) => a.localeCompare(b)),
+        };
+    });
 
-    // The access log envelope repeats the row header verbatim (status,
-    // latency, path), so it earns no line — unless it is all we have, as
-    // when a request dies in auth before any stage runs.
+    // The access log envelope repeats the row header verbatim (status, latency,
+    // path), so it earns no row — unless it is all we have, as when a request
+    // dies in auth before any stage runs.
     const staged = events.filter((e) => e.source !== 'http');
     const relevant = staged.length > 0 ? staged : events;
 
-    // One resolution order per event: the stage whose time span contains it,
-    // else a measured stage of the same name (event and span clocks can drift
-    // at the boundaries), else a stage derived from the name itself — which
-    // is every stage when tracing is off.
-    const byLabel = new Map(spanStages.map((s) => [s.label.toLowerCase(), s]));
-    const derived = new Map<string, JourneyStage>();
-    for (const event of relevant) {
-        const at = eventTime(event);
-        const key = event.stage || event.source;
-        let stage =
-            spanStages.find((s) => at >= s.start && at <= s.end) ??
-            byLabel.get(key.toLowerCase()) ??
-            derived.get(key);
-        if (!stage) {
-            stage = {
-                key: `derived:${key}`,
-                label: titleCase(key),
-                facts: [],
-                status: 'unset',
-                start: at,
-                end: at,
-                measured: false,
-                attrKeys: [],
-                annotations: [],
-            };
-            derived.set(key, stage);
-        }
-        stage.annotations.push(event);
-        // Only a derived stage takes its extent and outcome from its events;
-        // a measured one already has both from its span.
-        if (!stage.measured) {
-            stage.end = Math.max(stage.end, at);
-            if (isErrorLevel(event.level)) stage.status = 'error';
-        }
-    }
+    relevant.forEach((event, i) => {
+        const fields = event.fields || {};
+        const rules = Array.isArray(fields.trace) ? (fields.trace as RoutingRule[]) : undefined;
+        rows.push({
+            key: `log:${i}`,
+            kind: 'log',
+            name: event.stage || event.source,
+            // Smart routing's message ("rule matched") says nothing the stage
+            // row has not; what the reader wants is how much evaluation stands
+            // behind the choice, and that there is more on click.
+            detail: rules
+                ? `${rules.length} routing rule${rules.length === 1 ? '' : 's'} evaluated` +
+                  (typeof fields.matched_rule_index === 'number' ? ` · #${fields.matched_rule_index} matched` : ' · no match')
+                : event.message,
+            tone: isErrorLevel(event.level) ? 'error' : event.level === 'warning' ? 'warning' : 'plain',
+            start: new Date(event.time).getTime(),
+            payload: Object.keys(fields)
+                .filter((k) => !SUPPRESSED_FIELDS.has(k))
+                .sort()
+                .map((k) => [k, formatFieldValue(k, fields[k])] as [string, string]),
+            rules,
+            matchedRule: typeof fields.matched_rule_index === 'number' ? fields.matched_rule_index : -1,
+        });
+    });
 
-    const stages = [...spanStages, ...derived.values()].sort((a, b) => a.start - b.start);
-    for (const stage of stages) {
-        stage.routingFields = stage.annotations.find((e) => e.source === 'smart_routing')?.fields;
-    }
-    return stages;
+    // Time order alone expresses the grouping: a stage's log lines fall inside
+    // its window, so they land directly beneath it without any indentation.
+    return rows.sort((a, b) => a.start - b.start);
 };
 
-const StageIcon = ({ status }: { status: StageStatus }) => {
-    if (status === 'error') return <ErrorOutline sx={{ fontSize: 14, color: 'error.main' }} />;
-    if (status === 'ok') return <CheckCircle sx={{ fontSize: 14, color: 'success.main' }} />;
-    return <Circle sx={{ fontSize: 6, color: 'text.disabled' }} />;
-};
+const toneColor = (tone: RowTone): string =>
+    tone === 'error' ? 'error.main' : tone === 'warning' ? 'warning.main' : 'text.secondary';
 
-// The smart-routing evaluation explains *why* a service was chosen. It is
-// the one payload worth rendering richly — but on demand: it is four lines
-// per rule, and most reads of this view are not about routing.
-const RoutingRules = ({ fields }: { fields?: Record<string, any> }) => {
-    const rules: any[] = Array.isArray(fields?.trace) ? fields!.trace : [];
-    if (rules.length === 0) return null;
-    const matchedIdx = typeof fields?.matched_rule_index === 'number' ? fields!.matched_rule_index : -1;
-    return (
-        <Stack spacing={0.25} sx={{ mt: 0.25 }}>
-            {rules.map((rule: any) => {
-                const isWinner = matchedIdx === rule.rule_index;
-                return (
-                    <Box key={rule.rule_index}>
-                        <Typography sx={{ fontSize: '0.7rem', color: isWinner ? 'success.main' : 'text.disabled' }}>
-                            {isWinner ? '✓' : '·'} #{rule.rule_index} {rule.description || '(no description)'}
-                        </Typography>
-                        {Array.isArray(rule.ops) &&
-                            rule.ops.map((op: any, i: number) => (
-                                <Typography
-                                    key={i}
-                                    sx={{ fontFamily: 'monospace', fontSize: '0.68rem', color: 'text.disabled', pl: 1.5 }}
-                                >
-                                    {op.position}.{op.operation} — {op.reason}
-                                </Typography>
-                            ))}
-                    </Box>
-                );
-            })}
-        </Stack>
-    );
-};
+const KindBadge = ({ kind, tone }: { kind: JourneyRow['kind']; tone: RowTone }) => (
+    <Chip
+        size="small"
+        label={kind}
+        sx={{
+            width: 58,
+            height: 17,
+            fontSize: '0.58rem',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            borderRadius: 0.5,
+            color: tone === 'error' ? 'error.main' : kind === 'stage' ? 'primary.main' : 'text.disabled',
+            backgroundColor: tone === 'error'
+                ? 'rgba(211,47,47,0.10)'
+                : kind === 'stage'
+                    ? 'rgba(25,118,210,0.10)'
+                    : 'action.hover',
+            '& .MuiChip-label': { px: 0 },
+        }}
+    />
+);
 
-const annotationColor = (level: string) =>
-    isErrorLevel(level) ? 'error.main' : level === 'warning' ? 'warning.main' : 'text.secondary';
-
-// "rule matched" says nothing the stage line has not already said. What the
-// reader actually wants to know is how much evaluation stands behind the
-// choice — and that there is more to see on click.
-const annotationMessage = (event: ModelRequestEvent): string => {
-    const rules = event.fields?.trace;
-    if (event.source !== 'smart_routing' || !Array.isArray(rules) || rules.length === 0) {
-        return event.message;
-    }
-    const matched = typeof event.fields?.matched_rule_index === 'number' ? event.fields.matched_rule_index : -1;
-    const noun = rules.length === 1 ? 'rule' : 'rules';
-    return matched >= 0
-        ? `${rules.length} routing ${noun} evaluated · #${matched} matched`
-        : `${rules.length} routing ${noun} evaluated · no match`;
-};
-
-const AnnotationLine = ({ event }: { event: ModelRequestEvent }) => {
-    const fields = event.fields || {};
-    const keys = Object.keys(fields).filter((k) => !SUPPRESSED_FIELDS.has(k));
-    return (
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <Typography sx={{ fontSize: '0.72rem', color: annotationColor(event.level) }}>
-                {annotationMessage(event)}
-            </Typography>
-            {keys.length > 0 && (
-                <Typography sx={{ fontFamily: 'monospace', fontSize: '0.68rem', color: 'text.disabled', wordBreak: 'break-all' }}>
-                    {keys.map((k) => `${k}=${formatFieldValue(k, fields[k])}`).join('  ')}
+// The rule-by-rule evaluation is the one payload with real structure. It stays
+// structured, but inside the same panel every other row opens into.
+const RoutingRules = ({ rules, matched }: { rules: RoutingRule[]; matched: number }) => (
+    <>
+        {rules.map((rule) => (
+            <Box key={rule.rule_index}>
+                <Typography
+                    sx={{
+                        fontFamily: 'monospace',
+                        fontSize: '0.68rem',
+                        color: matched === rule.rule_index ? 'success.main' : 'text.disabled',
+                    }}
+                >
+                    {matched === rule.rule_index ? '✓' : '·'} #{rule.rule_index} {rule.description || '(no description)'}
                 </Typography>
-            )}
-        </Stack>
-    );
-};
+                {rule.ops?.map((op, i) => (
+                    <Typography
+                        key={i}
+                        sx={{ fontFamily: 'monospace', fontSize: '0.68rem', color: 'text.disabled', pl: 2 }}
+                    >
+                        {op.position}.{op.operation} — {op.reason}
+                    </Typography>
+                ))}
+            </Box>
+        ))}
+    </>
+);
 
 const RequestJourney = ({ events, traceId, getTrace }: RequestJourneyProps) => {
     // undefined = still loading, null = evicted from the ring, object = loaded
     const [trace, setTrace] = useState<TraceDetail | null | undefined>(undefined);
-    const [openStage, setOpenStage] = useState<string | null>(null);
+    const [openRow, setOpenRow] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!traceId || !getTrace) return;
+        if (!traceId) return;
         let cancelled = false;
         getTrace(traceId)
             .then((detail) => {
@@ -340,12 +296,12 @@ const RequestJourney = ({ events, traceId, getTrace }: RequestJourneyProps) => {
         };
     }, [traceId, getTrace]);
 
-    const stages = useMemo(() => buildStages(events, trace?.spans ?? []), [events, trace]);
+    const rows = useMemo(() => buildRows(events, trace?.spans ?? []), [events, trace]);
 
-    if (stages.length === 0) {
+    if (rows.length === 0) {
         return (
             <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
-                No stages recorded for this request.
+                Nothing recorded for this request.
             </Typography>
         );
     }
@@ -354,97 +310,97 @@ const RequestJourney = ({ events, traceId, getTrace }: RequestJourneyProps) => {
         <Box
             sx={{
                 display: 'grid',
-                // icon · stage · facts · status · duration — one grid for the
-                // whole journey so every column, including the annotations
-                // under each stage, lines up on the same edges.
-                gridTemplateColumns: ' 16px 88px 1fr auto 68px',
+                // kind · name · detail · result · duration — one grid for the
+                // whole journey so every row, and every opened panel, lines up
+                // on the same edges.
+                gridTemplateColumns: 'auto 92px 1fr auto 64px',
                 columnGap: 1,
-                rowGap: 0.15,
+                rowGap: 0.1,
                 alignItems: 'center',
             }}
         >
-            {stages.map((stage) => {
-                const open = openStage === stage.key;
-                const { attrKeys, routingFields } = stage;
-                const expandable = attrKeys.length > 0 || Array.isArray(routingFields?.trace);
-                const rowSx = {
-                    py: 0.35,
+            {rows.map((row) => {
+                const open = openRow === row.key;
+                const expandable = row.payload.length > 0 || !!row.rules;
+                const cellSx = {
+                    py: 0.32,
                     cursor: expandable ? 'pointer' : 'default',
                     backgroundColor: open ? 'action.hover' : 'transparent',
                 };
-                const onClick = () => expandable && setOpenStage(open ? null : stage.key);
+                const onClick = () => expandable && setOpenRow(open ? null : row.key);
+                const cell = { onClick, sx: cellSx };
 
-                // A stage with nothing to state — a derived one, or any stage
-                // when tracing is off — would otherwise render as a label
-                // beside two empty cells with its text dangling on the next
-                // line. Pull its first annotation up into the facts column so
-                // the list stays dense and every line carries content.
-                const inlineAnnotation = stage.facts.length === 0 ? stage.annotations[0] : undefined;
-                const belowAnnotations = inlineAnnotation ? stage.annotations.slice(1) : stage.annotations;
-
-                // A Fragment renders no DOM node, so these stay direct grid
-                // items of the parent — the alignment survives, and the six
-                // cells read as JSX instead of a hand-keyed array.
-                const cell = { onClick, sx: rowSx };
                 return (
-                    <Fragment key={stage.key}>
-                        <Box {...cell} sx={{ ...rowSx, display: 'flex', justifyContent: 'center' }}>
-                            <StageIcon status={stage.status} />
+                    <Fragment key={row.key}>
+                        <Box {...cell} sx={{ ...cellSx, display: 'flex' }}>
+                            <KindBadge kind={row.kind} tone={row.tone} />
                         </Box>
                         <Box {...cell}>
-                            <Typography sx={{ fontSize: '0.76rem', fontWeight: 500, color: stage.measured ? 'text.primary' : 'text.secondary' }}>
-                                {stage.label}
+                            <Typography
+                                sx={{
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.73rem',
+                                    fontWeight: 500,
+                                    color: row.kind === 'stage' ? 'text.primary' : 'text.secondary',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {row.name}
                             </Typography>
                         </Box>
-                        <Box {...cell} sx={{ ...rowSx, minWidth: 0 }}>
-                            {inlineAnnotation ? (
-                                <AnnotationLine event={inlineAnnotation} />
-                            ) : (
+                        <Box {...cell} sx={{ ...cellSx, minWidth: 0 }}>
+                            <Typography
+                                sx={{
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.72rem',
+                                    color: toneColor(row.tone),
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {row.detail}
+                            </Typography>
+                        </Box>
+                        <Box {...cell}>
+                            {row.result && (
                                 <Typography
                                     sx={{
                                         fontFamily: 'monospace',
                                         fontSize: '0.72rem',
-                                        color: 'text.secondary',
+                                        color: row.tone === 'error' ? 'error.main' : 'text.secondary',
                                         whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
                                     }}
                                 >
-                                    {stage.facts.join('  ·  ')}
+                                    → {row.result}
                                 </Typography>
                             )}
                         </Box>
                         <Box {...cell}>
-                            {stage.badge && (
-                                <Chip
-                                    size="small"
-                                    label={stage.badge}
-                                    color={stage.status === 'error' ? 'error' : 'default'}
-                                    sx={{ fontSize: '0.6rem', height: 16 }}
-                                />
-                            )}
-                        </Box>
-                        <Box {...cell}>
-                            <Typography sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'text.secondary', textAlign: 'right' }}>
-                                {stage.measured ? formatDuration(stage.end - stage.start) : ''}
+                            <Typography
+                                sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'text.disabled', textAlign: 'right' }}
+                            >
+                                {row.durationMs != null ? formatDuration(row.durationMs) : ''}
                             </Typography>
                         </Box>
 
-                        {/* Annotations and the expanded detail align under the
-                            facts column rather than starting a new indent ladder. */}
+                        {/* One detail panel shape for every row, aligned under
+                            the detail column rather than starting a new indent. */}
                         <Box sx={{ gridColumn: '3 / -1' }}>
-                            {belowAnnotations.map((event, i) => (
-                                <AnnotationLine key={i} event={event} />
-                            ))}
                             <Collapse in={open} timeout="auto" unmountOnExit>
-                                <Box sx={{ py: 0.5 }}>
-                                    <RoutingRules fields={routingFields} />
-                                    {attrKeys.map((k) => (
-                                        <Typography key={k} sx={{ fontFamily: 'monospace', fontSize: '0.68rem', color: 'text.disabled', wordBreak: 'break-all' }}>
-                                            {k}={stage.attributes![k]}
+                                <Stack spacing={0.1} sx={{ py: 0.5 }}>
+                                    {row.rules && <RoutingRules rules={row.rules} matched={row.matchedRule ?? -1} />}
+                                    {row.payload.map(([k, v]) => (
+                                        <Typography
+                                            key={k}
+                                            sx={{ fontFamily: 'monospace', fontSize: '0.68rem', color: 'text.disabled', wordBreak: 'break-all' }}
+                                        >
+                                            {k}={v}
                                         </Typography>
                                     ))}
-                                </Box>
+                                </Stack>
                             </Collapse>
                         </Box>
                     </Fragment>
