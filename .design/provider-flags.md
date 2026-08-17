@@ -287,26 +287,26 @@ providerHeadersTransport      ← 外层：先写入用户 extra headers
 rule-flags.md §8 的警告——**vendor 链内部永远不得引入
 providerHeadersTransport**。
 
-### 5.3 Header 名校验与 denylist
+### 5.3 Header 校验 —— 用户主导，只查结构
 
-保存时（API 层）校验，而不是发请求时静默丢弃（fail loudly at config
-time，符合"诊断必须走真实链路"原则）。**三个写入口（provider flags、
-model flags、rule flags）共用同一个 `ValidateExtraHeaders` 函数**：
+Extra headers 是**纯用户主导**的编排配置："custom" 就意味着我们无法预判的
+特殊需求，所以**没有 denylist、没有数量/尺寸上限**——`Authorization`、
+`User-Agent`、`anthropic-version`……任何 header 都可以配，配错自负
+（评审定调：把 tingly-box 当编排器，可任意配置，不过度设计）。
 
-- 名字必须是合法 RFC 7230 token；保存时规范化为 canonical 形式
+保存时（API 层）仍拒绝两类**结构性**问题——它们不是限制，而是"这个配置
+本身无定义"：
+
+- 名字必须是合法 RFC 7230 token、值必须是合法 field value（否则
+  net/http 在发送时才失败，报错更晦涩）；保存时规范化为 canonical 形式
   （`textproto.CanonicalMIMEHeaderKey`）。
-- **Denylist（保存即拒绝）**：
-  - 传输层破坏项：`Host`、`Content-Length`、`Transfer-Encoding`、
-    `Connection`、`Upgrade`、`Trailer`、`TE`、`Keep-Alive`
-  - 网关托管的认证项：`Authorization`、`Proxy-Authorization`、
-    `X-Api-Key`（凭证只能走 Token / Credential 字段，不能藏在 header
-    配置里——否则 mask、export 脱敏、OAuth 刷新等一整套凭证治理全部失守）
-  - `User-Agent`：UA 已有独立机制（rule `custom_user_agent` + vendor
-    pin，见 user-agent.md），双入口会重演当年 `provider.UserAgent` 的
-    混乱，明确拒绝。
-- 数量与尺寸限制：每级 ≤ 16 个；name ≤ 128B，value ≤ 4KB。
-- Denylist 在 transport 层做**第二道防御**（跳过 + warn log），防旧数据
-  / import 绕过。
+- 大小写不敏感的重名拒绝（HTTP header 名大小写不敏感，一个 map 里同名
+  两个拼写没有确定胜者）。
+
+与网关自管 header 的冲突**由 transport 链顺序决定，而不是过滤**：
+vendor pin 与 UA 链在更内层（更靠近 wire）后写后胜（§5.2）；通用链上
+用户配置的 `Authorization` 等则会覆盖网关默认——这正是用户显式表达的
+意图。
 
 ### 5.4 各 provider 形态的行为（首版发布范围）
 
@@ -515,8 +515,8 @@ switch/case。实现落点：
 | 注入点 | transport 层（wrapWithLogging 旁，一处） | ClientPool 逐构造器传 option | option 类型按 SDK 分裂（openai/anthropic/google 各一套），transport 一处覆盖所有 auth type 与 style |
 | model/rule 级 ctx 传递 | 单一 ctx key（dispatch 侧合并好） | 每级一个 ctx key | transport 保持哑，合并逻辑集中在 EffectiveExtraHeaders 一处 |
 | vendor pin 冲突 | 物理顺序保证 pin 胜出 | 逐 header 判断 | v1 不触发（api_key only），但顺序不变量零维护成本，为放开 OAuth 保底 |
-| Authorization/X-Api-Key | denylist 拒绝 | 允许（支持自定义认证头） | 凭证必须走 Token/Credential 字段，否则 mask/export 脱敏/凭证治理全失守。真有自定义认证头需求时，作为新 auth type 或专门字段进凭证体系，而不是从 header 后门进 |
-| 校验时机 | 保存时拒绝 + transport 二道防御 | 发请求时静默过滤 | 静默过滤 = 用户以为生效实际没有，违背"诊断走真实链路"；保存时报错教育前置 |
+| denylist / 上限 | **不做**（用户主导，配错自负） | 拒绝 Authorization/UA/传输头 + 数量尺寸上限 | 评审定调：编排器必须可任意配置，"custom" 即特殊需求，过度限制是过度设计。与网关自管 header 的冲突交给 transport 链顺序（pin 在内层后写后胜），不做过滤 |
+| 校验时机 | 保存时拒绝（仅结构合法性） | 发请求时静默失败 | 非法 token/重名在保存时报错比 net/http 发送期报错清晰；结构校验不是限制而是"配置无定义" |
 | API 形态 | typed `flags`/`model_flags` 字段 | 直接暴露 opaque extensions | REST 契约是服务 surface，必须 typed；opaque 容器只是存储与公共 module 之间的运输形态 |
 | 持久化 | 单 `extensions` JSON 列 | 每 flag 一列 | credential/vmodel_detail 先例；增 flag 零 DDL；provider 行不因 flag 增长而加宽 |
 | model key 匹配 | 精确匹配 | 通配/前缀 | 首版从简；registry 与数据形态不阻碍后续加 pattern |

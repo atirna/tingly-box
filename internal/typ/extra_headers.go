@@ -7,75 +7,36 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-// Extra-header limits enforced by ValidateExtraHeaders, per level.
-const (
-	MaxExtraHeadersPerLevel = 16
-	MaxExtraHeaderNameLen   = 128
-	MaxExtraHeaderValueLen  = 4096
-)
-
-// deniedExtraHeaders lists header names (canonical form) that extra_headers
-// may never set, at any level:
-//   - transport-breaking headers the HTTP stack owns
-//   - credential-carrying headers — credentials must go through the
-//     Token/Credential fields so masking, export scrubbing, and refresh keep
-//     working (never through header config)
-//   - User-Agent, which has its own dedicated mechanism (rule
-//     custom_user_agent + vendor pins; see .design/user-agent.md)
-var deniedExtraHeaders = map[string]bool{
-	"Host":                true,
-	"Content-Length":      true,
-	"Transfer-Encoding":   true,
-	"Connection":          true,
-	"Upgrade":             true,
-	"Trailer":             true,
-	"Te":                  true,
-	"Keep-Alive":          true,
-	"Authorization":       true,
-	"Proxy-Authorization": true,
-	"X-Api-Key":           true,
-	"User-Agent":          true,
-}
-
-// IsDeniedExtraHeader reports whether the header name (any case) is on the
-// denylist. The outbound transport uses this as a second line of defense
-// against pre-validation data (imports, old rows).
-func IsDeniedExtraHeader(name string) bool {
-	return deniedExtraHeaders[textproto.CanonicalMIMEHeaderKey(name)]
-}
-
-// ValidateExtraHeaders checks one level's extra-header map at config-save
-// time. All write entry points share this function so a header rejected in
-// one place is rejected everywhere. Fail-loudly-on-save: the request path
-// never filters silently except through the denylist defense above.
+// Extra headers are deliberately user-driven: tingly-box is an orchestrator,
+// and "custom" implies needs we cannot predict, so there is no denylist and
+// no size/count cap — the user can configure any header, including ones the
+// gateway also manages (Authorization, User-Agent, …), and owns the outcome.
+// What still wins over a user header is decided by transport ordering, not
+// by filtering: vendor-pinned headers and the User-Agent chain write later
+// (closer to the wire) and therefore take precedence on generic conflicts
+// (see .design/provider-flags.md §5).
+//
+// ValidateExtraHeaders therefore checks structural validity only — things
+// that would make the HTTP request itself malformed or the config ambiguous:
+//   - header names must be RFC 7230 tokens, values must be valid field values
+//     (net/http would otherwise fail the request at send time with a less
+//     helpful error);
+//   - case-insensitively duplicate names are rejected, because HTTP header
+//     names are case-insensitive and a map carrying both spellings has no
+//     defined winner.
 func ValidateExtraHeaders(headers map[string]string) error {
-	if len(headers) == 0 {
-		return nil
-	}
-	if len(headers) > MaxExtraHeadersPerLevel {
-		return fmt.Errorf("too many extra headers: %d (max %d)", len(headers), MaxExtraHeadersPerLevel)
-	}
 	seen := make(map[string]bool, len(headers))
 	for name, value := range headers {
 		if name == "" {
 			return fmt.Errorf("extra header with empty name")
 		}
-		if len(name) > MaxExtraHeaderNameLen {
-			return fmt.Errorf("extra header name %q too long: %d bytes (max %d)", name, len(name), MaxExtraHeaderNameLen)
-		}
 		if !httpguts.ValidHeaderFieldName(name) {
 			return fmt.Errorf("invalid extra header name %q", name)
-		}
-		if len(value) > MaxExtraHeaderValueLen {
-			return fmt.Errorf("extra header %q value too long: %d bytes (max %d)", name, len(value), MaxExtraHeaderValueLen)
 		}
 		if !httpguts.ValidHeaderFieldValue(value) {
 			return fmt.Errorf("extra header %q has an invalid value", name)
 		}
 		canonical := textproto.CanonicalMIMEHeaderKey(name)
-		if deniedExtraHeaders[canonical] {
-			return fmt.Errorf("extra header %q is not allowed: it is managed by the gateway", canonical)
-		}
 		if seen[canonical] {
 			return fmt.Errorf("duplicate extra header %q (names are case-insensitive)", canonical)
 		}

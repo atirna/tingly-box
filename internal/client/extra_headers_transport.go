@@ -3,7 +3,6 @@ package client
 import (
 	"net/http"
 
-	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -43,15 +42,11 @@ func (t *extraHeadersTransport) RoundTrip(req *http.Request) (*http.Response, er
 	}
 
 	// Clone before mutating: the request may be shared/retried by the SDK.
+	// Headers are applied verbatim — user-driven config, no filtering. Inner
+	// chains (vendor pins, the User-Agent transport) write later and win any
+	// conflict by ordering, which is the only precedence mechanism here.
 	req = req.Clone(req.Context())
 	for name, value := range headers {
-		// Second line of defense behind ValidateExtraHeaders — imports or
-		// pre-validation rows might carry denied names. Skip loudly, never
-		// silently alter gateway-managed headers.
-		if typ.IsDeniedExtraHeader(name) {
-			logrus.WithContext(req.Context()).Warnf("extra header %q is gateway-managed, skipping", name)
-			continue
-		}
 		req.Header.Set(name, value)
 	}
 	return t.inner.RoundTrip(req)

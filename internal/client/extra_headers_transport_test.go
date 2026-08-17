@@ -91,24 +91,23 @@ func TestExtraHeadersTransport_VendorPinWins(t *testing.T) {
 	}
 }
 
-// TestExtraHeadersTransport_DenylistDefense: config normally cannot contain
-// denied names (ValidateExtraHeaders rejects on save), but imports or old
-// rows might — the transport must skip them rather than touch
-// gateway-managed headers.
-func TestExtraHeadersTransport_DenylistDefense(t *testing.T) {
+// TestExtraHeadersTransport_AppliesVerbatim: user-driven config — the
+// transport does not filter, even for gateway-adjacent names like
+// Authorization. The user asked for it; the user owns it.
+func TestExtraHeadersTransport_AppliesVerbatim(t *testing.T) {
 	capture := &captureTransport{}
 	rt := wrapWithExtraHeaders(capture, apiKeyProvider())
 
 	req := newHeadersReq(t, map[string]string{
-		"Authorization": "Bearer attacker",
+		"Authorization": "Bearer custom",
 		"X-Title":       "fine",
 	})
-	req.Header.Set("Authorization", "Bearer real")
+	req.Header.Set("Authorization", "Bearer original")
 	if _, err := rt.RoundTrip(req); err != nil {
 		t.Fatal(err)
 	}
-	if got := capture.lastReq.Header.Get("Authorization"); got != "Bearer real" {
-		t.Errorf("Authorization = %q, want the untouched original", got)
+	if got := capture.lastReq.Header.Get("Authorization"); got != "Bearer custom" {
+		t.Errorf("Authorization = %q, want the user-configured value", got)
 	}
 	if got := capture.lastReq.Header.Get("X-Title"); got != "fine" {
 		t.Errorf("X-Title = %q, want fine", got)

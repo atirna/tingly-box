@@ -2,31 +2,17 @@ import { Add as AddIcon, Delete as DeleteIcon } from '@/components/icons';
 import { Box, Button, IconButton, Stack, TextField, Typography } from '@mui/material';
 import React, { useMemo, useState } from 'react';
 
-// Gateway-managed header names (canonical, lowercase for comparison) that the
-// backend rejects on save (typ.ValidateExtraHeaders). Mirrored here so the row
-// turns red with an explanation while typing instead of only failing on save.
-const DENIED_HEADERS = new Set([
-    'host', 'content-length', 'transfer-encoding', 'connection', 'upgrade',
-    'trailer', 'te', 'keep-alive',
-    'authorization', 'proxy-authorization', 'x-api-key',
-    'user-agent',
-]);
-
 // RFC 7230 header-name token characters.
 const TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
+// Structural validation only — headers are user-driven config, so there is no
+// denylist: any header can be set (including gateway-adjacent ones like
+// Authorization or User-Agent) and the user owns the outcome. Mirrors
+// typ.ValidateExtraHeaders.
 export function headerNameError(name: string, seenLower: Set<string>): string | undefined {
     if (name === '') return undefined; // incomplete row, not an error yet
     if (!TOKEN_RE.test(name)) return 'Invalid characters for an HTTP header name';
-    const lower = name.toLowerCase();
-    if (DENIED_HEADERS.has(lower)) {
-        if (lower === 'user-agent') return 'User-Agent has its own control (rule plugin "Custom User-Agent")';
-        if (lower === 'authorization' || lower === 'x-api-key' || lower === 'proxy-authorization') {
-            return 'Credentials go in the API key field, not headers';
-        }
-        return 'This header is managed by the gateway';
-    }
-    if (seenLower.has(lower)) return 'Duplicate header name (names are case-insensitive)';
+    if (seenLower.has(name.toLowerCase())) return 'Duplicate header name (names are case-insensitive)';
     return undefined;
 }
 
@@ -52,9 +38,9 @@ const rowsFromValue = (value?: Record<string, string>): HeaderRow[] =>
 /**
  * HeadersEditor — the shared key/value row editor for headers-type flags,
  * used by the rule catalog, the provider Plugins section, and the per-model
- * override popover. Rows validate inline (denylist / illegal characters /
- * duplicates); rows with an empty or invalid name are kept visible for
- * editing but excluded from the emitted map.
+ * override popover. Rows validate structure inline (illegal characters /
+ * duplicates — never a denylist); rows with an empty or invalid name are
+ * kept visible for editing but excluded from the emitted map.
  */
 export const HeadersEditor: React.FC<HeadersEditorProps> = ({ value, onChange, disabled }) => {
     // Seeded once per mount; dialogs/popovers remount per open, so the parent

@@ -204,22 +204,22 @@ func TestAddRule_DuplicateUUID(t *testing.T) {
 }
 
 // TestAddRule_ExtraHeadersValidation: the AddRule/UpdateRule choke points
-// reject denied header names and canonicalize accepted ones, sharing the same
-// gate as provider/model-level headers.
+// reject structurally invalid headers and canonicalize accepted ones. No
+// denylist — extra headers are user-driven config.
 func TestAddRule_ExtraHeadersValidation(t *testing.T) {
 	cfg, err := NewConfig(WithConfigDir(t.TempDir()))
 	if err != nil {
 		t.Fatalf("NewConfig error: %v", err)
 	}
 
-	denied := typ.Rule{
+	malformed := typ.Rule{
 		UUID:         "uuid-hdr-1",
 		Scenario:     "openai",
 		RequestModel: "hdr-model",
-		Flags:        typ.RuleFlags{ExtraHeaders: map[string]string{"Authorization": "Bearer x"}},
+		Flags:        typ.RuleFlags{ExtraHeaders: map[string]string{"X Title": "bad name"}},
 	}
-	if err := cfg.AddRule(denied); err == nil {
-		t.Fatal("expected denied header to be rejected, got nil")
+	if err := cfg.AddRule(malformed); err == nil {
+		t.Fatal("expected malformed header name to be rejected, got nil")
 	}
 
 	ok := typ.Rule{
@@ -241,8 +241,8 @@ func TestAddRule_ExtraHeadersValidation(t *testing.T) {
 
 	// UpdateRule shares the gate.
 	bad := *saved
-	bad.Flags.ExtraHeaders = map[string]string{"user-agent": "x"}
+	bad.Flags.ExtraHeaders = map[string]string{"X-Dup": "1", "x-dup": "2"}
 	if err := cfg.UpdateRule(bad.UUID, bad); err == nil {
-		t.Fatal("expected UpdateRule to reject denied header, got nil")
+		t.Fatal("expected UpdateRule to reject case-insensitive duplicate, got nil")
 	}
 }

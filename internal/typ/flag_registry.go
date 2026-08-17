@@ -110,7 +110,7 @@ func RuleFlagRegistry() []FlagSpec {
 		{
 			Key:         "extra_headers",
 			Label:       "Custom Headers",
-			Description: "Append custom HTTP headers to the outbound upstream request for requests matched by this rule. Applies to API-key providers only — OAuth/vendor providers (Claude Code, Codex, Kimi, Gemini, Antigravity) keep their handshake headers and ignore this. Headers managed by the gateway (Authorization, User-Agent, transport headers) cannot be set here.",
+			Description: "Append custom HTTP headers to the outbound upstream request for requests matched by this rule. Applies to API-key providers only — OAuth/vendor providers (Claude Code, Codex, Kimi, Gemini, Antigravity) keep their handshake headers and ignore this. Headers are sent as configured, including ones the gateway also sets (Authorization, User-Agent, …) — overriding those is your call and your responsibility.",
 			Type:        FlagTypeHeaders,
 			Category:    FlagCategoryRequest,
 		},
