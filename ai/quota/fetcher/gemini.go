@@ -102,7 +102,7 @@ func (f *GeminiFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*quot
 
 		window := &quota.UsageWindow{
 			Type:          quota.WindowTypeDaily,
-			Kind:          quota.WindowKindLimit, // recovers on its own; see PctLimit
+			Kind:          quota.WindowKindLimit, // recovers on its own; see Pct(WindowKindLimit)
 			Used:          usedPercent,           // Normalize to 0-100 scale
 			Limit:         100,                   // Normalize to 0-100 scale
 			UsedPercent:   usedPercent,

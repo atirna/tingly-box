@@ -134,7 +134,7 @@ Codex code review、Z.ai MCP、MiniMax 的视频/语音/图片/音乐额度都�
 `UsageWindow` 增三个字段、删一个：
 
 ```go
-Kind      WindowKind `json:"kind,omitempty"`      // "limit"（会重置）| "resource"（要充钱）
+Kind      WindowKind `json:"kind,omitempty"`      // "unknown"(空串，缺省) | "limit"（会重置） | "resource"（要充钱）
 Unknown   bool       `json:"unknown,omitempty"`   // 上游没说；不等于 0%
 Unlimited bool       `json:"unlimited,omitempty"` // 真·无限制
 // Tier 已删除：全仓库只写不读，排序改用周期后没有任何消费方
@@ -143,20 +143,16 @@ Unlimited bool       `json:"unlimited,omitempty"` // 真·无限制
 `Unknown` / `Unlimited` 合起来消掉 `Limit == 0` 的三义。`Windows` 走 JSON 持久化，
 新字段自动 round-trip，**不需要 DB 迁移**；旧行缺字段按 false 解码，行为不变。
 
-`Kind` **没有默认值**：未显式打标签的窗口既不算 `limit` 也不算 `resource`，
-在所有"这个会不会自己恢复"的判定里都按保守方向处理（不承诺恢复时间、排序上不领先于
-明确标了 `limit` 的窗口、不计入 `PctLimit`）——宁可漏判，也不要把一个语义不明的窗口
-当成安全的标准配额。这条原则最初是给 §8.1 的路由判定收紧的，但既然默认值本身是
-`ai/quota` 的共享逻辑，索性把 `RecoversAt` / 排序也一起收紧，不留一个"未标注 = 当
-limit"的口子在别处继续存在。
+`Kind` 三态：`WindowKindUnknown`（缺省值，空串）/ `WindowKindLimit` / `WindowKindResource`。
+`Unknown` 在 `RecoversAt`、排序、`Pct(WindowKindLimit)` 里一律按"不会自己恢复"处理。
 
-判定 API（`ai/quota/semantic.go`）：
+判定 API（`ai/quota/semantic.go`）：`kinds` 留空回答展示问题（不分 `Kind`，含资源型）；
+传 `WindowKindLimit` 回答自动化判定问题（§8.1 的 `service_quota`，只认显式标了 `limit` 的窗口）。
 
 ```go
-func (p *ProviderUsage) Pct() (float64, bool)      // 最紧窗口的百分比；false = 整个 provider 不可知
-func (p *ProviderUsage) PctLimit() (float64, bool) // 同上，但只看显式 Kind==limit 的窗口，不兜底
-func (p *ProviderUsage) Tightest() *UsageWindow    // 卡住你的那个窗口（能说"卡在哪"）
-func (p *ProviderUsage) RecoversAt() *time.Time    // Kind==limit → ResetsAt；其余（含未标）→ nil
+func (p *ProviderUsage) Pct(kinds ...WindowKind) (float64, bool)   // 最紧窗口的百分比；kinds 留空 = 不分 Kind，传 WindowKindLimit = 只看显式打了这个标签的窗口
+func (p *ProviderUsage) Tightest(kinds ...WindowKind) *UsageWindow // Pct 的来源窗口（能说"卡在哪"），kinds 语义同上
+func (p *ProviderUsage) RecoversAt() *time.Time                    // Tightest() 本身 Kind==limit → ResetsAt；否则 → nil
 
 func (w *UsageWindow) Percent() float64            // 窗口自己的百分比
 func (w *UsageWindow) Countable() bool             // 是否带可比用量

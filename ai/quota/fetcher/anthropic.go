@@ -130,7 +130,7 @@ func (f *AnthropicFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*q
 	// Used/Limit normalized to 0-100 scale for unified frontend rendering
 	fiveHour := usage.AddWindow("five_hour", &quota.UsageWindow{
 		Type:          quota.WindowTypeSession,
-		Kind:          quota.WindowKindLimit, // recovers on its own; see PctLimit
+		Kind:          quota.WindowKindLimit, // recovers on its own; see Pct(WindowKindLimit)
 		Used:          apiResp.FiveHour.Utilization,
 		Limit:         100,
 		UsedPercent:   apiResp.FiveHour.Utilization,
@@ -174,10 +174,10 @@ func (f *AnthropicFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*q
 		// upstream conveyed.
 		//
 		// Kind deliberately left unset: this is pay-as-you-go overage, closer
-		// to a spend-more resource than a self-healing allowance, and PctLimit
-		// (smart-routing's service_quota) only counts windows explicitly
-		// tagged Kind: WindowKindLimit — leaving this untagged keeps it out
-		// rather than defaulting it in.
+		// to a spend-more resource than a self-healing allowance, and
+		// Pct(WindowKindLimit) (smart-routing's service_quota) only counts
+		// windows explicitly tagged Kind: WindowKindLimit — leaving this
+		// untagged keeps it out rather than defaulting it in.
 		extra := &quota.UsageWindow{
 			Type:          quota.WindowTypeMonthly,
 			Unit:          quota.UsageUnitPercent,

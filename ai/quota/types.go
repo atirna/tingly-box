@@ -48,6 +48,7 @@ const (
 type WindowKind string
 
 const (
+	WindowKindUnknown  WindowKind = ""         // not tagged by the fetcher; treated as not self-healing
 	WindowKindLimit    WindowKind = "limit"    // periodic allowance (Anthropic 5h/7d, MiniMax daily)
 	WindowKindResource WindowKind = "resource" // standing balance (OpenRouter credit, Kimi booster)
 )
@@ -134,7 +135,7 @@ type UsageWindow struct {
 	// Unlimited say why UsedPercent should not be read as a usage figure.
 	// Between them they replace the three-way ambiguity of Limit == 0
 	// (unlimited / unknown / no entitlement).
-	Kind      WindowKind `json:"kind,omitempty"`      // no default; unset is treated as "not proven self-healing" everywhere (RecoversAt, display sort, PctLimit) — a fetcher must tag WindowKindLimit explicitly
+	Kind      WindowKind `json:"kind,omitempty"`      // WindowKindUnknown unless the fetcher tags it; RecoversAt/sort/Pct(WindowKindLimit) all treat Unknown as not self-healing
 	Unknown   bool       `json:"unknown,omitempty"`   // upstream did not report usage; not the same as 0%
 	Unlimited bool       `json:"unlimited,omitempty"` // no cap at all
 
@@ -181,7 +182,7 @@ func applyWindowSemantics(window *UsageWindow) {
 	// A balance is a resource by definition. Leaving each fetcher to say so
 	// means one that forgets produces a balance claiming it refills, and
 	// RecoversAt() then promises a recovery that never arrives.
-	if window.Kind == "" && window.Type == WindowTypeBalance {
+	if window.Kind == WindowKindUnknown && window.Type == WindowTypeBalance {
 		window.Kind = WindowKindResource
 	}
 	// A window with no usage figure must not carry one — a reader that skips

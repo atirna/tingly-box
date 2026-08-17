@@ -43,8 +43,18 @@ func (w *UsageWindow) Countable() bool {
 //
 // Only Windows are considered. Breakdowns are scoped to one model or feature
 // and do not describe the provider as a whole.
-func (p *ProviderUsage) Pct() (float64, bool) {
-	w := p.Tightest()
+//
+// With no kinds given, every countable window is eligible regardless of Kind
+// — the display question, "how much pressure is on this account, from
+// whatever source": a resource (OpenRouter's key balance, KimiK2's only
+// window) is meant to win here just as readily as a periodic allowance.
+// Pass WindowKindLimit to instead answer the automated-decision question,
+// "what will recover on its own" (smart-routing's service_quota is the
+// first caller that needs this; see .design/quota-semantics.md §8.1) — a
+// window whose Kind isn't exactly one of the given values never matches, so
+// an unset Kind is excluded rather than assumed safe.
+func (p *ProviderUsage) Pct(kinds ...WindowKind) (float64, bool) {
+	w := p.Tightest(kinds...)
 	if w == nil {
 		return 0, false
 	}
@@ -52,16 +62,16 @@ func (p *ProviderUsage) Pct() (float64, bool) {
 }
 
 // Tightest returns the window Pct came from, so callers can say which window
-// is binding rather than just quoting a number. Ties go to the shorter window,
-// which is the more actionable one to show.
-func (p *ProviderUsage) Tightest() *UsageWindow {
+// is binding rather than just quoting a number. Ties go to the shorter
+// window, which is the more actionable one to show. See Pct for what kinds
+// filters.
+func (p *ProviderUsage) Tightest(kinds ...WindowKind) *UsageWindow {
 	if p == nil {
 		return nil
 	}
-
 	var best *UsageWindow
 	for _, w := range p.Windows {
-		if !w.Countable() {
+		if !w.Countable() || !matchesKind(w, kinds) {
 			continue
 		}
 		if best == nil || tighter(w, best) {
@@ -71,44 +81,20 @@ func (p *ProviderUsage) Tightest() *UsageWindow {
 	return best
 }
 
-// PctLimit is Pct restricted to periodic-allowance windows (Kind ==
-// WindowKindLimit) — used by callers that must react only to quota that
-// recovers on its own, not to a standing balance/credit that requires a
-// manual top-up (smart-routing's service_quota op is the first of these;
-// see .design/quota-semantics.md §8.1).
-//
-// A window with Kind left unset is excluded here, same as everywhere else
-// in this file that makes a "will this heal on its own" claim (RecoversAt,
-// windowRank) — Kind has no default. A fetcher must explicitly tag
-// Kind: WindowKindLimit for a window to count as standard quota; silently
-// letting an ambiguous or new window (an overage add-on, a balance type
-// someone forgot to flag) count as standard is the dangerous direction to
-// fail in, since it would drive an automatic avoidance decision — or a
-// promised recovery time — off something that may not even self-heal.
-func (p *ProviderUsage) PctLimit() (float64, bool) {
-	w := p.tightestOfKind(WindowKindLimit)
-	if w == nil {
-		return 0, false
+// matchesKind reports whether w should be considered given a Pct/Tightest
+// kinds filter: no filter matches anything, otherwise w.Kind must equal one
+// of the given values exactly (no default — see the Kind field's doc in
+// types.go).
+func matchesKind(w *UsageWindow, kinds []WindowKind) bool {
+	if len(kinds) == 0 {
+		return true
 	}
-	return w.Percent(), true
-}
-
-// tightestOfKind is Tightest restricted to windows whose Kind is exactly
-// kind — a strict equality check, so an unset Kind never matches.
-func (p *ProviderUsage) tightestOfKind(kind WindowKind) *UsageWindow {
-	if p == nil {
-		return nil
-	}
-	var best *UsageWindow
-	for _, w := range p.Windows {
-		if !w.Countable() || w.Kind != kind {
-			continue
-		}
-		if best == nil || tighter(w, best) {
-			best = w
+	for _, k := range kinds {
+		if w.Kind == k {
+			return true
 		}
 	}
-	return best
+	return false
 }
 
 // RecoversAt returns when the binding window refills. It is nil when usage is

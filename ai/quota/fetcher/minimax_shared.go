@@ -236,7 +236,7 @@ func addMiniMaxAccountWindows(usage *quota.ProviderUsage, models []minimaxModelW
 			continue
 		}
 		account := *best
-		account.Kind = quota.WindowKindLimit // recovers on its own; see PctLimit
+		account.Kind = quota.WindowKindLimit // recovers on its own; see Pct(WindowKindLimit)
 		account.Label = label + " Quota"
 		account.Description = fmt.Sprintf("%s · %s", best.Description, bestModel)
 		usage.AddWindow(strings.ToLower(label), &account)
