@@ -28,6 +28,7 @@ export function flagDefault(spec: FlagSpec): unknown {
         case 'int': return 0;
         case 'enum': return spec.options?.[0]?.value ?? '';
         case 'service_ref': return undefined;
+        case 'headers': return undefined;
     }
 }
 
@@ -48,6 +49,10 @@ export function isFlagActive(spec: FlagSpec, flags: RuleFlags): boolean {
         case 'service_ref': {
             const ref = value as VisionProxyServiceRef | undefined;
             return !!(ref && ref.provider && ref.model);
+        }
+        case 'headers': {
+            const map = value as Record<string, string> | undefined;
+            return !!map && Object.keys(map).length > 0;
         }
         default: return false;
     }
@@ -75,4 +80,9 @@ export function flagsToApi(flags: RuleFlags | undefined): RuleFlagsApi {
         api[camelToSnake(key)] = value;
     }
     return api as RuleFlagsApi;
+}
+
+// headersValue reads a headers-type flag as a name→value map (empty when unset).
+export function headersValue(flags: RuleFlags | undefined, key: string): Record<string, string> {
+    return (getFlagValue(flags, key) as Record<string, string> | undefined) ?? {};
 }

@@ -22,13 +22,20 @@ type loggingRoundTripper struct {
 
 // wrapWithLogging wraps a transport so every provider's upstream call is logged
 // uniformly. It is the single place that surfaces proxy + outcome per request.
+//
+// It also mounts the extra-headers layer (extraHeadersTransport) between the
+// log line and the inner chain: this is the unique choke point every client
+// constructor passes through, so user-configured extra headers get one
+// injection site that covers all API styles — while staying OUTSIDE the
+// vendor round-trippers in inner, whose pinned headers must win (see
+// .design/provider-flags.md §5.2).
 func wrapWithLogging(inner http.RoundTripper, provider *typ.Provider) http.RoundTripper {
 	var proxyRaw string
 	if provider != nil {
 		proxyRaw = provider.ProxyURL
 	}
 	return &loggingRoundTripper{
-		inner:    inner,
+		inner:    wrapWithExtraHeaders(inner, provider),
 		provider: provider,
 		proxy:    redactProxy(proxyRaw),
 	}

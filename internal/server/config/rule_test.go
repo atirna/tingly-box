@@ -173,7 +173,7 @@ func TestAddRule_TeamSeedsCreateDefaults(t *testing.T) {
 	if other == nil {
 		t.Fatal("openai rule not found after AddRule")
 	}
-	if other.Flags != (typ.RuleFlags{}) {
+	if !other.Flags.IsZero() {
 		t.Errorf("non-team rule should keep empty flags, got %+v", other.Flags)
 	}
 }
@@ -200,5 +200,49 @@ func TestAddRule_DuplicateUUID(t *testing.T) {
 	}
 	if err := cfg.AddRule(rule2); err == nil {
 		t.Fatal("expected error for duplicate UUID, got nil")
+	}
+}
+
+// TestAddRule_ExtraHeadersValidation: the AddRule/UpdateRule choke points
+// reject denied header names and canonicalize accepted ones, sharing the same
+// gate as provider/model-level headers.
+func TestAddRule_ExtraHeadersValidation(t *testing.T) {
+	cfg, err := NewConfig(WithConfigDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("NewConfig error: %v", err)
+	}
+
+	denied := typ.Rule{
+		UUID:         "uuid-hdr-1",
+		Scenario:     "openai",
+		RequestModel: "hdr-model",
+		Flags:        typ.RuleFlags{ExtraHeaders: map[string]string{"Authorization": "Bearer x"}},
+	}
+	if err := cfg.AddRule(denied); err == nil {
+		t.Fatal("expected denied header to be rejected, got nil")
+	}
+
+	ok := typ.Rule{
+		UUID:         "uuid-hdr-2",
+		Scenario:     "openai",
+		RequestModel: "hdr-model-2",
+		Flags:        typ.RuleFlags{ExtraHeaders: map[string]string{"x-title": "tingly"}},
+	}
+	if err := cfg.AddRule(ok); err != nil {
+		t.Fatalf("valid header rejected: %v", err)
+	}
+	saved := cfg.GetRuleByUUID("uuid-hdr-2")
+	if saved == nil {
+		t.Fatal("rule not saved")
+	}
+	if _, exists := saved.Flags.ExtraHeaders["X-Title"]; !exists {
+		t.Errorf("header name not canonicalized on save: %v", saved.Flags.ExtraHeaders)
+	}
+
+	// UpdateRule shares the gate.
+	bad := *saved
+	bad.Flags.ExtraHeaders = map[string]string{"user-agent": "x"}
+	if err := cfg.UpdateRule(bad.UUID, bad); err == nil {
+		t.Fatal("expected UpdateRule to reject denied header, got nil")
 	}
 }

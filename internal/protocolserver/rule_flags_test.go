@@ -24,9 +24,8 @@ func newGinContext(t *testing.T) *gin.Context {
 
 func TestResolveRuleFlags_NilRule(t *testing.T) {
 	got := ResolveRuleFlags(newGinContext(t), nil)
-	want := typ.RuleFlags{}
-	if got != want {
-		t.Errorf("resolveRuleFlags(nil) = %#v, want zero value %#v", got, want)
+	if !got.IsZero() {
+		t.Errorf("resolveRuleFlags(nil) = %#v, want zero value", got)
 	}
 }
 
@@ -620,5 +619,26 @@ func TestResolveRuleFlagsWithScenario_ClaudeOrgIDReachesContext(t *testing.T) {
 	}
 	if ctxVal := typ.GetClaudeOrgID(c.Request.Context()); ctxVal != "org-uuid" {
 		t.Errorf("claude org id in ctx = %q, want %q", ctxVal, "org-uuid")
+	}
+}
+
+func TestResolveRuleFlagsWithScenario_ExtraHeaders(t *testing.T) {
+	// Rule-level headers land in the request context for the outbound
+	// transport, verbatim.
+	c := newGinContext(t)
+	rule := &typ.Rule{Flags: typ.RuleFlags{ExtraHeaders: map[string]string{"X-Team-Tag": "research"}}}
+	ResolveRuleFlagsWithScenario(c, rule, typ.ScenarioOpenAI, &typ.ScenarioConfig{},
+		protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, nil)
+	got := typ.GetExtraHeaders(c.Request.Context())
+	if got["X-Team-Tag"] != "research" {
+		t.Errorf("ctx headers = %v, want rule extra_headers attached", got)
+	}
+
+	// Nothing configured → nothing attached.
+	c = newGinContext(t)
+	ResolveRuleFlagsWithScenario(c, &typ.Rule{}, typ.ScenarioOpenAI, &typ.ScenarioConfig{},
+		protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, nil)
+	if got := typ.GetExtraHeaders(c.Request.Context()); got != nil {
+		t.Errorf("ctx headers = %v, want nil when the rule sets none", got)
 	}
 }

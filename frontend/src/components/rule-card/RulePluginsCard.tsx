@@ -10,7 +10,7 @@ import {
     MODEL_NODE_STYLES,
 } from '@/components/nodes/styles';
 import type { FlagSpec, RuleFlags, VisionProxyServiceRef } from '@/components/RoutingGraphTypes';
-import { getFlagValue, isFlagActive } from './flagHelpers';
+import { getFlagValue, headersValue, isFlagActive } from './flagHelpers';
 
 const CARD_STYLES = {
     width: MODEL_NODE_STYLES.width,
@@ -156,7 +156,9 @@ export const RulePluginsCard: React.FC<RulePluginsCardProps> = ({
                                 if (opt) displayVal = opt.label;
                             }
                             if (isServiceRef) displayVal = flagServiceRefDisplay(flags, spec.key);
-                            const tooltipTitle = ((isString || isEnum) && stringVal) || (isServiceRef && displayVal)
+                            // Headers: show the concrete header names, not a count.
+                            if (spec.type === 'headers') displayVal = Object.keys(headersValue(flags, spec.key)).join(', ');
+                            const tooltipTitle = ((isString || isEnum) && stringVal) || ((isServiceRef || spec.type === 'headers') && displayVal)
                                 ? `${spec.description}\nValue: ${displayVal}`
                                 : spec.description;
                             return (

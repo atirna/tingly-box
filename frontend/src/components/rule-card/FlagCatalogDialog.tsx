@@ -30,7 +30,8 @@ import type { FlagSpec, RuleFlags, VisionProxyServiceRef } from '@/components/Ro
 import type { Provider } from '@/types/provider';
 import type { ProviderSelectTabOption } from '@/components/ModelSelectDialog';
 import ModelSelectDialog from '@/components/ModelSelectDialog';
-import { getFlagValue, setFlagValue, flagDefault, enumInactive, isFlagActive, normalizeEnumForStorage } from './flagHelpers';
+import { getFlagValue, setFlagValue, flagDefault, enumInactive, isFlagActive, normalizeEnumForStorage, headersValue } from './flagHelpers';
+import HeadersEditor from '@/components/flags/HeadersEditor';
 
 export interface FlagCatalogDialogProps {
     open: boolean;
@@ -61,10 +62,11 @@ interface CategoryMeta {
 }
 
 // Display order for the category sidebar. Unknown categories are appended.
-const CATEGORY_ORDER = ['app', 'request_openai', 'request_anthropic', 'response', 'reasoning', 'vision', 'routing'];
+const CATEGORY_ORDER = ['app', 'request', 'request_openai', 'request_anthropic', 'response', 'reasoning', 'vision', 'routing'];
 
 const CATEGORY_META: Record<string, CategoryMeta> = {
     app:               { label: 'App',         icon: <TerminalIcon   fontSize="small" /> },
+    request:           { label: 'Request',     icon: <InputIcon      fontSize="small" /> },
     request_openai:    { label: 'Request (O)', icon: <InputIcon      fontSize="small" /> },
     request_anthropic: { label: 'Request (A)', icon: <InputIcon      fontSize="small" /> },
     response:          { label: 'Response',    icon: <OutputIcon     fontSize="small" /> },
@@ -428,6 +430,14 @@ export const FlagCatalogDialog: React.FC<FlagCatalogDialogProps> = ({
                                                             ))}
                                                         </Select>
                                                     </FormControl>
+                                                )}
+                                                {spec.type === 'headers' && (
+                                                    <Box sx={{ mt: 1 }}>
+                                                        <HeadersEditor
+                                                            value={headersValue(draft, spec.key)}
+                                                            onChange={(next) => setDraft((d) => setFlagValue(d, spec.key, next))}
+                                                        />
+                                                    </Box>
                                                 )}
                                                 {spec.type === 'service_ref' && (() => {
                                                     const ref = flagToServiceRef(draft, spec.key);

@@ -2,6 +2,7 @@ package typ
 
 import (
 	"encoding/json"
+	"reflect"
 	"time"
 
 	"github.com/tingly-dev/tingly-box/ai"
@@ -274,6 +275,13 @@ type RuleFlags struct {
 	// only the beta header changes behavior.
 	Context1M bool `json:"context_1m,omitempty" yaml:"context_1m,omitempty"`
 
+	// ExtraHeaders are appended to the outbound upstream request for requests
+	// matched by this rule. Merged with the provider- and model-level
+	// extra_headers (see typ.EffectiveExtraHeaders): provider < model < rule,
+	// the rule value winning on name conflicts. Applied on api_key providers
+	// only (vendor/OAuth chains keep their handshake headers untouched).
+	ExtraHeaders map[string]string `json:"extra_headers,omitempty" yaml:"extra_headers,omitempty"`
+
 	// ClaudeOrgID controls the anthropic-organization-id header sent upstream
 	// for Claude OAuth providers. Organization attribution is opt-in: empty
 	// (default) sends no organization header at all. "auto"
@@ -282,6 +290,13 @@ type RuleFlags struct {
 	// entitlements (e.g. Cyber Verification) rely on. Any other value sends
 	// that organization id verbatim.
 	ClaudeOrgID string `json:"claude_org_id,omitempty" yaml:"claude_org_id,omitempty"`
+}
+
+// IsZero reports whether no flag is set at all. RuleFlags stopped being
+// comparable with == once it grew map fields (ExtraHeaders), so zero checks
+// go through here.
+func (f RuleFlags) IsZero() bool {
+	return reflect.DeepEqual(f, RuleFlags{})
 }
 
 // VisionProxyService identifies the upstream used to describe images for the
