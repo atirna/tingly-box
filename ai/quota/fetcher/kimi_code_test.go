@@ -354,8 +354,8 @@ func TestKimiCodeSemantics(t *testing.T) {
 
 	// A wallet balance does not come back by waiting.
 	booster := findWindow(t, usage, "booster")
-	if booster.EffectiveKind() != quota.WindowKindResource {
-		t.Errorf("booster Kind = %q, want resource", booster.EffectiveKind())
+	if booster.Kind != quota.WindowKindResource {
+		t.Errorf("booster Kind = %q, want resource", booster.Kind)
 	}
 
 	// The weekly limit is the binding one here (40% vs the balance's 50% is

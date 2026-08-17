@@ -84,8 +84,8 @@ func TestKimiK2CreditsAreAResource(t *testing.T) {
 	checkInvariants(t, usage)
 
 	credits := findWindow(t, usage, "credits")
-	if credits.EffectiveKind() != quota.WindowKindResource {
-		t.Errorf("credits Kind = %q, want resource", credits.EffectiveKind())
+	if credits.Kind != quota.WindowKindResource {
+		t.Errorf("credits Kind = %q, want resource", credits.Kind)
 	}
 	if pct, ok := usage.Pct(); !ok || pct != 30 {
 		t.Fatalf("Pct() = %v, %v; want 30, true", pct, ok)

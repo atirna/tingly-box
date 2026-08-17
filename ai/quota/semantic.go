@@ -12,15 +12,6 @@ import (
 // can act on: how much is used, and when it comes back.
 // See .design/quota-semantics.md.
 
-// EffectiveKind reports the window kind, defaulting to WindowKindLimit for
-// windows written before the field existed.
-func (w *UsageWindow) EffectiveKind() WindowKind {
-	if w == nil || w.Kind == "" {
-		return WindowKindLimit
-	}
-	return w.Kind
-}
-
 // Percent returns the window's used percentage, falling back to used/limit for
 // windows that have not had UsedPercent filled in yet.
 func (w *UsageWindow) Percent() float64 {
@@ -80,12 +71,55 @@ func (p *ProviderUsage) Tightest() *UsageWindow {
 	return best
 }
 
+// PctLimit is Pct restricted to periodic-allowance windows (Kind ==
+// WindowKindLimit) — used by callers that must react only to quota that
+// recovers on its own, not to a standing balance/credit that requires a
+// manual top-up (smart-routing's service_quota op is the first of these;
+// see .design/quota-semantics.md §8.1).
+//
+// A window with Kind left unset is excluded here, same as everywhere else
+// in this file that makes a "will this heal on its own" claim (RecoversAt,
+// windowRank) — Kind has no default. A fetcher must explicitly tag
+// Kind: WindowKindLimit for a window to count as standard quota; silently
+// letting an ambiguous or new window (an overage add-on, a balance type
+// someone forgot to flag) count as standard is the dangerous direction to
+// fail in, since it would drive an automatic avoidance decision — or a
+// promised recovery time — off something that may not even self-heal.
+func (p *ProviderUsage) PctLimit() (float64, bool) {
+	w := p.tightestOfKind(WindowKindLimit)
+	if w == nil {
+		return 0, false
+	}
+	return w.Percent(), true
+}
+
+// tightestOfKind is Tightest restricted to windows whose Kind is exactly
+// kind — a strict equality check, so an unset Kind never matches.
+func (p *ProviderUsage) tightestOfKind(kind WindowKind) *UsageWindow {
+	if p == nil {
+		return nil
+	}
+	var best *UsageWindow
+	for _, w := range p.Windows {
+		if !w.Countable() || w.Kind != kind {
+			continue
+		}
+		if best == nil || tighter(w, best) {
+			best = w
+		}
+	}
+	return best
+}
+
 // RecoversAt returns when the binding window refills. It is nil when usage is
-// unknown, when the binding window is a resource (a top-up, not a reset, is
-// what brings it back), or when upstream did not report a reset time.
+// unknown, when the binding window is not explicitly tagged as a
+// self-healing allowance (Kind == WindowKindLimit — a resource needs a
+// top-up, not a reset, to come back, and an untagged window's ability to
+// self-heal is simply not established), or when upstream did not report a
+// reset time.
 func (p *ProviderUsage) RecoversAt() *time.Time {
 	w := p.Tightest()
-	if w == nil || w.EffectiveKind() == WindowKindResource {
+	if w == nil || w.Kind != WindowKindLimit {
 		return nil
 	}
 	return w.ResetsAt
@@ -147,14 +181,17 @@ func periodRank(w *UsageWindow) int {
 }
 
 // windowRank groups windows for display; within a group they order by period.
+// Rank 0 (self-healing allowances) requires an explicit Kind ==
+// WindowKindLimit tag — an untagged window is not assumed to belong there,
+// so it sorts alongside resources (rank 1) instead of jumping the queue.
 func windowRank(w *UsageWindow) int {
 	switch {
 	case !w.Countable():
 		return 2
-	case w.EffectiveKind() == WindowKindResource:
-		return 1
-	default:
+	case w.Kind == WindowKindLimit:
 		return 0
+	default:
+		return 1
 	}
 }
 
