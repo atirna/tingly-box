@@ -521,10 +521,10 @@ func TestApplyClientUserAgent_NilRequestIsNoOp(t *testing.T) {
 }
 
 // TestResolveRuleFlagsWithScenario_AttachesClientUserAgent verifies the single
-// merge point forwards the inbound client UA into the request context (which the
-// generic transport later reads) — but only as a fallback: when a
-// custom_user_agent override is set, the client UA is not attached, since the
-// transport would ignore it.
+// merge point forwards the inbound client UA into the request context
+// unconditionally — ruleFlagTransport is the sole arbiter of the UA
+// precedence, so the merge point attaches both candidates and takes no
+// precedence decision of its own.
 func TestResolveRuleFlagsWithScenario_AttachesClientUserAgent(t *testing.T) {
 	t.Run("inbound UA attached when no explicit override", func(t *testing.T) {
 		c := newGinContext(t)
@@ -539,7 +539,7 @@ func TestResolveRuleFlagsWithScenario_AttachesClientUserAgent(t *testing.T) {
 		}
 	})
 
-	t.Run("override wins and client UA is not attached", func(t *testing.T) {
+	t.Run("override and client UA are both attached", func(t *testing.T) {
 		c := newGinContext(t)
 		c.Request.Header.Set("User-Agent", "cherry-studio/1.2")
 		rule := &typ.Rule{Flags: typ.RuleFlags{CustomUserAgent: "Rule/2.0"}}
@@ -548,12 +548,13 @@ func TestResolveRuleFlagsWithScenario_AttachesClientUserAgent(t *testing.T) {
 			protocol.TypeAnthropicV1, protocol.TypeAnthropicV1, nil)
 
 		ctx := c.Request.Context()
-		if got := typ.GetCustomUserAgent(ctx); got != "Rule/2.0" {
+		if got := typ.GetRuleFlags(ctx).CustomUserAgent; got != "Rule/2.0" {
 			t.Errorf("custom UA in ctx = %q, want %q", got, "Rule/2.0")
 		}
-		// The override wins, so the client UA is redundant and not attached.
-		if got := typ.GetClientUserAgent(ctx); got != "" {
-			t.Errorf("client UA in ctx = %q, want empty (override present)", got)
+		// Both candidates ride the ctx; the transport resolves the precedence
+		// (override wins there — pinned by TestRuleFlagTransport_RuleWinsOverClient).
+		if got := typ.GetClientUserAgent(ctx); got != "cherry-studio/1.2" {
+			t.Errorf("client UA in ctx = %q, want %q", got, "cherry-studio/1.2")
 		}
 	})
 }
@@ -591,21 +592,26 @@ func TestResolveRuleFlagsWithScenario_CleanHeaderSuppressedForClaudeOAuth(t *tes
 	}
 }
 
-func TestApplyClaudeOrgID(t *testing.T) {
-	t.Run("attaches override to request context", func(t *testing.T) {
+func TestApplyRuleFlags(t *testing.T) {
+	t.Run("attaches the resolved flags to the request context", func(t *testing.T) {
 		c := newGinContext(t)
-		applyClaudeOrgID(c, typ.RuleFlags{ClaudeOrgID: "org-uuid"})
-		if got := typ.GetClaudeOrgID(c.Request.Context()); got != "org-uuid" {
+		applyRuleFlags(c, typ.RuleFlags{ClaudeOrgID: "org-uuid"})
+		if got := typ.GetRuleFlags(c.Request.Context()).ClaudeOrgID; got != "org-uuid" {
 			t.Errorf("claude org id in ctx = %q, want %q", got, "org-uuid")
 		}
 	})
 
-	t.Run("empty flag is a no-op", func(t *testing.T) {
+	t.Run("zero flags read back as zero", func(t *testing.T) {
 		c := newGinContext(t)
-		applyClaudeOrgID(c, typ.RuleFlags{})
-		if got := typ.GetClaudeOrgID(c.Request.Context()); got != "" {
-			t.Errorf("claude org id in ctx = %q, want empty", got)
+		applyRuleFlags(c, typ.RuleFlags{})
+		if got := typ.GetRuleFlags(c.Request.Context()); !got.IsZero() {
+			t.Errorf("flags in ctx = %+v, want zero value", got)
 		}
+	})
+
+	t.Run("nil request must not panic", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(nil)
+		applyRuleFlags(c, typ.RuleFlags{}) // must not panic
 	})
 }
 
@@ -617,7 +623,7 @@ func TestResolveRuleFlagsWithScenario_ClaudeOrgIDReachesContext(t *testing.T) {
 	if got.ClaudeOrgID != "org-uuid" {
 		t.Errorf("ClaudeOrgID = %q, want %q", got.ClaudeOrgID, "org-uuid")
 	}
-	if ctxVal := typ.GetClaudeOrgID(c.Request.Context()); ctxVal != "org-uuid" {
+	if ctxVal := typ.GetRuleFlags(c.Request.Context()).ClaudeOrgID; ctxVal != "org-uuid" {
 		t.Errorf("claude org id in ctx = %q, want %q", ctxVal, "org-uuid")
 	}
 }
@@ -629,7 +635,7 @@ func TestResolveRuleFlagsWithScenario_ExtraHeaders(t *testing.T) {
 	rule := &typ.Rule{Flags: typ.RuleFlags{ExtraHeaders: map[string]string{"X-Team-Tag": "research"}}}
 	ResolveRuleFlagsWithScenario(c, rule, typ.ScenarioOpenAI, &typ.ScenarioConfig{},
 		protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, nil)
-	got := typ.GetExtraHeaders(c.Request.Context())
+	got := typ.GetRuleFlags(c.Request.Context()).ExtraHeaders
 	if got["X-Team-Tag"] != "research" {
 		t.Errorf("ctx headers = %v, want rule extra_headers attached", got)
 	}
@@ -638,7 +644,7 @@ func TestResolveRuleFlagsWithScenario_ExtraHeaders(t *testing.T) {
 	c = newGinContext(t)
 	ResolveRuleFlagsWithScenario(c, &typ.Rule{}, typ.ScenarioOpenAI, &typ.ScenarioConfig{},
 		protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, nil)
-	if got := typ.GetExtraHeaders(c.Request.Context()); got != nil {
+	if got := typ.GetRuleFlags(c.Request.Context()).ExtraHeaders; got != nil {
 		t.Errorf("ctx headers = %v, want nil when the rule sets none", got)
 	}
 }

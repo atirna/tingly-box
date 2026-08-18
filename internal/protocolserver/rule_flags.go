@@ -107,11 +107,9 @@ func ResolveRuleFlags(c *gin.Context, rule *typ.Rule) typ.RuleFlags {
 //  4. Provider-driven suppressions (CleanHeader is cleared for Claude OAuth providers;
 //     the billing header must reach Anthropic's billing backend unchanged).
 //
-// Side effect: it also attaches the resolved CustomUserAgent to the request
-// context (applyCustomUserAgent) so callers don't have to repeat that at each
-// handler. The User-Agent is the one rule flag that has to reach a deep
-// component (the outbound transport) via ctx, so this central merge point is
-// where it gets applied.
+// Side effect: it attaches the whole resolved flag set to the request context
+// (applyRuleFlags) plus the inbound client UA fallback (applyClientUserAgent),
+// so no handler repeats either.
 func ResolveRuleFlagsWithScenario(
 	c *gin.Context,
 	rule *typ.Rule,
@@ -158,88 +156,36 @@ func ResolveRuleFlagsWithScenario(
 		flags.CleanHeader = false
 	}
 
-	// Attach the resolved User-Agent override to the request context here, at the
-	// single merge point, so the chat / v1 / beta handlers don't each repeat it.
-	applyCustomUserAgent(c, flags)
+	// Attach the whole resolved flag set once, at the single merge point, so
+	// every downstream consumer — ruleFlagTransport (custom_user_agent,
+	// extra_headers), the Anthropic client's Beta/Messages methods
+	// (context_1m), NewClaudeClient (claude_org_id) — reads the same value
+	// via typ.GetRuleFlags. This is the one Type-2 (context-passed) injection
+	// point; no handler applies anything itself.
+	applyRuleFlags(c, flags)
 
-	// Inbound client UA is a lower-precedence fallback (see applyClientUserAgent).
-	// Skip it when an override is set: the transport would ignore the client UA
-	// anyway, so attaching it is pure allocation.
-	if flags.CustomUserAgent == "" {
-		applyClientUserAgent(c)
-	}
-
-	// Attach the 1M-context hint the same way: the Anthropic client's Beta/
-	// Messages methods read it and add the context-1m beta per request.
-	applyContext1M(c, flags)
-
-	// Attach the claude_org_id hint the same way: NewClaudeClient reads it per
-	// request and decides whether/what anthropic-organization-id to send.
-	applyClaudeOrgID(c, flags)
-
-	// Attach the rule-level extra headers the same way: the outbound
-	// transport (extraHeadersTransport) reads them at RoundTrip time and
-	// applies them on api_key providers only.
-	applyExtraHeaders(c, flags)
+	// The inbound client UA is attached unconditionally; ruleFlagTransport is
+	// the sole arbiter of the UA precedence (custom_user_agent > client UA >
+	// SDK default), so no precedence judgment is duplicated here.
+	applyClientUserAgent(c)
 
 	return flags
 }
 
-// applyExtraHeaders attaches the rule's extra_headers map to the request
-// context for the outbound transport. No-op when the rule configures none.
-func applyExtraHeaders(c *gin.Context, flags typ.RuleFlags) {
-	if len(flags.ExtraHeaders) == 0 || c == nil || c.Request == nil {
+// applyRuleFlags attaches the resolved RuleFlags to the request context for
+// the outbound client layer (typ.GetRuleFlags).
+func applyRuleFlags(c *gin.Context, flags typ.RuleFlags) {
+	if c == nil || c.Request == nil {
 		return
 	}
-	c.Request = c.Request.WithContext(typ.WithExtraHeaders(c.Request.Context(), flags.ExtraHeaders))
-}
-
-// applyClaudeOrgID attaches the claude_org_id flag to the request context so
-// NewClaudeClient can resolve it when composing the anthropic-organization-id
-// header. No-op when the flag is empty, so no organization header is sent —
-// organization attribution is opt-in (see typ.RuleFlags.ClaudeOrgID).
-func applyClaudeOrgID(c *gin.Context, flags typ.RuleFlags) {
-	if flags.ClaudeOrgID == "" || c == nil || c.Request == nil {
-		return
-	}
-	c.Request = c.Request.WithContext(typ.WithClaudeOrgID(c.Request.Context(), flags.ClaudeOrgID))
-}
-
-// applyContext1M attaches the 1M-context hint to the request context so the
-// Anthropic client (generic and Claude Code OAuth) injects the context-1m beta
-// flag upstream. Without this, the flag would only ever be advertised to
-// clients ([1m] model names) and never reach providers whose clients don't send
-// it themselves.
-func applyContext1M(c *gin.Context, flags typ.RuleFlags) {
-	if !flags.Context1M || c == nil || c.Request == nil {
-		return
-	}
-	c.Request = c.Request.WithContext(typ.WithContext1M(c.Request.Context()))
-}
-
-// applyCustomUserAgent attaches the effective custom User-Agent (already merged
-// across rule + scenario) to the request context, so the outbound transport
-// (userAgentTransport) can read it at RoundTrip time. This is the Type-2
-// (context-passed hint) injection point: the dispatch path forwards
-// c.Request.Context() down to the SDK call, where the transport applies the
-// override. No-op when no override is configured, so the vendor/provider
-// User-Agent is left untouched.
-//
-// Called from ResolveRuleFlagsWithScenario, which every handler now routes
-// through — so no handler needs to apply the User-Agent itself.
-func applyCustomUserAgent(c *gin.Context, flags typ.RuleFlags) {
-	if flags.CustomUserAgent == "" || c == nil || c.Request == nil {
-		return
-	}
-	c.Request = c.Request.WithContext(typ.WithCustomUserAgent(c.Request.Context(), flags.CustomUserAgent))
+	c.Request = c.Request.WithContext(typ.WithRuleFlags(c.Request.Context(), flags))
 }
 
 // applyClientUserAgent attaches the inbound client's own User-Agent header to
-// the request context so the generic outbound transport (userAgentTransport)
-// can forward it upstream. Only the two generic pass-through clients wire that
+// the request context so the generic outbound transport (ruleFlagTransport)
+// can forward it upstream. Only the generic pass-through clients wire that
 // transport; vendor-specialized paths never read it, keeping their pinned UA
 // decisive. No-op when the client sent no User-Agent (SDK default stands).
-// The caller only invokes this when no custom_user_agent override is set.
 func applyClientUserAgent(c *gin.Context) {
 	if c == nil || c.Request == nil {
 		return

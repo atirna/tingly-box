@@ -61,7 +61,9 @@ func NewGoogleClient(provider *typ.Provider, model string, sessionID typ.Session
 	}
 
 	httpClient := &http.Client{
-		Transport: wrapWithLogging(transport, provider),
+		// resolveUA=false: the generic Google path has never forwarded
+		// rule/client UA.
+		Transport: wrapWithLogging(wrapWithRuleFlags(transport, provider, false), provider),
 		Timeout:   timeout,
 	}
 	return newGoogleClientFromHTTPClient(provider, httpClient)

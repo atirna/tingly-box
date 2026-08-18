@@ -112,9 +112,12 @@ type contextKey string
 
 const SessionIDKey contextKey = "session_id"
 
-// CustomUserAgentKey carries a rule-level User-Agent override down to the
-// outbound HTTP transport.
-const CustomUserAgentKey contextKey = "custom_user_agent"
+// RuleFlagsKey carries the request's resolved RuleFlags (the merge of rule +
+// scenario + auto-applied flags done by ResolveRuleFlagsWithScenario) down to
+// the outbound client layer. One key for the whole flag set: consumers read
+// the field they care about via GetRuleFlags(ctx).X instead of each flag
+// minting its own context key.
+const RuleFlagsKey contextKey = "rule_flags"
 
 // UserAgentNone is the sentinel custom_user_agent value that strips the
 // outbound User-Agent header entirely (the request is sent with no User-Agent),
@@ -142,30 +145,30 @@ func GetSessionID(ctx context.Context) SessionID {
 	return SessionID{}
 }
 
-// WithCustomUserAgent attaches a User-Agent override that an outbound HTTP
-// transport may read at request time.
-func WithCustomUserAgent(ctx context.Context, ua string) context.Context {
-	if ua == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, CustomUserAgentKey, ua)
+// WithRuleFlags attaches the resolved RuleFlags for this request so the
+// outbound client layer (ruleFlagTransport, SDK-level readers) can consume
+// them at request time.
+func WithRuleFlags(ctx context.Context, flags RuleFlags) context.Context {
+	return context.WithValue(ctx, RuleFlagsKey, flags)
 }
 
-// GetCustomUserAgent returns the per-request User-Agent override, or "" if none.
-func GetCustomUserAgent(ctx context.Context) string {
+// GetRuleFlags returns the request's resolved RuleFlags, or the zero value
+// when none were attached (every flag reads as unset).
+func GetRuleFlags(ctx context.Context) RuleFlags {
 	if ctx == nil {
-		return ""
+		return RuleFlags{}
 	}
-	if ua, ok := ctx.Value(CustomUserAgentKey).(string); ok {
-		return ua
+	if flags, ok := ctx.Value(RuleFlagsKey).(RuleFlags); ok {
+		return flags
 	}
-	return ""
+	return RuleFlags{}
 }
 
 // ClientUserAgentKey carries the *inbound* client's User-Agent header down to
-// the outbound HTTP transport so it can be forwarded upstream. Distinct from
-// CustomUserAgentKey (the explicit rule/scenario override); userAgentTransport
-// resolves the precedence between them.
+// the outbound HTTP transport so it can be forwarded upstream. This is a
+// request fact, not a rule flag, so it stays a separate key from RuleFlagsKey;
+// ruleFlagTransport resolves the precedence between it and
+// RuleFlags.CustomUserAgent.
 const ClientUserAgentKey contextKey = "client_user_agent"
 
 // WithClientUserAgent attaches the inbound client's User-Agent so an outbound
@@ -189,81 +192,9 @@ func GetClientUserAgent(ctx context.Context) string {
 	return ""
 }
 
-// ExtraHeadersKey carries the request-scoped extra headers (resolved at
-// dispatch time from the rule's extra_headers flag) down to the outbound
-// HTTP transport, which applies them on api_key providers only. See
-// .design/provider-flags.md.
-const ExtraHeadersKey contextKey = "extra_headers"
-
-// WithExtraHeaders attaches request-scoped extra headers for the outbound
-// transport. Empty maps are not attached.
-func WithExtraHeaders(ctx context.Context, headers map[string]string) context.Context {
-	if len(headers) == 0 {
-		return ctx
-	}
-	return context.WithValue(ctx, ExtraHeadersKey, headers)
-}
-
-// GetExtraHeaders returns the request-scoped extra headers, or nil if none.
-// Callers must treat the returned map as read-only.
-func GetExtraHeaders(ctx context.Context) map[string]string {
-	if ctx == nil {
-		return nil
-	}
-	if h, ok := ctx.Value(ExtraHeadersKey).(map[string]string); ok {
-		return h
-	}
-	return nil
-}
-
-// Context1MKey carries the rule-level 1M-context hint down to the Anthropic
-// client, whose Beta/Messages methods add the context-1m beta flag per request.
-const Context1MKey contextKey = "context_1m"
-
-// ClaudeOrgIDKey carries the rule-level claude_org_id override down to the
-// outbound Anthropic client/transport, which sends it as the
-// anthropic-organization-id header instead of the provider's login-time
-// organization.
-const ClaudeOrgIDKey contextKey = "claude_org_id"
-
 // ClaudeOrgIDAuto is the sentinel claude_org_id value that attaches the
 // organization captured at OAuth login
 // (OAuthDetail.ExtraFields["organization_id"]) as anthropic-organization-id.
 // Sending the organization is opt-in: an unset (empty) flag attaches no
 // organization header at all, preserving the classic behavior.
 const ClaudeOrgIDAuto = "auto"
-
-// WithClaudeOrgID attaches the anthropic-organization-id override that the
-// outbound Anthropic client reads at request time. Empty values are not
-// attached (no override).
-func WithClaudeOrgID(ctx context.Context, orgID string) context.Context {
-	if orgID == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, ClaudeOrgIDKey, orgID)
-}
-
-// GetClaudeOrgID returns the per-request organization-id override, or "" if none.
-func GetClaudeOrgID(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
-	if orgID, ok := ctx.Value(ClaudeOrgIDKey).(string); ok {
-		return orgID
-	}
-	return ""
-}
-
-// WithContext1M marks the request as wanting Anthropic's 1M context window.
-func WithContext1M(ctx context.Context) context.Context {
-	return context.WithValue(ctx, Context1MKey, true)
-}
-
-// GetContext1M reports whether the request carries the 1M-context hint.
-func GetContext1M(ctx context.Context) bool {
-	if ctx == nil {
-		return false
-	}
-	v, _ := ctx.Value(Context1MKey).(bool)
-	return v
-}

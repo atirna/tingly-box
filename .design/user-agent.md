@@ -37,15 +37,15 @@ vendor SDK（openai-go / anthropic-sdk-go / go-genai）**重建**出站请求。
 
 ```
    wrapWithLogging                       ← 只记录，不改 UA
-     userAgentTransport                  ← 一处解析固定优先级
+     ruleFlagTransport                  ← 一处解析固定优先级
        base transport → wire
 ```
 
-**优先级(在 `userAgentTransport` 一个 RoundTrip 内解析,不靠多层叠放):**
+**优先级(在 `ruleFlagTransport` 一个 RoundTrip 内解析,不靠多层叠放):**
 `rule/scenario custom_user_agent` > `入站 client UA` > `SDK 默认 UA`。
 
-- 只有这两条通用链接入 `userAgentTransport`。它读 ctx 里的两个候选值
-  (`GetCustomUserAgent` / `GetClientUserAgent`),显式按上面顺序取胜者——**不是**用两个
+- 只有这两条通用链接入 `ruleFlagTransport`。它读 ctx 里的两个候选值
+  (`GetRuleFlags(ctx).CustomUserAgent` / `GetClientUserAgent(ctx)`),显式按上面顺序取胜者——**不是**用两个
   叠放的 transport(那样"包裹顺序"与"执行/优先级顺序"相反,极易读错)。
 - client 入站 UA 只在 rule/scenario override 为空时才用。
 - 两者都空且 client 也没发 UA → 保留 SDK 默认。
@@ -62,7 +62,7 @@ vendor SDK（openai-go / anthropic-sdk-go / go-genai）**重建**出站请求。
 
 **唯一的 UA 来源:vendor 特种 UA(决定性)。**
 
-- `userAgentTransport` **不在这条链上**——没有任何 transport 去读 rule/scenario
+- `ruleFlagTransport` **不在这条链上**——没有任何 transport 去读 rule/scenario
   custom_user_agent 或入站 client UA。Gemini 更是
   `req.Header = http.Header{}` 把整个 header 清空后重设,client 的一切头都没了。
 - `createSessionBoundTransport` 现在**只做 session 绑定**,不再包 UA override。
@@ -83,7 +83,7 @@ vendor SDK（openai-go / anthropic-sdk-go / go-genai）**重建**出站请求。
 | `none`（哨兵） | 任意 | **（无 UA 头）** | 显式 strip,见 §4 |
 
 > scenario `custom_user_agent` 与 rule `custom_user_agent` 合并进同一个 `CustomUserAgent`
-> 值(rule 非空时赢,否则继承 scenario),由 `userAgentTransport` 当作"rule/scenario
+> 值(rule 非空时赢,否则继承 scenario),由 `ruleFlagTransport` 当作"rule/scenario
 > override"处理。因此**已配置的 scenario 默认 UA 仍会覆盖 client 入站 UA**——"显式配置
 > > 尊重 client > SDK 默认"。
 
@@ -132,11 +132,11 @@ wire UA。ChatGPT backend 靠 OAuth token + `ChatGPT-Account-ID` 头 + `originat
 `custom_user_agent = "none"`（`typ.UserAgentNone`）表示**完全去掉** User-Agent 头，
 仅对**通用链**有效(vendor 链不读 custom_user_agent)。
 
-实现细节（`custom_ua_transport.go`）：net/http 在头**缺失**时会注入默认
+实现细节（`rule_flag_transport.go`）：net/http 在头**缺失**时会注入默认
 `Go-http-client/<ver>`；只有把头设成**显式空串**才能让请求真正不带 UA。所以哨兵把
 `User-Agent` set 为 `""`（present-but-empty），而非删除。
 
-`none` 是 rule/scenario override 值,`userAgentTransport` 优先取它,所以即便 client 发了
+`none` 是 rule/scenario override 值,`ruleFlagTransport` 优先取它,所以即便 client 发了
 UA,`none` 依旧 strip 掉——显式 strip 是通用链里最高优先的意图。
 
 ---
@@ -162,20 +162,23 @@ UA,`none` 依旧 strip 掉——显式 strip 是通用链里最高优先的意�
 
 **边界如何保证**(重要不变量):
 
-- `applyClientUserAgent` / `applyCustomUserAgent`(都由 `resolveRuleFlagsWithScenario`
-  统一调用)对**所有**请求都把 UA 写进 `c.Request.Context()`,但这两个 UA 只在传输链里
-  **有** `userAgentTransport` 的 client 上被读取。
-- `userAgentTransport` **只**接入通用 `NewOpenAIClient`(openai.go)与通用非-OAuth
-  Anthropic 分支(anthropic.go else)。
+- `applyRuleFlags` / `applyClientUserAgent`(都由 `ResolveRuleFlagsWithScenario`
+  统一调用)对**所有**请求把解析后的 RuleFlags(含 CustomUserAgent)与 client UA 写进
+  `c.Request.Context()`,但它们只在传输链里**有** `ruleFlagTransport`(且 resolveUA=true)
+  的 client 上被读取。
+- `ruleFlagTransport` 带 resolveUA=true **只**接入通用 `NewOpenAIClient`(openai.go)与
+  通用非-OAuth Anthropic 分支(anthropic.go else)。第三个挂载点 `NewGoogleClient`
+  (google.go)为 resolveUA=false,只应用 extra_headers、不碰 UA(权威挂载清单见
+  `wrapWithRuleFlags` 的 doc comment)。
 - vendor 链虽内部复用 `NewOpenAIClient`(Kimi / Codex),但用 `extraOptions` 里自带的
-  `WithHTTPClient`(含 `kimiRoundTripper` / `codexRoundTripper`,**不含** `userAgentTransport`)
+  `WithHTTPClient`(含 `kimiRoundTripper` / `codexRoundTripper`,**不含** `ruleFlagTransport`)
   在 SDK option 末尾覆盖掉通用 httpClient("extra 最后应用");Gemini / Antigravity /
   Claude OAuth 自建 transport 链。这些 vendor RT 都包在 `createSessionBoundTransport`
   **外层**,而后者不碰 UA。
 - 所以即便 ctx 里带着 UA,vendor client 也没有任何 transport 去读它——vendor 特种 UA
   岿然不动。
 
-> ⚠️ **给 vendor 链新增 transport 时,切勿引入 `userAgentTransport`;也不要恢复任何
+> ⚠️ **给 vendor 链新增 transport 时,切勿引入 `ruleFlagTransport`;也不要恢复任何
 > provider 级 UA override。** 这些都会击穿 vendor 特种 UA 的决定性。若确需为某个 vendor
 > 端点冒充别的 UA,应改那条 vendor RT 里硬编码的特种 UA 常量,而不是从请求链路旁路注入。
 
@@ -186,16 +189,16 @@ UA,`none` 依旧 strip 掉——显式 strip 是通用链里最高优先的意�
 | 关注点 | 位置 |
 |--------|------|
 | client UA ctx helper | `internal/typ/id.go`（`WithClientUserAgent` / `GetClientUserAgent` / `ClientUserAgentKey`）|
-| rule/scenario UA ctx helper + `none` 哨兵 | `internal/typ/id.go`（`WithCustomUserAgent` / `GetCustomUserAgent` / `UserAgentNone`）|
-| UA 解析 transport（A 类,rule/scenario override + client 兜底转发,一处解析优先级）| `internal/client/custom_ua_transport.go`（`userAgentTransport`）|
+| rule/scenario UA ctx helper（随 RuleFlags 整包）+ `none` 哨兵 | `internal/typ/id.go`（`WithRuleFlags` / `GetRuleFlags` / `UserAgentNone`）|
+| UA 解析 transport（A 类,rule/scenario override + client 兜底转发,一处解析优先级;同一 transport 也应用 extra_headers）| `internal/client/rule_flag_transport.go`（`ruleFlagTransport`,resolveUA=true）|
 | session 绑定底座(A + B,不碰 UA) | `internal/client/http.go`（`createSessionBoundTransport` / `SessionBoundTransport`）|
 | 通用 OpenAI 链装配（A）| `internal/client/openai.go`（`NewOpenAIClient`）|
 | 通用 Anthropic 链装配（A）| `internal/client/anthropic.go`（`NewAnthropicClient` else 分支）|
 | vendor 特种 RT（B）| `claude_round_tripper.go` / `kimi_round_tripper.go` / `gemini_client.go` / `antigravity_client.go` / `codex_round_tripper.go` |
-| 解析合并 + 挂 ctx（唯一合并点） | `internal/server/rule_flags.go`（`ResolveRuleFlagsWithScenario` → `applyCustomUserAgent` / `applyClientUserAgent`）|
+| 解析合并 + 挂 ctx（唯一合并点） | `internal/server/rule_flags.go`（`ResolveRuleFlagsWithScenario` → `applyRuleFlags` / `applyClientUserAgent`）|
 | UA 预设快选(通用链 flag) | `internal/typ/flag_registry.go`（`DefaultUserAgents`）|
 | 入站 UA 仅做检测的地方 | `internal/server/user_agent.go`（Cursor 检测）；`../internal/middleware/memory_log.go`（审计日志）|
-| 测试 | `internal/client/custom_ua_transport_test.go`；`internal/server/rule_flags_test.go` |
+| 测试 | `internal/client/rule_flag_transport_test.go`；`internal/server/rule_flags_test.go` |
 
 ---
 

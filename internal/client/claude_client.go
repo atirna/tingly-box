@@ -37,8 +37,8 @@ type ClaudeClient struct {
 // then wraps it in an AnthropicClient for delegation.
 //
 // ctx is the inbound request context: the pool constructs a client per request,
-// so per-request hints resolved here (the claude_org_id rule flag via
-// typ.GetClaudeOrgID) are correctly scoped to the request being served.
+// so per-request flags resolved here (the claude_org_id rule flag via
+// typ.GetRuleFlags) are correctly scoped to the request being served.
 func NewClaudeClient(ctx context.Context, provider *typ.Provider, model string, sessionID typ.SessionID) (*ClaudeClient, error) {
 	logrus.Debug("creating claude-client")
 
@@ -58,7 +58,7 @@ func NewClaudeClient(ctx context.Context, provider *typ.Provider, model string, 
 	isOAuthToken := IsClaudeOAuthToken(provider.GetAccessToken())
 
 	// Apply Claude Code specific headers
-	options = applyClaudeCodeHeaders(options, provider, sessionID.Value, isOAuthToken, typ.GetClaudeOrgID(ctx))
+	options = applyClaudeCodeHeaders(options, provider, sessionID.Value, isOAuthToken, typ.GetRuleFlags(ctx).ClaudeOrgID)
 
 	// Add beta query parameter
 	options = append(options, anthropicOption.WithQuery("beta", "true"))

@@ -286,18 +286,31 @@ func ruleFlagCases() []flagCase {
 		{key: "custom_user_agent", run: func(t flagTB, env *TestEnv) {
 			const ua = "HarnessFlagUA/9.9"
 			model := env.SetupRouteWithFlags(protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, flagScenario(), typ.RuleFlags{CustomUserAgent: ua})
-			// Streaming path: the custom UA rides c.Request.Context() into the
-			// forward context, which the OpenAI client's userAgentTransport
-			// reads. (The non-streaming openai_chat path builds its forward
-			// context with a nil baseCtx, so the UA override does not propagate
-			// there — tracked separately.)
-			sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, true, nil, nil)
-			up := env.virtual.LastRequest(EndpointChat)
+			// The custom UA rides c.Request.Context() into the forward
+			// context, which the OpenAI client's ruleFlagTransport reads —
+			// on the streaming and non-streaming paths alike.
+			for _, streaming := range []bool{true, false} {
+				sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, streaming, nil, nil)
+				up := env.virtual.LastRequest(EndpointChat)
+				if up == nil {
+					t.Fatal("no upstream request captured")
+				}
+				if got := up.Headers.Get("User-Agent"); got != ua {
+					t.Errorf("streaming=%v: upstream User-Agent = %q, want %q", streaming, got, ua)
+				}
+			}
+
+			// Anthropic chain: pins the ruleFlagTransport mount inside
+			// anthropicTransport — a wire-level guard against a future edit
+			// dropping the wrap from that constructor.
+			model = env.SetupRouteWithFlags(protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, flagScenario(), typ.RuleFlags{CustomUserAgent: ua})
+			sendFlag(t, env, protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, model, false, nil, nil)
+			up := env.virtual.LastRequest(EndpointAnthropic)
 			if up == nil {
-				t.Fatal("no upstream request captured")
+				t.Fatal("no anthropic upstream request captured")
 			}
 			if got := up.Headers.Get("User-Agent"); got != ua {
-				t.Errorf("upstream User-Agent = %q, want %q", got, ua)
+				t.Errorf("anthropic chain: upstream User-Agent = %q, want %q", got, ua)
 			}
 		}},
 
@@ -322,6 +335,17 @@ func ruleFlagCases() []flagCase {
 				if got := up.Headers.Get(header); got != want {
 					t.Errorf("upstream %s = %q, want %q", header, got, want)
 				}
+			}
+
+			// Anthropic chain: pins the ruleFlagTransport mount inside
+			// anthropicTransport (see the custom_user_agent case).
+			model = env.SetupRouteWithFlags(protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, flagScenario(),
+				typ.RuleFlags{ExtraHeaders: map[string]string{"X-Team-Tag": "research"}})
+			sendFlag(t, env, protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, model, false, nil, nil)
+			if up := env.virtual.LastRequest(EndpointAnthropic); up == nil {
+				t.Fatal("no anthropic upstream request captured")
+			} else if got := up.Headers.Get("X-Team-Tag"); got != "research" {
+				t.Errorf("anthropic chain: upstream X-Team-Tag = %q, want research", got)
 			}
 		}},
 
