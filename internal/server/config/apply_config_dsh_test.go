@@ -94,6 +94,34 @@ func TestApplyDshSettings_DefaultInputEnum(t *testing.T) {
 	assert.Equal(t, []interface{}{"text", "image"}, stanza["defaultInput"])
 }
 
+func TestApplyDshSettings_ProtocolEnum(t *testing.T) {
+	dshHome := t.TempDir()
+	t.Setenv("DSH_HOME", dshHome)
+
+	result, err := ApplyDshSettings("https://tingly.local/tingly/dsh", []string{"tingly-dsh"}, &DshPrefs{Protocol: "anthropic-messages"})
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	cfg := loadDshYAMLForTest(t, filepath.Join(dshHome, "settings.yaml"))
+	stanza, ok := dshProviderStanza(cfg)
+	require.True(t, ok)
+	assert.Equal(t, "anthropic-messages", stanza["api"])
+}
+
+func TestApplyDshSettings_InvalidProtocolFallsBackToDefault(t *testing.T) {
+	dshHome := t.TempDir()
+	t.Setenv("DSH_HOME", dshHome)
+
+	result, err := ApplyDshSettings("https://tingly.local/tingly/dsh", []string{"tingly-dsh"}, &DshPrefs{Protocol: "not-a-real-protocol"})
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	cfg := loadDshYAMLForTest(t, filepath.Join(dshHome, "settings.yaml"))
+	stanza, ok := dshProviderStanza(cfg)
+	require.True(t, ok)
+	assert.Equal(t, dshDefaultProtocol, stanza["api"])
+}
+
 func TestReadDshSettings_RoundTrip(t *testing.T) {
 	dshHome := t.TempDir()
 	t.Setenv("DSH_HOME", dshHome)
@@ -111,6 +139,14 @@ func TestReadDshSettings_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, exists)
 	assert.Equal(t, "text_image", prefs.DefaultInput)
+	assert.Equal(t, dshDefaultProtocol, prefs.Protocol, "api key was written by the default-protocol path and should round-trip")
+
+	_, err = ApplyDshSettings("https://tingly.local/tingly/dsh", []string{"m1"}, &DshPrefs{Protocol: "openai-responses"})
+	require.NoError(t, err)
+	prefs, exists, err = ReadDshSettings()
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, "openai-responses", prefs.Protocol)
 }
 
 func TestApplyDshCredentials_PreservesOtherKeys(t *testing.T) {
