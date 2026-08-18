@@ -50,15 +50,45 @@ func dshHomeDir() (string, error) {
 // ("text" or "text_image" -> [text] / [text, image]); empty omits the key so
 // dsh treats the provider as text-only — the conservative default for models
 // tingly-box cannot verify support vision (same stance as Codex's third-party
-// defaults, see .design/codex-config.md).
+// defaults, see .design/codex-config.md). Protocol mirrors the provider-level
+// `api` key (see dshProtocolValues) — unlike DefaultInput, dsh has no "omit
+// it" state for `api`: it's a required field, so an empty/invalid Protocol
+// always falls back to dshDefaultProtocol rather than being dropped.
 type DshPrefs struct {
 	DefaultInput string `json:"default_input,omitempty"`
+	Protocol     string `json:"protocol,omitempty"`
+}
+
+// dshDefaultProtocol is the wire protocol dsh talks to the tingly-box
+// provider with when Protocol is unset or invalid. Chosen for backward
+// compatibility: it's the value this stanza always wrote before Protocol
+// became user-tunable.
+const dshDefaultProtocol = "openai-completions"
+
+// dshProtocolValues lists the wire protocols dsh's llm-pi-ai adapter can
+// describe with just a key, an endpoint, and headers (its `supportedProtocols()`
+// — see packages/llm/llm-pi-ai/src/provider.ts in deepseek-ai/deepseek-harness).
+var dshProtocolValues = []string{"openai-completions", "openai-responses", "anthropic-messages"}
+
+// dshProtocolValue validates val against dshProtocolValues, returning the
+// trimmed value and true when it is a member, or ""/false otherwise (empty
+// input also yields false). Shared by toConfig (write) and DshPrefsFromConfig
+// (read) so the two stay in lockstep.
+func dshProtocolValue(val string) (string, bool) {
+	val = strings.TrimSpace(val)
+	for _, allowed := range dshProtocolValues {
+		if val == allowed {
+			return val, true
+		}
+	}
+	return "", false
 }
 
 // DefaultDshPrefs returns the defaults for the CLI path and no-prefs
-// fallback: DefaultInput unset (text-only).
+// fallback: DefaultInput unset (text-only), Protocol defaulting to
+// dshDefaultProtocol.
 func DefaultDshPrefs() *DshPrefs {
-	return &DshPrefs{}
+	return &DshPrefs{Protocol: dshDefaultProtocol}
 }
 
 // dshDefaultInputList converts the enum value into the YAML modality list,
@@ -74,9 +104,18 @@ func dshDefaultInputList(val string) []string {
 	}
 }
 
-// toConfig converts prefs into the provider-stanza fields it controls.
+// toConfig converts prefs into the provider-stanza fields it controls. Unlike
+// DefaultInput, "api" is always emitted — dsh requires a protocol, so a
+// nil/empty/invalid Protocol resolves to dshDefaultProtocol rather than
+// omitting the key.
 func (p *DshPrefs) toConfig() map[string]interface{} {
-	out := map[string]interface{}{}
+	protocol := dshDefaultProtocol
+	if p != nil {
+		if v, ok := dshProtocolValue(p.Protocol); ok {
+			protocol = v
+		}
+	}
+	out := map[string]interface{}{"api": protocol}
 	if p == nil {
 		return out
 	}
@@ -86,10 +125,15 @@ func (p *DshPrefs) toConfig() map[string]interface{} {
 	return out
 }
 
-// DshPrefsFromConfig is the inverse of toConfig: it extracts DefaultInput
-// from a parsed tingly-box provider stanza.
+// DshPrefsFromConfig is the inverse of toConfig: it extracts DefaultInput and
+// Protocol from a parsed tingly-box provider stanza.
 func DshPrefsFromConfig(providerStanza map[string]interface{}) *DshPrefs {
 	prefs := &DshPrefs{}
+	if v, ok := providerStanza["api"].(string); ok {
+		if val, ok := dshProtocolValue(v); ok {
+			prefs.Protocol = val
+		}
+	}
 	list, ok := providerStanza["defaultInput"].([]interface{})
 	if !ok || len(list) == 0 {
 		return prefs
@@ -243,10 +287,11 @@ func mergeDshSettings(cfg map[string]interface{}, baseURL string, models []strin
 
 	stanza := map[string]interface{}{
 		"apiKeyEnv": dshAPIKeyEnvName,
-		"api":       "openai-completions",
 		"baseURL":   baseURL,
 		"models":    modelEntries,
 	}
+	// prefs.toConfig() always emits "api" (defaulting when unset/invalid), so
+	// the stanza literal above no longer needs a hardcoded default.
 	for k, v := range prefs.toConfig() {
 		stanza[k] = v
 	}

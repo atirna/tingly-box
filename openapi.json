@@ -9190,6 +9190,10 @@
           "default_input": {
             "type": "string",
             "description": "Field default_input"
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Field protocol"
           }
         }
       },
