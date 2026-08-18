@@ -7,6 +7,10 @@ import (
 
 const DefaultClaudeCodeDefaultMode = "acceptEdits"
 
+// DefaultClaudeCodeShowThinkingSummaries mirrors Claude Code's own built-in
+// default for the top-level showThinkingSummaries setting.
+const DefaultClaudeCodeShowThinkingSummaries = true
+
 var validClaudeCodeDefaultModes = map[string]struct{}{
 	"acceptEdits":       {},
 	"bypassPermissions": {},
@@ -26,6 +30,16 @@ func NormalizeClaudeCodeDefaultMode(mode string) (string, bool) {
 	}
 	_, ok := validClaudeCodeDefaultModes[mode]
 	return mode, ok
+}
+
+// NormalizeClaudeCodeShowThinkingSummaries applies the Tingly default when the
+// setting has never been written (nil), and passes an explicit value through
+// unchanged.
+func NormalizeClaudeCodeShowThinkingSummaries(v *bool) bool {
+	if v == nil {
+		return DefaultClaudeCodeShowThinkingSummaries
+	}
+	return *v
 }
 
 // ClaudeCodePrefs is the user-tunable surface of Claude Code's env config.

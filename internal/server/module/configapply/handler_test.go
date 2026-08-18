@@ -66,6 +66,66 @@ func TestGetClaudeConfig_RestoresAppliedPreferences(t *testing.T) {
 	assert.True(t, response.InstallStatusLine)
 	assert.Equal(t, "plan", response.DefaultMode)
 	assert.Equal(t, "64000", response.Preferences.ClaudeCodeMaxOutputTokens)
+	// showThinkingSummaries absent from the file → falls back to the tb default.
+	assert.Equal(t, agent.DefaultClaudeCodeShowThinkingSummaries, response.ShowThinkingSummaries)
+}
+
+func TestGetClaudeConfig_RestoresShowThinkingSummaries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	settingsDir := filepath.Join(home, ".claude")
+	require.NoError(t, os.MkdirAll(settingsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(settingsDir, "settings.json"), []byte(`{
+		"env":{},
+		"showThinkingSummaries": false
+	}`), 0644))
+
+	handler := NewHandler(nil, "localhost")
+	router := gin.New()
+	router.GET("/config/claude", handler.GetClaudeConfig)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/config/claude", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var response ClaudeConfigResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	assert.False(t, response.ShowThinkingSummaries)
+}
+
+// A request that explicitly turns the toggle off must land in settings.json.
+func TestApplyClaudeConfig_WritesShowThinkingSummaries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	tmpDir := t.TempDir()
+	cfg, err := config.NewConfig(config.WithConfigDir(tmpDir))
+	require.NoError(t, err)
+	handler := NewHandler(cfg, "localhost")
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/apply/claude", handler.ApplyClaudeConfig)
+
+	show := false
+	body, _ := json.Marshal(ApplyClaudeConfigRequest{
+		Preferences:           &agent.ClaudeCodePrefs{AnthropicModel: "tingly/cc"},
+		ShowThinkingSummaries: &show,
+	})
+	req, _ := http.NewRequest("POST", "/apply/claude", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	require.NoError(t, err)
+	var settings map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &settings))
+	assert.Equal(t, false, settings["showThinkingSummaries"])
 }
 
 func TestGetCodexConfig_RestoresAppliedPreferences(t *testing.T) {

@@ -3048,6 +3048,7 @@ export const handlers = [
             preferences: mockMainClaudeCodePreferences,
             defaultMode: 'acceptEdits',
             installStatusLine: true,
+            showThinkingSummaries: true,
         })
     }),
 

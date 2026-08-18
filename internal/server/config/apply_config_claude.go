@@ -46,6 +46,9 @@ func buildClaudeSettings(base []byte, env map[string]string, applyOpts *applyOpt
 	if applyOpts.defaultMode != "" {
 		existingConfig["defaultMode"] = applyOpts.defaultMode
 	}
+	if applyOpts.showThinkingSummaries != nil {
+		existingConfig["showThinkingSummaries"] = *applyOpts.showThinkingSummaries
+	}
 	for k, v := range applyOpts.extras {
 		existingConfig[k] = v
 	}

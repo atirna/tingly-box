@@ -7634,6 +7634,10 @@
           },
           "preferences": {
             "$ref": "#/components/schemas/ClaudeCodePrefs"
+          },
+          "showThinkingSummaries": {
+            "type": "boolean",
+            "description": "Field showThinkingSummaries"
           }
         },
         "required": [
@@ -8263,6 +8267,10 @@
           "preferences": {
             "$ref": "#/components/schemas/ClaudeCodePrefs"
           },
+          "showThinkingSummaries": {
+            "type": "boolean",
+            "description": "Field showThinkingSummaries"
+          },
           "success": {
             "type": "boolean",
             "description": "Field success"
@@ -8273,7 +8281,8 @@
           "exists",
           "preferences",
           "defaultMode",
-          "installStatusLine"
+          "installStatusLine",
+          "showThinkingSummaries"
         ]
       },
       "ClientListResponse": {

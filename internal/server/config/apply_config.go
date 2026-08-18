@@ -249,10 +249,11 @@ func ensureDir(path string) error {
 type ApplyOption func(*applyOptions)
 
 type applyOptions struct {
-	backup      bool
-	retention   int
-	extras      map[string]any
-	defaultMode string
+	backup                bool
+	retention             int
+	extras                map[string]any
+	defaultMode           string
+	showThinkingSummaries *bool
 }
 
 // WithBackup enables or disables backup when applying settings.
@@ -275,6 +276,14 @@ func WithBackupRetention(n int) ApplyOption {
 func WithDefaultMode(mode string) ApplyOption {
 	return func(opts *applyOptions) {
 		opts.defaultMode = mode
+	}
+}
+
+// WithShowThinkingSummaries sets the Claude Code top-level showThinkingSummaries
+// value in settings.json.
+func WithShowThinkingSummaries(show bool) ApplyOption {
+	return func(opts *applyOptions) {
+		opts.showThinkingSummaries = &show
 	}
 }
 
