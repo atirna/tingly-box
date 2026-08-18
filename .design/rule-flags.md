@@ -58,7 +58,7 @@
    │                   anthropic_v1.go / anthropic_beta.go)         │
    │                                                                │
    │   flags := resolveRuleFlags(c, rule)                           │
-   │   ├─ WithCustomUserAgent(ctx, flags.CustomUserAgent)           │  Type 2
+   │   ├─ WithRuleFlags(ctx, flags) — 解析结果整包挂 ctx            │  Type 2
    │   ├─ reqCtx.Extra["skip_usage"] = flags.SkipUsage              │  Type 3
    │   ├─ preBase   := rulePreBaseTransforms(flags)                 │  Type 1b-pre
    │   │   → [transform.OpenAICursorCompatTransform{}]              │
@@ -134,7 +134,7 @@ func RuleFlagRegistry() []FlagSpec { … }
 
 | Key | Type | 类别 | Shared | 继承 | 作用 | 注入点 |
 |-----|------|------|--------|------|------|--------|
-| `custom_user_agent` | string | request | **yes** | override | 覆盖出站 User-Agent header。registry 通过 `Suggestions`（`typ.DefaultUserAgents()`）透出几个常见 CLI/agent 的 UA 预设供快选。特殊值 `none`（`typ.UserAgentNone`）= 完全去掉 User-Agent header。| `userAgentTransport` + `applyCustomUserAgent(c, flags)` → `WithCustomUserAgent(ctx, ...)`（Type 2）|
+| `custom_user_agent` | string | request | **yes** | override | 覆盖出站 User-Agent header。registry 通过 `Suggestions`（`typ.DefaultUserAgents()`）透出几个常见 CLI/agent 的 UA 预设供快选。特殊值 `none`（`typ.UserAgentNone`）= 完全去掉 User-Agent header。| `ruleFlagTransport` + `applyRuleFlags(c, flags)` → `typ.WithRuleFlags(ctx, flags)`（Type 2）|
 | `openai_endpoint_override` | enum (`auto`/`chat`/`responses`) | request | — | — | 强制单条 rule 的 OpenAI 出口走 Chat 或 Responses；与 provider 声明的 `OpenAIEndpointMode` 冲突时 provider 赢（见 `.design/openai-endpoint-routing.md`）| `ParseEndpointOverride` → `ResolveOpenAIEndpoint`（Type 4：路由层决策）|
 | `use_max_completion_tokens` | bool | request | — | — | 把 `max_tokens` 字段名重写为 `max_completion_tokens`（OpenAI o1/o3/gpt-5 系列必需） | `transform.OpenAIMaxTokensRewriteTransform` → `ops.ApplyMaxCompletionTokensRewrite`（Type 1b-post）|
 | `use_max_tokens` | bool | request | — | — | 反向：把 `max_completion_tokens` 写回旧字段 `max_tokens`（用于拒绝新字段的 provider/模型）| 同上 → `ops.ApplyMaxTokensRewrite`（Type 1b-post）|
@@ -168,9 +168,14 @@ Type 1b-post Request body, preVendor slot（post-Base Transform，推荐用于�
          OpenAIMaxTokensRewriteTransform、RuleThinkingTransform。聚合点：
          `internal/server/rule_flags.go::rulePreVendorTransforms`。
 
-Type 2   Per-request context hint
-         handler 把 c.Request 的 ctx 替换成带 hint 的；transport /
-         round-tripper 等深层组件读 ctx。例：custom_user_agent。
+Type 2   Per-request context flags
+         ResolveRuleFlagsWithScenario 把解析后的整个 RuleFlags 一次性挂进
+         c.Request 的 ctx（typ.WithRuleFlags，唯一注入点）；出站侧统一读
+         typ.GetRuleFlags(ctx) 取字段——header 级改写走唯一的
+         ruleFlagTransport（custom_user_agent / extra_headers，按
+         provider/链型就地判断适用性），SDK 参数级的在对应调用点读
+         （context_1m 的 Betas、claude_org_id 的构造期 option）。
+         例：custom_user_agent。
 
 Type 3   Response post-processing
          handler 把 flag 写进 reqCtx.Extra；protocol_dispatch.go 的派
@@ -295,11 +300,11 @@ handler                            transformXxxx                       chain
 `anthropic.go` else 分支）——client 入站 UA 会被**兜底转发**：
 
 ```
-   userAgentTransport                  ← 一处解析优先级(不靠多层叠放)
+   ruleFlagTransport                  ← 一处解析优先级(不靠多层叠放)
      base http.Transport → wire
 ```
 
-优先级（在 `userAgentTransport` 一个 RoundTrip 内解析）：**rule/scenario custom_user_agent
+优先级（在 `ruleFlagTransport` 一个 RoundTrip 内解析）：**rule/scenario custom_user_agent
 > 入站 client UA > SDK 默认**。它读 ctx 两个候选值显式取胜者,避免"包裹顺序 vs 执行顺序
 相反"的易错点。
 
@@ -315,7 +320,7 @@ provider 配置入口**：
 
 唯一 UA 来源:**vendor 特种 UA,决定性、不可被任何配置覆盖**。
 
-⚠️ **别把两套写成一条链。** vendor 链上没有 `userAgentTransport`（Gemini 更是
+⚠️ **别把两套写成一条链。** vendor 链上没有 `ruleFlagTransport`（Gemini 更是
 `req.Header = http.Header{}` 清空整个 header），`createSessionBoundTransport` 也只做
 session 绑定不碰 UA——所以 client 发什么、rule 配
 什么,都**动不了 vendor 特种 UA**。边界靠"vendor 链自带 `WithHTTPClient` 在 SDK option
@@ -347,17 +352,17 @@ OAuth / 握手 / 指纹协议绑定，任何级别的覆盖都会破坏 vendor �
 对它们是**决定性**的。这条边界写进了 `flag_registry.go` 中 `custom_user_agent` 的
 description 里，逐路径对照见 `.design/user-agent.md` §3。
 
-⚠️ **重要不变量**：`applyCustomUserAgent` 与 `applyClientUserAgent`（都由
-`resolveRuleFlagsWithScenario` 统一调用）把 UA 写进 `c.Request.Context()`（对**所有**
-请求，无论 scenario/provider），但这两个 UA 只在 transport 链里**有**
-`userAgentTransport` 的 client 上生效——它读 `req.Context()` 的两个候选值并按固定优先级
-取胜者。`userAgentTransport` 只在两处接入：通用 `NewOpenAIClient`（openai.go）与通用
+⚠️ **重要不变量**：`applyRuleFlags` 与 `applyClientUserAgent`（都由
+`ResolveRuleFlagsWithScenario` 统一调用）把解析后的 RuleFlags（含 CustomUserAgent）与
+client UA 写进 `c.Request.Context()`（对**所有**请求，无论 scenario/provider），但 UA
+只在 transport 链里**有** `ruleFlagTransport`（且 resolveUA=true）的 client 上生效——它读 `req.Context()` 的两个候选值并按固定优先级
+取胜者。`ruleFlagTransport` 只在两处接入：通用 `NewOpenAIClient`（openai.go）与通用
 非-OAuth Anthropic 分支（anthropic.go else）。vendor 路径（Codex / Kimi 等）虽然内部复用
 `NewOpenAIClient`，但用 `extraOptions` 里自带的 `WithHTTPClient`（含 `codexRoundTripper` /
-`kimiRoundTripper`，**不含** `userAgentTransport`）在 SDK option 末尾覆盖掉通用 httpClient
+`kimiRoundTripper`，**不含** `ruleFlagTransport`）在 SDK option 末尾覆盖掉通用 httpClient
 （"extra 最后应用"）；Gemini / Antigravity / Claude OAuth 自建 transport 链。所以即便 ctx
 里带着 UA，vendor client 也没有任何 transport 去读它——握手 / 特种 UA 不会被 flag 或
-client UA 污染。**给 vendor 链新增 transport 时切勿引入 `userAgentTransport`。**
+client UA 污染。**给 vendor 链新增 transport 时切勿引入 `ruleFlagTransport`。**
 
 ---
 
@@ -465,11 +470,17 @@ Plugins Card 操作。
    │   ④ handler 端无需改动——4 个 handler 都已调                  │
    │      rulePreBaseTransforms(flags) / rulePreVendorTransforms(flags)│
    │                                                              │
-   │ Type 2 (context-passed hint)                                 │
-   │   ① 在 internal/typ/id.go 加 contextKey + 一对                │
-   │      WithXxx / GetXxx helper。                                │
-   │   ② handler 入口 c.Request = c.Request.WithContext(WithXxx)。 │
-   │   ③ 消费方（transport / round-tripper）读 GetXxx。            │
+   │ Type 2 (context-passed rule flag)                            │
+   │   ① 无需新 ctx key：整个 RuleFlags 已由 applyRuleFlags        │
+   │      （ResolveRuleFlagsWithScenario 内）一次性挂进 ctx。      │
+   │   ② 出站是 header 改写 → 在 internal/client/                  │
+   │      rule_flag_transport.go 的 RoundTrip 里加一段应用逻辑，   │
+   │      按 provider/链型就地判断适用范围（参考 extra_headers    │
+   │      的 IsAPIKey 门、UA 的 resolveUA）。vendor 链不挂该       │
+   │      transport，天然免疫。                                    │
+   │   ③ 出站是 SDK 参数（Betas、构造期 option）→ 在对应 SDK       │
+   │      调用点读 typ.GetRuleFlags(ctx).Xxx（参考 context_1m /    │
+   │      claude_org_id）。                                        │
    │                                                              │
    │ Type 3 (response 后置加工)                                    │
    │   ① handler 把 flag 值写进 reqCtx.Extra。                    │
@@ -536,7 +547,7 @@ rule flag 在请求级覆盖或继承它。`resolveRuleFlagsWithScenario`（`int
 | `skip_usage` | ✅ | ✅ | Scenario 启用时自动 OR 进 rule 的 `SkipUsage`（rule 未禁用即生效）|
 | `thinking_effort` | ✅ | ✅ | Rule 显式设置 > Scenario 默认 > By Client（空字符串）|
 | `claude_code_compat` | ✅ | ✅ | Scenario 启用时自动 OR 进 rule 的 `ClaudeCodeCompat` |
-| `custom_user_agent` | ✅ | ✅ | Rule 显式设置（非空）> Scenario 默认 > 不覆盖（空）。注入点 `applyCustomUserAgent`（Type 2，写入 c.Request.Context()）|
+| `custom_user_agent` | ✅ | ✅ | Rule 显式设置（非空）> Scenario 默认 > 不覆盖（空）。注入点 `applyRuleFlags`（Type 2，随 RuleFlags 整包写入 c.Request.Context()）|
 
 **Scenario-only flags**（无 rule 级对应，只存在于 ScenarioFlags）：
 

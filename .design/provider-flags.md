@@ -236,16 +236,16 @@ Registry 通过新 endpoint 透出给前端（§7），前端 registry-driven �
 
 ## 5. `extra_headers` 的注入与安全边界
 
-### 5.1 注入点：全 client 通用的 transport 层
+### 5.1 注入点：transport 层
 
-所有 client 构造器都经过唯一的 transport 包装点
-`wrapWithLogging(inner, provider)`
-（`internal/client/logging_roundtripper.go:25`），且该点已持有
-`*typ.Provider`。在同一位置增加一层：
+rule 级 `extra_headers` 已由统一的 `ruleFlagTransport`
+（`internal/client/rule_flag_transport.go`，见 rule-flags.md §5 Type 2）
+承载：pass-through 构造器（openai / anthropic / google）显式挂载，
+vendor 链不挂。provider 级 headers（本文档规划部分）沿同一策略加一层：
 
 ```
-wrapWithLogging( providerHeadersTransport( innerChain, provider ), provider )
-                 └── 新增：读 provider 级 headers + ctx 里的 request 级 headers
+wrapWithLogging( providerHeadersTransport( ruleFlagTransport( base ) ) )
+                 └── 新增：读 provider 级 headers（构造期解出，不依赖 ctx）
 ```
 
 `providerHeadersTransport`：
@@ -258,9 +258,9 @@ wrapWithLogging( providerHeadersTransport( innerChain, provider ), provider )
   visionproxy 等不经 protocol dispatch 的路径也自动生效。
 - **model 级 + rule 级 headers**：dispatch 阶段（rule→provider→model
   已定型）计算 `EffectiveExtraHeaders(p, model, ruleFlags)` 与 provider
-  级的差集，经 Type 2 手法（`internal/typ/id.go` 新增
-  `WithExtraHeaders(ctx, map)` / `GetExtraHeaders(ctx)`）写入 request
-  ctx；transport 读到则叠加（合并优先级已在 dispatch 侧算好，transport
+  级的差集，经 Type 2 手法写入 request
+  ctx——rule 级 headers 是 RuleFlags 的字段，随 `typ.WithRuleFlags`
+  整包挂 ctx，transport 读 `typ.GetRuleFlags(ctx).ExtraHeaders`；transport 读到则叠加（合并优先级已在 dispatch 侧算好，transport
   只做"provider 级打底、ctx 覆盖"两步）。ctx 缺失时退化为仅 provider
   级 —— 这是非 dispatch 路径（无 rule、无 model 语境）的预期行为。
 
@@ -465,7 +465,7 @@ switch/case。实现落点：
    ├─ flag_registry.go：FlagSpec 增加 Scope / MergeMode 字段；
    │   FlagValueType 增加 "headers"；RuleFlagRegistry() 追加 extra_headers
    ├─ provider_flag_registry.go：ProviderFlagRegistry()
-   └─ id.go：WithExtraHeaders / GetExtraHeaders（Type 2）
+   └─ id.go：rule 级 headers 随 WithRuleFlags / GetRuleFlags 整包传递（Type 2）
 
 4. internal/db/provider_store.go
    └─ extensions 列 + 三处映射（rule 侧零改动）
@@ -473,7 +473,7 @@ switch/case。实现落点：
 5. internal/client
    ├─ provider_headers_transport.go：providerHeadersTransport
    │   （含 IsAPIKey 守卫 + denylist 二道防御）
-   └─ 在 wrapWithLogging 接入点外侧统一挂载（一处改动覆盖全部构造器）
+   └─ 挂载策略同 rule 级 ruleFlagTransport：pass-through 构造器显式挂载，vendor 链不挂
 
 6. protocol dispatch
    └─ provider+model+rule 定型处调用 EffectiveExtraHeaders，
@@ -512,7 +512,7 @@ switch/case。实现落点：
 | 首版发布范围 | 仅 api_key | 全 auth type | vendor 特种链有握手/指纹边界、SigV4 有签名敏感性，验证成本高；api_key 覆盖绝大多数真实需求（OpenRouter/网关/自建端点）。范围由 UI 隐藏 + API 校验 + transport 守卫三道闸收口，放开时逐道解除 |
 | extra_headers 形态 | `map[string]string` | `[]HeaderKV`（有序可重复） | 配置型 header 不需要重复/顺序；与 probe headers 先例一致；UI 简单；三级同形态合并函数唯一 |
 | model flag 合并 | 按 flag 声明 MergeMode（headers=merge） | 一律 override | headers 的自然语义是叠加覆写；未来 bool flag 需要 override——语义属于 flag 本身，进 registry |
-| 注入点 | transport 层（wrapWithLogging 旁，一处） | ClientPool 逐构造器传 option | option 类型按 SDK 分裂（openai/anthropic/google 各一套），transport 一处覆盖所有 auth type 与 style |
+| 注入点 | transport 层（ruleFlagTransport，一处） | ClientPool 逐构造器传 option | option 类型按 SDK 分裂（openai/anthropic/google 各一套），transport 一处覆盖所有 auth type 与 style |
 | model/rule 级 ctx 传递 | 单一 ctx key（dispatch 侧合并好） | 每级一个 ctx key | transport 保持哑，合并逻辑集中在 EffectiveExtraHeaders 一处 |
 | vendor pin 冲突 | 物理顺序保证 pin 胜出 | 逐 header 判断 | v1 不触发（api_key only），但顺序不变量零维护成本，为放开 OAuth 保底 |
 | denylist / 上限 | **不做**（用户主导，配错自负） | 拒绝 Authorization/UA/传输头 + 数量尺寸上限 | 评审定调：编排器必须可任意配置，"custom" 即特殊需求，过度限制是过度设计。与网关自管 header 的冲突交给 transport 链顺序（pin 在内层后写后胜），不做过滤 |
