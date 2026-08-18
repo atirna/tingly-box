@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import CodeBlock from '@/components/CodeBlock';
 import { isFullEdition } from '@/utils/edition';
 import { useScenarioPageModal } from '@/pages/scenario/context/ScenarioPageContext';
-import ClaudeCodeQuickConfig, { derivePrefsFromRules, prefsToEnvPreview } from './ClaudeCodeQuickConfig';
+import ClaudeCodeQuickConfig, { CLAUDE_CODE_DEFAULT_SHOW_THINKING_SUMMARIES, derivePrefsFromRules, prefsToEnvPreview } from './ClaudeCodeQuickConfig';
 import type { ClaudeCodeDefaultMode, ClaudeCodePrefs } from './ClaudeCodeQuickConfig';
 import type { AgentApplyResult } from './AgentSetupCard';
 import Context1MChangeBanner from './Context1MChangeBanner';
@@ -28,7 +28,7 @@ interface ClaudeCodeConfigModalProps {
     // this callback is what writes them to ~/.claude/settings.json. The
     // returned AgentApplyResult is rendered in-modal so the user sees
     // which files were touched and where the backup landed.
-    onApplyWithPrefs?: (prefs: ClaudeCodePrefs, installStatusLine: boolean, defaultMode: ClaudeCodeDefaultMode) => Promise<AgentApplyResult>;
+    onApplyWithPrefs?: (prefs: ClaudeCodePrefs, installStatusLine: boolean, defaultMode: ClaudeCodeDefaultMode, showThinkingSummaries: boolean) => Promise<AgentApplyResult>;
     isApplyLoading?: boolean;
     // Pending 1M context change (scoped to the toggled rule) to preview in the modal
     pendingContext1MChange?: { enabled: boolean; ruleUuid?: string } | null;
@@ -120,6 +120,7 @@ const ClaudeCodeConfigModal: React.FC<ClaudeCodeConfigModalProps> = ({
     const [applyResult, setApplyResult] = React.useState<AgentApplyResult | null>(null);
     const [installStatusLine, setInstallStatusLine] = React.useState(true);
     const [defaultMode, setDefaultMode] = React.useState<ClaudeCodeDefaultMode>('acceptEdits');
+    const [showThinkingSummaries, setShowThinkingSummaries] = React.useState(CLAUDE_CODE_DEFAULT_SHOW_THINKING_SUMMARIES);
     const [isConfigLoading, setIsConfigLoading] = React.useState(false);
 
     // Prefs is the single source of truth for both tabs. On open, restore the
@@ -132,6 +133,7 @@ const ClaudeCodeConfigModal: React.FC<ClaudeCodeConfigModalProps> = ({
         if (!open) {
             setPrefs(derivePrefsFromRules({ rules, mode: configMode }));
             setDefaultMode('acceptEdits');
+            setShowThinkingSummaries(CLAUDE_CODE_DEFAULT_SHOW_THINKING_SUMMARIES);
             setInstallStatusLine(true);
             setApplyResult(null);
             setIsConfigLoading(false);
@@ -169,10 +171,12 @@ const ClaudeCodeConfigModal: React.FC<ClaudeCodeConfigModalProps> = ({
                     applied: result.preferences || {},
                 }));
                 setDefaultMode((result.defaultMode || 'acceptEdits') as ClaudeCodeDefaultMode);
+                setShowThinkingSummaries(result.showThinkingSummaries ?? CLAUDE_CODE_DEFAULT_SHOW_THINKING_SUMMARIES);
                 setInstallStatusLine(!!result.installStatusLine);
             } else {
                 setPrefs(generated);
                 setDefaultMode('acceptEdits');
+                setShowThinkingSummaries(CLAUDE_CODE_DEFAULT_SHOW_THINKING_SUMMARIES);
                 setInstallStatusLine(true);
                 if (result?.success === false) {
                     setApplyResult({ success: false, error: result.error || 'Failed to load the applied Claude Code configuration' });
@@ -199,6 +203,11 @@ const ClaudeCodeConfigModal: React.FC<ClaudeCodeConfigModalProps> = ({
         setApplyResult(null);
     }, []);
 
+    const setShowThinkingSummariesAndClearResult = React.useCallback((next: boolean) => {
+        setShowThinkingSummaries(next);
+        setApplyResult(null);
+    }, []);
+
     const claudeJsonConfig = { hasCompletedOnboarding: true };
 
     // Env map for both the manual tab (display/copy) and the preview dialog.
@@ -209,8 +218,8 @@ const ClaudeCodeConfigModal: React.FC<ClaudeCodeConfigModalProps> = ({
     );
 
     const settingsConfig = React.useMemo(
-        () => ({ env: envConfig, defaultMode }),
-        [envConfig, defaultMode],
+        () => ({ env: envConfig, defaultMode, showThinkingSummaries }),
+        [envConfig, defaultMode, showThinkingSummaries],
     );
 
     const generateSettingsConfig = React.useCallback(() => {
@@ -322,14 +331,15 @@ node -e '${nodeCode.replace(/'/g, "'\\''")}'`;
 
     const handleApply = async (installStatusLine: boolean) => {
         if (!onApplyWithPrefs) return;
-        const result = await onApplyWithPrefs(prefs, installStatusLine, defaultMode);
+        const result = await onApplyWithPrefs(prefs, installStatusLine, defaultMode, showThinkingSummaries);
         setApplyResult(result);
     };
 
     const handleResetDefaults = React.useCallback(() => {
         setPrefsAndClearResult(derivePrefsFromRules({ rules, mode: configMode }));
         setDefaultModeAndClearResult('acceptEdits');
-    }, [configMode, rules, setDefaultModeAndClearResult, setPrefsAndClearResult]);
+        setShowThinkingSummariesAndClearResult(CLAUDE_CODE_DEFAULT_SHOW_THINKING_SUMMARIES);
+    }, [configMode, rules, setDefaultModeAndClearResult, setPrefsAndClearResult, setShowThinkingSummariesAndClearResult]);
 
     const canApply = isFullEdition && !!onApplyWithPrefs;
 
@@ -443,6 +453,8 @@ node -e '${nodeCode.replace(/'/g, "'\\''")}'`;
                             setPrefs={setPrefsAndClearResult}
                             defaultMode={defaultMode}
                             setDefaultMode={setDefaultModeAndClearResult}
+                            showThinkingSummaries={showThinkingSummaries}
+                            setShowThinkingSummaries={setShowThinkingSummariesAndClearResult}
                         />
                     )}
 

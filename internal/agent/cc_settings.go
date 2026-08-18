@@ -143,10 +143,11 @@ func GenerateCCEnv(cfg *serverconfig.Config, baseURL, apiKey, scenarioPath strin
 // file. Env may contain keys outside the typed preference surface; callers that
 // expose data through the API must convert it with ClaudeCodePrefsFromEnv.
 type ClaudeCodeSettingsSnapshot struct {
-	Exists      bool
-	Env         map[string]string
-	DefaultMode string
-	StatusLine  bool
+	Exists                bool
+	Env                   map[string]string
+	DefaultMode           string
+	StatusLine            bool
+	ShowThinkingSummaries *bool
 }
 
 // ReadMainClaudeCodeSettings reads the user's source-of-truth settings file.
@@ -169,9 +170,10 @@ func readClaudeCodeSettings(path string) (ClaudeCodeSettingsSnapshot, error) {
 	}
 	snapshot.Exists = true
 	var raw struct {
-		Env         map[string]any  `json:"env"`
-		DefaultMode string          `json:"defaultMode"`
-		StatusLine  json.RawMessage `json:"statusLine"`
+		Env                   map[string]any  `json:"env"`
+		DefaultMode           string          `json:"defaultMode"`
+		StatusLine            json.RawMessage `json:"statusLine"`
+		ShowThinkingSummaries *bool           `json:"showThinkingSummaries"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return snapshot, fmt.Errorf("failed to parse Claude Code settings: %w", err)
@@ -183,6 +185,7 @@ func readClaudeCodeSettings(path string) (ClaudeCodeSettingsSnapshot, error) {
 	}
 	snapshot.DefaultMode = raw.DefaultMode
 	snapshot.StatusLine = len(raw.StatusLine) > 0 && string(raw.StatusLine) != "null"
+	snapshot.ShowThinkingSummaries = raw.ShowThinkingSummaries
 	return snapshot, nil
 }
 

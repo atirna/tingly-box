@@ -33,6 +33,58 @@ func TestApplyClaudeSettings_DefaultMode(t *testing.T) {
 	}
 }
 
+func TestApplyClaudeSettings_ShowThinkingSummaries(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "settings.json")
+
+	result, err := ApplyClaudeSettingsToPath(targetPath, map[string]string{
+		"ANTHROPIC_MODEL": "test-model",
+	}, WithShowThinkingSummaries(false), WithBackup(false))
+	if err != nil {
+		t.Fatalf("ApplyClaudeSettingsToPath failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got: %s", result.Message)
+	}
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("unmarshal settings: %v", err)
+	}
+	if settings["showThinkingSummaries"] != false {
+		t.Fatalf("showThinkingSummaries = %v, want false", settings["showThinkingSummaries"])
+	}
+}
+
+func TestApplyClaudeSettings_ShowThinkingSummariesOmittedWhenUnset(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "settings.json")
+
+	result, err := ApplyClaudeSettingsToPath(targetPath, map[string]string{
+		"ANTHROPIC_MODEL": "test-model",
+	}, WithBackup(false))
+	if err != nil {
+		t.Fatalf("ApplyClaudeSettingsToPath failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got: %s", result.Message)
+	}
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("unmarshal settings: %v", err)
+	}
+	if _, present := settings["showThinkingSummaries"]; present {
+		t.Fatalf("showThinkingSummaries should be omitted when WithShowThinkingSummaries is not used, got: %v", settings["showThinkingSummaries"])
+	}
+}
+
 func TestApplyClaudeSettings_NewFile(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "tingly-test")

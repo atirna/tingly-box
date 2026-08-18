@@ -48,6 +48,7 @@ func TestGetClaudeConfig_RestoresAppliedPreferences(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(settingsDir, "settings.json"), []byte(`{
 		"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"64000"},
 		"defaultMode":"plan",
+		"showThinkingSummaries":false,
 		"statusLine":{"type":"command","command":"status.sh"}
 	}`), 0644))
 
@@ -66,6 +67,7 @@ func TestGetClaudeConfig_RestoresAppliedPreferences(t *testing.T) {
 	assert.True(t, response.InstallStatusLine)
 	assert.Equal(t, "plan", response.DefaultMode)
 	assert.Equal(t, "64000", response.Preferences.ClaudeCodeMaxOutputTokens)
+	assert.False(t, response.ShowThinkingSummaries)
 }
 
 func TestGetCodexConfig_RestoresAppliedPreferences(t *testing.T) {
@@ -239,6 +241,7 @@ func TestApplyClaudeConfigRequest_JSONShape(t *testing.T) {
 	wire := []byte(`{
 			"installStatusLine": true,
 			"defaultMode": "delegate",
+			"showThinkingSummaries": false,
 			"preferences": {
 			"ANTHROPIC_MODEL": "tingly/cc-default",
 			"ANTHROPIC_DEFAULT_SONNET_MODEL": "tingly/cc-sonnet[1m]",
@@ -256,6 +259,9 @@ func TestApplyClaudeConfigRequest_JSONShape(t *testing.T) {
 	}
 	if req.DefaultMode != "delegate" {
 		t.Errorf("DefaultMode = %q", req.DefaultMode)
+	}
+	if req.ShowThinkingSummaries == nil || *req.ShowThinkingSummaries != false {
+		t.Errorf("ShowThinkingSummaries = %v, want false", req.ShowThinkingSummaries)
 	}
 	if req.Preferences == nil {
 		t.Fatal("Preferences = nil, want populated")

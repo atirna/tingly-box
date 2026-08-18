@@ -14,6 +14,26 @@ func TestNormalizeClaudeCodeDefaultModeAcceptsManual(t *testing.T) {
 	}
 }
 
+func TestNormalizeClaudeCodeShowThinkingSummaries(t *testing.T) {
+	trueVal, falseVal := true, false
+	cases := []struct {
+		name string
+		in   *bool
+		want bool
+	}{
+		{"nil falls back to the tb default", nil, DefaultClaudeCodeShowThinkingSummaries},
+		{"explicit true passes through", &trueVal, true},
+		{"explicit false passes through", &falseVal, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeClaudeCodeShowThinkingSummaries(tc.in); got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestClaudeCodePrefs_ToEnv_OmitsEmpty(t *testing.T) {
 	// Sparse prefs: only one model + one limit, everything else empty.
 	p := ClaudeCodePrefs{

@@ -55,11 +55,12 @@ func (h *Handler) GetClaudeConfig(c *gin.Context) {
 		defaultMode = agent.DefaultClaudeCodeDefaultMode
 	}
 	c.JSON(http.StatusOK, ClaudeConfigResponse{
-		Success:           true,
-		Exists:            snapshot.Exists,
-		Preferences:       prefs,
-		DefaultMode:       defaultMode,
-		InstallStatusLine: snapshot.StatusLine,
+		Success:               true,
+		Exists:                snapshot.Exists,
+		Preferences:           prefs,
+		DefaultMode:           defaultMode,
+		InstallStatusLine:     snapshot.StatusLine,
+		ShowThinkingSummaries: agent.NormalizeClaudeCodeShowThinkingSummaries(snapshot.ShowThinkingSummaries),
 	})
 }
 
@@ -234,6 +235,7 @@ func (h *Handler) ApplyClaudeConfig(c *gin.Context) {
 
 	var opts []config.ApplyOption
 	opts = append(opts, config.WithDefaultMode(defaultMode))
+	opts = append(opts, config.WithShowThinkingSummaries(agent.NormalizeClaudeCodeShowThinkingSummaries(req.ShowThinkingSummaries)))
 	if req.InstallStatusLine {
 		var scriptCreated bool
 		statusLinePath, scriptCreated, err = config.InstallStatusLineScript()

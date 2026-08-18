@@ -422,6 +422,9 @@ interface DefaultModeOptionText {
 
 export const CLAUDE_CODE_DEFAULT_MODE_OPTIONS: ClaudeCodeDefaultMode[] = ['acceptEdits', 'default', 'manual', 'plan', 'auto', 'delegate', 'dontAsk', 'bypassPermissions'];
 
+// Mirrors agent.DefaultClaudeCodeShowThinkingSummaries in internal/agent/prefs.go.
+export const CLAUDE_CODE_DEFAULT_SHOW_THINKING_SUMMARIES = true;
+
 const DEFAULT_MODE_TEXT_ZH: Record<ClaudeCodeDefaultMode, DefaultModeOptionText> = {
     acceptEdits: { label: '接受编辑（推荐）', description: '自动接受文件编辑，其他高风险操作仍按 Claude Code 规则处理。' },
     default: { label: '默认', description: '使用 Claude Code 官方默认权限行为。' },
@@ -457,6 +460,28 @@ const DEFAULT_MODE_SECTION_TEXT: Record<Lang, SectionText> = {
     en: {
         title: 'Default permission mode',
         hint: 'Writes defaultMode in settings.json; tb recommends acceptEdits.',
+    },
+};
+
+interface ToggleSettingText {
+    title: string;
+    hint: string;
+    label: string;
+    tooltip: string;
+}
+
+const SHOW_THINKING_SUMMARIES_TEXT: Record<Lang, ToggleSettingText> = {
+    zh: {
+        title: '思考摘要',
+        hint: '写入 settings.json 的顶层 showThinkingSummaries；不是 env 变量。',
+        label: '显示思考摘要',
+        tooltip: '开启后 Claude Code 会在回复前展示模型的推理摘要（reasoning）。关闭仅隐藏摘要展示，不影响模型是否思考。',
+    },
+    en: {
+        title: 'Thinking summaries',
+        hint: 'Writes the top-level showThinkingSummaries in settings.json; not an env var.',
+        label: 'Show thinking summaries',
+        tooltip: "When on, Claude Code displays the model's reasoning summary before its reply. Turning it off only hides the summary — it doesn't affect whether the model thinks.",
     },
 };
 
@@ -813,6 +838,46 @@ interface QuickConfigPanelProps {
     setDefaultMode: (mode: ClaudeCodeDefaultMode) => void;
 }
 
+// Shared shell for a single "top-level settings.json key" row: a titled card
+// with one label/key-badge/control row. Both DefaultModeSection (Select) and
+// ShowThinkingSummariesSection (Switch) are peers of this — same JSON layer
+// (not an env var, unlike the FieldRow-driven prefs groups below), just a
+// different control in column 3.
+const SettingsRowSection: React.FC<{
+    title: string;
+    hint: string;
+    label: string;
+    tooltip: string;
+    settingsKey: string;
+    control: React.ReactNode;
+}> = ({ title, hint, label, tooltip, settingsKey, control }) => (
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden' }}>
+        <Box sx={{ px: 1.5, py: 1.15, bgcolor: 'action.hover' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>{title}</Typography>
+            <Typography variant="body2" sx={{ mt: 0.25, color: 'text.secondary', lineHeight: 1.45 }}>{hint}</Typography>
+        </Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: CLAUDE_CONFIG_ROW_COLUMNS, alignItems: 'center', columnGap: 2, rowGap: 1, px: 1.5, py: 1.1, minHeight: 56, borderTop: '1px solid', borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                <Typography variant="body2" noWrap sx={{
+                    fontWeight: 600,
+                    color: 'text.primary',
+                }}>{label}</Typography>
+                <Tooltip placement="top" arrow title={tooltip}>
+                    <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
+                </Tooltip>
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+                <Box component="span" sx={CLAUDE_CONFIG_KEY_SX}>
+                    {settingsKey}
+                </Box>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
+                {control}
+            </Box>
+        </Box>
+    </Box>
+);
+
 const DefaultModeSection: React.FC<{
     lang: Lang;
     defaultMode: ClaudeCodeDefaultMode;
@@ -823,92 +888,110 @@ const DefaultModeSection: React.FC<{
     const selectedText = text[defaultMode];
 
     return (
-        <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden' }}>
-            <Box sx={{ px: 1.5, py: 1.15, bgcolor: 'action.hover' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>{meta.title}</Typography>
-                <Typography variant="body2" sx={{ mt: 0.25, color: 'text.secondary', lineHeight: 1.45 }}>{meta.hint}</Typography>
-            </Box>
-            <Box sx={{ display: 'grid', gridTemplateColumns: CLAUDE_CONFIG_ROW_COLUMNS, alignItems: 'center', columnGap: 2, rowGap: 1, px: 1.5, py: 1.1, minHeight: 56, borderTop: '1px solid', borderColor: 'divider' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-                    <Typography variant="body2" noWrap sx={{
-                        fontWeight: 600,
-                        color: 'text.primary',
-                    }}>Default Mode</Typography>
-                    <Tooltip placement="top" arrow title={`${selectedText.label}: ${selectedText.description}`}>
-                        <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
-                    </Tooltip>
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                    <Box component="span" sx={CLAUDE_CONFIG_KEY_SX}>
-                        defaultMode
-                    </Box>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
-                    <FormControl size="small" sx={{ width: 360 }}>
-                        <Select
-                            value={defaultMode}
-                            onChange={(e) => setDefaultMode(e.target.value as ClaudeCodeDefaultMode)}
-                            renderValue={(value) => {
-                                const mode = value as ClaudeCodeDefaultMode;
-                                return (
+        <SettingsRowSection
+            title={meta.title}
+            hint={meta.hint}
+            label="Default Mode"
+            tooltip={`${selectedText.label}: ${selectedText.description}`}
+            settingsKey="defaultMode"
+            control={
+                <FormControl size="small" sx={{ width: 360 }}>
+                    <Select
+                        value={defaultMode}
+                        onChange={(e) => setDefaultMode(e.target.value as ClaudeCodeDefaultMode)}
+                        renderValue={(value) => {
+                            const mode = value as ClaudeCodeDefaultMode;
+                            return (
+                                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, width: '100%' }}>
+                                    <Typography component="span" variant="body2">{text[mode].label}</Typography>
+                                    <Typography
+                                        component="span"
+                                        variant="caption"
+                                        sx={{
+                                            color: "text.secondary",
+                                            fontFamily: 'monospace'
+                                        }}>{mode}</Typography>
+                                </Box>
+                            );
+                        }}
+                        MenuProps={{
+                            slotProps: { paper: { sx: { maxHeight: 320, width: 360 } }, list: { sx: { py: 0.5 } } },
+                        }}
+                        sx={{
+                            height: 40,
+                            '& .MuiSelect-select': {
+                                display: 'flex',
+                                alignItems: 'center',
+                                py: 1,
+                            },
+                        }}
+                    >
+                        {CLAUDE_CODE_DEFAULT_MODE_OPTIONS.map((mode) => (
+                            <MenuItem key={mode} value={mode} sx={{ minHeight: 40, py: 1 }}>
+                                <Tooltip title={text[mode].description} arrow placement="left">
                                     <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, width: '100%' }}>
-                                        <Typography component="span" variant="body2">{text[mode].label}</Typography>
+                                        <Typography variant="body2">{text[mode].label}</Typography>
                                         <Typography
-                                            component="span"
                                             variant="caption"
                                             sx={{
                                                 color: "text.secondary",
                                                 fontFamily: 'monospace'
                                             }}>{mode}</Typography>
                                     </Box>
-                                );
-                            }}
-                            MenuProps={{
-                                slotProps: { paper: { sx: { maxHeight: 320, width: 360 } }, list: { sx: { py: 0.5 } } },
-                            }}
-                            sx={{
-                                height: 40,
-                                '& .MuiSelect-select': {
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    py: 1,
-                                },
-                            }}
-                        >
-                            {CLAUDE_CODE_DEFAULT_MODE_OPTIONS.map((mode) => (
-                                <MenuItem key={mode} value={mode} sx={{ minHeight: 40, py: 1 }}>
-                                    <Tooltip title={text[mode].description} arrow placement="left">
-                                        <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, width: '100%' }}>
-                                            <Typography variant="body2">{text[mode].label}</Typography>
-                                            <Typography
-                                                variant="caption"
-                                                sx={{
-                                                    color: "text.secondary",
-                                                    fontFamily: 'monospace'
-                                                }}>{mode}</Typography>
-                                        </Box>
-                                    </Tooltip>
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                </Box>
-            </Box>
-        </Box>
+                                </Tooltip>
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+            }
+        />
     );
 };
 
-const ClaudeCodeQuickConfig: React.FC<QuickConfigPanelProps> = ({
+const ShowThinkingSummariesSection: React.FC<{
+    lang: Lang;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+}> = ({ lang, checked, onChange }) => {
+    const text = SHOW_THINKING_SUMMARIES_TEXT[lang];
+
+    return (
+        <SettingsRowSection
+            title={text.title}
+            hint={text.hint}
+            label={text.label}
+            tooltip={text.tooltip}
+            settingsKey="showThinkingSummaries"
+            control={
+                <Switch
+                    size="small"
+                    checked={checked}
+                    onChange={(_, c) => onChange(c)}
+                />
+            }
+        />
+    );
+};
+
+interface QuickConfigPanelWithBehaviorProps extends QuickConfigPanelProps {
+    showThinkingSummaries: boolean;
+    setShowThinkingSummaries: (show: boolean) => void;
+}
+
+const ClaudeCodeQuickConfig: React.FC<QuickConfigPanelWithBehaviorProps> = ({
     prefs,
     setPrefs,
     defaultMode,
     setDefaultMode,
+    showThinkingSummaries,
+    setShowThinkingSummaries,
 }) => {
     const lang = useLang();
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             <DefaultModeSection lang={lang} defaultMode={defaultMode} setDefaultMode={setDefaultMode} />
+            <ShowThinkingSummariesSection lang={lang} checked={showThinkingSummaries} onChange={setShowThinkingSummaries} />
             <Section group="model" lang={lang} prefs={prefs} setPrefs={setPrefs} />
             <Section group="limits" lang={lang} prefs={prefs} setPrefs={setPrefs} />
             <Section group="switches" lang={lang} prefs={prefs} setPrefs={setPrefs} />

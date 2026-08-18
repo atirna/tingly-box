@@ -184,10 +184,11 @@ const UseClaudeCodePageContent: React.FC = () => {
         prefs: Record<string, string>,
         installStatusLine: boolean,
         defaultMode: ClaudeCodeDefaultMode = 'acceptEdits',
+        showThinkingSummaries: boolean = true,
     ): Promise<AgentApplyResult> => {
         try {
             setIsApplyLoading(true);
-            const result = await api.applyClaudeConfig(prefs, installStatusLine, defaultMode);
+            const result = await api.applyClaudeConfig(prefs, installStatusLine, defaultMode, showThinkingSummaries);
             if (result?.success) {
                 const created = result.createdFiles || [];
                 const updated = result.updatedFiles || [];
@@ -334,8 +335,8 @@ const UseClaudeCodePageContent: React.FC = () => {
                     baseUrl={baseUrl}
                     rules={rules}
                     copyToClipboard={copyToClipboard}
-                    onApplyWithPrefs={(prefs, installStatusLine, defaultMode) =>
-                        applyPrefs(prefs as Record<string, string>, installStatusLine, defaultMode)
+                    onApplyWithPrefs={(prefs, installStatusLine, defaultMode, showThinkingSummaries) =>
+                        applyPrefs(prefs as Record<string, string>, installStatusLine, defaultMode, showThinkingSummaries)
                     }
                     isApplyLoading={isApplyLoading}
                     pendingContext1MChange={pendingContext1MChange}

@@ -15,6 +15,9 @@ type ApplyClaudeConfigRequest struct {
 	InstallStatusLine bool                   `json:"installStatusLine,omitempty"`
 	Preferences       *agent.ClaudeCodePrefs `json:"preferences"`
 	DefaultMode       string                 `json:"defaultMode,omitempty"`
+	// ShowThinkingSummaries controls the top-level showThinkingSummaries key in
+	// settings.json. nil falls back to agent.DefaultClaudeCodeShowThinkingSummaries.
+	ShowThinkingSummaries *bool `json:"showThinkingSummaries,omitempty"`
 }
 
 const DefaultClaudeCodeDefaultMode = agent.DefaultClaudeCodeDefaultMode
@@ -32,11 +35,12 @@ type ApplyConfigResponse struct {
 // ClaudeConfigResponse returns the typed values currently persisted in the
 // user's main ~/.claude/settings.json so the frontend can restore Apply state.
 type ClaudeConfigResponse struct {
-	Success           bool                  `json:"success"`
-	Exists            bool                  `json:"exists"`
-	Preferences       agent.ClaudeCodePrefs `json:"preferences"`
-	DefaultMode       string                `json:"defaultMode"`
-	InstallStatusLine bool                  `json:"installStatusLine"`
+	Success               bool                  `json:"success"`
+	Exists                bool                  `json:"exists"`
+	Preferences           agent.ClaudeCodePrefs `json:"preferences"`
+	DefaultMode           string                `json:"defaultMode"`
+	InstallStatusLine     bool                  `json:"installStatusLine"`
+	ShowThinkingSummaries bool                  `json:"showThinkingSummaries"`
 }
 
 // CodexConfigResponse returns the typed values currently persisted in the
