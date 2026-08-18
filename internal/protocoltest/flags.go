@@ -286,18 +286,18 @@ func ruleFlagCases() []flagCase {
 		{key: "custom_user_agent", run: func(t flagTB, env *TestEnv) {
 			const ua = "HarnessFlagUA/9.9"
 			model := env.SetupRouteWithFlags(protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, flagScenario(), typ.RuleFlags{CustomUserAgent: ua})
-			// Streaming path: the custom UA rides c.Request.Context() into the
-			// forward context, which the OpenAI client's ruleFlagTransport
-			// reads. (The non-streaming openai_chat path builds its forward
-			// context with a nil baseCtx, so the UA override does not propagate
-			// there — tracked separately.)
-			sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, true, nil, nil)
-			up := env.virtual.LastRequest(EndpointChat)
-			if up == nil {
-				t.Fatal("no upstream request captured")
-			}
-			if got := up.Headers.Get("User-Agent"); got != ua {
-				t.Errorf("upstream User-Agent = %q, want %q", got, ua)
+			// The custom UA rides c.Request.Context() into the forward
+			// context, which the OpenAI client's ruleFlagTransport reads —
+			// on the streaming and non-streaming paths alike.
+			for _, streaming := range []bool{true, false} {
+				sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, streaming, nil, nil)
+				up := env.virtual.LastRequest(EndpointChat)
+				if up == nil {
+					t.Fatal("no upstream request captured")
+				}
+				if got := up.Headers.Get("User-Agent"); got != ua {
+					t.Errorf("streaming=%v: upstream User-Agent = %q, want %q", streaming, got, ua)
+				}
 			}
 		}},
 

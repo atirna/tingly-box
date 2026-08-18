@@ -254,6 +254,17 @@ func formatAppliedFlags(f typ.RuleFlags) string {
 	if f.VisionProxyService != nil {
 		parts = append(parts, "vision_proxy")
 	}
+	if f.Context1M {
+		parts = append(parts, "context_1m")
+	}
+	if f.ClaudeOrgID != "" {
+		parts = append(parts, "claude_org_id="+f.ClaudeOrgID)
+	}
+	// Count only — header values may carry user secrets and this string is
+	// echoed back to clients (X-Tingly-Applied-Flags) and logged.
+	if len(f.ExtraHeaders) > 0 {
+		parts = append(parts, fmt.Sprintf("extra_headers=%d", len(f.ExtraHeaders)))
+	}
 	return strings.Join(parts, ", ")
 }
 
