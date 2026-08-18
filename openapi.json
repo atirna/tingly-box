@@ -6815,6 +6815,28 @@
         }
       }
     },
+    "/api/v2/provider/flags/registry": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Get catalog of supported provider/model-level flags",
+        "description": "Get catalog of supported provider/model-level flags",
+        "operationId": "apiV2ProviderFlagsRegistryGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagRegistryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/providers": {
       "get": {
         "tags": [
@@ -8643,6 +8665,16 @@
             "type": "boolean",
             "description": "Whether provider is enabled",
             "example": true
+          },
+          "flags": {
+            "$ref": "#/components/schemas/ProviderFlags"
+          },
+          "model_flags": {
+            "type": "object",
+            "description": "Per-model flag overrides keyed by provider-side model ID; api_key auth only",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProviderFlags"
+            }
           },
           "name": {
             "type": "string",
@@ -12376,6 +12408,18 @@
           }
         }
       },
+      "ProviderFlags": {
+        "type": "object",
+        "properties": {
+          "extra_headers": {
+            "type": "object",
+            "description": "Field extra_headers",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ProviderImportInfo": {
         "type": "object",
         "properties": {
@@ -12535,6 +12579,16 @@
             "type": "boolean",
             "description": "Field enabled",
             "example": true
+          },
+          "flags": {
+            "$ref": "#/components/schemas/ProviderFlags"
+          },
+          "model_flags": {
+            "type": "object",
+            "description": "Field model_flags",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProviderFlags"
+            }
           },
           "name": {
             "type": "string",
@@ -14962,6 +15016,16 @@
           "enabled": {
             "type": "boolean",
             "description": "New enabled status"
+          },
+          "flags": {
+            "$ref": "#/components/schemas/ProviderFlags"
+          },
+          "model_flags": {
+            "type": "object",
+            "description": "Replacement per-model flag overrides; empty map clears them (api_key auth only)",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProviderFlags"
+            }
           },
           "name": {
             "type": "string",

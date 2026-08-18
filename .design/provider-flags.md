@@ -1,8 +1,12 @@
-# Provider Extensions & Provider/Model/Rule Flags
+# Provider / Model / Rule Flags
 
-> 状态：**分两个 PR 交付**（api_key-only 发布范围）：
-> PR1 — rule 级 `extra_headers`（含前端，已实现）；
-> PR2 — provider & model 级改造（Extensions 容器、db 列、provider API 与前端）。
+> 状态：**分三段交付**（api_key-only 发布范围）：
+> ① rule 级 `extra_headers`（含前端）—— 已合并 (#1589)；
+> ② provider & model 级后端（Provider.Flags/ModelFlags、db 列、三级合并、provider API）—— 本分支；
+> ③ provider & model 级前端（Plugins 区块、per-model popover）—— 独立 PR，可后续升级。
+>
+> ②③ 拆开的原因：后端能力（含 API 与 registry endpoint）可独立落地并被
+> CLI / 直接调用 API 的使用者消费；UI 是纯增量，晚一步不影响功能可用性。
 > 适用对象：tingly-box 后端 / 前端贡献者。
 > 相关文档：`.design/rule-flags.md`（rule/scenario 级 flag 机制，本设计大量复用其模式）、
 > `.design/user-agent.md`（vendor pin 不可污染的边界，本设计必须尊重）、
@@ -30,14 +34,15 @@ Cloudflare AI Gateway 的网关 header、企业内网网关的租户/审计 head
 向后兼容语义与 dual provider）。OAuth / vendor 特种链、多字段凭证
 （aws_sigv4 / azure_key / gcp_sa）、vmodel 首版不释放（§5.4）。
 
-分层原则（本设计的核心约束）：
+分层原则：
 
-> **对 `ai` module 而言，扩展字段是任意的（opaque）；
-> 对 tingly-box 服务而言，扩展字段有明确定义的 schema 与语义。**
+> **provider/model 级 flag 是"如何抵达这个上游"的属性，与 base URL、auth
+> 一样属于 `ai.Provider`；rule/scenario 级 flag 是网关的产品行为，留在
+> `internal/`。**
 
-`ai/` 是独立 go module、对外公共 API。它不应该知道 tingly-box 服务定义了
-哪些 flag——它只提供一个无 schema 的扩展容器。所有类型化、注册表、校验、
-合并语义都在 `internal/` 落地。
+最初规划过一个不透明扩展容器（"对 ai module 而言是任意的"），实现后按
+评审意见塌缩为 typed 字段——理由与代价见 §2。校验、注册表、合并语义仍全部
+在 `internal/`，ai 只持有数据。
 
 现有 flag 语义由此补全为四层（rule-flags.md §1 的表 + 本设计的前两行）：
 
@@ -63,34 +68,29 @@ UA 的教训（`provider.UserAgent` 移除史，user-agent.md §5）仍然成立
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ai module（公共 API，opaque）                                │
+│  ai module（公共 API）                                        │
 │                                                             │
 │  ai.Provider {                                              │
 │      ...                                                    │
-│      Extensions map[string]json.RawMessage `json:"extensions,omitempty"` │
+│      Flags      ProviderFlags            `json:"flags"`      │
+│      ModelFlags map[string]ProviderFlags `json:"model_flags"`│
 │  }                                                          │
 │                                                             │
-│  ai 包不解释内容；任何消费方可用自己的 key 存放任意 JSON。       │
+│  type ProviderFlags struct {                                │
+│      ExtraHeaders map[string]string `json:"extra_headers"`   │
+│      // 后续字段须通过"准入规则"（见下）                        │
+│  }                                                          │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ well-known keys（服务侧独占）
+                           │ typ.ProviderFlags = ai.ProviderFlags（别名）
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  tingly-box 服务（internal/，typed）                          │
-│                                                             │
-│  internal/constant:                                         │
-│      ProviderExtKeyFlags      = "provider_flags"  // ProviderFlags │
-│      ProviderExtKeyModelFlags = "model_flags"  // map[model]ProviderFlags │
+│  tingly-box 服务（internal/）                                 │
 │                                                             │
 │  internal/typ:                                              │
-│      type ProviderFlags struct {                            │
-│          ExtraHeaders map[string]string `json:"extra_headers,omitempty"` │
-│          // 后续 flag 在此追加 typed 字段                       │
-│      }                                                      │
 │      RuleFlags 追加同形态字段：                                │
-│          ExtraHeaders map[string]string `json:"extra_headers,omitempty"` │
-│      GetProviderFlags(p)            // 解 "flags" key         │
-│      GetModelFlags(p, model)        // 解 "model_flags"[model]│
-│      EffectiveExtraHeaders(p, model, ruleFlags) // 三级合并（§3.3）│
+│          ExtraHeaders map[string]string `json:"extra_headers"`│
+│      SupplyExtraHeaders(p, model)   // provider ∪ model（§3.3）│
+│      PruneModelFlags(m)             // 清空的 model 不留空对象  │
 │                                                             │
 │  internal/typ/provider_flag_registry.go:                    │
 │      ProviderFlagRegistry() []FlagSpec  // provider/model 级可信源（§4）│
@@ -99,28 +99,40 @@ UA 的教训（`provider.UserAgent` 移除史，user-agent.md §5）仍然成立
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Rule 级不走 Extensions 容器——RuleFlags 本来就是服务域内的 typed struct
-（rule-flags.md §3），直接加字段即可；Extensions 只解决"公共 module 不能
-认识服务 schema"的问题，Rule 类型不存在这个问题。
+访问方式与 rule flags 完全一致：`p.Flags.ExtraHeaders` / `rule.Flags.ExtraHeaders`，
+没有访问器、没有容器、没有 well-known key。
 
-### 为什么是 `map[string]json.RawMessage` 而不是 `map[string]any`
+### 为什么字段直接放在 ai（而不是不透明扩展容器）
 
-- **无损**：RawMessage 原样保存字节，不经历 `any` 的 float64 化 /
-  key 顺序丢失；ai module "任意"的承诺才真正成立。
-- **强制分层**：ai 包物理上无法"顺手"读懂内容，schema 只能在服务侧定义，
-  防止类型定义渗回公共 module。
-- 服务侧解码是一次小 JSON unmarshal，请求路径成本可忽略（provider 对象
-  在 ClientPool / dispatch 中已被缓存与克隆，必要时可在解析处 memoize，
-  首版不做）。
-- 先例差异说明：`ScenarioConfig.Extensions` 用了 `map[string]interface{}`，
-  但它本身就在 internal/typ（服务域内），没有跨 module 分层需求；
-  ai.Provider 是公共 API，取 RawMessage 更严格。
+最初的规划是给 `ai.Provider` 一个 `Extensions map[string]json.RawMessage`
+不透明容器，服务在两个 well-known key 下放自己的 typed schema——理由是
+"对 ai module 而言扩展字段是任意的"。实现出来后评审判定这是过度设计，
+改为 typed 字段，依据是：
 
-`ResolveStyle` / dual-provider 的 shallow clone 语义不受影响：Extensions
-是引用共享的 map，clone 不深拷贝，所有读取方**只读**（写入只发生在
-usecase 保存路径）。
+1. **容器只有一个消费者**。除 provider flags 外没有任何代码读写它；为
+   "保护别人的 key"而做的读-改-写和它的测试（测试里的 key 字面就叫
+   `someone_elses_key`）保护的是一个假想消费者——与被删掉的
+   `Scope`/`MergeMode` 是同一种投机，只是体量更大。
+2. **ai 的依赖独立性不受影响**。`ProviderFlags` 内部只是
+   `map[string]string`，不引入任何新 import，ai 仍然零依赖 `internal/`。
+3. **语义上并不越界**。ai 自述的职责就是"provider + 如何抵达这个上游"，
+   它已经装着 `OpenAIEndpointMode`、`VModelDetail`、`CredentialBundle`、
+   `Issuer`；`extra_headers`（OpenRouter 的 `HTTP-Referer`、网关租户头）
+   正属于这一类，而不是网关的产品行为。
 
----
+塌缩省掉约 135 行：5 个访问器 + `setExtension` 的读-改-写、db 的
+`cloneExtensions`、以及三个纯容器测试（外键保序 / 畸形 JSON 兜底 /
+extensions wire shape）。
+
+**代价与护栏**：ai 从此认识 flag schema，新增 provider flag 要动公共
+module；真正的风险是先例——一个开放的 `Flags` 结构会招揽产品语义。护栏
+是一条写进 `ai/README.md` 与本文档的准入规则：
+
+> **ai 只接受"描述如何抵达上游"的字段；网关的产品行为（响应改写、客户端
+> 兼容垫片、路由策略……）一律留在 rule flags。**
+
+Rule 级不受影响：RuleFlags 本来就是服务域内的 typed struct（rule-flags.md
+§3），直接加字段即可。
 
 ## 3. 数据模型与合并语义
 
@@ -152,25 +164,33 @@ model ID 精确匹配**（即经过 rule 映射后、实际发给该 provider �
 flag 是供给侧配置，只应认识 provider 自己的模型词汇，不认识客户端别名。
 通配/前缀匹配（如 `gpt-5*`）留作后续扩展，registry 机制不受影响。
 
-### 3.3 三级合并语义（Effective headers）
+### 3.3 三级合并语义
 
-```go
-// EffectiveExtraHeaders(p, model, ruleFlags):
-//   provider 级 ∪ model 级 ∪ rule 级，同名时后者胜出：
-//
-//       provider  <  model  <  rule
-//     （最泛化）              （最贴近本次请求）
+```
+供给侧（客户端构造期，按 (provider, model) 缓存）：
+    SupplyExtraHeaders(p, model) = provider 级 ∪ model 级，model 胜
+
+请求侧（每次 RoundTrip）：
+    GetRuleFlags(ctx).ExtraHeaders                 ← rule 级
+
+最终优先级 = transport 的写入顺序：
+    provider  <  model  <  rule
+  （最泛化）              （最贴近本次请求）
 ```
 
 优先级理由：粒度越贴近"这一次请求"越应胜出。provider 级是全局默认；
 model 级是供给侧对默认的细化；rule 级表达"这一类客户端/用途"的显式
 意图，是三者中最具体的，故最后写入。
 
-对未来的非 map 型 flag（bool/enum），合并模式由 registry 按 flag 声明
-（`MergeMode`：`merge` / `override`），不是全局规则；`extra_headers`
-声明为 `merge`。这与 rule flags 的 `InheritanceMode`（scenario→rule 的
-or/override）同构，但轴不同：`MergeMode` 描述 provider→model→rule 的
-纵向叠加，命名分开以免混淆。
+**没有"三级合并函数"**：供给侧两级在构造期合并一次，rule 级在写 header
+时叠加，`req.Header.Set` 的 canonical 化保证同名（含大小写不同）覆盖。
+详见 §5.1。
+
+合并语义是**层级的属性，不是每个 flag 的属性**：model 级覆盖同名的
+provider 级，就这一条。曾经给 FlagSpec 加过 `Scope` / `MergeMode` 两个轴
+（"这个 flag 存在于哪几级 / 两级怎么合"），但唯一的 flag 两级都有、合法
+只有 merge 一种，没有任何生产代码读它们——纯为想象中的第二个 flag 预留，
+已删除。真出现语义不同的 flag 时再加轴，届时有真实约束可依。
 
 ---
 
@@ -179,10 +199,8 @@ or/override）同构，但轴不同：`MergeMode` 描述 provider→model→rule
 ### Provider/Model 级：新增 `internal/typ/provider_flag_registry.go`
 
 ```go
-// 复用 FlagSpec / FlagValueType / FlagOption（flag_registry.go）
-// FlagSpec 增加两个字段（rule flags 不使用，零值忽略）：
-//   Scope     FlagScope // "provider" | "model" | "both"
-//   MergeMode string    // Scope == "both" 时必填："override" | "merge"
+// 直接复用 FlagSpec / FlagValueType / FlagOption（flag_registry.go），
+// 不给 FlagSpec 加任何 provider 专用字段——与 rule spec 完全同形。
 
 func ProviderFlagRegistry() []FlagSpec {
     return []FlagSpec{
@@ -192,12 +210,13 @@ func ProviderFlagRegistry() []FlagSpec {
             Description: "Append custom HTTP headers to outbound requests ...",
             Type:        FlagValueHeaders, // 新增的 value type，见下
             Category:    FlagCategoryRequest,
-            Scope:       "both",
-            MergeMode:   "merge",
         },
     }
 }
 ```
+
+**每个 spec 都是 provider + model 两级可配**（model 级同名覆盖 provider
+级）。不做 per-spec 的 scope 声明：两个 UI 面都渲染整个 registry。
 
 ### Rule 级：`RuleFlagRegistry()` 追加一条
 
@@ -208,8 +227,8 @@ func ProviderFlagRegistry() []FlagSpec {
     Description: "Append custom HTTP headers to outbound requests for this rule ...",
     Type:        FlagValueHeaders,
     Category:    FlagCategoryRequest,
-    // 无 Shared / InheritanceMode：不做 scenario 级（首版无此需求），
-    // 与 provider/model 级的合并发生在 EffectiveExtraHeaders（§3.3），
+    // 无 Shared / InheritanceMode：不做 scenario 级（首版无此需求）。
+    // 与 provider/model 级的叠加发生在出站 transport（§5.1），
     // 不走 resolveRuleFlagsWithScenario 的 scenario 继承链。
 }
 ```
@@ -224,8 +243,6 @@ func ProviderFlagRegistry() []FlagSpec {
   json tag（`TestProviderFlagRegistry_KeysMatchStructFields`）；
   rule 级 `extra_headers` 由既有 `TestRuleFlagRegistry_KeysMatchStructFields`
   自动覆盖。
-- `Scope` 必须在枚举内；`Scope == "both"` 必须声明 `MergeMode`，
-  其他 Scope 不得声明。
 - `headers` 类型不允许 Options/Suggestions。
 
 Registry 通过新 endpoint 透出给前端（§7），前端 registry-driven 渲染，
@@ -236,56 +253,58 @@ Registry 通过新 endpoint 透出给前端（§7），前端 registry-driven �
 
 ## 5. `extra_headers` 的注入与安全边界
 
-### 5.1 注入点：transport 层
+### 5.1 注入点：统一的 `ruleFlagTransport`，供给侧静态 + rule 级随 ctx
 
-rule 级 `extra_headers` 已由统一的 `ruleFlagTransport`
-（`internal/client/rule_flag_transport.go`，见 rule-flags.md §5 Type 2）
-承载：pass-through 构造器（openai / anthropic / google）显式挂载，
-vendor 链不挂。provider 级 headers（本文档规划部分）沿同一策略加一层：
-
-```
-wrapWithLogging( providerHeadersTransport( ruleFlagTransport( base ) ) )
-                 └── 新增：读 provider 级 headers（构造期解出，不依赖 ctx）
-```
-
-`providerHeadersTransport`：
-
-- **api_key 守卫（首版范围）**：`!provider.IsAPIKey()` 时该 transport
-  为纯透传（no-op）。发布范围由这一个判断收口（配置入口另在 API/UI 层
-  拦截，见 §5.4），后续放开 = 调整这一处守卫 + 对应校验。
-- **provider 级 headers**：构造时从 provider 解出（`GetProviderFlags`），
-  每个 RoundTrip 应用。不依赖 ctx —— 因此 probe、model-list 拉取、
-  visionproxy 等不经 protocol dispatch 的路径也自动生效。
-- **model 级 + rule 级 headers**：dispatch 阶段（rule→provider→model
-  已定型）计算 `EffectiveExtraHeaders(p, model, ruleFlags)` 与 provider
-  级的差集，经 Type 2 手法写入 request
-  ctx——rule 级 headers 是 RuleFlags 的字段，随 `typ.WithRuleFlags`
-  整包挂 ctx，transport 读 `typ.GetRuleFlags(ctx).ExtraHeaders`；transport 读到则叠加（合并优先级已在 dispatch 侧算好，transport
-  只做"provider 级打底、ctx 覆盖"两步）。ctx 缺失时退化为仅 provider
-  级 —— 这是非 dispatch 路径（无 rule、无 model 语境）的预期行为。
-
-rule 级选择与 model 级共用同一个 ctx key 而不是单独一个：transport 只
-认"本次请求的增量 header"一个概念，三级优先级是 dispatch 侧
-`EffectiveExtraHeaders` 的职责——合并逻辑集中一处，transport 保持哑。
-
-### 5.2 顺序不变量：vendor pin 永远胜出（对首版是防御，For 未来是边界）
-
-首版只释放 api_key，generic 链上没有 vendor pin，本节在 v1 实际不触发；
-但机制上 `providerHeadersTransport` 挂在所有构造器的统一包装点，**顺序
-不变量从第一天就要成立**，为后续放开 OAuth 特种链保底：
+上游把出站 rule flag 收敛成一个 ctx key + 一个 transport
+（`internal/client/rule_flag_transport.go`，见 rule-flags.md §5 Type 2）：
+pass-through 构造器（openai / anthropic / google）显式挂载 `wrapWithRuleFlags`，
+vendor 链一律不挂。三级 headers **复用这一层**，不新增 transport：
 
 ```
-providerHeadersTransport      ← 外层：先写入用户 extra headers
-  vendorRoundTripper / SDK    ← 内层（更靠近 wire）：后写入 vendor pin
-    wire                          同名时后写者胜 → vendor pin 决定性
+wrapWithRuleFlags(base, provider, model, resolveUA)
+   ├── 构造期：supplyHeaders = typ.SupplyExtraHeaders(provider, model)   ← 供给侧两级
+   └── RoundTrip：先写 supplyHeaders，再写 GetRuleFlags(ctx).ExtraHeaders ← rule 级
 ```
 
-`.design/user-agent.md` 的结论在这里同样成立：vendor 特种链上由握手 /
-指纹协议绑定的 header（UA、`x-stainless-*`、`X-Msh-*`、
-`X-ChatGPT-Account-ID`、session header 等）不可被任何用户配置覆盖。
-护栏：给该顺序写回归测试（stub inner 断言最终 header 值）；并延续
-rule-flags.md §8 的警告——**vendor 链内部永远不得引入
-providerHeadersTransport**。
+关键点：
+
+- **供给侧（provider ∪ model）在构造期解出**。client 本就按
+  `(provider, model)` 缓存（`ClientKey`），三个挂载点全都持有 `model`，
+  所以模型级 headers 不需要经过 dispatch——`typ.SupplyExtraHeaders` 在
+  wrap 时算一次，之后每个 RoundTrip 直接用，JSON 不重复解码。
+  不依赖 ctx 也意味着 probe、model-list 拉取、visionproxy 等不经
+  protocol dispatch 的路径同样带上上游配置的 header。
+- **rule 级仍是 rule flag**，随 `typ.WithRuleFlags` 整包挂 ctx，transport
+  读 `typ.GetRuleFlags(ctx).ExtraHeaders`。**不把三级合并塞进这个 ctx
+  值**：它的契约是"本次请求解析出的 RuleFlags"，混入供给侧配置会让
+  `X-Tingly-Applied-Flags` 之类的诊断把 provider 配置报成 rule flag。
+- **优先级由写入顺序产生，没有第四方合并函数**：supply 先写、rule 后写、
+  UA 最后写，`req.Header.Set` 自带 canonical 化，于是
+  `provider < model < rule < UA 解析 < 内层链` 自然成立。
+- **api_key 守卫沿用同一处**：`wrapWithRuleFlags` 在 wrap 时判定
+  `provider.IsAPIKey()`，false 则 supply headers 根本不装载（且当该链也
+  不需要 UA 解析时直接返回 inner）。发布范围由这一个判断收口，配置入口
+  另在 API 层拦截（§5.4）。
+
+### 5.2 顺序不变量：vendor pin 永远胜出
+
+vendor 链（Claude OAuth / Codex / Kimi / Gemini / Antigravity）**根本不挂
+这一层**——上游重构后这条边界由结构保证，不再依赖注释里的不变量，因此
+任何级别的 headers 都到不了 vendor 握手。
+
+在挂载了该层的 pass-through 链上，内层（更靠近 wire）仍然后写后胜：
+
+```
+ruleFlagTransport             ← 外层：supply → rule → UA
+  SDK / inner round-tripper   ← 内层：后写者胜
+    wire
+```
+
+`.design/user-agent.md` 的结论同样成立：握手 / 指纹绑定的 header
+（UA、`x-stainless-*`、`X-Msh-*`、`X-ChatGPT-Account-ID`、session header）
+不可被用户配置覆盖。护栏：`rule_flag_transport_test.go` 里的
+`TestRuleFlagTransport_VendorPinWins`（stub inner 断言最终值）+
+**vendor 链内部永远不得挂 `wrapWithRuleFlags`**。
 
 ### 5.3 Header 校验 —— 用户主导，只查结构
 
@@ -337,21 +356,15 @@ vendor pin 与 UA 链在更内层（更靠近 wire）后写后胜（§5.2）；�
 Provider / model 级沿用 `credential` / `vmodel_detail` 的既定先例
 （`internal/db/provider_store.go`）：
 
-- `ProviderRecord` 新增一个 `extensions` TEXT 列，内容为
-  `ai.Provider.Extensions` 整个 map 的 JSON。
+- `ProviderRecord` 新增 `flags` / `model_flags` 两个 TEXT 列
+  （`serializer:json`，与 `credential` / `vmodel_detail` 同模式）。
 - GORM `AutoMigrate` 增列即生效，**无需 migration 脚本、无需回填**
-  （零值 = 无扩展）。
-- `toProvider` / `toRecord` / `updateRecordFromProvider` 三处映射函数
-  各加一段 marshal/unmarshal（与 credential 的处理完全同形）。
-- 服务侧不认识的 key（其他消费方存的任意扩展）随整个 map 原样存取，
-  **update 时必须整 map 读-改-写，不得只写服务自己的两个 key**（否则
-  丢别人的数据）。
-
-Rule 级零持久化改动：RuleFlags 本就以 JSON 列随 rule 行存储
-（rule-flags.md §2），加字段即可。
+  （零值 = 未配置）。
+- `toProvider` / `toRecord` / `updateRecordFromProvider` 三处映射各加两行
+  clone（与其他 JSON 列一样做缓存隔离）。
 
 Provider export / import（`/provider-export`、`/provider-import`）随
-Provider JSON 自然携带 extensions；import 侧对 `flags` / `model_flags`
+Provider JSON 自然携带这两个字段；import 侧对 `flags` / `model_flags`
 两个 well-known key 执行与 API 相同的校验（§5.3 + §5.4 的 auth type
 门），非法拒绝导入并报明确错误。
 
@@ -379,8 +392,7 @@ GET  /api/v1/provider/flags/registry     // ProviderFlagRegistry() → 前端渲
 // CreateProviderRequest 同步新增两个可选字段。
 ```
 
-- handler 侧写入路径：读出 provider → 改 `Extensions["flags"]` /
-  `Extensions["model_flags"]` → 保存（整 map 读-改-写，见 §6）。
+- handler 侧写入路径：读出 provider → 赋 `p.Flags` / `p.ModelFlags` → 保存。
 - 校验集中在 `ValidateExtraHeaders`（§5.3）+ auth type 门（§5.4），
   Create / Update / Import 三处共用。
 - `model_flags` 的 model key 不强校验存在于 `Provider.Models`（模型列表
@@ -402,8 +414,8 @@ switch/case。实现落点：
 
 1. **新控件类型 `headers`（一次性投入，三处共用）**：
    `components/flags/HeadersEditor.tsx` —— 可增删的 KV 行编辑器,行内
-   即时校验(denylist / 非法字符 / 大小写不敏感重复,直接标红并给出
-   原因,教育内嵌于产品;denylist 与后端 `ValidateExtraHeaders` 镜像)。
+   即时校验(非法字符 / 大小写不敏感重复,直接标红并给出原因——仅结构
+   校验,无 denylist,与后端 `ValidateExtraHeaders` 镜像,见 §5.3)。
    接入 `FlagCatalogDialog` 的类型分发(`spec.Type` 驱动,与 bool/
    string/enum/int/service_ref 并列新增一个分支)。
 2. **Rule 级入口**：零布局改动——`extra_headers` 出现在既有
@@ -415,7 +427,7 @@ switch/case。实现落点：
    内(edit 模式)渲染 `ProviderPluginsBlock` —— 与 rule 侧同构的
    "Plugins 卡片 + 目录弹窗"交互:折叠卡片列出 active flag 与具体值,
    点击打开共享的 `FlagCatalogDialog`(标题 "Provider Plugins",registry
-   来自 `GET /provider/flags/registry`,按 `Scope` 含 provider 过滤)。
+   来自 `GET /provider/flags/registry`)。
    该编辑框本身只服务 api_key 域(oauth/cloud 走别的对话框),天然满足
    §5.4 的 UI 门。
 4. **Model 级入口**：`ModelCard`(模型管理面)hover 工具条加
@@ -439,11 +451,11 @@ switch/case。实现落点：
 
 | 层 | 内容 |
 |---|---|
-| registry 护栏 | ProviderFlagRegistry Key ↔ `ProviderFlags` json tag 同步；rule 级由既有 KeysMatchStructFields 覆盖；Scope/MergeMode 约束 |
-| 合并语义 | `EffectiveExtraHeaders`：仅 provider / 仅 model / 仅 rule / 三级同名覆盖顺序（provider < model < rule）/ 都为空 |
-| 校验 | denylist、canonical 化、token 合法性、数量/尺寸上限；非 api_key provider 拒绝；三个写入口都过同一校验 |
-| transport | headers 落到出站请求；ctx 叠加覆盖 provider 级；**非 api_key no-op 守卫**；**vendor pin 胜出的顺序回归**（为未来放开保底）；denylist 第二道防御；vmodel 路径 no-op |
-| db | extensions 列 round-trip；含未知 key 的整 map 读-改-写不丢数据 |
+| registry 护栏 | ProviderFlagRegistry Key ↔ `ProviderFlags` json tag 同步；rule 级由既有 KeysMatchStructFields 覆盖 |
+| 合并语义 | `SupplyExtraHeaders`：仅 provider / 仅 model / model 不匹配 / 大小写碰撞 / 都为空；transport 侧再验三级同名覆盖顺序（provider < model < rule）|
+| 校验 | 仅结构性:token/值合法性、大小写不敏感重名、canonical 化(无 denylist/上限,§5.3);非 api_key provider 拒绝;三个写入口都过同一校验 |
+| transport | headers 逐字落到出站请求(无过滤);ctx 叠加覆盖 provider 级;**非 api_key no-op 守卫**;**vendor pin 胜出的顺序回归**(为未来放开保底);vmodel 路径 no-op |
+| db | flags / model_flags 列 round-trip；缓存隔离（调用方改动不回灌 store）|
 | API | partial update 语义（nil 不动 / 非 nil 替换）；builtin 拒绝；rule 保存路径校验生效；export→import round-trip 含校验 |
 | e2e（后补） | 三级各配一部分 header → mock upstream 断言合并结果（依赖 mock provider fixture，同 rule flags 的待办） |
 
@@ -453,31 +465,32 @@ switch/case。实现落点：
 
 ```
 1. ai/provider.go
-   └─ Provider 增加 Extensions map[string]json.RawMessage（含只读语义注释）
+   └─ Provider 增加 Flags / ModelFlags + ProviderFlags struct（含准入规则注释）
 
 2. internal/constant
    └─ ProviderExtKeyFlags / ProviderExtKeyModelFlags 常量
 
 3. internal/typ
    ├─ provider_flags.go：ProviderFlags struct + Get/Set 帮助函数
-   │   （Set 系列负责整 map 读-改-写）+ EffectiveExtraHeaders（三级合并）
+   │   （Set 系列负责整 map 读-改-写）+ SupplyExtraHeaders（供给侧合并）
    ├─ type.go：RuleFlags 加 ExtraHeaders 字段（json/yaml tag: extra_headers）
-   ├─ flag_registry.go：FlagSpec 增加 Scope / MergeMode 字段；
-   │   FlagValueType 增加 "headers"；RuleFlagRegistry() 追加 extra_headers
+   ├─ flag_registry.go：FlagValueType 增加 "headers"；RuleFlagRegistry()
+   │   追加 extra_headers（FlagSpec 本身不加任何 provider 专用字段）
    ├─ provider_flag_registry.go：ProviderFlagRegistry()
-   └─ id.go：rule 级 headers 随 WithRuleFlags / GetRuleFlags 整包传递（Type 2）
+   └─ （ctx 侧无需新增：rule 级 headers 已随 typ.WithRuleFlags 整包传递）
 
 4. internal/db/provider_store.go
-   └─ extensions 列 + 三处映射（rule 侧零改动）
+   └─ flags / model_flags 两列 + 三处映射（rule 侧零改动）
 
 5. internal/client
-   ├─ provider_headers_transport.go：providerHeadersTransport
-   │   （含 IsAPIKey 守卫 + denylist 二道防御）
-   └─ 挂载策略同 rule 级 ruleFlagTransport：pass-through 构造器显式挂载，vendor 链不挂
+   ├─ rule_flag_transport.go：wrapWithRuleFlags 增 model 入参
+   │   （含 IsAPIKey 守卫;逐字应用,无过滤）
+   └─ 在 wrapWithLogging 接入点外侧统一挂载（一处改动覆盖全部构造器）
 
-6. protocol dispatch
-   └─ provider+model+rule 定型处调用 EffectiveExtraHeaders，
-      与 provider 级的差集写入 ctx
+6. protocol dispatch —— 无需改动
+   └─ 旧规划让 dispatch 计算三级合并再写 ctx；上游把出站 rule flag 收敛成
+      单一 ctx key 后，供给侧改在 client 构造期解出，`ResolveRuleFlagsWithScenario`
+      与 4 个 handler 的签名都不用动
 
 7. internal/server/module/provider + module/rule
    ├─ provider/types.go / handler.go：请求响应模型 + ValidateExtraHeaders
@@ -505,22 +518,22 @@ switch/case。实现落点：
 | 选项 | 已采纳 | 备择 | 取舍理由 |
 |------|--------|------|----------|
 | ai.Provider 扩展容器形态 | `map[string]json.RawMessage` | typed struct / `map[string]any` | ai 是公共 module，必须对内容不知情；RawMessage 无损且物理隔离 schema。typed struct 会把服务语义泄进公共 API |
+| provider flag 的存放位置 | `ai.Provider` 上的 typed 字段 | `Extensions map[string]json.RawMessage` 不透明容器 + 服务侧 well-known key | 容器只有一个消费者，"保护别人 key"的读-改-写保护的是假想消费者（评审意见）。塌缩省 ~135 行；ai 的依赖独立性不变（不引入新 import），语义上 headers 本就属于"如何抵达上游"。代价是 ai 认识 flag schema，用准入规则约束（§2）|
 | 服务侧 schema 位置 | internal/typ + registry | 散落各消费点 | 复刻 rule flags 的"唯一可信源"模式，前端零 switch/case，已被验证 |
 | rule 级是否同步支持 | ✅ 三级统一 | 仅 provider/model | headers 三级各有真实语义（网关固有 / 模型灰度 / 客户端标记）；rule 级复用既有 RuleFlags 机制近乎零成本，一次做齐避免二次开口 |
-| rule 级走 Extensions 还是 RuleFlags | RuleFlags 加字段 | Rule 也做 opaque 容器 | Rule 类型在服务域内，不存在跨 module schema 问题；opaque 容器只为公共 module 存在 |
 | 三级合并顺序 | provider < model < rule | rule < model < provider | 粒度越贴近单次请求越应胜出；rule 是显式的请求侧意图 |
 | 首版发布范围 | 仅 api_key | 全 auth type | vendor 特种链有握手/指纹边界、SigV4 有签名敏感性，验证成本高；api_key 覆盖绝大多数真实需求（OpenRouter/网关/自建端点）。范围由 UI 隐藏 + API 校验 + transport 守卫三道闸收口，放开时逐道解除 |
 | extra_headers 形态 | `map[string]string` | `[]HeaderKV`（有序可重复） | 配置型 header 不需要重复/顺序；与 probe headers 先例一致；UI 简单；三级同形态合并函数唯一 |
-| model flag 合并 | 按 flag 声明 MergeMode（headers=merge） | 一律 override | headers 的自然语义是叠加覆写；未来 bool flag 需要 override——语义属于 flag 本身，进 registry |
-| 注入点 | transport 层（ruleFlagTransport，一处） | ClientPool 逐构造器传 option | option 类型按 SDK 分裂（openai/anthropic/google 各一套），transport 一处覆盖所有 auth type 与 style |
-| model/rule 级 ctx 传递 | 单一 ctx key（dispatch 侧合并好） | 每级一个 ctx key | transport 保持哑，合并逻辑集中在 EffectiveExtraHeaders 一处 |
+| model flag 合并 | 层级属性：model 级同名覆盖 provider 级 | 每个 flag 用 registry 的 `MergeMode` 声明 | 曾按 flag 声明（Scope/MergeMode 两个轴），但唯一的 flag 两级都有、只有 merge 合法，无任何生产读取方——纯预留结构，已删。有语义不同的 flag 时再加，届时有真实约束 |
+| 注入点 | transport 层（wrapWithLogging 旁，一处） | ClientPool 逐构造器传 option | option 类型按 SDK 分裂（openai/anthropic/google 各一套），transport 一处覆盖所有 auth type 与 style |
+| 供给侧 headers 的解析时机 | client 构造期（wrap 时按 (provider, model) 解出） | dispatch 侧算好三级合并写进 ctx | client 本就按 provider+model 缓存，构造期解一次即可，JSON 不重复解码；且 rule flags 的 ctx key 契约保持"只装 RuleFlags"，诊断不会把 provider 配置报成 rule flag。代价是优先级由写入顺序表达，需在 transport 注释与测试中写清 |
 | vendor pin 冲突 | 物理顺序保证 pin 胜出 | 逐 header 判断 | v1 不触发（api_key only），但顺序不变量零维护成本，为放开 OAuth 保底 |
 | denylist / 上限 | **不做**（用户主导，配错自负） | 拒绝 Authorization/UA/传输头 + 数量尺寸上限 | 评审定调：编排器必须可任意配置，"custom" 即特殊需求，过度限制是过度设计。与网关自管 header 的冲突交给 transport 链顺序（pin 在内层后写后胜），不做过滤 |
 | 校验时机 | 保存时拒绝（仅结构合法性） | 发请求时静默失败 | 非法 token/重名在保存时报错比 net/http 发送期报错清晰；结构校验不是限制而是"配置无定义" |
-| API 形态 | typed `flags`/`model_flags` 字段 | 直接暴露 opaque extensions | REST 契约是服务 surface，必须 typed；opaque 容器只是存储与公共 module 之间的运输形态 |
-| 持久化 | 单 `extensions` JSON 列 | 每 flag 一列 | credential/vmodel_detail 先例；增 flag 零 DDL；provider 行不因 flag 增长而加宽 |
+| API 形态 | typed `flags`/`model_flags` 字段 | —— | 与存储、与 ai 的字段同形，DTO 不再需要编解码 |
+| 持久化 | `flags` / `model_flags` 两个 JSON 列 | 每 flag 一列 | credential/vmodel_detail 先例；增 flag 零 DDL |
 | model key 匹配 | 精确匹配 | 通配/前缀 | 首版从简；registry 与数据形态不阻碍后续加 pattern |
-| UI 命名 | 复用 "Plugins" | 新词（Extensions/Custom Headers） | 词汇全局统一：同一交互心智（registry 目录 + 卡片）应同名；scope 差异由所在 surface（provider 编辑框 vs rule 卡片）表达 |
+| UI 命名 | 复用 "Plugins" | 新词（Custom Headers 等） | 词汇全局统一：同一交互心智（registry 目录 + 卡片）应同名；scope 差异由所在 surface（provider 编辑框 vs rule 卡片）表达 |
 | 非 api_key 的 UI 呈现 | 隐藏入口 | 灰置 + 提示 | 减少视觉噪音：不解释一个当前用不了的功能；放开时再出现 |
 
 ---

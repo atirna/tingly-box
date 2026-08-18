@@ -388,6 +388,9 @@ type VModelDetail = ai.VModelDetail
 // Type alias for backward compatibility with common/provider
 type CredentialBundle = ai.CredentialBundle
 
+// ProviderFlags re-exports the provider/model flag struct (see ai.ProviderFlags).
+type ProviderFlags = ai.ProviderFlags
+
 // MCPMode defines MCP runtime mode
 type MCPMode string
 

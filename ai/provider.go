@@ -80,6 +80,30 @@ func (c *CredentialBundle) Field(key string) string {
 	return c.Fields[key]
 }
 
+// ProviderFlags carries per-provider options that describe *how to reach this
+// upstream* — the same job the rest of this type does (base URLs, auth,
+// protocol metadata). It exists at two levels on Provider: provider-wide
+// (Provider.Flags) and per-model (Provider.ModelFlags), where a model-level
+// value overrides the provider-level one for that model.
+//
+// Admission rule for new fields, so this struct cannot drift into a dumping
+// ground: only things a caller must know to talk to the upstream belong
+// here. Product behaviour of a gateway in front of it (response rewriting,
+// client compatibility shims, routing policy, …) does not — in tingly-box
+// that is what rule flags are for. See .design/provider-flags.md.
+type ProviderFlags struct {
+	// ExtraHeaders are appended to outbound requests, verbatim. Header names
+	// are stored in canonical form. Typical uses are upstreams that gate on
+	// their own headers (OpenRouter's HTTP-Referer / X-Title, gateway tenant
+	// or audit headers).
+	ExtraHeaders map[string]string `json:"extra_headers,omitempty"`
+}
+
+// IsZero reports whether the flags carry no configuration at all.
+func (f ProviderFlags) IsZero() bool {
+	return len(f.ExtraHeaders) == 0
+}
+
 // OAuthDetail contains OAuth-specific authentication information
 type OAuthDetail struct {
 	AccessToken  string                 `json:"access_token"`           // OAuth access token
@@ -218,6 +242,13 @@ type Provider struct {
 	// Codex OAuth completion. Routing reads this; users do not edit it
 	// directly. See the OpenAIEndpointMode constants for semantics.
 	OpenAIEndpointMode OpenAIEndpointMode `json:"openai_endpoint_mode,omitempty"`
+
+	// Flags carries provider-level options, and ModelFlags the per-model
+	// overrides keyed by the provider-side model ID. Both are shared by
+	// shallow clones (ResolveStyle etc.), so readers must treat them as
+	// read-only and writers replace whole values on the save path.
+	Flags      ProviderFlags            `json:"flags,omitempty"`
+	ModelFlags map[string]ProviderFlags `json:"model_flags,omitempty"`
 }
 
 // OpenAIEndpointMode declares this provider's support for the OpenAI Chat
