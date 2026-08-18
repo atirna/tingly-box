@@ -838,6 +838,46 @@ interface QuickConfigPanelProps {
     setDefaultMode: (mode: ClaudeCodeDefaultMode) => void;
 }
 
+// Shared shell for a single "top-level settings.json key" row: a titled card
+// with one label/key-badge/control row. Both DefaultModeSection (Select) and
+// ShowThinkingSummariesSection (Switch) are peers of this — same JSON layer
+// (not an env var, unlike the FieldRow-driven prefs groups below), just a
+// different control in column 3.
+const SettingsRowSection: React.FC<{
+    title: string;
+    hint: string;
+    label: string;
+    tooltip: string;
+    settingsKey: string;
+    control: React.ReactNode;
+}> = ({ title, hint, label, tooltip, settingsKey, control }) => (
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden' }}>
+        <Box sx={{ px: 1.5, py: 1.15, bgcolor: 'action.hover' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>{title}</Typography>
+            <Typography variant="body2" sx={{ mt: 0.25, color: 'text.secondary', lineHeight: 1.45 }}>{hint}</Typography>
+        </Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: CLAUDE_CONFIG_ROW_COLUMNS, alignItems: 'center', columnGap: 2, rowGap: 1, px: 1.5, py: 1.1, minHeight: 56, borderTop: '1px solid', borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                <Typography variant="body2" noWrap sx={{
+                    fontWeight: 600,
+                    color: 'text.primary',
+                }}>{label}</Typography>
+                <Tooltip placement="top" arrow title={tooltip}>
+                    <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
+                </Tooltip>
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+                <Box component="span" sx={CLAUDE_CONFIG_KEY_SX}>
+                    {settingsKey}
+                </Box>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
+                {control}
+            </Box>
+        </Box>
+    </Box>
+);
+
 const DefaultModeSection: React.FC<{
     lang: Lang;
     defaultMode: ClaudeCodeDefaultMode;
@@ -848,78 +888,63 @@ const DefaultModeSection: React.FC<{
     const selectedText = text[defaultMode];
 
     return (
-        <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden' }}>
-            <Box sx={{ px: 1.5, py: 1.15, bgcolor: 'action.hover' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>{meta.title}</Typography>
-                <Typography variant="body2" sx={{ mt: 0.25, color: 'text.secondary', lineHeight: 1.45 }}>{meta.hint}</Typography>
-            </Box>
-            <Box sx={{ display: 'grid', gridTemplateColumns: CLAUDE_CONFIG_ROW_COLUMNS, alignItems: 'center', columnGap: 2, rowGap: 1, px: 1.5, py: 1.1, minHeight: 56, borderTop: '1px solid', borderColor: 'divider' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-                    <Typography variant="body2" noWrap sx={{
-                        fontWeight: 600,
-                        color: 'text.primary',
-                    }}>Default Mode</Typography>
-                    <Tooltip placement="top" arrow title={`${selectedText.label}: ${selectedText.description}`}>
-                        <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
-                    </Tooltip>
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                    <Box component="span" sx={CLAUDE_CONFIG_KEY_SX}>
-                        defaultMode
-                    </Box>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
-                    <FormControl size="small" sx={{ width: 360 }}>
-                        <Select
-                            value={defaultMode}
-                            onChange={(e) => setDefaultMode(e.target.value as ClaudeCodeDefaultMode)}
-                            renderValue={(value) => {
-                                const mode = value as ClaudeCodeDefaultMode;
-                                return (
+        <SettingsRowSection
+            title={meta.title}
+            hint={meta.hint}
+            label="Default Mode"
+            tooltip={`${selectedText.label}: ${selectedText.description}`}
+            settingsKey="defaultMode"
+            control={
+                <FormControl size="small" sx={{ width: 360 }}>
+                    <Select
+                        value={defaultMode}
+                        onChange={(e) => setDefaultMode(e.target.value as ClaudeCodeDefaultMode)}
+                        renderValue={(value) => {
+                            const mode = value as ClaudeCodeDefaultMode;
+                            return (
+                                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, width: '100%' }}>
+                                    <Typography component="span" variant="body2">{text[mode].label}</Typography>
+                                    <Typography
+                                        component="span"
+                                        variant="caption"
+                                        sx={{
+                                            color: "text.secondary",
+                                            fontFamily: 'monospace'
+                                        }}>{mode}</Typography>
+                                </Box>
+                            );
+                        }}
+                        MenuProps={{
+                            slotProps: { paper: { sx: { maxHeight: 320, width: 360 } }, list: { sx: { py: 0.5 } } },
+                        }}
+                        sx={{
+                            height: 40,
+                            '& .MuiSelect-select': {
+                                display: 'flex',
+                                alignItems: 'center',
+                                py: 1,
+                            },
+                        }}
+                    >
+                        {CLAUDE_CODE_DEFAULT_MODE_OPTIONS.map((mode) => (
+                            <MenuItem key={mode} value={mode} sx={{ minHeight: 40, py: 1 }}>
+                                <Tooltip title={text[mode].description} arrow placement="left">
                                     <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, width: '100%' }}>
-                                        <Typography component="span" variant="body2">{text[mode].label}</Typography>
+                                        <Typography variant="body2">{text[mode].label}</Typography>
                                         <Typography
-                                            component="span"
                                             variant="caption"
                                             sx={{
                                                 color: "text.secondary",
                                                 fontFamily: 'monospace'
                                             }}>{mode}</Typography>
                                     </Box>
-                                );
-                            }}
-                            MenuProps={{
-                                slotProps: { paper: { sx: { maxHeight: 320, width: 360 } }, list: { sx: { py: 0.5 } } },
-                            }}
-                            sx={{
-                                height: 40,
-                                '& .MuiSelect-select': {
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    py: 1,
-                                },
-                            }}
-                        >
-                            {CLAUDE_CODE_DEFAULT_MODE_OPTIONS.map((mode) => (
-                                <MenuItem key={mode} value={mode} sx={{ minHeight: 40, py: 1 }}>
-                                    <Tooltip title={text[mode].description} arrow placement="left">
-                                        <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 2, width: '100%' }}>
-                                            <Typography variant="body2">{text[mode].label}</Typography>
-                                            <Typography
-                                                variant="caption"
-                                                sx={{
-                                                    color: "text.secondary",
-                                                    fontFamily: 'monospace'
-                                                }}>{mode}</Typography>
-                                        </Box>
-                                    </Tooltip>
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                </Box>
-            </Box>
-        </Box>
+                                </Tooltip>
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+            }
+        />
     );
 };
 
@@ -931,35 +956,20 @@ const ShowThinkingSummariesSection: React.FC<{
     const text = SHOW_THINKING_SUMMARIES_TEXT[lang];
 
     return (
-        <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden' }}>
-            <Box sx={{ px: 1.5, py: 1.15, bgcolor: 'action.hover' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.35 }}>{text.title}</Typography>
-                <Typography variant="body2" sx={{ mt: 0.25, color: 'text.secondary', lineHeight: 1.45 }}>{text.hint}</Typography>
-            </Box>
-            <Box sx={{ display: 'grid', gridTemplateColumns: CLAUDE_CONFIG_ROW_COLUMNS, alignItems: 'center', columnGap: 2, rowGap: 1, px: 1.5, py: 1.1, minHeight: 56, borderTop: '1px solid', borderColor: 'divider' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-                    <Typography variant="body2" noWrap sx={{
-                        fontWeight: 600,
-                        color: 'text.primary',
-                    }}>{text.label}</Typography>
-                    <Tooltip placement="top" arrow title={text.tooltip}>
-                        <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
-                    </Tooltip>
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                    <Box component="span" sx={CLAUDE_CONFIG_KEY_SX}>
-                        showThinkingSummaries
-                    </Box>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
-                    <Switch
-                        size="small"
-                        checked={checked}
-                        onChange={(_, c) => onChange(c)}
-                    />
-                </Box>
-            </Box>
-        </Box>
+        <SettingsRowSection
+            title={text.title}
+            hint={text.hint}
+            label={text.label}
+            tooltip={text.tooltip}
+            settingsKey="showThinkingSummaries"
+            control={
+                <Switch
+                    size="small"
+                    checked={checked}
+                    onChange={(_, c) => onChange(c)}
+                />
+            }
+        />
     );
 };
 
