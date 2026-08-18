@@ -15,6 +15,10 @@ const (
 	// pair is treated as inactive. Backed by a typed struct on RuleFlags, not
 	// a scalar.
 	FlagTypeServiceRef FlagValueType = "service_ref"
+	// FlagTypeHeaders is a name→value HTTP header map. The UI renders an
+	// editable key/value row list (add/remove rows); an empty map is treated
+	// as inactive. Backed by a map[string]string on the flags struct.
+	FlagTypeHeaders FlagValueType = "headers"
 )
 
 // FlagCategory groups flags for presentation in the UI.
@@ -23,6 +27,9 @@ type FlagCategory string
 const (
 	// FlagCategoryApp — flags that target a specific client application (IDE, CLI tool, etc).
 	FlagCategoryApp FlagCategory = "app"
+	// FlagCategoryRequest — protocol-agnostic request-level adjustments that
+	// apply regardless of the upstream's API style (e.g. extra HTTP headers).
+	FlagCategoryRequest FlagCategory = "request"
 	// FlagCategoryRequestOpenAI — request-level adjustments for OpenAI-compatible upstreams:
 	// endpoint routing, field rewrites, tool blocking, user-agent overrides.
 	FlagCategoryRequestOpenAI FlagCategory = "request_openai"
@@ -99,6 +106,14 @@ func DefaultUserAgents() []FlagOption {
 // by adjacent entries sharing the same Category value.
 func RuleFlagRegistry() []FlagSpec {
 	return []FlagSpec{
+		// ── Request (protocol-agnostic) ────────────────────────────────────
+		{
+			Key:         "extra_headers",
+			Label:       "Custom Headers",
+			Description: "Append custom HTTP headers to the outbound upstream request for requests matched by this rule. Applies to API-key providers only — OAuth/vendor providers (Claude Code, Codex, Kimi, Gemini, Antigravity) keep their handshake headers and ignore this. Headers are sent as configured, including ones the gateway also sets (Authorization, User-Agent, …) — overriding those is your call and your responsibility.",
+			Type:        FlagTypeHeaders,
+			Category:    FlagCategoryRequest,
+		},
 		// ── Request (OpenAI) ───────────────────────────────────────────────
 		{
 			Key:             "custom_user_agent",

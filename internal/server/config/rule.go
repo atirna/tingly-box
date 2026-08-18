@@ -41,10 +41,22 @@ func (c *Config) GetEffectiveAffinity(rule *typ.Rule) time.Duration {
 // out of the box. Only seed when the caller sent no flags at all, so an explicit
 // payload that sets any flag is left untouched.
 func applyScenarioCreateDefaults(rule *typ.Rule) {
-	if rule.Scenario.Is(typ.ScenarioTeam) && rule.Flags == (typ.RuleFlags{}) {
+	if rule.Scenario.Is(typ.ScenarioTeam) && rule.Flags.IsZero() {
 		rule.Flags.ClaudeCodeCompat = true
 		rule.Flags.CleanHeader = true
 	}
+}
+
+// validateRuleExtraHeaders rejects invalid extra_headers on the rule flags and
+// canonicalizes accepted names. Lives in the AddRule/UpdateRule choke points
+// so every write path (HTTP, CLI, TUI, import) shares the same gate as the
+// provider- and model-level headers (typ.ValidateExtraHeaders).
+func validateRuleExtraHeaders(rule *typ.Rule) error {
+	if err := typ.ValidateExtraHeaders(rule.Flags.ExtraHeaders); err != nil {
+		return fmt.Errorf("extra_headers: %w", err)
+	}
+	rule.Flags.ExtraHeaders = typ.CanonicalizeExtraHeaders(rule.Flags.ExtraHeaders)
+	return nil
 }
 
 // AddRule updates the default Rule
@@ -60,6 +72,9 @@ func (c *Config) AddRule(rule typ.Rule) error {
 		return err
 	}
 	if err := validateSmartRoutingRules(rule); err != nil {
+		return err
+	}
+	if err := validateRuleExtraHeaders(&rule); err != nil {
 		return err
 	}
 
@@ -101,6 +116,9 @@ func (c *Config) UpdateRule(uid string, rule typ.Rule) error {
 		return err
 	}
 	if err := validateSmartRoutingRules(rule); err != nil {
+		return err
+	}
+	if err := validateRuleExtraHeaders(&rule); err != nil {
 		return err
 	}
 

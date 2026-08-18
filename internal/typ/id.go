@@ -189,6 +189,33 @@ func GetClientUserAgent(ctx context.Context) string {
 	return ""
 }
 
+// ExtraHeadersKey carries the request-scoped extra headers (resolved at
+// dispatch time from the rule's extra_headers flag) down to the outbound
+// HTTP transport, which applies them on api_key providers only. See
+// .design/provider-flags.md.
+const ExtraHeadersKey contextKey = "extra_headers"
+
+// WithExtraHeaders attaches request-scoped extra headers for the outbound
+// transport. Empty maps are not attached.
+func WithExtraHeaders(ctx context.Context, headers map[string]string) context.Context {
+	if len(headers) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, ExtraHeadersKey, headers)
+}
+
+// GetExtraHeaders returns the request-scoped extra headers, or nil if none.
+// Callers must treat the returned map as read-only.
+func GetExtraHeaders(ctx context.Context) map[string]string {
+	if ctx == nil {
+		return nil
+	}
+	if h, ok := ctx.Value(ExtraHeadersKey).(map[string]string); ok {
+		return h
+	}
+	return nil
+}
+
 // Context1MKey carries the rule-level 1M-context hint down to the Anthropic
 // client, whose Beta/Messages methods add the context-1m beta flag per request.
 const Context1MKey contextKey = "context_1m"

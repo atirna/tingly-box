@@ -177,7 +177,21 @@ func ResolveRuleFlagsWithScenario(
 	// request and decides whether/what anthropic-organization-id to send.
 	applyClaudeOrgID(c, flags)
 
+	// Attach the rule-level extra headers the same way: the outbound
+	// transport (extraHeadersTransport) reads them at RoundTrip time and
+	// applies them on api_key providers only.
+	applyExtraHeaders(c, flags)
+
 	return flags
+}
+
+// applyExtraHeaders attaches the rule's extra_headers map to the request
+// context for the outbound transport. No-op when the rule configures none.
+func applyExtraHeaders(c *gin.Context, flags typ.RuleFlags) {
+	if len(flags.ExtraHeaders) == 0 || c == nil || c.Request == nil {
+		return
+	}
+	c.Request = c.Request.WithContext(typ.WithExtraHeaders(c.Request.Context(), flags.ExtraHeaders))
 }
 
 // applyClaudeOrgID attaches the claude_org_id flag to the request context so

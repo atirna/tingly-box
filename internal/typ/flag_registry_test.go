@@ -73,6 +73,7 @@ func TestRuleFlagRegistry_TypesAreValid(t *testing.T) {
 		FlagTypeEnum:       true,
 		FlagTypeInt:        true,
 		FlagTypeServiceRef: true,
+		FlagTypeHeaders:    true,
 	}
 	for _, spec := range RuleFlagRegistry() {
 		if !allowed[spec.Type] {

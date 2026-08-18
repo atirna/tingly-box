@@ -301,6 +301,30 @@ func ruleFlagCases() []flagCase {
 			}
 		}},
 
+		// ── extra_headers ────────────────────────────────────────────────────
+		// Rule-level custom headers must reach the upstream request on an
+		// api_key provider.
+		{key: "extra_headers", run: func(t flagTB, env *TestEnv) {
+			model := env.SetupRouteWithFlags(protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, flagScenario(),
+				typ.RuleFlags{ExtraHeaders: map[string]string{
+					"X-Team-Tag":   "research",
+					"Http-Referer": "https://myapp.example",
+				}})
+			sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, model, false, nil, nil)
+			up := env.virtual.LastRequest(EndpointChat)
+			if up == nil {
+				t.Fatal("no upstream request captured")
+			}
+			for header, want := range map[string]string{
+				"X-Team-Tag":   "research",
+				"Http-Referer": "https://myapp.example",
+			} {
+				if got := up.Headers.Get(header); got != want {
+					t.Errorf("upstream %s = %q, want %q", header, got, want)
+				}
+			}
+		}},
+
 		// ── use_max_completion_tokens ────────────────────────────────────────
 		{key: "use_max_completion_tokens", run: func(t flagTB, env *TestEnv) {
 			model := env.SetupRouteWithFlags(protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, flagScenario(), typ.RuleFlags{UseMaxCompletionTokens: true})

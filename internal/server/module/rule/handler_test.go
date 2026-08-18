@@ -356,7 +356,7 @@ func TestCreateRule_NonTeamNoDefaultFlags(t *testing.T) {
 	if saved == nil {
 		t.Fatal("rule not found after create")
 	}
-	if saved.Flags != (typ.RuleFlags{}) {
+	if !saved.Flags.IsZero() {
 		t.Errorf("non-team rule should keep empty flags, got %+v", saved.Flags)
 	}
 }
