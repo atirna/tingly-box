@@ -29,7 +29,7 @@ func TestWithContext1MBeta(t *testing.T) {
 	})
 
 	t.Run("hint appends to empty", func(t *testing.T) {
-		ctx := typ.WithContext1M(context.Background())
+		ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{Context1M: true})
 		got := withContext1MBeta(ctx, nil)
 		if hasBeta(got, c1m) != 1 {
 			t.Errorf("context-1m not appended once: %v", got)
@@ -37,7 +37,7 @@ func TestWithContext1MBeta(t *testing.T) {
 	})
 
 	t.Run("hint dedupes when already present", func(t *testing.T) {
-		ctx := typ.WithContext1M(context.Background())
+		ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{Context1M: true})
 		got := withContext1MBeta(ctx, []anthropic.AnthropicBeta{c1m})
 		if hasBeta(got, c1m) != 1 {
 			t.Errorf("context-1m duplicated: %v", got)
@@ -46,7 +46,7 @@ func TestWithContext1MBeta(t *testing.T) {
 
 	t.Run("hint preserves other betas and appends", func(t *testing.T) {
 		other := anthropic.AnthropicBetaPromptCaching2024_07_31
-		ctx := typ.WithContext1M(context.Background())
+		ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{Context1M: true})
 		got := withContext1MBeta(ctx, []anthropic.AnthropicBeta{other})
 		if hasBeta(got, other) != 1 || hasBeta(got, c1m) != 1 {
 			t.Errorf("expected both betas once: %v", got)
@@ -58,7 +58,7 @@ func TestContext1MHeaderOpts(t *testing.T) {
 	if opts := context1MHeaderOpts(context.Background()); opts != nil {
 		t.Errorf("no hint should yield nil opts, got %d", len(opts))
 	}
-	ctx := typ.WithContext1M(context.Background())
+	ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{Context1M: true})
 	if opts := context1MHeaderOpts(ctx); len(opts) != 1 {
 		t.Errorf("hint should yield exactly one header opt, got %d", len(opts))
 	}

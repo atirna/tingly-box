@@ -75,13 +75,13 @@ func TestClaudeClient_ClaudeOrgID(t *testing.T) {
 	})
 
 	t.Run("auto sends the login-time org", func(t *testing.T) {
-		ctx := typ.WithClaudeOrgID(context.Background(), typ.ClaudeOrgIDAuto)
+		ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{ClaudeOrgID: typ.ClaudeOrgIDAuto})
 		send(t, ctx, newProvider())
 		assert.Equal(t, loginOrg, gotOrg)
 	})
 
 	t.Run("auto with no login-time org sends no header", func(t *testing.T) {
-		ctx := typ.WithClaudeOrgID(context.Background(), typ.ClaudeOrgIDAuto)
+		ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{ClaudeOrgID: typ.ClaudeOrgIDAuto})
 		p := newProvider()
 		p.OAuthDetail.ExtraFields = nil
 		send(t, ctx, p)
@@ -89,7 +89,7 @@ func TestClaudeClient_ClaudeOrgID(t *testing.T) {
 	})
 
 	t.Run("custom value replaces the login-time org", func(t *testing.T) {
-		ctx := typ.WithClaudeOrgID(context.Background(), customOrg)
+		ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{ClaudeOrgID: customOrg})
 		send(t, ctx, newProvider())
 		assert.Equal(t, customOrg, gotOrg)
 	})

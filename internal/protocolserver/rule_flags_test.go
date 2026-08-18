@@ -548,7 +548,7 @@ func TestResolveRuleFlagsWithScenario_AttachesClientUserAgent(t *testing.T) {
 			protocol.TypeAnthropicV1, protocol.TypeAnthropicV1, nil)
 
 		ctx := c.Request.Context()
-		if got := typ.GetCustomUserAgent(ctx); got != "Rule/2.0" {
+		if got := typ.GetRuleFlags(ctx).CustomUserAgent; got != "Rule/2.0" {
 			t.Errorf("custom UA in ctx = %q, want %q", got, "Rule/2.0")
 		}
 		// The override wins, so the client UA is redundant and not attached.
@@ -591,21 +591,26 @@ func TestResolveRuleFlagsWithScenario_CleanHeaderSuppressedForClaudeOAuth(t *tes
 	}
 }
 
-func TestApplyClaudeOrgID(t *testing.T) {
-	t.Run("attaches override to request context", func(t *testing.T) {
+func TestApplyRuleFlags(t *testing.T) {
+	t.Run("attaches the resolved flags to the request context", func(t *testing.T) {
 		c := newGinContext(t)
-		applyClaudeOrgID(c, typ.RuleFlags{ClaudeOrgID: "org-uuid"})
-		if got := typ.GetClaudeOrgID(c.Request.Context()); got != "org-uuid" {
+		applyRuleFlags(c, typ.RuleFlags{ClaudeOrgID: "org-uuid"})
+		if got := typ.GetRuleFlags(c.Request.Context()).ClaudeOrgID; got != "org-uuid" {
 			t.Errorf("claude org id in ctx = %q, want %q", got, "org-uuid")
 		}
 	})
 
-	t.Run("empty flag is a no-op", func(t *testing.T) {
+	t.Run("zero flags read back as zero", func(t *testing.T) {
 		c := newGinContext(t)
-		applyClaudeOrgID(c, typ.RuleFlags{})
-		if got := typ.GetClaudeOrgID(c.Request.Context()); got != "" {
-			t.Errorf("claude org id in ctx = %q, want empty", got)
+		applyRuleFlags(c, typ.RuleFlags{})
+		if got := typ.GetRuleFlags(c.Request.Context()); !got.IsZero() {
+			t.Errorf("flags in ctx = %+v, want zero value", got)
 		}
+	})
+
+	t.Run("nil request must not panic", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(nil)
+		applyRuleFlags(c, typ.RuleFlags{}) // must not panic
 	})
 }
 
@@ -617,7 +622,7 @@ func TestResolveRuleFlagsWithScenario_ClaudeOrgIDReachesContext(t *testing.T) {
 	if got.ClaudeOrgID != "org-uuid" {
 		t.Errorf("ClaudeOrgID = %q, want %q", got.ClaudeOrgID, "org-uuid")
 	}
-	if ctxVal := typ.GetClaudeOrgID(c.Request.Context()); ctxVal != "org-uuid" {
+	if ctxVal := typ.GetRuleFlags(c.Request.Context()).ClaudeOrgID; ctxVal != "org-uuid" {
 		t.Errorf("claude org id in ctx = %q, want %q", ctxVal, "org-uuid")
 	}
 }
@@ -629,7 +634,7 @@ func TestResolveRuleFlagsWithScenario_ExtraHeaders(t *testing.T) {
 	rule := &typ.Rule{Flags: typ.RuleFlags{ExtraHeaders: map[string]string{"X-Team-Tag": "research"}}}
 	ResolveRuleFlagsWithScenario(c, rule, typ.ScenarioOpenAI, &typ.ScenarioConfig{},
 		protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, nil)
-	got := typ.GetExtraHeaders(c.Request.Context())
+	got := typ.GetRuleFlags(c.Request.Context()).ExtraHeaders
 	if got["X-Team-Tag"] != "research" {
 		t.Errorf("ctx headers = %v, want rule extra_headers attached", got)
 	}
@@ -638,7 +643,7 @@ func TestResolveRuleFlagsWithScenario_ExtraHeaders(t *testing.T) {
 	c = newGinContext(t)
 	ResolveRuleFlagsWithScenario(c, &typ.Rule{}, typ.ScenarioOpenAI, &typ.ScenarioConfig{},
 		protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, nil)
-	if got := typ.GetExtraHeaders(c.Request.Context()); got != nil {
+	if got := typ.GetRuleFlags(c.Request.Context()).ExtraHeaders; got != nil {
 		t.Errorf("ctx headers = %v, want nil when the rule sets none", got)
 	}
 }

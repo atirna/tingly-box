@@ -74,8 +74,9 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 	//
 	// context-1m is NOT injected here: it's a request-body/header concern
 	// applied per-call in the Beta/Messages methods (withContext1MBeta /
-	// context1MHeaderOpts) from the typ.WithContext1M hint, so it reaches both
-	// this generic client and ClaudeClient without a dedicated transport.
+	// context1MHeaderOpts) from the resolved rule flags (typ.GetRuleFlags), so
+	// it reaches both this generic client and ClaudeClient without a dedicated
+	// transport.
 	//
 	// Note: Claude Code OAuth providers never reach this constructor —
 	// ClientPool.GetAnthropicClient routes them to NewClaudeClient. So the
@@ -88,14 +89,14 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 		// same guarantee as the non-OAuth path below.
 		transport = createSessionBoundTransport(provider, sessionID)
 	} else {
-		// Generic non-OAuth Anthropic provider. A single userAgentTransport
-		// resolves the same fixed precedence as the generic OpenAI client
-		// (rule/scenario custom_user_agent > inbound client UA > SDK default) in
-		// one place. There is deliberately no provider-level UA layer
-		// (see .design/user-agent.md). OAuth issuers above keep their dedicated
-		// transport chain unchanged because vendor-specific round-trippers pin
-		// the handshake UA themselves — that pin is decisive and must not be
-		// overwritten by the rule or client UA.
+		// Generic non-OAuth Anthropic provider. The single ruleFlagTransport
+		// resolves the same fixed UA precedence as the generic OpenAI client
+		// (rule/scenario custom_user_agent > inbound client UA > SDK default)
+		// and applies extra_headers on api_key providers. There is deliberately
+		// no provider-level UA layer (see .design/user-agent.md). OAuth issuers
+		// above keep their dedicated transport chain unchanged because
+		// vendor-specific round-trippers pin the handshake UA themselves — that
+		// pin is decisive and must not be overwritten by the rule or client UA.
 		//
 		// Use the transport pool instead of http.DefaultTransport so that env
 		// proxy variables (HTTP_PROXY / HTTPS_PROXY) are not inherited when no
@@ -129,12 +130,11 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 
 // anthropicTransport builds the transport chain generic Anthropic providers
 // use: pooled session-bound base (provider proxy_url honored, env proxy not
-// inherited), UA resolution, logging. Shared with the Vertex path, which must
+// inherited), rule-flag layer, logging. Shared with the Vertex path, which must
 // rebuild this chain under its OAuth transport (see vertexAnthropicOptions).
 func anthropicTransport(provider *typ.Provider, model string, sessionID typ.SessionID) http.RoundTripper {
 	base := GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID)
-	var transport http.RoundTripper = &userAgentTransport{base: base}
-	return wrapWithLogging(transport, provider)
+	return wrapWithLogging(wrapWithRuleFlags(base, provider, true), provider)
 }
 
 // ProviderType returns the provider type
@@ -161,14 +161,16 @@ func (c *AnthropicClient) HttpClient() *http.Client {
 }
 
 // withContext1MBeta appends Anthropic's context-1m beta to a beta request's
-// Betas when the request context carries the 1M hint (typ.WithContext1M, set by
-// the gateway from the context_1m rule / [1m] alias). Deduped, so a client that
+// Betas when the request's resolved rule flags carry Context1M (set by the
+// gateway from the context_1m rule / [1m] alias). Deduped, so a client that
 // already sent it is left untouched. The SDK serializes Betas into the
 // anthropic-beta header via WithHeaderAdd *after* the client's base options, so
 // this also reaches ClaudeClient — its static anthropic-beta header gets the
-// value appended. No transport needed.
+// value appended. Deliberately consumed at the SDK layer, not in
+// ruleFlagTransport: the Claude OAuth vendor chain mounts no rule-flag
+// transport, and this is the one flag that must reach it.
 func withContext1MBeta(ctx context.Context, betas []anthropic.AnthropicBeta) []anthropic.AnthropicBeta {
-	if !typ.GetContext1M(ctx) {
+	if !typ.GetRuleFlags(ctx).Context1M {
 		return betas
 	}
 	for _, b := range betas {
@@ -181,9 +183,9 @@ func withContext1MBeta(ctx context.Context, betas []anthropic.AnthropicBeta) []a
 
 // context1MHeaderOpts carries the context-1m beta via the anthropic-beta header
 // for the non-beta Messages API, whose params have no Betas field. No-op
-// without the 1M hint.
+// without the 1M flag.
 func context1MHeaderOpts(ctx context.Context) []anthropicOption.RequestOption {
-	if !typ.GetContext1M(ctx) {
+	if !typ.GetRuleFlags(ctx).Context1M {
 		return nil
 	}
 	return []anthropicOption.RequestOption{anthropicOption.WithHeaderAdd("anthropic-beta", AnthropicContext1m)}

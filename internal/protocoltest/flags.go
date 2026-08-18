@@ -287,7 +287,7 @@ func ruleFlagCases() []flagCase {
 			const ua = "HarnessFlagUA/9.9"
 			model := env.SetupRouteWithFlags(protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, flagScenario(), typ.RuleFlags{CustomUserAgent: ua})
 			// Streaming path: the custom UA rides c.Request.Context() into the
-			// forward context, which the OpenAI client's userAgentTransport
+			// forward context, which the OpenAI client's ruleFlagTransport
 			// reads. (The non-streaming openai_chat path builds its forward
 			// context with a nil baseCtx, so the UA override does not propagate
 			// there — tracked separately.)
