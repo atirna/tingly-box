@@ -5,8 +5,13 @@ import (
 	"time"
 )
 
+// window builds a fixture defaulting to Kind: WindowKindLimit — most tests
+// in this file model an ordinary periodic allowance. Production code has no
+// such default (Kind must be tagged explicitly by the fetcher); tests that
+// need a resource or an untagged window override via opts (see
+// unclassified()) or build a literal UsageWindow directly.
 func window(pct float64, minutes int, opts ...func(*UsageWindow)) *UsageWindow {
-	w := &UsageWindow{UsedPercent: pct, WindowMinutes: minutes, Limit: 100, Used: pct}
+	w := &UsageWindow{Kind: WindowKindLimit, UsedPercent: pct, WindowMinutes: minutes, Limit: 100, Used: pct}
 	for _, opt := range opts {
 		opt(w)
 	}
@@ -15,6 +20,12 @@ func window(pct float64, minutes int, opts ...func(*UsageWindow)) *UsageWindow {
 
 func labelled(label string) func(*UsageWindow) {
 	return func(w *UsageWindow) { w.Label = label }
+}
+
+// unclassified sets Kind to WindowKindUnknown, simulating a fetcher that
+// never tagged the window.
+func unclassified() func(*UsageWindow) {
+	return func(w *UsageWindow) { w.Kind = WindowKindUnknown }
 }
 
 func TestPctTakesTheTightestWindow(t *testing.T) {
@@ -174,12 +185,36 @@ func TestBreakdownsDoNotAnswerForTheProvider(t *testing.T) {
 	}
 }
 
-func TestKindDefaultsToLimit(t *testing.T) {
-	if got := (&UsageWindow{}).EffectiveKind(); got != WindowKindLimit {
-		t.Fatalf("EffectiveKind() = %q; want %q", got, WindowKindLimit)
+func TestUnclassifiedKindDoesNotRecoverOnItsOwn(t *testing.T) {
+	// No default: a window nobody explicitly tagged Kind: WindowKindLimit
+	// must not promise a recovery time, same treatment as a resource.
+	expires := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(90, 300, unclassified(), func(w *UsageWindow) { w.ResetsAt = &expires }),
+	}}
+
+	if got := usage.RecoversAt(); got != nil {
+		t.Fatalf("RecoversAt() = %v; want nil for an untagged window", got)
 	}
-	if got := (&UsageWindow{Kind: WindowKindResource}).EffectiveKind(); got != WindowKindResource {
-		t.Fatalf("EffectiveKind() = %q; want %q", got, WindowKindResource)
+	// Pct() still counts it — only the "will it come back" claim is withheld.
+	if pct, ok := usage.Pct(); !ok || pct != 90 {
+		t.Fatalf("Pct() = %v, %v; want 90, true", pct, ok)
+	}
+}
+
+func TestUnclassifiedKindDoesNotJumpTheDisplayQueue(t *testing.T) {
+	// An untagged window must not outrank an explicitly-tagged limit window
+	// on the strength of a shorter period — the Kind tag gates the group,
+	// period only breaks ties within it.
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(50, 100, unclassified(), labelled("untagged-short")),
+		window(50, 500, labelled("tagged-limit")),
+	}}
+
+	usage.NormalizeWindows()
+
+	if got := usage.Windows[0].Label; got != "tagged-limit" {
+		t.Fatalf("first window = %q; want tagged-limit — an untagged window must not outrank a tagged one", got)
 	}
 }
 
@@ -230,8 +265,8 @@ func TestBalanceDefaultsToResource(t *testing.T) {
 		Type: WindowTypeBalance, Used: 30, Limit: 100, ResetsAt: &reset,
 	})
 
-	if w.EffectiveKind() != WindowKindResource {
-		t.Errorf("EffectiveKind() = %q; want resource", w.EffectiveKind())
+	if w.Kind != WindowKindResource {
+		t.Errorf("Kind = %q; want resource", w.Kind)
 	}
 	if usage.RecoversAt() != nil {
 		t.Error("a balance must not report a recovery time")
@@ -265,6 +300,82 @@ func TestOrderingAndTieBreakAgreeOnUnsizedWindows(t *testing.T) {
 	usage.NormalizeWindows()
 	if got := usage.Windows[0].Key; got != "weekly" {
 		t.Errorf("first window = %q; want weekly — display must match the tie-break", got)
+	}
+}
+
+func TestPctFilteredByKindExcludesResourceWindows(t *testing.T) {
+	// A near-exhausted balance must not read as standard quota running out —
+	// callers like smart-routing's service_quota need to react only to
+	// self-healing allowances, not to something that needs a manual top-up.
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(95, 0, func(w *UsageWindow) { w.Kind = WindowKindResource }),
+	}}
+
+	if pct, ok := usage.Pct(WindowKindLimit); ok {
+		t.Fatalf("Pct(WindowKindLimit) = %v, %v; want unknown when only a resource window exists", pct, ok)
+	}
+}
+
+func TestPctFilteredByKindDoesNotDefaultUnsetKindToLimit(t *testing.T) {
+	// Filtering by WindowKindLimit requires an explicit tag — a fetcher that
+	// forgot to (or deliberately did not, e.g. Anthropic's pay-as-you-go
+	// overage add-on) mark a window Kind: WindowKindLimit must not silently
+	// count.
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(95, 300, unclassified(), labelled("untagged")),
+	}}
+
+	if pct, ok := usage.Pct(WindowKindLimit); ok {
+		t.Fatalf("Pct(WindowKindLimit) = %v, %v; want unknown for an untagged (Kind=\"\") window", pct, ok)
+	}
+	// Sanity check: the unfiltered Pct() does count it — only the filtered
+	// call is strict.
+	if pct, ok := usage.Pct(); !ok || pct != 95 {
+		t.Fatalf("Pct() = %v, %v; want 95, true", pct, ok)
+	}
+}
+
+func TestPctFilteredByKindTakesTheTightestMatchingWindow(t *testing.T) {
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(12, 300, func(w *UsageWindow) { w.Kind = WindowKindLimit; w.Label = "5h" }),
+		window(96, 10080, func(w *UsageWindow) { w.Kind = WindowKindLimit; w.Label = "7d" }),
+		window(99, 0, func(w *UsageWindow) { w.Kind = WindowKindResource }), // higher %, must be ignored
+	}}
+
+	pct, ok := usage.Pct(WindowKindLimit)
+	if !ok || pct != 96 {
+		t.Fatalf("Pct(WindowKindLimit) = %v, %v; want 96, true (resource window must not win)", pct, ok)
+	}
+}
+
+func TestTightestFilteredByKindLetsACallerSayWhichWindow(t *testing.T) {
+	// Pct(kind) quotes a bare number; Tightest(kind) is how a caller (e.g. a
+	// routing trace) says *which* window.
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(12, 300, func(w *UsageWindow) { w.Kind = WindowKindLimit; w.Label = "5h" }),
+		window(96, 10080, func(w *UsageWindow) { w.Kind = WindowKindLimit; w.Label = "7d" }),
+		window(99, 0, func(w *UsageWindow) { w.Kind = WindowKindResource; w.Label = "balance" }),
+	}}
+
+	got := usage.Tightest(WindowKindLimit)
+	if got == nil || got.Label != "7d" {
+		t.Fatalf("Tightest(WindowKindLimit) = %v; want the 7d window (99%% balance must be ignored)", got)
+	}
+}
+
+func TestTightestFilteredByKindNilWhenNothingIsTagged(t *testing.T) {
+	usage := &ProviderUsage{Windows: []*UsageWindow{
+		window(50, 300, unclassified()),
+		window(90, 0, func(w *UsageWindow) { w.Kind = WindowKindResource }),
+	}}
+
+	if got := usage.Tightest(WindowKindLimit); got != nil {
+		t.Fatalf("Tightest(WindowKindLimit) = %v; want nil when nothing is tagged Kind=limit", got)
+	}
+	// Unfiltered Tightest() still finds the resource window (90% > 50%) — a
+	// display caller should still see it, Kind doesn't gate this path.
+	if got := usage.Tightest(); got == nil || got.Kind != WindowKindResource {
+		t.Fatalf("Tightest() = %v; want the resource window", got)
 	}
 }
 

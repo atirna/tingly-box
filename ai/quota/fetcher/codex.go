@@ -132,6 +132,7 @@ func codexWindow(w *codexRateLimitWindow, typ quota.WindowType, label, descripti
 	resetsAt := time.Unix(w.ResetAt, 0)
 	return &quota.UsageWindow{
 		Type:          typ,
+		Kind:          quota.WindowKindLimit,  // recovers on its own; see Pct(WindowKindLimit)
 		Used:          float64(w.UsedPercent), // Normalize to 0-100 scale
 		Limit:         100,                    // Normalize to 0-100 scale
 		UsedPercent:   float64(w.UsedPercent),

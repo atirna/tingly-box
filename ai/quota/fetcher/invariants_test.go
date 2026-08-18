@@ -62,14 +62,14 @@ func checkWindow(t *testing.T, where string, w *quota.UsageWindow) {
 
 	// A resource is brought back by topping up, not by waiting, so a reset
 	// time on it would be read as a recovery that never happens.
-	if w.EffectiveKind() == quota.WindowKindResource && w.ResetsAt != nil {
+	if w.Kind == quota.WindowKindResource && w.ResetsAt != nil {
 		t.Errorf("%s: resource has ResetsAt set; a balance does not refill on its own", where)
 	}
 
 	// The direction that catches an omission: a balance left as an allowance
 	// would claim it refills, and RecoversAt would promise a recovery that
 	// never arrives.
-	if w.Type == quota.WindowTypeBalance && w.EffectiveKind() != quota.WindowKindResource {
+	if w.Type == quota.WindowTypeBalance && w.Kind != quota.WindowKindResource {
 		t.Errorf("%s: balance is not marked as a resource", where)
 	}
 

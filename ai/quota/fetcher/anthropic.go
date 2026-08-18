@@ -130,6 +130,7 @@ func (f *AnthropicFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*q
 	// Used/Limit normalized to 0-100 scale for unified frontend rendering
 	fiveHour := usage.AddWindow("five_hour", &quota.UsageWindow{
 		Type:          quota.WindowTypeSession,
+		Kind:          quota.WindowKindLimit, // recovers on its own; see Pct(WindowKindLimit)
 		Used:          apiResp.FiveHour.Utilization,
 		Limit:         100,
 		UsedPercent:   apiResp.FiveHour.Utilization,
@@ -143,6 +144,7 @@ func (f *AnthropicFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*q
 	// Used/Limit normalized to 0-100 scale for unified frontend rendering
 	sevenDay := usage.AddWindow("seven_day", &quota.UsageWindow{
 		Type:          quota.WindowTypeWeekly,
+		Kind:          quota.WindowKindLimit,
 		Used:          apiResp.SevenDay.Utilization,
 		Limit:         100,
 		UsedPercent:   apiResp.SevenDay.Utilization,
@@ -170,6 +172,12 @@ func (f *AnthropicFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*q
 		// A null utilization means the API did not say. Reporting it as 0%
 		// would tell the user the add-on is untouched — the opposite of what
 		// upstream conveyed.
+		//
+		// Kind deliberately left unset: this is pay-as-you-go overage, closer
+		// to a spend-more resource than a self-healing allowance, and
+		// Pct(WindowKindLimit) (smart-routing's service_quota) only counts
+		// windows explicitly tagged Kind: WindowKindLimit — leaving this
+		// untagged keeps it out rather than defaulting it in.
 		extra := &quota.UsageWindow{
 			Type:          quota.WindowTypeMonthly,
 			Unit:          quota.UsageUnitPercent,

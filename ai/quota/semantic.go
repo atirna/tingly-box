@@ -12,15 +12,6 @@ import (
 // can act on: how much is used, and when it comes back.
 // See .design/quota-semantics.md.
 
-// EffectiveKind reports the window kind, defaulting to WindowKindLimit for
-// windows written before the field existed.
-func (w *UsageWindow) EffectiveKind() WindowKind {
-	if w == nil || w.Kind == "" {
-		return WindowKindLimit
-	}
-	return w.Kind
-}
-
 // Percent returns the window's used percentage, falling back to used/limit for
 // windows that have not had UsedPercent filled in yet.
 func (w *UsageWindow) Percent() float64 {
@@ -52,8 +43,18 @@ func (w *UsageWindow) Countable() bool {
 //
 // Only Windows are considered. Breakdowns are scoped to one model or feature
 // and do not describe the provider as a whole.
-func (p *ProviderUsage) Pct() (float64, bool) {
-	w := p.Tightest()
+//
+// With no kinds given, every countable window is eligible regardless of Kind
+// — the display question, "how much pressure is on this account, from
+// whatever source": a resource (OpenRouter's key balance, KimiK2's only
+// window) is meant to win here just as readily as a periodic allowance.
+// Pass WindowKindLimit to instead answer the automated-decision question,
+// "what will recover on its own" (smart-routing's service_quota is the
+// first caller that needs this; see .design/quota-semantics.md §8.1) — a
+// window whose Kind isn't exactly one of the given values never matches, so
+// an unset Kind is excluded rather than assumed safe.
+func (p *ProviderUsage) Pct(kinds ...WindowKind) (float64, bool) {
+	w := p.Tightest(kinds...)
 	if w == nil {
 		return 0, false
 	}
@@ -61,16 +62,16 @@ func (p *ProviderUsage) Pct() (float64, bool) {
 }
 
 // Tightest returns the window Pct came from, so callers can say which window
-// is binding rather than just quoting a number. Ties go to the shorter window,
-// which is the more actionable one to show.
-func (p *ProviderUsage) Tightest() *UsageWindow {
+// is binding rather than just quoting a number. Ties go to the shorter
+// window, which is the more actionable one to show. See Pct for what kinds
+// filters.
+func (p *ProviderUsage) Tightest(kinds ...WindowKind) *UsageWindow {
 	if p == nil {
 		return nil
 	}
-
 	var best *UsageWindow
 	for _, w := range p.Windows {
-		if !w.Countable() {
+		if !w.Countable() || !matchesKind(w, kinds) {
 			continue
 		}
 		if best == nil || tighter(w, best) {
@@ -80,12 +81,31 @@ func (p *ProviderUsage) Tightest() *UsageWindow {
 	return best
 }
 
+// matchesKind reports whether w should be considered given a Pct/Tightest
+// kinds filter: no filter matches anything, otherwise w.Kind must equal one
+// of the given values exactly (no default — see the Kind field's doc in
+// types.go).
+func matchesKind(w *UsageWindow, kinds []WindowKind) bool {
+	if len(kinds) == 0 {
+		return true
+	}
+	for _, k := range kinds {
+		if w.Kind == k {
+			return true
+		}
+	}
+	return false
+}
+
 // RecoversAt returns when the binding window refills. It is nil when usage is
-// unknown, when the binding window is a resource (a top-up, not a reset, is
-// what brings it back), or when upstream did not report a reset time.
+// unknown, when the binding window is not explicitly tagged as a
+// self-healing allowance (Kind == WindowKindLimit — a resource needs a
+// top-up, not a reset, to come back, and an untagged window's ability to
+// self-heal is simply not established), or when upstream did not report a
+// reset time.
 func (p *ProviderUsage) RecoversAt() *time.Time {
 	w := p.Tightest()
-	if w == nil || w.EffectiveKind() == WindowKindResource {
+	if w == nil || w.Kind != WindowKindLimit {
 		return nil
 	}
 	return w.ResetsAt
@@ -147,14 +167,17 @@ func periodRank(w *UsageWindow) int {
 }
 
 // windowRank groups windows for display; within a group they order by period.
+// Rank 0 (self-healing allowances) requires an explicit Kind ==
+// WindowKindLimit tag — an untagged window is not assumed to belong there,
+// so it sorts alongside resources (rank 1) instead of jumping the queue.
 func windowRank(w *UsageWindow) int {
 	switch {
 	case !w.Countable():
 		return 2
-	case w.EffectiveKind() == WindowKindResource:
-		return 1
-	default:
+	case w.Kind == WindowKindLimit:
 		return 0
+	default:
+		return 1
 	}
 }
 

@@ -173,8 +173,8 @@ func TestCodexFetcher_Fetch(t *testing.T) {
 
 	// Verify credits balance: a resource with no percentage to report.
 	credits := findWindow(t, usage, "credits")
-	if credits.EffectiveKind() != quota.WindowKindResource {
-		t.Errorf("credits Kind = %q, want resource", credits.EffectiveKind())
+	if credits.Kind != quota.WindowKindResource {
+		t.Errorf("credits Kind = %q, want resource", credits.Kind)
 	}
 	if !credits.Unknown {
 		t.Error("credits balance has no percentage; it must be marked unknown")
@@ -585,8 +585,8 @@ func TestCodexFetcher_ResetCreditCarriesNoRecoveryTime(t *testing.T) {
 	checkInvariants(t, usage)
 
 	credit := findBreakdown(t, usage, "rc_1").Windows[0]
-	if credit.EffectiveKind() != quota.WindowKindResource {
-		t.Errorf("reset credit Kind = %q, want resource", credit.EffectiveKind())
+	if credit.Kind != quota.WindowKindResource {
+		t.Errorf("reset credit Kind = %q, want resource", credit.Kind)
 	}
 	if credit.ResetsAt != nil {
 		t.Error("a voucher does not refill on its own; ResetsAt must be nil")
