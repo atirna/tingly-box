@@ -45,11 +45,6 @@ func apiKeyProvider() *typ.Provider {
 	return &typ.Provider{UUID: "p1", AuthType: ai.AuthTypeAPIKey, Token: "sk-x"}
 }
 
-// flagsCtx attaches resolved RuleFlags the way the gateway's merge point does.
-func flagsCtx(flags typ.RuleFlags) context.Context {
-	return typ.WithRuleFlags(context.Background(), flags)
-}
-
 func newReq(t *testing.T, ctx context.Context, ua string) *http.Request {
 	t.Helper()
 	req, err := http.NewRequestWithContext(ctx, "GET", "http://example.test/v1/foo", nil)
@@ -88,7 +83,7 @@ func TestRuleFlagTransport_NoContextValue_PassesThrough(t *testing.T) {
 func TestRuleFlagTransport_RuleOverride(t *testing.T) {
 	cap := &captureTransport{}
 	wrapped := wrapWithRuleFlags(cap, apiKeyProvider(), true)
-	ctx := flagsCtx(typ.RuleFlags{CustomUserAgent: "RuleUA/1.0"})
+	ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{CustomUserAgent: "RuleUA/1.0"})
 	req := newReq(t, ctx, "sdk-default/1.0")
 
 	if _, err := wrapped.RoundTrip(req); err != nil {
@@ -161,7 +156,7 @@ func TestRuleFlagTransport_NoneSentinelStripsEvenWithClientUA(t *testing.T) {
 func TestRuleFlagTransport_DoesNotMutateOriginalRequest(t *testing.T) {
 	cap := &captureTransport{}
 	wrapped := wrapWithRuleFlags(cap, apiKeyProvider(), true)
-	ctx := flagsCtx(typ.RuleFlags{CustomUserAgent: "RuleUA/1.0"})
+	ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{CustomUserAgent: "RuleUA/1.0"})
 	req := newReq(t, ctx, "sdk-default/1.0")
 
 	if _, err := wrapped.RoundTrip(req); err != nil {
@@ -179,7 +174,7 @@ func TestRuleFlagTransport_EmptyFlagsAreNoOp(t *testing.T) {
 	wrapped := wrapWithRuleFlags(cap, apiKeyProvider(), true)
 	// Zero-value flags attached (the merge point attaches unconditionally), so
 	// an existing SDK UA header is left untouched.
-	ctx := flagsCtx(typ.RuleFlags{})
+	ctx := typ.WithRuleFlags(context.Background(), typ.RuleFlags{})
 	ctx = typ.WithClientUserAgent(ctx, "")
 	req := newReq(t, ctx, "sdk-default/1.0")
 
@@ -232,14 +227,7 @@ func TestRuleFlagTransport_NilInnerFallsBackToDefault(t *testing.T) {
 
 func newHeadersReq(t *testing.T, headers map[string]string) *http.Request {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, "https://upstream.example/v1/chat", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if headers != nil {
-		req = req.WithContext(typ.WithRuleFlags(req.Context(), typ.RuleFlags{ExtraHeaders: headers}))
-	}
-	return req
+	return newReq(t, typ.WithRuleFlags(context.Background(), typ.RuleFlags{ExtraHeaders: headers}), "")
 }
 
 func TestRuleFlagTransport_AppliesExtraHeaders(t *testing.T) {
@@ -258,6 +246,9 @@ func TestRuleFlagTransport_ExtraHeadersNonAPIKeyIsNoOp(t *testing.T) {
 	capture := &captureTransport{}
 	oauth := &typ.Provider{UUID: "p2", AuthType: ai.AuthTypeOAuth}
 	rt := wrapWithRuleFlags(capture, oauth, false)
+	if rt != http.RoundTripper(capture) {
+		t.Fatal("a chain where no flag can apply must get the inner transport unchanged")
+	}
 
 	// Even ctx-carried rule headers cannot reach a non-api_key chain.
 	if _, err := rt.RoundTrip(newHeadersReq(t, map[string]string{"X-Rule": "r"})); err != nil {

@@ -107,11 +107,9 @@ func ResolveRuleFlags(c *gin.Context, rule *typ.Rule) typ.RuleFlags {
 //  4. Provider-driven suppressions (CleanHeader is cleared for Claude OAuth providers;
 //     the billing header must reach Anthropic's billing backend unchanged).
 //
-// Side effect: it also attaches the resolved CustomUserAgent to the request
-// context (applyCustomUserAgent) so callers don't have to repeat that at each
-// handler. The User-Agent is the one rule flag that has to reach a deep
-// component (the outbound transport) via ctx, so this central merge point is
-// where it gets applied.
+// Side effect: it attaches the whole resolved flag set to the request context
+// (applyRuleFlags) plus the inbound client UA fallback (applyClientUserAgent),
+// so no handler repeats either.
 func ResolveRuleFlagsWithScenario(
 	c *gin.Context,
 	rule *typ.Rule,
@@ -166,12 +164,10 @@ func ResolveRuleFlagsWithScenario(
 	// point; no handler applies anything itself.
 	applyRuleFlags(c, flags)
 
-	// Inbound client UA is a lower-precedence fallback (see applyClientUserAgent).
-	// Skip it when an override is set: the transport would ignore the client UA
-	// anyway, so attaching it is pure allocation.
-	if flags.CustomUserAgent == "" {
-		applyClientUserAgent(c)
-	}
+	// The inbound client UA is attached unconditionally; ruleFlagTransport is
+	// the sole arbiter of the UA precedence (custom_user_agent > client UA >
+	// SDK default), so no precedence judgment is duplicated here.
+	applyClientUserAgent(c)
 
 	return flags
 }
@@ -190,7 +186,6 @@ func applyRuleFlags(c *gin.Context, flags typ.RuleFlags) {
 // can forward it upstream. Only the generic pass-through clients wire that
 // transport; vendor-specialized paths never read it, keeping their pinned UA
 // decisive. No-op when the client sent no User-Agent (SDK default stands).
-// The caller only invokes this when no custom_user_agent override is set.
 func applyClientUserAgent(c *gin.Context) {
 	if c == nil || c.Request == nil {
 		return

@@ -61,9 +61,8 @@ func NewGoogleClient(provider *typ.Provider, model string, sessionID typ.Session
 	}
 
 	httpClient := &http.Client{
-		// Rule-flag layer without UA resolution: extra_headers apply on
-		// api_key Google providers; the generic Google path has never
-		// forwarded rule/client UA, so resolveUA stays false.
+		// resolveUA=false: the generic Google path has never forwarded
+		// rule/client UA.
 		Transport: wrapWithLogging(wrapWithRuleFlags(transport, provider, false), provider),
 		Timeout:   timeout,
 	}

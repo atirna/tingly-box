@@ -356,8 +356,10 @@ description 里，逐路径对照见 `.design/user-agent.md` §3。
 `ResolveRuleFlagsWithScenario` 统一调用）把解析后的 RuleFlags（含 CustomUserAgent）与
 client UA 写进 `c.Request.Context()`（对**所有**请求，无论 scenario/provider），但 UA
 只在 transport 链里**有** `ruleFlagTransport`（且 resolveUA=true）的 client 上生效——它读 `req.Context()` 的两个候选值并按固定优先级
-取胜者。`ruleFlagTransport` 只在两处接入：通用 `NewOpenAIClient`（openai.go）与通用
-非-OAuth Anthropic 分支（anthropic.go else）。vendor 路径（Codex / Kimi 等）虽然内部复用
+取胜者。`ruleFlagTransport` 有三个挂载点（权威清单见 `wrapWithRuleFlags` 的 doc
+comment）：通用 `NewOpenAIClient`（openai.go）与通用非-OAuth Anthropic 分支
+（anthropic.go，Vertex 复用）为 resolveUA=true；`NewGoogleClient`（google.go）为
+resolveUA=false（仅 extra_headers，不碰 UA）。vendor 路径（Codex / Kimi 等）虽然内部复用
 `NewOpenAIClient`，但用 `extraOptions` 里自带的 `WithHTTPClient`（含 `codexRoundTripper` /
 `kimiRoundTripper`，**不含** `ruleFlagTransport`）在 SDK option 末尾覆盖掉通用 httpClient
 （"extra 最后应用"）；Gemini / Antigravity / Claude OAuth 自建 transport 链。所以即便 ctx

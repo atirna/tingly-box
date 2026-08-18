@@ -192,8 +192,17 @@ func setProbeUpstreamHeaders(c *gin.Context, reqCtx *transform.TransformContext,
 		}
 	}
 	if rule != nil {
-		if flags := formatAppliedFlags(rule.Flags); flags != "" {
-			c.Header("X-Tingly-Applied-Flags", flags)
+		// Prefer the resolved flag set (scenario inheritance and provider
+		// suppressions applied) — that is what actually drives the request.
+		// Every handler resolves before dispatch; the raw rule.Flags fallback
+		// only covers a path that skipped the merge, where it matches the old
+		// behavior of this header.
+		flags := typ.GetRuleFlags(c.Request.Context())
+		if flags.IsZero() {
+			flags = rule.Flags
+		}
+		if formatted := formatAppliedFlags(flags); formatted != "" {
+			c.Header("X-Tingly-Applied-Flags", formatted)
 		}
 	}
 }

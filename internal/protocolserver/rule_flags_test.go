@@ -521,10 +521,10 @@ func TestApplyClientUserAgent_NilRequestIsNoOp(t *testing.T) {
 }
 
 // TestResolveRuleFlagsWithScenario_AttachesClientUserAgent verifies the single
-// merge point forwards the inbound client UA into the request context (which the
-// generic transport later reads) — but only as a fallback: when a
-// custom_user_agent override is set, the client UA is not attached, since the
-// transport would ignore it.
+// merge point forwards the inbound client UA into the request context
+// unconditionally — ruleFlagTransport is the sole arbiter of the UA
+// precedence, so the merge point attaches both candidates and takes no
+// precedence decision of its own.
 func TestResolveRuleFlagsWithScenario_AttachesClientUserAgent(t *testing.T) {
 	t.Run("inbound UA attached when no explicit override", func(t *testing.T) {
 		c := newGinContext(t)
@@ -539,7 +539,7 @@ func TestResolveRuleFlagsWithScenario_AttachesClientUserAgent(t *testing.T) {
 		}
 	})
 
-	t.Run("override wins and client UA is not attached", func(t *testing.T) {
+	t.Run("override and client UA are both attached", func(t *testing.T) {
 		c := newGinContext(t)
 		c.Request.Header.Set("User-Agent", "cherry-studio/1.2")
 		rule := &typ.Rule{Flags: typ.RuleFlags{CustomUserAgent: "Rule/2.0"}}
@@ -551,9 +551,10 @@ func TestResolveRuleFlagsWithScenario_AttachesClientUserAgent(t *testing.T) {
 		if got := typ.GetRuleFlags(ctx).CustomUserAgent; got != "Rule/2.0" {
 			t.Errorf("custom UA in ctx = %q, want %q", got, "Rule/2.0")
 		}
-		// The override wins, so the client UA is redundant and not attached.
-		if got := typ.GetClientUserAgent(ctx); got != "" {
-			t.Errorf("client UA in ctx = %q, want empty (override present)", got)
+		// Both candidates ride the ctx; the transport resolves the precedence
+		// (override wins there — pinned by TestRuleFlagTransport_RuleWinsOverClient).
+		if got := typ.GetClientUserAgent(ctx); got != "cherry-studio/1.2" {
+			t.Errorf("client UA in ctx = %q, want %q", got, "cherry-studio/1.2")
 		}
 	})
 }

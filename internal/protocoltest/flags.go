@@ -299,6 +299,19 @@ func ruleFlagCases() []flagCase {
 					t.Errorf("streaming=%v: upstream User-Agent = %q, want %q", streaming, got, ua)
 				}
 			}
+
+			// Anthropic chain: pins the ruleFlagTransport mount inside
+			// anthropicTransport — a wire-level guard against a future edit
+			// dropping the wrap from that constructor.
+			model = env.SetupRouteWithFlags(protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, flagScenario(), typ.RuleFlags{CustomUserAgent: ua})
+			sendFlag(t, env, protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, model, false, nil, nil)
+			up := env.virtual.LastRequest(EndpointAnthropic)
+			if up == nil {
+				t.Fatal("no anthropic upstream request captured")
+			}
+			if got := up.Headers.Get("User-Agent"); got != ua {
+				t.Errorf("anthropic chain: upstream User-Agent = %q, want %q", got, ua)
+			}
 		}},
 
 		// ── extra_headers ────────────────────────────────────────────────────
@@ -322,6 +335,17 @@ func ruleFlagCases() []flagCase {
 				if got := up.Headers.Get(header); got != want {
 					t.Errorf("upstream %s = %q, want %q", header, got, want)
 				}
+			}
+
+			// Anthropic chain: pins the ruleFlagTransport mount inside
+			// anthropicTransport (see the custom_user_agent case).
+			model = env.SetupRouteWithFlags(protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, flagScenario(),
+				typ.RuleFlags{ExtraHeaders: map[string]string{"X-Team-Tag": "research"}})
+			sendFlag(t, env, protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, model, false, nil, nil)
+			if up := env.virtual.LastRequest(EndpointAnthropic); up == nil {
+				t.Fatal("no anthropic upstream request captured")
+			} else if got := up.Headers.Get("X-Team-Tag"); got != "research" {
+				t.Errorf("anthropic chain: upstream X-Team-Tag = %q, want research", got)
 			}
 		}},
 

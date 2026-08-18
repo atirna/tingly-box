@@ -166,9 +166,8 @@ func (c *AnthropicClient) HttpClient() *http.Client {
 // already sent it is left untouched. The SDK serializes Betas into the
 // anthropic-beta header via WithHeaderAdd *after* the client's base options, so
 // this also reaches ClaudeClient — its static anthropic-beta header gets the
-// value appended. Deliberately consumed at the SDK layer, not in
-// ruleFlagTransport: the Claude OAuth vendor chain mounts no rule-flag
-// transport, and this is the one flag that must reach it.
+// value appended. Consumed at the SDK layer, not in a transport — see the
+// ruleFlagTransport doc for why.
 func withContext1MBeta(ctx context.Context, betas []anthropic.AnthropicBeta) []anthropic.AnthropicBeta {
 	if !typ.GetRuleFlags(ctx).Context1M {
 		return betas

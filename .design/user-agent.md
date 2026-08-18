@@ -166,8 +166,10 @@ UA,`none` 依旧 strip 掉——显式 strip 是通用链里最高优先的意�
   统一调用)对**所有**请求把解析后的 RuleFlags(含 CustomUserAgent)与 client UA 写进
   `c.Request.Context()`,但它们只在传输链里**有** `ruleFlagTransport`(且 resolveUA=true)
   的 client 上被读取。
-- `ruleFlagTransport` **只**接入通用 `NewOpenAIClient`(openai.go)与通用非-OAuth
-  Anthropic 分支(anthropic.go else)。
+- `ruleFlagTransport` 带 resolveUA=true **只**接入通用 `NewOpenAIClient`(openai.go)与
+  通用非-OAuth Anthropic 分支(anthropic.go else)。第三个挂载点 `NewGoogleClient`
+  (google.go)为 resolveUA=false,只应用 extra_headers、不碰 UA(权威挂载清单见
+  `wrapWithRuleFlags` 的 doc comment)。
 - vendor 链虽内部复用 `NewOpenAIClient`(Kimi / Codex),但用 `extraOptions` 里自带的
   `WithHTTPClient`(含 `kimiRoundTripper` / `codexRoundTripper`,**不含** `ruleFlagTransport`)
   在 SDK option 末尾覆盖掉通用 httpClient("extra 最后应用");Gemini / Antigravity /

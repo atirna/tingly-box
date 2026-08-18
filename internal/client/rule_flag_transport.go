@@ -28,19 +28,34 @@ import (
 // the Claude OAuth chain, and claude_org_id is resolved at client
 // construction (claude_client.go).
 type ruleFlagTransport struct {
-	inner    http.RoundTripper
-	provider *typ.Provider
+	inner http.RoundTripper
 	// resolveUA marks a generic pass-through chain: resolve the UA precedence
 	// (rule/scenario custom_user_agent > inbound client UA > SDK default) at
 	// this layer. Chains whose UA is owned elsewhere mount with false.
 	resolveUA bool
+	// applyExtraHeaders is the api_key release gate, decided once at wrap time
+	// (the provider is fixed for the transport's lifetime).
+	applyExtraHeaders bool
 }
 
 // wrapWithRuleFlags mounts the rule-flag layer on a client transport chain.
 // Mount it on pass-through chains only; vendor round-tripper chains stay
 // unwrapped so no rule flag can reach into a vendor handshake.
+//
+// Mount inventory (authoritative): NewOpenAIClient (openai.go, resolveUA=true),
+// anthropicTransport (anthropic.go non-OAuth branch, resolveUA=true; reused by
+// the Vertex chain), NewGoogleClient (google.go, resolveUA=false). Nothing
+// else mounts it.
+//
+// Returns inner unchanged when no flag can ever apply on this chain
+// (non-api_key provider and no UA resolution) — same zero-cost no-op the old
+// per-flag wrappers provided.
 func wrapWithRuleFlags(inner http.RoundTripper, provider *typ.Provider, resolveUA bool) http.RoundTripper {
-	return &ruleFlagTransport{inner: inner, provider: provider, resolveUA: resolveUA}
+	applyExtraHeaders := provider != nil && provider.IsAPIKey()
+	if !resolveUA && !applyExtraHeaders {
+		return inner
+	}
+	return &ruleFlagTransport{inner: inner, resolveUA: resolveUA, applyExtraHeaders: applyExtraHeaders}
 }
 
 func (t *ruleFlagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -55,7 +70,7 @@ func (t *ruleFlagTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	// extra_headers: api_key providers only. Applied verbatim — user-driven
 	// config, no filtering.
 	var extra map[string]string
-	if t.provider != nil && t.provider.IsAPIKey() {
+	if t.applyExtraHeaders {
 		extra = flags.ExtraHeaders
 	}
 
