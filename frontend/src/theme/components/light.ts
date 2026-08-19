@@ -61,6 +61,11 @@ export const lightComponents: ThemeOptions['components'] = {
         borderRadius: 6,
         backgroundColor: 'transparent',
         transition: 'background-color 120ms ease, border-color 120ms ease',
+        // MUI keeps adornment icons at 24px inside size="small" inputs, which
+        // visually inflates the field — shrink them app-wide at the theme level.
+        '&.MuiInputBase-sizeSmall .MuiInputAdornment-root .MuiSvgIcon-root': {
+          fontSize: 20,
+        },
         '& .MuiOutlinedInput-notchedOutline': { borderColor: '#d1d5db' },
         '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#9ca3af' },
         '&.Mui-focused .MuiOutlinedInput-notchedOutline': {

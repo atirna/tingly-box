@@ -2,16 +2,14 @@ import { AddCircleOutline as AddCircleOutlineIcon } from '@/components/icons';
 import { NavigateBefore as NavigateBeforeIcon } from '@/components/icons';
 import { NavigateNext as NavigateNextIcon } from '@/components/icons';
 import { Refresh as RefreshIcon } from '@/components/icons';
-import { Search as SearchIcon } from '@/components/icons';
 import { BugReport as BugReportIcon } from '@/components/icons';
+import { Edit as EditIcon } from '@/components/icons';
 import {
     Box,
     Button,
     CircularProgress,
     IconButton,
-    InputAdornment,
     Stack,
-    TextField,
     Typography,
     Divider,
 } from '@mui/material';
@@ -20,6 +18,7 @@ import type { Provider } from '@/types/provider';
 import type { ProviderQuota } from '@/types/quota';
 import { QuotaBarItem } from '@/components/credential/QuotaBarItem';
 import { useQuotaBars } from '@/components/credential/QuotaBarRow';
+import SearchField from '@/components/SearchField';
 import { getModelTypeInfo } from '@/utils/modelUtils';
 import { useCustomModels } from '@/hooks/useCustomModels';
 import { useProviderModels } from '@/hooks/useProviderModels';
@@ -83,6 +82,9 @@ export interface ModelsPanelProps {
     onModelSelect: (provider: Provider, model: string) => void;
     onCustomModelEdit: (provider: Provider, value?: string) => void;
     onCustomModelDelete: (provider: Provider, customModel: string) => void;
+    // Open the provider edit dialog for this provider. Omitted on surfaces
+    // that don't support credential editing — the button is hidden then.
+    onProviderEdit?: (provider: Provider) => void;
 }
 
 export function ModelsPanel({
@@ -94,6 +96,7 @@ export function ModelsPanel({
     onModelSelect,
     onCustomModelEdit,
     onCustomModelDelete,
+    onProviderEdit,
 }: ModelsPanelProps) {
     const { customModels } = useCustomModels();
     const { providerModels, refreshingProviders, refreshModels, fetchModels } = useProviderModels();
@@ -243,28 +246,42 @@ export function ModelsPanel({
                     }}>
                         <Button
                             variant="outlined"
+                            size="small"
                             startIcon={<AddCircleOutlineIcon />}
                             onClick={() => onCustomModelEdit(provider)}
-                            sx={{ height: 40, minWidth: 100 }}
+                            sx={{ minWidth: 100 }}
                         >
                             Custom Model
                         </Button>
                         <Button
                             variant="outlined"
+                            size="small"
                             startIcon={isRefreshing ? <CircularProgress size={16} /> : <RefreshIcon />}
                             onClick={() => refreshModels(provider.uuid)}
                             disabled={isRefreshing}
-                            sx={{ height: 40, minWidth: 100 }}
+                            sx={{ minWidth: 100 }}
                         >
                             {isRefreshing ? 'Fetching...' : 'Refresh'}
                         </Button>
+                        {onProviderEdit && (
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<EditIcon />}
+                                onClick={() => onProviderEdit(provider)}
+                                sx={{ minWidth: 100 }}
+                            >
+                                Edit Provider
+                            </Button>
+                        )}
                         {import.meta.env.DEV && (
                             <Button
                                 variant="outlined"
+                                size="small"
                                 color="warning"
                                 startIcon={<BugReportIcon />}
                                 onClick={handleDevTestRemoveModels}
-                                sx={{ height: 40, minWidth: 100 }}
+                                sx={{ minWidth: 100 }}
                                 title="Dev: Randomly mark some models as 'new' for testing"
                             >
                                 Test New
@@ -273,20 +290,10 @@ export function ModelsPanel({
                     </Stack>
 
                     {/* Search box */}
-                    <TextField
-                        size="small"
+                    <SearchField
                         placeholder="Search models..."
                         value={searchTerms[provider.uuid] || ''}
                         onChange={(e) => handleSearchChange(provider.uuid, e.target.value)}
-                        slotProps={{
-                            input: {
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon />
-                                    </InputAdornment>
-                                ),
-                            },
-                        }}
                         sx={{ width: 200 }}
                     />
                 </Stack>

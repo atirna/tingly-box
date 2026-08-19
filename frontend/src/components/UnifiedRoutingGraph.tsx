@@ -85,10 +85,10 @@ export interface UnifiedRoutingGraphProps {
 
     // Callbacks
     onUpdateRecord?: (field: keyof ConfigRecord, value: any) => void;
-    onProviderNodeClick?: (providerUuid: string) => void;
+    onServiceNodeClick?: (serviceUuid: string) => void;
     onEditProvider?: (providerUuid: string) => void;
-    onTierChange?: (providerUuid: string, tier: number) => void;
-    onDeleteProvider?: (providerUuid: string) => void;
+    onTierChange?: (serviceUuid: string, tier: number) => void;
+    onDeleteService?: (serviceUuid: string) => void;
     onAddService?: (tier?: number) => void;
     onToggleExpanded?: () => void;
 
@@ -176,10 +176,10 @@ export const UnifiedRoutingGraph: React.FC<UnifiedRoutingGraphProps> = ({
                                                                             collapsible = false,
                                                                             guideMode = false,
                                                                             onUpdateRecord,
-                                                                            onProviderNodeClick,
+                                                                            onServiceNodeClick,
                                                                             onEditProvider,
                                                                             onTierChange,
-                                                                            onDeleteProvider,
+                                                                            onDeleteService,
                                                                             onAddService,
                                                                             onToggleExpanded,
                                                                             onAddSmartRule,
@@ -341,8 +341,8 @@ export const UnifiedRoutingGraph: React.FC<UnifiedRoutingGraphProps> = ({
                                 scenario={record.scenario}
                                 providersData={providers}
                                 active={active && p.active !== false}
-                                onDelete={() => onDeleteProvider?.(p.uuid)}
-                                onNodeClick={() => onProviderNodeClick?.(p.uuid)}
+                                onDelete={() => onDeleteService?.(p.uuid)}
+                                onNodeClick={() => onServiceNodeClick?.(p.uuid)}
                                 onEditProvider={onEditProvider}
                                 showTier={false}
                                 forceShowActions={shouldShowActions ?? (hoveredTier === group.tier)}
@@ -365,7 +365,7 @@ export const UnifiedRoutingGraph: React.FC<UnifiedRoutingGraphProps> = ({
                 })}
             </Box>
         );
-    }, [t, tierGroups, active, saving, record.providers.length, getApiStyle, providers, onDeleteProvider, onProviderNodeClick, onEditProvider, onTierChange, onAddService, hoveredTier, guideMode, handleShowGuide]);
+    }, [t, tierGroups, active, saving, record.providers.length, getApiStyle, providers, onDeleteService, onServiceNodeClick, onEditProvider, onTierChange, onAddService, hoveredTier, guideMode, handleShowGuide]);
 
     // Render smart rules section
     const renderSmartRules = () => {
@@ -409,7 +409,7 @@ export const UnifiedRoutingGraph: React.FC<UnifiedRoutingGraphProps> = ({
                                                 providersData={providers}
                                                 active={active && service.active !== false}
                                                 onDelete={() => onDeleteServiceFromSmartRule?.(rule.uuid, service.uuid)}
-                                                onNodeClick={() => onProviderNodeClick?.(service.provider)}
+                                                onNodeClick={() => onServiceNodeClick?.(service.uuid)}
                                                 onEditProvider={onEditProvider}
                                             />
                                         ))}

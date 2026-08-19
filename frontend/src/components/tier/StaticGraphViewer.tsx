@@ -60,9 +60,9 @@ export const StaticGraphViewer: React.FC<StaticGraphViewerProps> = ({
 
     // Create demo callbacks that do nothing
     const handleUpdateRecord = () => {};
-    const handleProviderNodeClick = () => {};
+    const handleServiceNodeClick = () => {};
     const handleTierChange = () => {};
-    const handleDeleteProvider = () => {};
+    const handleDeleteService = () => {};
     const handleAddService = () => {};
     const handleAddSmartRule = () => {};
     const handleEditSmartRule = () => {};
@@ -93,9 +93,9 @@ export const StaticGraphViewer: React.FC<StaticGraphViewerProps> = ({
                 guideMode={true}
                 autoScroll={true}
                 onUpdateRecord={handleUpdateRecord}
-                onProviderNodeClick={handleProviderNodeClick}
+                onServiceNodeClick={handleServiceNodeClick}
                 onTierChange={handleTierChange}
-                onDeleteProvider={handleDeleteProvider}
+                onDeleteService={handleDeleteService}
                 onAddService={handleAddService}
                 onAddSmartRule={handleAddSmartRule}
                 onEditSmartRule={handleEditSmartRule}

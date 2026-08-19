@@ -56,7 +56,7 @@ export interface RuleCardProps {
     onProviderModelsChange?: (providerUuid: string, models: ProviderModelData) => void;
     onRefreshProvider?: (providerUuid: string) => void;
     onProviderUpdated?: (providerUuid: string) => void | Promise<void>;
-    onModelSelectOpen: (ruleUuid: string, configRecord: ConfigRecord, mode: 'edit' | 'add', providerUuid?: string, addTier?: number) => void;
+    onModelSelectOpen: (ruleUuid: string, configRecord: ConfigRecord, mode: 'edit' | 'add', serviceUuid?: string, addTier?: number) => void;
     collapsible?: boolean;
     initiallyExpanded?: boolean;
     allowDeleteRule?: boolean;
@@ -179,11 +179,13 @@ export const RuleCard: React.FC<RuleCardProps> = ({
         [configRecord, updateField]
     );
 
-    // Handler: Provider node click
-    const handleProviderNodeClick = useCallback(
-        (providerUuid: string) => {
+    // Handler: service node click — open the model-select dialog on that
+    // service's provider + model. The service uuid locates the entry being
+    // edited (the same provider may appear in multiple services).
+    const handleServiceNodeClick = useCallback(
+        (serviceUuid: string) => {
             if (configRecord) {
-                onModelSelectOpen(rule.uuid, configRecord, 'edit', providerUuid);
+                onModelSelectOpen(rule.uuid, configRecord, 'edit', serviceUuid);
             }
         },
         [configRecord, rule.uuid, onModelSelectOpen]
@@ -201,10 +203,10 @@ export const RuleCard: React.FC<RuleCardProps> = ({
     // updateField re-compacts tiers on commit, so moving the last T0 service
     // down promotes the tiers below and moving past the bottom is a no-op.
     const handleProviderTierChange = useCallback(
-        async (providerUuid: string, tier: number) => {
+        async (serviceUuid: string, tier: number) => {
             if (!configRecord) return;
             const updated = configRecord.providers.map((p) =>
-                p.uuid === providerUuid ? { ...p, tier } : p,
+                p.uuid === serviceUuid ? { ...p, tier } : p,
             );
             await updateField(configRecord, setConfigRecord, 'providers', updated);
         },
@@ -345,10 +347,10 @@ export const RuleCard: React.FC<RuleCardProps> = ({
                 extraActions={extraActions}
                 extensionsCard={extensionsCard}
                 onUpdateRecord={(field, value) => updateField(configRecord, setConfigRecord, field, value)}
-                onProviderNodeClick={handleProviderNodeClick}
+                onServiceNodeClick={handleServiceNodeClick}
                 onEditProvider={editProvider}
                 onTierChange={handleProviderTierChange}
-                onDeleteProvider={(providerUuid) => handleDeleteProvider(configRecord.uuid, providerUuid)}
+                onDeleteService={(serviceUuid) => handleDeleteProvider(configRecord.uuid, serviceUuid)}
                 onAddService={handleAddServiceButtonClick}
                 onAddSmartRule={smartHandlers.handleAddSmartRule}
                 onEditSmartRule={smartHandlers.handleEditSmartRule}

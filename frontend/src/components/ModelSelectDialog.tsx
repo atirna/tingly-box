@@ -1,11 +1,13 @@
 import { Box } from '@mui/material';
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
+import { api } from '@/services/api';
 import { useCustomModels } from '@/hooks/useCustomModels';
 import { useProviderModels } from '@/hooks/useProviderModels';
 import { useGridLayout } from '@/hooks/useGridLayout';
 import { useProviderGroups } from '@/hooks/useProviderGroups';
 import { useModelSelection } from '@/hooks/useModelSelection';
 import { useRecentModels } from '@/hooks/useRecentModels';
+import { useProviderEditDialog } from '@/hooks/useProviderEditDialog';
 import { ModelSelectProvider, useModelSelectContext } from '@/contexts/ModelSelectContext';
 import type { Provider } from '@/types/provider';
 import { getModelTypeInfo } from '@/utils/modelUtils';
@@ -52,15 +54,41 @@ function ModelSelectTabInner({
         closeCustomModelDialog,
         customModelDialog,
         triggerRefresh,
+        showSnackbar,
     } = useModelSelectContext();
 
     const { handleModelSelect } = useModelSelection({ onSelected });
     const { recentModels, lastProvider } = useRecentModels();
 
+    // Providers edited through the in-dialog "Edit Provider" button. Callers
+    // own the providers prop and only refetch it on their own surfaces, so an
+    // edit (e.g. a rename) wouldn't show up here until the dialog reopens.
+    // Overlay the freshly-fetched record on the prop until the next refresh.
+    const [providerOverrides, setProviderOverrides] = useState<Record<string, Provider>>({});
+    const effectiveProviders = useMemo(
+        () => providers.map(p => providerOverrides[p.uuid] ?? p),
+        [providers, providerOverrides]
+    );
+
+    const handleProviderUpdated = useCallback(async (providerUuid: string) => {
+        const result = await api.getProvider(providerUuid);
+        if (result.success) {
+            setProviderOverrides(prev => ({ ...prev, [providerUuid]: result.data as Provider }));
+        }
+        // The edit may change api style/endpoint — refetch models for the tab.
+        fetchModels(providerUuid);
+        triggerRefresh();
+    }, [fetchModels, triggerRefresh]);
+
+    const { editProvider, providerEditDialogs } = useProviderEditDialog({
+        onUpdated: handleProviderUpdated,
+        showNotification: showSnackbar,
+    });
+
     const {
         groupedProviders,
         flattenedProviders,
-    } = useProviderGroups(providers, singleProvider);
+    } = useProviderGroups(effectiveProviders, singleProvider);
 
     // Use external activeTab if provided, otherwise use internal state.
     // Fallback chain to prevent flickering:
@@ -69,11 +97,16 @@ function ModelSelectTabInner({
     //   3. selectedProvider — lock onto the selected provider if a model is chosen
     //   4. lastProvider — remember the last chosen provider when nothing is selected
     //   5. first available provider — final default
-    const currentTab = externalActiveTab
+    // The winner must resolve to an existing provider: an absent (empty-string)
+    // or stale (deleted provider) reference would otherwise leave the right
+    // panel blank, so fall through to the first provider instead.
+    const requestedTab = externalActiveTab
         ?? internalCurrentTab
         ?? (selectedProvider && selectedModel ? selectedProvider : undefined)
-        ?? lastProvider
-        ?? flattenedProviders[0]?.uuid;
+        ?? (lastProvider || undefined);
+    const currentTab = flattenedProviders.some(p => p.uuid === requestedTab)
+        ? requestedTab
+        : flattenedProviders[0]?.uuid;
 
     const handleTabChange = useCallback(async (providerUuid: string) => {
         if (externalActiveTab === undefined) {
@@ -200,12 +233,16 @@ function ModelSelectTabInner({
                         onModelSelect={handleModelSelect}
                         onCustomModelEdit={handleCustomModelEdit}
                         onCustomModelDelete={handleDeleteCustomModel}
+                        onProviderEdit={(provider) => editProvider(provider.uuid)}
                     />
                 );
             })()}
 
             {/* Custom Model Dialog */}
             <CustomModelDialog onSave={handleCustomModelSave} />
+
+            {/* Provider edit dialogs (API-key form / OAuth detail) */}
+            {providerEditDialogs}
         </Box>
     );
 }

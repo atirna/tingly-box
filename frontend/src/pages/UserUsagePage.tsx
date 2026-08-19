@@ -8,7 +8,6 @@ import {
     CircularProgress,
     Grid,
     IconButton,
-    InputAdornment,
     Paper,
     Skeleton,
     Stack,
@@ -20,7 +19,6 @@ import {
     TablePagination,
     TableRow,
     TableSortLabel,
-    TextField,
     ToggleButton,
     ToggleButtonGroup,
     Tooltip,
@@ -37,11 +35,11 @@ import {
     CheckCircle,
     ErrorOutline,
     Refresh,
-    Search,
     Token,
     Users,
 } from '@/components/icons';
 import PageHeader from '@/components/PageHeader';
+import SearchField from '@/components/SearchField';
 import {
     formatNumber,
     StatCard,
@@ -538,18 +536,10 @@ export default function UserUsagePage() {
                                 </Typography>
                                 <Chip size="small" label={visibleRows.length} sx={{ height: 22 }} />
                             </Stack>
-                            <TextField
-                                size="small"
+                            <SearchField
                                 value={search}
                                 onChange={(event) => setSearch(event.target.value)}
                                 placeholder={t('dashboard.userUsage.search', { defaultValue: 'Search users' })}
-                                slotProps={{
-                                    input: {
-                                        startAdornment: (
-                                            <InputAdornment position="start"><Search fontSize="small" /></InputAdornment>
-                                        ),
-                                    },
-                                }}
                                 sx={{ width: { xs: '100%', sm: 220 } }}
                             />
                         </Box>

@@ -175,10 +175,10 @@ const TemplatePage: React.FC<TemplatePageProps> = (props) => {
         ruleUuid: string,
         configRecord: any,
         mode: 'edit' | 'add',
-        providerUuid?: string,
+        serviceUuid?: string,
         addTier?: number
     ) => {
-        openModelSelect({ruleUuid, configRecord, providerUuid, mode, addTier});
+        openModelSelect({ruleUuid, configRecord, serviceUuid, mode, addTier});
     }, [openModelSelect]);
 
     // Add-provider flow opened in place (rather than navigating away).
