@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import { api } from '../services/api';
 import type { EnhancedProviderFormData } from '@/components/ProviderFormDialog';
 import type { ConnectSelection } from '@/components/ConnectProviderDialog';
+import type { ImportResultItem } from '@/components/ImportModal';
+import { useProviderEditDialog } from './useProviderEditDialog';
 
 interface UseProviderDialogOptions {
     defaultApiStyle?: 'openai' | 'anthropic' | undefined;
@@ -82,9 +84,17 @@ export interface UseProviderDialogReturn {
     /** Open state for the built-in ImportModal (owned by this hook). */
     importModalOpen: boolean;
     importing: boolean;
+    /** Populated after a successful import; switches ImportModal into the result-list view. */
+    importResult: ImportResultItem[] | null;
     handleImportClick: () => void;
     handleCloseImport: () => void;
     handleImportData: (data: string) => Promise<void>;
+    /** Opens the edit dialog for one just-imported provider. */
+    handleEditImportedProvider: (uuid: string) => void;
+    /** Dismisses the import result view and closes the modal. */
+    handleImportDone: () => void;
+    /** Renders the provider-edit dialog opened via handleEditImportedProvider. */
+    importEditDialogs: React.ReactNode;
     /** Open state for the built-in add-flow OAuthDialog (owned by this hook). */
     oauthDialogOpen: boolean;
     oauthAutoStartId: string | null;
@@ -116,6 +126,7 @@ export const useProviderDialog = (
     const [pasteDialogOpen, setPasteDialogOpen] = useState(false);
     const [importModalOpen, setImportModalOpen] = useState(false);
     const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState<ImportResultItem[] | null>(null);
     const [oauthDialogOpen, setOAuthDialogOpen] = useState(false);
     const [oauthAutoStartId, setOAuthAutoStartId] = useState<string | null>(null);
     const [cloudPresetId, setCloudPresetId] = useState<string | null>(null);
@@ -173,7 +184,19 @@ export const useProviderDialog = (
 
     const handleCloseImport = useCallback(() => {
         setImportModalOpen(false);
+        setImportResult(null);
     }, []);
+
+    const handleImportDone = useCallback(() => {
+        setImportModalOpen(false);
+        setImportResult(null);
+    }, []);
+
+    // Edit dialog for a just-imported provider — a separate instance from the
+    // main add-flow ProviderFormDialog so opening it doesn't disturb import
+    // state; onUpdated just triggers the same refresh as any other edit.
+    const { editProvider: handleEditImportedProvider, providerEditDialogs: importEditDialogs } =
+        useProviderEditDialog({ onUpdated: () => onProviderAdded?.(), showNotification });
 
     const handleImportData = useCallback(async (data: string) => {
         setImporting(true);
@@ -181,13 +204,19 @@ export const useProviderDialog = (
             const result = await api.importProvider(data);
             if (result.success) {
                 const created = result.data?.providers_created || 0;
-                const used = result.data?.providers_used || 0;
-                let message = 'Provider import completed';
-                if (created > 0) message += `. ${created} new provider${created > 1 ? 's' : ''} created`;
-                if (used > 0) message += `. ${used} existing provider${used > 1 ? 's' : ''} referenced`;
-                if (created === 0 && used === 0) message = 'No providers found in import data';
-                showNotification(message, 'success');
-                setImportModalOpen(false);
+                const providers: ImportResultItem[] = (result.data?.providers || []).map((p: any) => ({
+                    uuid: p.uuid,
+                    name: p.name,
+                    action: p.action,
+                    renamed: p.renamed,
+                }));
+                showNotification(
+                    created > 0
+                        ? `${created} new provider${created > 1 ? 's' : ''} created`
+                        : 'No providers found in import data',
+                    'success'
+                );
+                setImportResult(providers);
                 onProviderAdded?.();
             } else {
                 showNotification(`Import failed: ${result.error || 'Unknown error'}`, 'error');
@@ -289,9 +318,13 @@ export const useProviderDialog = (
         handleClosePasteDialog,
         importModalOpen,
         importing,
+        importResult,
         handleImportClick,
         handleCloseImport,
         handleImportData,
+        handleEditImportedProvider,
+        handleImportDone,
+        importEditDialogs,
         oauthDialogOpen,
         oauthAutoStartId,
         handleCloseOAuth,

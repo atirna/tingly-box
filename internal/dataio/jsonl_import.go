@@ -11,26 +11,25 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
-// ImportOptions controls how imports are handled when conflicts occur
+// ImportOptions controls import behavior.
 type ImportOptions struct {
-	// OnProviderConflict specifies what to do when a provider already exists.
-	// "use" - use existing provider, "skip" - skip this provider, "suffix" - create with suffixed name
-	OnProviderConflict string
 	// Quiet suppresses progress output
 	Quiet bool
 }
 
-// ProviderImportInfo contains information about an imported or used provider
+// ProviderImportInfo contains information about an imported provider
 type ProviderImportInfo struct {
 	UUID   string
 	Name   string
-	Action string // "created", "used", "skipped"
+	Action string // "created"
+	// Renamed is true when Name was auto-suffixed because it collided with
+	// an already-existing provider name.
+	Renamed bool
 }
 
 // ImportResult contains the results of an import operation
 type ImportResult struct {
 	ProvidersCreated int
-	ProvidersUsed    int
 	Providers        []ProviderImportInfo
 	ProviderMap      map[string]string // old UUID -> new UUID
 }
@@ -58,11 +57,6 @@ func (i *JSONLImporter) Format() Format {
 func (i *JSONLImporter) Import(data string, globalConfig *config.Config, opts ImportOptions) (*ImportResult, error) {
 	result := &ImportResult{
 		ProviderMap: make(map[string]string),
-	}
-
-	// Set defaults
-	if opts.OnProviderConflict == "" {
-		opts.OnProviderConflict = "use"
 	}
 
 	// Parse lines
@@ -115,71 +109,20 @@ func (i *JSONLImporter) Import(data string, globalConfig *config.Config, opts Im
 
 	// Import providers
 	for _, p := range providersData {
-		providerResult, err := i.importProvider(globalConfig, p, opts.OnProviderConflict, result.ProviderMap)
+		info, err := i.importProvider(globalConfig, p, result.ProviderMap)
 		if err != nil {
 			return nil, fmt.Errorf("failed to import provider '%s': %w", p.Name, err)
 		}
-		if providerResult.created {
-			result.ProvidersCreated++
-		}
-		if providerResult.used {
-			result.ProvidersUsed++
-		}
-		// Add provider info to result
-		if providerResult.info != nil {
-			result.Providers = append(result.Providers, *providerResult.info)
-		}
+		result.ProvidersCreated++
+		result.Providers = append(result.Providers, *info)
 	}
 
 	return result, nil
 }
 
-type providerImportResult struct {
-	created bool
-	used    bool
-	info    *ProviderImportInfo
-}
-
-func (i *JSONLImporter) importProvider(globalConfig *config.Config, p *ProviderData, onConflict string, providerMap map[string]string) (*providerImportResult, error) {
-	result := &providerImportResult{}
-
-	// Check if provider with same UUID already exists (real conflict)
-	existingProvider, err := globalConfig.GetProviderByUUID(p.UUID)
-	if err == nil && existingProvider != nil {
-		// Real UUID conflict - provider was already imported before
-		switch onConflict {
-		case "skip":
-			result.info = &ProviderImportInfo{
-				UUID:   p.UUID,
-				Name:   p.Name,
-				Action: "skipped",
-			}
-			return result, nil
-		case "use":
-			// Use the existing provider
-			providerMap[p.UUID] = existingProvider.UUID
-			result.used = true
-			result.info = &ProviderImportInfo{
-				UUID:   existingProvider.UUID,
-				Name:   existingProvider.Name,
-				Action: "used",
-			}
-			return result, nil
-		default:
-			// Default to using existing provider for UUID conflicts
-			providerMap[p.UUID] = existingProvider.UUID
-			result.used = true
-			result.info = &ProviderImportInfo{
-				UUID:   existingProvider.UUID,
-				Name:   existingProvider.Name,
-				Action: "used",
-			}
-			return result, nil
-		}
-	}
-
+func (i *JSONLImporter) importProvider(globalConfig *config.Config, p *ProviderData, providerMap map[string]string) (*ProviderImportInfo, error) {
 	// Check if provider name already exists (need to avoid duplicate names)
-	_, err = globalConfig.GetProviderByName(p.Name)
+	_, err := globalConfig.GetProviderByName(p.Name)
 	nameExists := err == nil
 
 	// Always create a new UUID for imported providers
@@ -187,6 +130,7 @@ func (i *JSONLImporter) importProvider(globalConfig *config.Config, p *ProviderD
 	providerUUID := uuid.New().String()
 
 	// If name exists, add suffix to avoid conflicts
+	renamed := nameExists
 	if nameExists {
 		suffix := 2
 		newName := fmt.Sprintf("%s-%d", p.Name, suffix)
@@ -226,11 +170,10 @@ func (i *JSONLImporter) importProvider(globalConfig *config.Config, p *ProviderD
 
 	// Map old UUID to new UUID
 	providerMap[p.UUID] = newProvider.UUID
-	result.created = true
-	result.info = &ProviderImportInfo{
-		UUID:   newProvider.UUID,
-		Name:   newProvider.Name,
-		Action: "created",
-	}
-	return result, nil
+	return &ProviderImportInfo{
+		UUID:    newProvider.UUID,
+		Name:    newProvider.Name,
+		Action:  "created",
+		Renamed: renamed,
+	}, nil
 }

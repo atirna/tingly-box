@@ -416,8 +416,9 @@ export const api = {
         return controlApi((client, headers) => client.GET('/api/v1/rule/flags/registry', {headers}));
     },
 
-    // Imports providers from a base64/JSONL export bundle.
-    importProvider: async (data: string, onProviderConflict: string = 'use'): Promise<any> => {
+    // Imports providers from a base64/JSONL export bundle. Every imported
+    // provider is always created with a freshly minted UUID.
+    importProvider: async (data: string): Promise<any> => {
         try {
             const client = await getClient();
             const headers = await getAuthHeaders();
@@ -425,7 +426,6 @@ export const api = {
                 headers,
                 body: {
                     data,
-                    on_provider_conflict: onProviderConflict,
                 },
             });
             return unwrap(response);

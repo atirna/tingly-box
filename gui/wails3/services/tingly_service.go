@@ -165,7 +165,6 @@ func (s *TinglyService) ListRules() []typ.Rule {
 // dataio export/import no longer carries rule data.
 func (s *TinglyService) ImportRule(data string) (*command.ImportResult, error) {
 	return command.ImportProviders(s.appManager.GetGlobalConfig(), data, exportpkg.FormatAuto, command.ImportOptions{
-		OnProviderConflict: "use",
-		Quiet:              true,
+		Quiet: true,
 	})
 }

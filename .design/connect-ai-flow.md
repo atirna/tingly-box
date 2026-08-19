@@ -36,7 +36,8 @@ configuration is no longer a separate picker card or mode. See [dual-provider.md
 
 **Routing on card click:**
 - **Custom / Key provider / Self-hosted** → opens the form dialog (pre-filled when a template was chosen)
-- **Import** → opens the import modal
+- **Import** → opens the import modal; on success, stays open showing a
+  result list (see "Import" below) instead of closing
 - **OAuth** → opens OAuthDialog in direct mode (skips the provider grid, shows provider + proxy config, then starts auth)
 
 ### Flow at a glance
@@ -56,21 +57,31 @@ configuration is no longer a separate picker card or mode. See [dual-provider.md
   │ slots     │  │ file import │ │ from     │ │ localhost  │ │ provider +   │
   │           │  │             │ │ template │ │ :port +    │ │ proxy config │
   │           │  │             │ │          │ │ key conv.  │ │ ▸ sign in    │
-  └─────┬─────┘  └─────────────┘ └────┬─────┘ └─────┬──────┘ └──────┬───────┘
-        │                              │             │               │
-        └──────────────────────────────┴─────────────┘               │
-                               ▼                                     ▼
-                    ┌─────────────────────┐                ┌──────────────────┐
-                    │  ProviderFormDialog  │                │  token stored on │
-                    │  (← Back re-opens    │                │  callback; new   │
-                    │   the picker)        │                │  provider record │
-                    └──────────┬───────────┘                └──────────────────┘
-                               │ submit
-                               ▼
-                    ┌─────────────────────┐
-                    │  api.addProvider     │  one record; optional
-                    │                     │  api_base_openai + api_base_anthropic
-                    └─────────────────────┘
+  └─────┬─────┘  └──────┬──────┘ └────┬─────┘ └─────┬──────┘ └──────┬───────┘
+        │                │             │             │               │
+        └────────────────┘             └─────────────┘               │
+                 │                            ▼                      ▼
+                 │              ┌─────────────────────┐    ┌──────────────────┐
+                 │              │  ProviderFormDialog  │    │  token stored on │
+                 │              │  (← Back re-opens    │    │  callback; new   │
+                 │              │   the picker)        │    │  provider record │
+                 │              └──────────┬───────────┘    └──────────────────┘
+                 │                         │ submit
+                 │                         ▼
+                 │              ┌─────────────────────┐
+                 │              │  api.addProvider     │  one record; optional
+                 │              │                     │  api_base_openai + api_base_anthropic
+                 │              └─────────────────────┘
+                 ▼
+      ┌────────────────────────┐
+      │  api.importProvider     │  persists immediately — always mints a
+      │  (POST /provider-import)│  fresh UUID per provider, no confirm step
+      └──────────┬──────────────┘
+                 ▼
+      ┌────────────────────────┐
+      │  ImportModal result list │  every created provider, each with an
+      │  (replaces close+toast) │  inline Edit → useProviderEditDialog
+      └────────────────────────┘
 ```
 
 Every surface renders this picker → route sequence through the same pair:
@@ -88,6 +99,18 @@ individual kinds themselves, so no entry point can drift to a subset:
   passes `inline` to `ConnectAIDialogs` (no picker dialog, no "← Back to
   picker" in the form). The old separate "Paste & detect" tab is gone; paste
   is a picker card here like everywhere else.
+
+### Import — no confirm step, edit-after instead
+
+Import intentionally does **not** route through `ProviderFormDialog` before
+persisting — see `.sdlc/docs/provider-import-confirm-flow-20260819.spec.md`
+for why a parse-then-confirm step was considered and dropped: every imported
+provider always gets a freshly minted UUID (no reuse-on-conflict branch), so
+there's no ambiguous default left to gate behind a preview. Instead,
+`ImportModal` stays open after a successful import and shows the created
+providers as a list; each row's Edit button opens the same
+`useProviderEditDialog` flow `CredentialPage` uses for any other provider —
+reusing the existing edit path instead of inventing a pre-create draft state.
 
 ---
 
@@ -164,6 +187,8 @@ enter their key without unchecking a separate toggle.
 | `frontend/src/pages/CredentialPage.tsx` | Credential-management surface; standard add flow uses `useProviderDialog`, edit flow uses `useProviderEditDialog` |
 | `frontend/src/hooks/useProviderDialog.tsx` | Single source of truth for the add flow: picker state + routing for every `ConnectSelection` kind, form submit, OAuth / paste / import dialog state |
 | `frontend/src/components/ConnectAIDialogs.tsx` | Renders the full downstream dialog stack (picker, form, OAuth, paste & detect, import) from the hook's return; `inline` variant for onboarding |
+| `frontend/src/components/ImportModal.tsx` | Paste/upload import UI; after a successful import, switches into a result-list view (no separate confirm dialog) |
+| `frontend/src/hooks/useProviderEditDialog.tsx` | Provider-edit dialog + submit logic; reused both by `CredentialPage` row-edit and `ImportModal`'s per-row Edit |
 | `frontend/src/components/provider-form-dialog/ApiKeyField.tsx` | Key field; optional editable token state for self-hosted providers |
 | `frontend/src/components/provider-form-dialog/ProtocolSlot.tsx` | OpenAI / Anthropic URL slot UI |
 | `frontend/src/components/provider-form-dialog/ProxyUrlField.tsx` | Proxy URL and global quick-proxy selector |

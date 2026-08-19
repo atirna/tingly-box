@@ -592,18 +592,8 @@ func (h *Handler) ImportProviders(c *gin.Context) {
 		return
 	}
 
-	// Set default conflict handling
-	// OnProviderConflict: Only matters when the same provider UUID already exists
-	//   - "use": use the existing provider with the same UUID
-	//   - "skip": skip importing this provider
-	// Note: Provider names can be duplicated; if name exists, a suffix is added automatically
-	if req.OnProviderConflict == "" {
-		req.OnProviderConflict = "use" // Use existing if same UUID found
-	}
-
 	opts := dataio.ImportOptions{
-		OnProviderConflict: req.OnProviderConflict,
-		Quiet:              true,
+		Quiet: true,
 	}
 
 	result, err := dataio.Import(req.Data, cfg, dataio.FormatAuto, opts)
@@ -620,14 +610,14 @@ func (h *Handler) ImportProviders(c *gin.Context) {
 		Message: "Providers imported successfully",
 	}
 	response.Data.ProvidersCreated = result.ProvidersCreated
-	response.Data.ProvidersUsed = result.ProvidersUsed
 
 	// Convert provider import info to response format
 	for _, providerInfo := range result.Providers {
 		response.Data.Providers = append(response.Data.Providers, ProviderImportInfo{
-			UUID:   providerInfo.UUID,
-			Name:   providerInfo.Name,
-			Action: providerInfo.Action,
+			UUID:    providerInfo.UUID,
+			Name:    providerInfo.Name,
+			Action:  providerInfo.Action,
+			Renamed: providerInfo.Renamed,
 		})
 	}
 
@@ -637,8 +627,8 @@ func (h *Handler) ImportProviders(c *gin.Context) {
 		"providers_created": result.ProvidersCreated,
 	}).Info(
 		fmt.Sprintf(
-			"Provider import completed: created=%d, used=%d",
-			result.ProvidersCreated, result.ProvidersUsed,
+			"Provider import completed: created=%d",
+			result.ProvidersCreated,
 		),
 	)
 

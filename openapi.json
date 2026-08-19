@@ -10174,16 +10174,10 @@
             "type": "string",
             "description": "Base64 encoded provider export data",
             "example": "TGB64:1.0:..."
-          },
-          "on_provider_conflict": {
-            "type": "string",
-            "description": "How to handle provider conflicts",
-            "example": "use"
           }
         },
         "required": [
-          "data",
-          "on_provider_conflict"
+          "data"
         ]
       },
       "ImportProvidersResponse": {
@@ -10205,17 +10199,10 @@
                 "format": "int64",
                 "description": "Field providers_created",
                 "example": 1
-              },
-              "providers_used": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Field providers_used",
-                "example": 0
               }
             },
             "required": [
-              "providers_created",
-              "providers_used"
+              "providers_created"
             ]
           },
           "message": {
@@ -12297,6 +12284,11 @@
             "description": "Field name",
             "example": "openai"
           },
+          "renamed": {
+            "type": "boolean",
+            "description": "Field renamed",
+            "example": false
+          },
           "uuid": {
             "type": "string",
             "description": "Field uuid",
@@ -12306,7 +12298,8 @@
         "required": [
           "uuid",
           "name",
-          "action"
+          "action",
+          "renamed"
         ]
       },
       "ProviderModelInfo": {

@@ -62,7 +62,11 @@ const ConnectAIDialogs: React.FC<ConnectAIDialogsProps> = ({ flow, inline = fals
                 onClose={flow.handleCloseImport}
                 onImport={flow.handleImportData}
                 loading={flow.importing}
+                result={flow.importResult}
+                onEditProvider={flow.handleEditImportedProvider}
+                onDone={flow.handleImportDone}
             />
+            {flow.importEditDialogs}
             <CloudProviderDialog
                 open={flow.cloudPresetId !== null}
                 presetId={flow.cloudPresetId}

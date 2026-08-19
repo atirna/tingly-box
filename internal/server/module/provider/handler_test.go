@@ -113,8 +113,7 @@ func TestImportProviders_JSONL(t *testing.T) {
 {"type":"provider","uuid":"prov-1","name":"TestProvider","api_base":"https://api.test.com","api_style":"openai","auth_type":"api_key","token":"sk-test","enabled":true,"timeout":30}`
 
 	importReq := ImportProvidersRequest{
-		Data:               jsonlData,
-		OnProviderConflict: "use",
+		Data: jsonlData,
 	}
 	body, _ := json.Marshal(importReq)
 	req, _ := http.NewRequest("POST", "/provider-import", bytes.NewBuffer(body))
@@ -148,8 +147,7 @@ func TestImportProviders_Base64(t *testing.T) {
 	base64Data := dataio.Base64Prefix + ":1.0:" + base64Payload
 
 	importReq := ImportProvidersRequest{
-		Data:               base64Data,
-		OnProviderConflict: "use",
+		Data: base64Data,
 	}
 	body, _ := json.Marshal(importReq)
 	req, _ := http.NewRequest("POST", "/provider-import", bytes.NewBuffer(body))
@@ -165,10 +163,12 @@ func TestImportProviders_Base64(t *testing.T) {
 	assert.Contains(t, bodyResp, `"success":true`)
 }
 
-// TestImportProviders_ProviderConflictUse tests using existing provider on conflict.
-// This test verifies that when a provider with the same UUID is imported,
-// the existing provider is used instead of creating a new one.
-func TestImportProviders_ProviderConflictUse(t *testing.T) {
+// TestImportProviders_AlwaysMintsNewUUID verifies that importing a bundle
+// whose provider UUID collides with an already-existing local provider does
+// not reuse that provider — it always creates a new one with a fresh UUID
+// (identity mapping is tracked separately via ProviderMap for future
+// rule-remap consumers; see internal/dataio/jsonl_import.go).
+func TestImportProviders_AlwaysMintsNewUUID(t *testing.T) {
 	cfg, _ := config.NewConfig(config.WithConfigDir(t.TempDir()))
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -193,8 +193,7 @@ func TestImportProviders_ProviderConflictUse(t *testing.T) {
 {"type":"provider","uuid":"prov-1","name":"TestProvider","api_base":"https://api.test.com","api_style":"openai","auth_type":"api_key","token":"sk-test","enabled":true}`
 
 	importReq := ImportProvidersRequest{
-		Data:               jsonlData,
-		OnProviderConflict: "use", // Use existing provider
+		Data: jsonlData,
 	}
 	body, _ := json.Marshal(importReq)
 	req, _ := http.NewRequest("POST", "/provider-import", bytes.NewBuffer(body))
@@ -215,12 +214,29 @@ func TestImportProviders_ProviderConflictUse(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	// Should have 0 providers created (used existing), 1 used
-	if resp.Data.ProvidersCreated != 0 {
-		t.Errorf("Expected 0 providers created, got %d", resp.Data.ProvidersCreated)
+	// A brand new provider is always created, with a fresh UUID distinct
+	// from both the bundle's original UUID and the pre-existing provider's.
+	if resp.Data.ProvidersCreated != 1 {
+		t.Errorf("Expected 1 provider created, got %d", resp.Data.ProvidersCreated)
 	}
-	if resp.Data.ProvidersUsed != 1 {
-		t.Errorf("Expected 1 provider used, got %d", resp.Data.ProvidersUsed)
+	if len(resp.Data.Providers) != 1 {
+		t.Fatalf("Expected 1 provider in response, got %d", len(resp.Data.Providers))
+	}
+	created := resp.Data.Providers[0]
+	if created.Action != "created" {
+		t.Errorf("Expected action 'created', got %q", created.Action)
+	}
+	if created.UUID == "prov-1" {
+		t.Error("Expected a freshly minted UUID, got the colliding source UUID")
+	}
+
+	// The pre-existing provider is left untouched.
+	stillExisting, err := cfg.GetProviderByUUID("prov-1")
+	if err != nil || stillExisting == nil {
+		t.Fatal("Expected the pre-existing provider to still be present")
+	}
+	if stillExisting.Name != "ExistingProvider" {
+		t.Errorf("Expected existing provider to be unmodified, got name %q", stillExisting.Name)
 	}
 }
 
@@ -234,8 +250,7 @@ func TestImportProviders_InvalidData(t *testing.T) {
 	router.POST("/provider-import", handler.ImportProviders)
 
 	importReq := ImportProvidersRequest{
-		Data:               "invalid data",
-		OnProviderConflict: "use",
+		Data: "invalid data",
 	}
 	body, _ := json.Marshal(importReq)
 	req, _ := http.NewRequest("POST", "/provider-import", bytes.NewBuffer(body))
@@ -249,75 +264,6 @@ func TestImportProviders_InvalidData(t *testing.T) {
 
 	bodyResp := w.Body.String()
 	assert.Contains(t, bodyResp, `"success":false`)
-}
-
-// TestImportProviders_ProviderUUIDConflict tests real UUID conflict scenario
-func TestImportProviders_ProviderUUIDConflict(t *testing.T) {
-	cfg, _ := config.NewConfig(config.WithConfigDir(t.TempDir()))
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	handler := NewHandler(cfg, nil)
-
-	router.POST("/provider-import", handler.ImportProviders)
-
-	// First create an existing provider with the same UUID (simulating re-import)
-	existingProvider := &typ.Provider{
-		UUID:     "prov-1", // Same UUID as in the export
-		Name:     "ExistingProvider",
-		APIBase:  "https://api.existing.com",
-		APIStyle: protocol.APIStyleOpenAI,
-		AuthType: typ.AuthTypeAPIKey,
-		Token:    "sk-existing",
-		Enabled:  true,
-	}
-	cfg.AddProvider(existingProvider)
-
-	// Import a provider with the same UUID
-	jsonlData := `{"type":"metadata","version":"1.0","exported_at":"2024-01-01T00:00:00Z"}
-{"type":"provider","uuid":"prov-1","name":"TestProvider","api_base":"https://api.test.com","api_style":"openai","auth_type":"api_key","token":"sk-test","enabled":true}`
-
-	importReq := ImportProvidersRequest{
-		Data:               jsonlData,
-		OnProviderConflict: "use", // Use existing provider with same UUID
-	}
-	body, _ := json.Marshal(importReq)
-	req, _ := http.NewRequest("POST", "/provider-import", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
-	}
-
-	bodyResp := w.Body.String()
-	assert.Contains(t, bodyResp, `"success":true`)
-
-	// Parse response to check provider info
-	var resp ImportProvidersResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Failed to parse response: %v", err)
-	}
-
-	// Should have 0 providers created (used existing), 1 used
-	if resp.Data.ProvidersCreated != 0 {
-		t.Errorf("Expected 0 providers created, got %d", resp.Data.ProvidersCreated)
-	}
-	if resp.Data.ProvidersUsed != 1 {
-		t.Errorf("Expected 1 provider used, got %d", resp.Data.ProvidersUsed)
-	}
-
-	// Verify the used provider is the existing one
-	found := false
-	for _, p := range resp.Data.Providers {
-		if p.UUID == "prov-1" && p.Name == "ExistingProvider" && p.Action == "used" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("Expected to find existing provider being used")
-	}
 }
 
 // TestImportProviders_MissingData tests importing with missing data field

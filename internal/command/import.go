@@ -48,8 +48,7 @@ func runImport(appManager *AppManager, formatStr string, args []string) error {
 	}
 
 	result, err := ImportProviders(appManager.GetGlobalConfig(), data, format, ImportOptions{
-		OnProviderConflict: "use", // Use existing provider by default
-		Quiet:              false,
+		Quiet: false,
 	})
 
 	if err != nil {
@@ -59,11 +58,7 @@ func runImport(appManager *AppManager, formatStr string, args []string) error {
 	fmt.Printf("\nImport completed!\n")
 	if result.ProvidersCreated > 0 {
 		fmt.Printf("✓ Providers created: %d\n", result.ProvidersCreated)
-	}
-	if result.ProvidersUsed > 0 {
-		fmt.Printf("ℹ Providers reused: %d\n", result.ProvidersUsed)
-	}
-	if result.ProvidersCreated == 0 && result.ProvidersUsed == 0 {
+	} else {
 		fmt.Println("ℹ No providers were imported")
 	}
 
