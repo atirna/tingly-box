@@ -976,7 +976,7 @@
       "model_doc": "https://www.alibabacloud.com/help/en/model-studio/models",
       "pricing_doc": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
       "base_url_openai": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-      "base_url_anthropic": null,
+      "base_url_anthropic": "https://dashscope-intl.aliyuncs.com/apps/anthropic",
       "models": [
         {
           "id": "qwen-max",
@@ -1011,9 +1011,10 @@
       ],
       "supports_models_endpoint": true,
       "icon": "qwen",
-      "last_updated": "2026-07-20",
+      "last_updated": "2026-08-19",
       "sources": [
-        "https://www.alibabacloud.com/help/en/model-studio/models"
+        "https://www.alibabacloud.com/help/en/model-studio/models",
+        "https://www.alibabacloud.com/help/en/model-studio/anthropic-api-messages"
       ]
     },
     "dashscope-cn-coding": {
@@ -2065,13 +2066,13 @@
       "region": "cn",
       "plan": "standard",
       "website": "https://platform.stepfun.com",
-      "description": "Stepfun Step series LLMs (China site, OpenAI compatible)",
+      "description": "Stepfun Step series LLMs (China site)",
       "type": "official",
       "api_doc": "https://platform.stepfun.com/docs/overview/quickstart",
       "model_doc": "https://platform.stepfun.com/docs/llm/text",
       "pricing_doc": "https://platform.stepfun.com/docs/pricing/modelprice",
       "base_url_openai": "https://api.stepfun.com/v1",
-      "base_url_anthropic": null,
+      "base_url_anthropic": "https://api.stepfun.com/v1/anthropic",
       "models": [
         {
           "id": "step-3.7-flash",
@@ -2088,10 +2089,11 @@
       ],
       "supports_models_endpoint": true,
       "icon": "stepfun",
-      "last_updated": "2026-07-20",
+      "last_updated": "2026-08-19",
       "sources": [
         "https://models.dev/labs/stepfun/",
-        "https://cloud.tencent.com/developer/news/3993306"
+        "https://cloud.tencent.com/developer/news/3993306",
+        "https://platform.stepfun.com/docs/zh/step-plan/integrations/claude-code"
       ]
     },
     "stepfun-ai": {
@@ -2104,13 +2106,13 @@
       "region": "intl",
       "plan": "standard",
       "website": "https://platform.stepfun.ai",
-      "description": "Stepfun Step series LLMs (International, OpenAI compatible)",
+      "description": "Stepfun Step series LLMs (International)",
       "type": "official",
       "api_doc": "https://platform.stepfun.ai/docs/overview/quickstart",
       "model_doc": "https://platform.stepfun.ai/docs/llm/text",
       "pricing_doc": "https://platform.stepfun.ai/docs/pricing/modelprice",
       "base_url_openai": "https://api.stepfun.ai/v1",
-      "base_url_anthropic": null,
+      "base_url_anthropic": "https://api.stepfun.ai/v1/anthropic",
       "models": [
         {
           "id": "step-3.7-flash",
@@ -2127,9 +2129,10 @@
       ],
       "supports_models_endpoint": true,
       "icon": "stepfun",
-      "last_updated": "2026-07-20",
+      "last_updated": "2026-08-19",
       "sources": [
-        "https://models.dev/labs/stepfun/"
+        "https://models.dev/labs/stepfun/",
+        "https://platform.stepfun.ai/docs/en/step-plan/integrations/claude-code"
       ]
     },
     "siliconflow-cn": {
@@ -2626,7 +2629,7 @@
       "model_doc": "https://opencode.ai/docs/providers/",
       "pricing_doc": "https://opencode.ai/docs/providers/",
       "base_url_openai": "https://opencode.ai/zen/v1",
-      "base_url_anthropic": null,
+      "base_url_anthropic": "https://opencode.ai/zen",
       "models": [
         {
           "id": "qwen3.7-max"
@@ -2673,9 +2676,10 @@
       ],
       "supports_models_endpoint": true,
       "icon": "opencode",
-      "last_updated": "2026-07-20",
+      "last_updated": "2026-08-19",
       "sources": [
-        "https://opencode.ai/docs/zen/"
+        "https://opencode.ai/docs/zen/",
+        "https://github.com/mudrii/opencode-docs/blob/main/docs/official/zen.md"
       ]
     },
     "opencode-go": {
@@ -2694,7 +2698,7 @@
       "model_doc": "https://opencode.ai/docs/providers/",
       "pricing_doc": "https://opencode.ai/docs/providers/",
       "base_url_openai": "https://opencode.ai/zen/go/v1",
-      "base_url_anthropic": null,
+      "base_url_anthropic": "https://opencode.ai/zen/go",
       "models": [
         {
           "id": "kimi-k3"
@@ -2741,9 +2745,10 @@
       ],
       "supports_models_endpoint": true,
       "icon": "opencode",
-      "last_updated": "2026-07-20",
+      "last_updated": "2026-08-19",
       "sources": [
-        "https://opencode.ai/docs/go/"
+        "https://opencode.ai/docs/go/",
+        "https://titancode.pl/en/blog/opencode-go-claude-code-permanent-config"
       ]
     },
     "ollama": {
@@ -2758,9 +2763,15 @@
       "description": "Local inference server for Llama, Qwen, Mistral, Gemma and many more open models",
       "website": "https://ollama.com",
       "base_url_openai": "http://localhost:11434/v1",
+      "base_url_anthropic": "http://localhost:11434",
       "no_key_required": true,
       "supports_models_endpoint": true,
-      "icon": "ollama"
+      "icon": "ollama",
+      "last_updated": "2026-08-19",
+      "sources": [
+        "https://docs.ollama.com/api/anthropic-compatibility",
+        "https://ollama.com/blog/claude"
+      ]
     },
     "lm-studio": {
       "id": "lm-studio",
@@ -2774,9 +2785,14 @@
       "description": "Local LLM runner with a GUI for Mac, Windows and Linux",
       "website": "https://lmstudio.ai",
       "base_url_openai": "http://localhost:1234/v1",
+      "base_url_anthropic": "http://localhost:1234",
       "no_key_required": true,
       "supports_models_endpoint": true,
-      "icon": "lm-studio"
+      "icon": "lm-studio",
+      "last_updated": "2026-08-19",
+      "sources": [
+        "https://lmstudio.ai/docs/developer/anthropic-compat"
+      ]
     },
     "localai": {
       "id": "localai",
@@ -2790,9 +2806,14 @@
       "description": "Free, open source OpenAI alternative that runs locally",
       "website": "https://localai.io",
       "base_url_openai": "http://localhost:8080/v1",
+      "base_url_anthropic": "http://localhost:8080",
       "no_key_required": true,
       "supports_models_endpoint": true,
-      "icon": "localai"
+      "icon": "localai",
+      "last_updated": "2026-08-19",
+      "sources": [
+        "https://github.com/mudler/LocalAI/releases/tag/v3.10.0"
+      ]
     },
     "jan": {
       "id": "jan",
@@ -2806,9 +2827,15 @@
       "description": "Open source ChatGPT alternative that runs 100% offline",
       "website": "https://jan.ai",
       "base_url_openai": "http://localhost:1337/v1",
+      "base_url_anthropic": "http://localhost:1337",
       "no_key_required": true,
       "supports_models_endpoint": true,
-      "icon": "jan"
+      "icon": "jan",
+      "last_updated": "2026-08-19",
+      "sources": [
+        "https://github.com/janhq/jan/issues/7575",
+        "https://www.jan.ai/docs/desktop/cli"
+      ]
     },
     "vllm": {
       "id": "vllm",
@@ -2822,9 +2849,15 @@
       "description": "High-throughput and memory-efficient inference engine for LLMs",
       "website": "https://docs.vllm.ai",
       "base_url_openai": "http://localhost:8000/v1",
+      "base_url_anthropic": "http://localhost:8000",
       "no_key_required": true,
       "supports_models_endpoint": true,
-      "icon": "vllm"
+      "icon": "vllm",
+      "last_updated": "2026-08-19",
+      "sources": [
+        "https://github.com/vllm-project/vllm/pull/22627",
+        "https://docs.vllm.ai/en/latest/serving/integrations/claude_code/"
+      ]
     },
     "sglang": {
       "id": "sglang",
@@ -2838,9 +2871,14 @@
       "description": "Fast serving framework for large language and vision-language models",
       "website": "https://sgl-project.github.io",
       "base_url_openai": "http://localhost:30000/v1",
+      "base_url_anthropic": "http://localhost:30000",
       "no_key_required": true,
       "supports_models_endpoint": true,
-      "icon": "sglang"
+      "icon": "sglang",
+      "last_updated": "2026-08-19",
+      "sources": [
+        "https://github.com/sgl-project/sglang/pull/18630"
+      ]
     }
   }
 }
