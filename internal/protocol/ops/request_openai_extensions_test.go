@@ -46,3 +46,50 @@ func TestProviderDispatchMatchesBareHostnameWithoutScheme(t *testing.T) {
 
 	assert.Equal(t, "high", string(req.ReasoningEffort))
 }
+
+// TestDefaultTransformCollapsesExtendedEffortForUnverifiedVendor proves an
+// unverified relay (e.g. opencode.ai/zen/go with a codenamed model that
+// doesn't hint "deepseek") never receives "minimal"/"xhigh"/"max" verbatim.
+func TestDefaultTransformCollapsesExtendedEffortForUnverifiedVendor(t *testing.T) {
+	tests := []struct {
+		ladderEffort string
+		want         string
+	}{
+		{"minimal", "low"},
+		{"low", "low"},
+		{"medium", "medium"},
+		{"high", "high"},
+		{"xhigh", "high"},
+		{"max", "high"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ladderEffort, func(t *testing.T) {
+			req := &openai.ChatCompletionNewParams{
+				Model: openai.ChatModel("gpt-5.6-luna"),
+			}
+
+			ApplyProviderTransforms(req, "https://opencode.ai/zen/go/v1", string(req.Model), &protocol.OpenAIConfig{
+				HasThinking:     true,
+				ReasoningEffort: openai.ReasoningEffort(tt.ladderEffort),
+			})
+
+			assert.Equal(t, tt.want, string(req.ReasoningEffort))
+		})
+	}
+}
+
+// TestDefaultTransformKeepsExtendedEffortForVerifiedOpenAI proves
+// api.openai.com is unaffected by the unverified-vendor collapse above.
+func TestDefaultTransformKeepsExtendedEffortForVerifiedOpenAI(t *testing.T) {
+	req := &openai.ChatCompletionNewParams{
+		Model: openai.ChatModel("gpt-5.6"),
+	}
+
+	ApplyProviderTransforms(req, "https://api.openai.com/v1", string(req.Model), &protocol.OpenAIConfig{
+		HasThinking:     true,
+		ReasoningEffort: "xhigh",
+	})
+
+	assert.Equal(t, "xhigh", string(req.ReasoningEffort))
+}

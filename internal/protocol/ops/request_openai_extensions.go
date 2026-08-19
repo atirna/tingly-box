@@ -22,7 +22,8 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 
 	// See stripOpenAIPromptCacheFields for why: most OpenAI-compatible
 	// vendors reject these fields outright (#1548), so default to stripping.
-	if !supportsExplicitPromptCache(host) {
+	nativeOpenAI := supportsExplicitPromptCache(host)
+	if !nativeOpenAI {
 		stripOpenAIPromptCacheFields(req)
 	}
 
@@ -50,7 +51,7 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 
 	// api.openai.com falls through to here too — no vendor-specific shaping
 	// needed beyond applyDefaultTransform's thinking fallback.
-	return applyDefaultTransform(req, config)
+	return applyDefaultTransform(req, config, nativeOpenAI)
 }
 
 // supportsExplicitPromptCache reports whether the provider host is confirmed
@@ -205,9 +206,17 @@ func flattenRichContent(parts []interface{}) (string, bool) {
 // fallback when no vendor-specific transform matched. Sets reasoning_effort
 // from config, or falls back to a `thinking.type=enabled` extra field for
 // providers that accept the Anthropic-style extension.
-func applyDefaultTransform(req *openai.ChatCompletionNewParams, config *protocol.OpenAIConfig) *openai.ChatCompletionNewParams {
+//
+// nativeReasoningEffort mirrors supportsExplicitPromptCache: only a
+// confirmed-OpenAI host gets the six-level ladder verbatim; everything else
+// collapses through genericEffortTiers (see .design/model-data.md).
+func applyDefaultTransform(req *openai.ChatCompletionNewParams, config *protocol.OpenAIConfig, nativeReasoningEffort bool) *openai.ChatCompletionNewParams {
 	if config.HasThinking && config.ReasoningEffort != "" {
-		req.ReasoningEffort = config.ReasoningEffort
+		if nativeReasoningEffort {
+			req.ReasoningEffort = config.ReasoningEffort
+		} else {
+			applyReasoningEffortTier(req, config, genericEffortTiers())
+		}
 	} else if config.HasThinking {
 		extra := req.ExtraFields()
 		if extra == nil {
