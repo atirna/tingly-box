@@ -409,7 +409,7 @@ export const UnifiedRoutingGraph: React.FC<UnifiedRoutingGraphProps> = ({
                                                 providersData={providers}
                                                 active={active && service.active !== false}
                                                 onDelete={() => onDeleteServiceFromSmartRule?.(rule.uuid, service.uuid)}
-                                                onNodeClick={() => onProviderNodeClick?.(service.provider)}
+                                                onNodeClick={() => onProviderNodeClick?.(service.uuid)}
                                                 onEditProvider={onEditProvider}
                                             />
                                         ))}
