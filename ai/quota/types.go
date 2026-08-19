@@ -26,6 +26,7 @@ const (
 	ProviderTypeMiniMaxCN  ProviderType = "minimaxi"
 	ProviderTypeCursor     ProviderType = "cursor"
 	ProviderTypeCodex      ProviderType = "codex"
+	ProviderTypeOpenCode   ProviderType = "opencode"
 )
 
 // WindowType window type enumeration

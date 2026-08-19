@@ -22,6 +22,7 @@ func RegisterAll(r quota.FetcherRegistrar, logger *logrus.Logger) {
 		NewMiniMaxFetcher(),
 		NewMiniMaxCNFetcher(),
 		NewCodexFetcher(),
+		NewOpenCodeFetcher(),
 	}
 	for _, f := range fetchers {
 		if err := r.RegisterFetcher(f); err != nil {
