@@ -97,11 +97,16 @@ function ModelSelectTabInner({
     //   3. selectedProvider — lock onto the selected provider if a model is chosen
     //   4. lastProvider — remember the last chosen provider when nothing is selected
     //   5. first available provider — final default
-    const currentTab = externalActiveTab
+    // The winner must resolve to an existing provider: an absent (empty-string)
+    // or stale (deleted provider) reference would otherwise leave the right
+    // panel blank, so fall through to the first provider instead.
+    const requestedTab = externalActiveTab
         ?? internalCurrentTab
         ?? (selectedProvider && selectedModel ? selectedProvider : undefined)
-        ?? lastProvider
-        ?? flattenedProviders[0]?.uuid;
+        ?? (lastProvider || undefined);
+    const currentTab = flattenedProviders.some(p => p.uuid === requestedTab)
+        ? requestedTab
+        : flattenedProviders[0]?.uuid;
 
     const handleTabChange = useCallback(async (providerUuid: string) => {
         if (externalActiveTab === undefined) {
