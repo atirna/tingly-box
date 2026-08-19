@@ -62,6 +62,11 @@ export const claudeComponents: ThemeOptions['components'] = {
         borderRadius: 6,
         backgroundColor: 'transparent',
         transition: 'background-color 120ms ease, border-color 120ms ease',
+        // MUI keeps adornment icons at 24px inside size="small" inputs, which
+        // visually inflates the field — shrink them app-wide at the theme level.
+        '&.MuiInputBase-sizeSmall .MuiInputAdornment-root .MuiSvgIcon-root': {
+          fontSize: 20,
+        },
         '& .MuiOutlinedInput-notchedOutline': { borderColor: '#D6D3C7' },
         '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#B0AEA5' },
         '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
