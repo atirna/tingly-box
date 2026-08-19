@@ -8,25 +8,23 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
-// ImportOptions controls how provider conflicts are handled during import.
+// ImportOptions controls provider import behavior.
 type ImportOptions struct {
-	// OnProviderConflict is one of "use", "skip", or "suffix".
-	OnProviderConflict string
 	// Quiet suppresses progress output.
 	Quiet bool
 }
 
-// ProviderImportInfo describes one imported, reused, or skipped provider.
+// ProviderImportInfo describes one imported provider.
 type ProviderImportInfo struct {
-	UUID   string
-	Name   string
-	Action string
+	UUID    string
+	Name    string
+	Action  string
+	Renamed bool
 }
 
 // ImportResult contains the results of a provider import.
 type ImportResult struct {
 	ProvidersCreated int
-	ProvidersUsed    int
 	Providers        []ProviderImportInfo
 	ProviderMap      map[string]string
 }
@@ -76,8 +74,7 @@ func providerUUIDsFromRule(rule *typ.Rule) []string {
 // ImportProviders imports provider data without requiring an AppManager.
 func ImportProviders(cfg *serverconfig.Config, data string, format dataio.Format, opts ImportOptions) (*ImportResult, error) {
 	result, err := dataio.Import(data, cfg, format, dataio.ImportOptions{
-		OnProviderConflict: opts.OnProviderConflict,
-		Quiet:              opts.Quiet,
+		Quiet: opts.Quiet,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import providers: %w", err)
@@ -86,12 +83,11 @@ func ImportProviders(cfg *serverconfig.Config, data string, format dataio.Format
 	providers := make([]ProviderImportInfo, len(result.Providers))
 	for i, provider := range result.Providers {
 		providers[i] = ProviderImportInfo{
-			UUID: provider.UUID, Name: provider.Name, Action: provider.Action,
+			UUID: provider.UUID, Name: provider.Name, Action: provider.Action, Renamed: provider.Renamed,
 		}
 	}
 	return &ImportResult{
 		ProvidersCreated: result.ProvidersCreated,
-		ProvidersUsed:    result.ProvidersUsed,
 		Providers:        providers,
 		ProviderMap:      result.ProviderMap,
 	}, nil

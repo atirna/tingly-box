@@ -133,12 +133,10 @@ type FetchProviderModelsResponse struct {
 }
 
 // ImportProvidersRequest represents a request to import providers from a
-// base64/JSONL encoded export bundle (see internal/dataio).
+// base64/JSONL encoded export bundle (see internal/dataio). Every imported
+// provider is always created with a freshly minted UUID.
 type ImportProvidersRequest struct {
 	Data string `json:"data" binding:"required" description:"Base64 encoded provider export data" example:"TGB64:1.0:..."`
-	// OnProviderConflict specifies what to do when a provider already exists.
-	// "use" - use existing provider, "skip" - skip this provider, "suffix" - create with suffixed name
-	OnProviderConflict string `json:"on_provider_conflict" description:"How to handle provider conflicts" example:"use"`
 }
 
 // ImportProvidersResponse represents the response for importing providers.
@@ -147,16 +145,18 @@ type ImportProvidersResponse struct {
 	Message string `json:"message" example:"Providers imported successfully"`
 	Data    struct {
 		ProvidersCreated int                  `json:"providers_created" example:"1"`
-		ProvidersUsed    int                  `json:"providers_used" example:"0"`
 		Providers        []ProviderImportInfo `json:"providers,omitempty"`
 	} `json:"data"`
 }
 
-// ProviderImportInfo contains basic information about an imported or used provider.
+// ProviderImportInfo contains basic information about an imported provider.
 type ProviderImportInfo struct {
 	UUID   string `json:"uuid" example:"123e4567-e89b-12d3-a456-426614174000"`
 	Name   string `json:"name" example:"openai"`
-	Action string `json:"action" example:"created"` // "created", "used", "skipped"
+	Action string `json:"action" example:"created"`
+	// Renamed is true when Name was auto-suffixed because it collided with
+	// an already-existing provider name.
+	Renamed bool `json:"renamed" example:"false"`
 }
 
 // ExportProviderResponse represents the response for exporting a single provider.
