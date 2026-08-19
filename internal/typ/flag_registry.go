@@ -170,6 +170,15 @@ func RuleFlagRegistry() []FlagSpec {
 			Shared:          true,
 			InheritanceMode: "or",
 		},
+		{
+			Key:   "salvage_truncated_stream",
+			Label: "Salvage truncated stream",
+			Description: "When the upstream stream is cut off mid-content without a finish signal, end the response cleanly (synthesized completion) instead of surfacing a stream error. " +
+				"Partial content already delivered is kept; the client cannot tell the response was truncated. " +
+				"An empty truncated stream still errors so failover can retry. Use for unstable upstreams that drop connections mid-generation.",
+			Type:     FlagTypeBool,
+			Category: FlagCategoryResponse,
+		},
 		// ── Reasoning ──────────────────────────────────────────────────────
 		{
 			Key:             "thinking_effort",

@@ -290,6 +290,15 @@ type RuleFlags struct {
 	// entitlements (e.g. Cyber Verification) rely on. Any other value sends
 	// that organization id verbatim.
 	ClaudeOrgID string `json:"claude_org_id,omitempty" yaml:"claude_org_id,omitempty"`
+
+	// SalvageTruncatedStream synthesizes a clean terminal sequence when an
+	// upstream stream ends mid-content without a finish signal (finish_reason
+	// / terminal event), instead of surfacing a stream error to the client.
+	// Only applies when partial content was already delivered — an empty
+	// truncated stream still errors so mid-request failover can retry.
+	// Availability-over-honesty trade-off: the client cannot tell the
+	// response was truncated, so this is opt-in and off by default.
+	SalvageTruncatedStream bool `json:"salvage_truncated_stream,omitempty" yaml:"salvage_truncated_stream,omitempty"`
 }
 
 // IsZero reports whether no flag is set at all. RuleFlags stopped being

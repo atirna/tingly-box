@@ -293,6 +293,7 @@ func (ph *ProtocolHandler) streamOpenAIChat(c *gin.Context, provider *typ.Provid
 	hc := protocol.NewHandleContext(c, responseModel)
 	hc.DisableStreamUsage = disableStreamUsage
 	hc.EstimatedInputTokens = estimatedInputTokens
+	hc.SalvageTruncatedStream = typ.GetRuleFlags(c.Request.Context()).SalvageTruncatedStream
 
 	usage, err := stream.HandleOpenAIChatStream(hc, streamResp)
 

@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/openai/openai-go/v3"
 	openaiOption "github.com/openai/openai-go/v3/option"
+	openaistream "github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -383,6 +385,88 @@ func TestChatStreamUsage_NilDetails(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &out))
 	assert.NotContains(t, out, "prompt_tokens_details")
 	assert.NotContains(t, out, "completion_tokens_details")
+}
+
+// TestHandleOpenAIChatToResponsesStream_TruncatedStreamErrors: a chat stream
+// that ends mid-content without a finish_reason must surface an error event —
+// strict Responses clients (Codex) otherwise see a bare EOF and report
+// "stream closed before response.completed" with nothing to diagnose.
+func TestHandleOpenAIChatToResponsesStream_TruncatedStreamErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	dec := &fakeChatDecoder{events: []string{
+		buildChatRoleOnlyChunkJSON(t),
+		buildChatContentChunkJSON(t, "partial"),
+	}, current: -1}
+	stream := openaistream.NewStream[openai.ChatCompletionChunk](dec, nil)
+
+	_, err := HandleOpenAIChatToResponsesStream(protocol.NewHandleContext(c, "gpt-4o"), stream, "gpt-4o")
+	require.ErrorContains(t, err, "without a finish reason")
+
+	body := w.Body.String()
+	assert.Contains(t, body, `"type":"error"`)
+	assert.NotContains(t, body, "response.completed")
+}
+
+// TestHandleOpenAIChatToResponsesStream_TruncatedStreamSalvaged: with the
+// salvage_truncated_stream flag on, the same truncated stream is closed with
+// a synthesized terminal sequence (response.completed + [DONE]) that keeps
+// the partial content, instead of a stream error.
+func TestHandleOpenAIChatToResponsesStream_TruncatedStreamSalvaged(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	dec := &fakeChatDecoder{events: []string{
+		buildChatRoleOnlyChunkJSON(t),
+		buildChatContentChunkJSON(t, "partial"),
+	}, current: -1}
+	stream := openaistream.NewStream[openai.ChatCompletionChunk](dec, nil)
+
+	hc := protocol.NewHandleContext(c, "gpt-4o")
+	hc.SalvageTruncatedStream = true
+	_, err := HandleOpenAIChatToResponsesStream(hc, stream, "gpt-4o")
+	require.NoError(t, err)
+
+	body := w.Body.String()
+	events := parseResponsesSSEEvents(t, body)
+
+	completedEvent, ok := events["response.completed"]
+	require.True(t, ok, "salvage must synthesize response.completed")
+	completedResponse := completedEvent["response"].(map[string]interface{})
+	assert.Equal(t, "completed", completedResponse["status"])
+
+	doneEvent, ok := events["response.output_text.done"]
+	require.True(t, ok, "salvage must close the text item")
+	assert.Equal(t, "partial", doneEvent["text"])
+
+	assert.NotContains(t, body, `"type":"error"`)
+	assert.Contains(t, body, "[DONE]")
+}
+
+// TestHandleOpenAIChatToResponsesStream_EmptyTruncatedStreamStillErrors: the
+// salvage flag must not rescue a truncated stream that produced no content —
+// there is nothing to keep, and the error must stay retryable for failover.
+func TestHandleOpenAIChatToResponsesStream_EmptyTruncatedStreamStillErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	dec := &fakeChatDecoder{events: []string{
+		buildChatRoleOnlyChunkJSON(t),
+	}, current: -1}
+	stream := openaistream.NewStream[openai.ChatCompletionChunk](dec, nil)
+
+	hc := protocol.NewHandleContext(c, "gpt-4o")
+	hc.SalvageTruncatedStream = true
+	_, err := HandleOpenAIChatToResponsesStream(hc, stream, "gpt-4o")
+	require.ErrorContains(t, err, "without a finish reason")
+	assert.NotContains(t, w.Body.String(), "response.completed")
 }
 
 // parseResponsesSSEEvents parses SSE response body into a map of events

@@ -225,6 +225,7 @@ func (ph *ProtocolHandler) streamOpenAIChatToResponses(c *gin.Context, reqCtx *t
 		return
 	}
 	hc := protocol.NewHandleContext(c, responseModel)
+	hc.SalvageTruncatedStream = typ.GetRuleFlags(c.Request.Context()).SalvageTruncatedStream
 	usage, err := stream.HandleOpenAIChatToResponsesStream(hc, chatStream, responseModel)
 	ph.trackUsageWithTokenUsage(c, usage, err)
 }

@@ -73,6 +73,7 @@ export interface RuleFlags {
     context1m?: boolean;
     claudeOrgId?: string;
     extraHeaders?: Record<string, string>;
+    salvageTruncatedStream?: boolean;
 }
 
 export interface RuleFlagsApi {
@@ -92,6 +93,7 @@ export interface RuleFlagsApi {
     context_1m?: boolean;
     claude_org_id?: string;
     extra_headers?: Record<string, string>;
+    salvage_truncated_stream?: boolean;
 }
 
 export type FlagValueType = 'bool' | 'string' | 'enum' | 'int' | 'service_ref' | 'headers';

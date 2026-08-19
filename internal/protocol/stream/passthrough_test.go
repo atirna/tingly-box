@@ -647,6 +647,34 @@ func TestHandleOpenAIChatStream_Passthrough_TruncatedStreamErrors(t *testing.T) 
 	assert.NotContains(t, w.Body.String(), "[DONE]")
 }
 
+// TestHandleOpenAIChatStream_Passthrough_TruncatedStreamSalvaged: with the
+// salvage_truncated_stream flag on, the same truncated stream ends cleanly —
+// a synthesized finish_reason:"stop" chunk plus [DONE] — instead of a
+// stream_error event.
+func TestHandleOpenAIChatStream_Passthrough_TruncatedStreamSalvaged(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	dec := &fakeChatDecoder{events: []string{
+		buildChatRoleOnlyChunkJSON(t),
+		buildChatContentChunkJSON(t, "partial"),
+	}, current: -1}
+	stream := openaistream.NewStream[openai.ChatCompletionChunk](dec, nil)
+
+	hc := newTestHandleContext(c)
+	hc.DisableStreamUsage = true
+	hc.SalvageTruncatedStream = true
+	_, err := HandleOpenAIChatStream(hc, stream)
+	require.NoError(t, err)
+
+	body := w.Body.String()
+	assert.NotContains(t, body, `"type":"stream_error"`)
+	assert.Contains(t, body, `"finish_reason":"stop"`)
+	assert.Contains(t, body, "[DONE]")
+}
+
 // TestHandleOpenAIChatStream_Passthrough_NoTTFTOnRoleOnly verifies no TTFT is
 // recorded when the stream contains only the role-only delta.
 func TestHandleOpenAIChatStream_Passthrough_NoTTFTOnRoleOnly(t *testing.T) {

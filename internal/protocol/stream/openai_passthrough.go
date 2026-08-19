@@ -268,18 +268,47 @@ func HandleOpenAIChatStream(hc *protocol.HandleContext, streamResp *openaistream
 	}
 
 	if contentBuilder.Len() > 0 && !sawFinish && c.Request.Context().Err() == nil {
-		streamErr := fmt.Errorf("chat stream ended without a finish reason")
-		errorChunk := map[string]interface{}{
-			"error": map[string]interface{}{
-				"message": streamErr.Error(),
-				"type":    "stream_error",
-				"code":    "upstream_truncated",
-			},
+		if hc.SalvageTruncatedStream {
+			// Upstream cut the stream mid-content without a finish_reason.
+			// Salvage: close the turn with a synthesized finish chunk so the
+			// client sees a clean end instead of a stream error, then fall
+			// through to the usual usage-estimate + [DONE] tail.
+			logrus.WithContext(c.Request.Context()).
+				Warnf("chat stream ended without a finish reason; salvaging %d content bytes with a synthesized finish chunk", contentBuilder.Len())
+			chunkID := firstChunkID
+			if chunkID == "" {
+				chunkID = fmt.Sprintf("chatcmpl-%d", time.Now().Unix())
+			}
+			finishChunk := map[string]interface{}{
+				"id":      chunkID,
+				"object":  "chat.completion.chunk",
+				"created": time.Now().Unix(),
+				"model":   hc.ResponseModel,
+				"choices": []map[string]interface{}{
+					{
+						"index":         0,
+						"delta":         map[string]interface{}{},
+						"finish_reason": "stop",
+					},
+				},
+			}
+			finishJSON, _ := json.Marshal(finishChunk)
+			c.SSEvent("", string(finishJSON))
+			flusher.Flush()
+		} else {
+			streamErr := fmt.Errorf("chat stream ended without a finish reason")
+			errorChunk := map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": streamErr.Error(),
+					"type":    "stream_error",
+					"code":    "upstream_truncated",
+				},
+			}
+			errorJSON, _ := json.Marshal(errorChunk)
+			c.SSEvent("", string(errorJSON))
+			flusher.Flush()
+			return usage, streamErr
 		}
-		errorJSON, _ := json.Marshal(errorChunk)
-		c.SSEvent("", string(errorJSON))
-		flusher.Flush()
-		return usage, streamErr
 	}
 
 	if !hasUsage {

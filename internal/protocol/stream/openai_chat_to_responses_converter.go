@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/sirupsen/logrus"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	protocolusage "github.com/tingly-dev/tingly-box/internal/protocol/usage"
@@ -35,6 +36,7 @@ type chatToResponsesConverter struct {
 	hasUsage          bool
 	completedSent     bool
 	finishReason      string
+	salvageTruncated  bool
 
 	// pending is an internal queue of events to yield one-by-one
 	pending []wire.ResponsesEvent
@@ -79,7 +81,25 @@ func (c *chatToResponsesConverter) Next() (interface{}, bool, error) {
 				return nil, false, err
 			}
 			if !c.completedSent {
-				return nil, false, fmt.Errorf("chat stream ended without a finish reason")
+				// The upstream closed the connection cleanly without ever
+				// sending a finish_reason: the turn was truncated on the
+				// provider side. With salvage enabled and real partial
+				// content on hand, synthesize the terminal sequence so the
+				// client gets a clean end instead of a stream error. An
+				// empty truncated stream still errors — there is nothing to
+				// keep, and the error stays retryable for failover.
+				if c.salvageTruncated && (c.accumulatedText.Len() > 0 || len(c.pendingToolCalls) > 0) {
+					logrus.Warnf("chat stream ended without a finish reason; salvaging %d text bytes, %d tool calls into a synthesized completion",
+						c.accumulatedText.Len(), len(c.pendingToolCalls))
+					c.emitCompletionEvents()
+				} else {
+					return nil, false, fmt.Errorf("chat stream ended without a finish reason")
+				}
+			}
+			if len(c.pending) > 0 {
+				evt := c.pending[0]
+				c.pending = c.pending[1:]
+				return evt, false, nil
 			}
 			return nil, true, nil
 		}

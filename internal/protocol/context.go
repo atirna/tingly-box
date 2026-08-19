@@ -32,6 +32,13 @@ type HandleContext struct {
 	// Stream configuration flags
 	DisableStreamUsage bool // Don't include usage in streaming chunks
 
+	// SalvageTruncatedStream ends a stream cleanly (synthesized terminal
+	// sequence) when the upstream cuts off mid-content without a finish
+	// signal, instead of surfacing a stream error. Only applies once partial
+	// content exists; an empty truncated stream still errors so failover can
+	// retry. Set from the rule's salvage_truncated_stream flag.
+	SalvageTruncatedStream bool
+
 	// EstimatedInputTokens is a pre-computed input-token estimate used only as a
 	// fallback when the upstream stream reports no usage. The caller computes it
 	// and sets it here, so the stream handler depends on this scalar rather than
