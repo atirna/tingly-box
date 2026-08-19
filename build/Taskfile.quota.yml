@@ -617,6 +617,55 @@ tasks:
         {{ if .PROXY }}--proxy "{{.PROXY}}"{{ end }} | jq
 
 
+  # opencode (zen / go)
+  #
+  # One host, two products, one key: /zen/v1 bills the prepaid Zen balance,
+  # /zen/go/v1 the Go subscription. Only the subscription publishes usage, and
+  # only as percentages — the dollar limits behind them are never returned.
+  # A key with no Go plan gets 403 EntitlementError; the Zen balance itself has
+  # no public endpoint (opencode issue #10448).
+  opencode:
+    cmds:
+      - |
+        echo "example"
+        cat << EOF
+        {
+          "usage": {
+            "rolling": {
+              "status": "ok",
+              "percent": 12,
+              "resetsAt": "2026-08-19T13:00:00.000Z"
+            },
+            "weekly": {
+              "status": "ok",
+              "percent": 40,
+              "resetsAt": "2026-08-24T00:00:00.000Z"
+            },
+            "monthly": {
+              "status": "ok",
+              "percent": 31,
+              "resetsAt": "2026-09-03T00:00:00.000Z"
+            }
+          }
+        }
+        EOF
+      - |
+        echo "no subscription"
+        cat << EOF
+        {
+          "type": "error",
+          "error": {
+            "type": "EntitlementError",
+            "message": "OpenCode Go subscription required."
+          }
+        }
+        EOF
+      - |
+        curl https://opencode.ai/zen/go/v1/usage \
+        -H "Authorization: Bearer {{.OPENCODE_KEY}}" \
+        -H "Accept: application/json" \
+        {{ if .PROXY }}--proxy "{{.PROXY}}"{{ end }} | jq
+
   # copilot, cursor, vertex_ai: no public quota API
   copilot:
     cmds:

@@ -391,6 +391,12 @@ func inferProviderType(provider *typ.Provider) ProviderType {
 		return ProviderTypeMiniMax
 	case hostIs(host, "chatgpt.com"), strings.Contains(host, "codex"):
 		return ProviderTypeCodex
+	// One host serves both OpenCode products: /zen/v1 bills the prepaid
+	// balance, /zen/go/v1 the Go subscription. The fetcher reads the
+	// subscription either way and says so when the key has no plan, so the
+	// path does not need to split them here.
+	case hostIs(host, "opencode.ai"):
+		return ProviderTypeOpenCode
 	}
 	return ""
 }

@@ -38,6 +38,7 @@
 | Kimi Code | 周额度 + N 个 limit（**部分不给时长**）；booster 钱包 | — |
 | Kimi K2 | `consumed` / `remaining` | 原始总额（只能合成） |
 | OpenRouter | key 终身限额（可为 null）；日/周/月花费（**月花费永远无上限**——key limit 管终身不管当月） | — |
+| OpenCode | Go 订阅三个窗口（5h 滚动 / 周 / 月）的百分比 + 重置时间 + `status` | 限额绝对值、窗口长度、**按量付费余额（无公开端点）**、免费额度（按 IP 计） |
 | OpenAI | 花费时序（`/v1/usage` 常 404） | 上限 |
 | Copilot / Cursor / VertexAI | 无配额 API | 一切 |
 
@@ -184,7 +185,7 @@ return w != nil && !w.Unknown && !w.Unlimited && w.Limit > 0
 |---|---|
 | 判定 API、排序、`Unreadable` | `ai/quota/semantic.go` |
 | 字段定义、`AddWindow` / `AddBreakdown`、语义推导 | `ai/quota/types.go` |
-| 14 个 fetcher | `ai/quota/fetcher/*.go` |
+| 15 个 fetcher | `ai/quota/fetcher/*.go` |
 | 共享助手（`endpoint` / `calcPercent` / `windowTypeForMinutes` / `unreadableUsage`） | `ai/quota/fetcher/helpers.go` |
 | 不变量断言（每个 provider 测试调用） | `ai/quota/fetcher/invariants_test.go` |
 | 真实样本固化 | `ai/quota/fetcher/taskfile_samples_test.go` + `build/Taskfile.quota.yml` |
@@ -202,6 +203,7 @@ return w != nil && !w.Unknown && !w.Unlimited && w.Limit > 0
 | kimi_code | booster → `resource`；weekly 补 7d；无时长 limit 保持 `custom` |
 | kimik2 | credits → `resource` |
 | openrouter | key 余额 → `resource`；月度花费两个分支都标 `Unlimited`（key limit 管终身不管当月）；去掉重复的第二个 monthly 窗口 |
+| opencode | 三个窗口都是账户级 gate（网关任一打满即拒），交给 `Tightest()`；只有百分比 → 0-100 标度；滚动窗口长度上游不给，按其超限文案的 "5 hour" 取 300min；无 Go 订阅的 403 `EntitlementError` → `MarkUnreadable`（好 key，不是错误，更不是 0%）。详见 `.design/opencode-quota.md` |
 | openai | 有花费无上限 → `Unknown` 窗口（数值可见）；404 → 只记 `LastError` |
 | copilot / cursor / vertex_ai | 只记 `LastError`，不产出窗口 |
 

@@ -218,6 +218,20 @@ func TestTaskfileSamples(t *testing.T) {
 	findBreakdown(t, glmU, "mcp")
 	findBreakdown(t, glmU, "search-prime")
 
+	// ── opencode go (build/Taskfile.quota.yml) ──
+	// Percentages are all upstream gives; the plan's dollar limits never
+	// appear, so the windows live on the 0-100 scale.
+	s = serve(t, `{"usage":{
+	 "rolling":{"status":"ok","percent":12,"resetsAt":"2026-08-19T13:00:00.000Z"},
+	 "weekly":{"status":"ok","percent":40,"resetsAt":"2026-08-24T00:00:00.000Z"},
+	 "monthly":{"status":"ok","percent":31,"resetsAt":"2026-09-03T00:00:00.000Z"}}}`)
+	u, err = (&OpenCodeFetcher{}).Fetch(context.Background(),
+		&ai.Provider{UUID: "u", Name: "OpenCode", Token: "k", APIBase: s.URL + "/zen/v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(t, "opencode", u, want{pct: 40, ok: true, tightest: "weekly", windows: 3})
+
 	// ── openai 404 / copilot ──
 	s = serve(t, "")
 	srv404 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
