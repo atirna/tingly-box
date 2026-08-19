@@ -37,6 +37,7 @@ type chatToResponsesConverter struct {
 	completedSent     bool
 	finishReason      string
 	salvageTruncated  bool
+	salvaged          bool
 
 	// pending is an internal queue of events to yield one-by-one
 	pending []wire.ResponsesEvent
@@ -77,20 +78,28 @@ func (c *chatToResponsesConverter) Next() (interface{}, bool, error) {
 	// Read upstream chunks until we have at least one event to yield
 	for {
 		if !c.stream.Next() {
-			if err := c.stream.Err(); err != nil {
-				return nil, false, err
+			// The upstream stream ended before a finish_reason — a clean EOF
+			// or a transport read error (connection torn down mid-response).
+			// With salvage enabled and real partial content on hand,
+			// synthesize the terminal sequence so the client gets a clean end
+			// instead of a stream error. An empty truncated stream still
+			// errors — there is nothing to keep, and the error stays
+			// retryable for failover. In-band error payloads and client
+			// cancellation are never salvaged.
+			streamErr := c.stream.Err()
+			canSalvage := c.salvageTruncated && !c.completedSent &&
+				(c.accumulatedText.Len() > 0 || len(c.pendingToolCalls) > 0) &&
+				salvageableStreamErr(streamErr)
+			// A salvaged stream's read error stays swallowed on the drain
+			// calls that follow the synthesized completion.
+			if streamErr != nil && !canSalvage && !c.salvaged {
+				return nil, false, streamErr
 			}
 			if !c.completedSent {
-				// The upstream closed the connection cleanly without ever
-				// sending a finish_reason: the turn was truncated on the
-				// provider side. With salvage enabled and real partial
-				// content on hand, synthesize the terminal sequence so the
-				// client gets a clean end instead of a stream error. An
-				// empty truncated stream still errors — there is nothing to
-				// keep, and the error stays retryable for failover.
-				if c.salvageTruncated && (c.accumulatedText.Len() > 0 || len(c.pendingToolCalls) > 0) {
-					logrus.Warnf("chat stream ended without a finish reason; salvaging %d text bytes, %d tool calls into a synthesized completion",
-						c.accumulatedText.Len(), len(c.pendingToolCalls))
+				if canSalvage {
+					logrus.Warnf("chat stream ended without a finish reason (err=%v); salvaging %d text bytes, %d tool calls into a synthesized completion",
+						streamErr, c.accumulatedText.Len(), len(c.pendingToolCalls))
+					c.salvaged = true
 					c.emitCompletionEvents()
 				} else {
 					return nil, false, fmt.Errorf("chat stream ended without a finish reason")

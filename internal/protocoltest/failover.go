@@ -298,8 +298,9 @@ func (env *TestEnv) SetupBothFailingRoute(
 // wrapped with a per-request counter. Caller selects the desired failure shape via the
 // Service.Model field on the rule (e.g. virtual-fail-429). Both registries are populated,
 // so the same server serves either OpenAI Chat or Anthropic Messages depending on the
-// route the gateway picks.
-func startFailingProvider(t *testing.T) (*httptest.Server, *atomic.Int64) {
+// route the gateway picks. Takes flagTB (satisfied by *testing.T) so the
+// rule-flag suite can reuse it under the CLI recorder.
+func startFailingProvider(t flagTB) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 

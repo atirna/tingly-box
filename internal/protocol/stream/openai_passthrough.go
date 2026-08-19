@@ -240,6 +240,19 @@ func HandleOpenAIChatStream(hc *protocol.HandleContext, streamResp *openaistream
 		},
 	)
 
+	// salvage_truncated_stream: a transport read error after real content is
+	// the same truncation as a clean EOF from the client's point of view —
+	// fold it into the truncation guard below, which synthesizes the finish.
+	// Pre-content failures keep erroring (retryable for failover), as do
+	// in-band error payloads and client cancellation.
+	if err != nil && hc.SalvageTruncatedStream && c.Writer.Written() &&
+		contentBuilder.Len() > 0 && !sawFinish &&
+		salvageableStreamErr(err) && c.Request.Context().Err() == nil {
+		logrus.WithContext(c.Request.Context()).
+			WithError(err).Warn("chat stream read error after partial content; treating as truncated stream for salvage")
+		err = nil
+	}
+
 	if err != nil && !errors.Is(err, context.Canceled) {
 		if !hasUsage {
 			usage = protocol.NewTokenUsage(hc.EstimatedInputTokens, token.EstimateOutputTokens(contentBuilder.String()))

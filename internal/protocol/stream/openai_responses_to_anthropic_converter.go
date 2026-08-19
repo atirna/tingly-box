@@ -41,6 +41,13 @@ type responsesToAnthropicConverter struct {
 	done    bool
 	convErr error // set on protocol-level errors (response.failed, etc.)
 
+	// salvageTruncated (rule flag salvage_truncated_stream) closes a stream
+	// that was cut mid-content with a synthesized terminal sequence instead
+	// of an error event; salvaged records that it fired so the handler skips
+	// its post-run stream.Err() error path.
+	salvageTruncated bool
+	salvaged         bool
+
 	// usage (set at response.completed)
 	usage *protocol.TokenUsage
 }
@@ -92,14 +99,27 @@ func (r *responsesToAnthropicConverter) Next() (interface{}, bool, error) {
 			// honest error event rather than fabricating a clean message_stop.
 			// Real SDK clients raise on it (the turn was truncated); lenient
 			// clients keep the partial content already sent.
+			//
+			// With the salvage_truncated_stream flag on and real partial
+			// content delivered, close the turn with a synthesized terminal
+			// sequence instead — both for a clean EOF and for a transport
+			// read error (the upstream tore the connection down). In-band
+			// error payloads and client cancellation are never salvaged.
 			if r.convErr == nil && !r.done {
-				r.emitAnthropic("error", map[string]interface{}{
-					"type": "error",
-					"error": map[string]interface{}{
-						"type":    "stream_error",
-						"message": "upstream stream ended before completion",
-					},
-				})
+				if r.salvageTruncated && r.state.nextBlockIndex > 0 && salvageableStreamErr(r.stream.Err()) {
+					logrus.WithContext(r.ctx).Warnf("[ResponsesAPI] upstream stream ended before completion; salvaging %d content block(s) into a synthesized message_stop (err=%v)",
+						r.state.nextBlockIndex, r.stream.Err())
+					r.salvaged = true
+					r.salvageFinalize()
+				} else {
+					r.emitAnthropic("error", map[string]interface{}{
+						"type": "error",
+						"error": map[string]interface{}{
+							"type":    "stream_error",
+							"message": "upstream stream ended before completion",
+						},
+					})
+				}
 			}
 			r.done = true
 			if len(r.pending) > 0 {
@@ -595,4 +615,19 @@ func (r *responsesToAnthropicConverter) finalize(resp *responses.Response, stopR
 	}
 	r.emitMessageDelta(stopReason)
 	r.emitMessageStop() // sets r.done = true
+}
+
+// salvageFinalize closes a truncated stream as if the upstream had finished:
+// stop events for every open block, message_delta with the stop reason
+// derived from the streamed content (same derivation as finalize), and
+// message_stop. Usage keeps whatever was accumulated — zero when the
+// upstream died before response.completed.
+func (r *responsesToAnthropicConverter) salvageFinalize() {
+	r.emitStopEvents()
+	stopReason := anthropicStopReasonEndTurn
+	if r.lastOutputItemType == "function_call" {
+		stopReason = anthropicStopReasonToolUse
+	}
+	r.emitMessageDelta(stopReason)
+	r.emitMessageStop()
 }

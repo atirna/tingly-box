@@ -82,6 +82,13 @@ type openAIToAnthropicConverter struct {
 	hookErr              error
 	done                 bool
 	pending              []interface{}
+
+	// salvageTruncated (rule flag salvage_truncated_stream) closes a stream
+	// that was cut mid-content with a synthesized terminal sequence instead
+	// of an error; salvaged records that it fired so the handler skips its
+	// post-run stream.Err() error path.
+	salvageTruncated bool
+	salvaged         bool
 }
 
 func newOpenAIToAnthropicConverter(
@@ -142,6 +149,16 @@ func (c *openAIToAnthropicConverter) Next() (interface{}, bool, error) {
 				if streamErr != nil {
 					logrus.WithError(streamErr).Warn("openai stream errored after finish_reason; salvaging completed response")
 				}
+				c.emitTerminalEvents()
+			} else if c.salvageTruncated && c.hookErr == nil && c.state.nextBlockIndex > 0 && salvageableStreamErr(streamErr) {
+				// salvage_truncated_stream: real partial content was delivered
+				// and the upstream cut without a finish signal — a clean EOF or
+				// a transport read error alike. Close the turn with the normal
+				// terminal sequence instead of an error. In-band error payloads
+				// and client cancellation are never salvaged.
+				logrus.WithError(streamErr).Warnf("openai stream ended before a finish_reason; salvaging %d content block(s) into a synthesized message_stop",
+					c.state.nextBlockIndex)
+				c.salvaged = true
 				c.emitTerminalEvents()
 			} else if streamErr != nil {
 				return nil, false, streamErr

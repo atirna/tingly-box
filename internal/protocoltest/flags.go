@@ -404,6 +404,98 @@ func ruleFlagCases() []flagCase {
 			}
 		}},
 
+		// ── salvage_truncated_stream ─────────────────────────────────────────
+		// Upstream: the tail-less vmodel (virtual-fail-midstream-cleaneof) —
+		// it streams one real chat delta, then ends the chunked body cleanly
+		// with no finish_reason chunk and no [DONE] (the #1384 shape). With
+		// the flag ON the gateway must close the client stream with a
+		// synthesized terminal sequence that keeps the partial content; with
+		// the flag OFF it must keep surfacing the honest stream error.
+		{key: "salvage_truncated_stream", run: func(t flagTB, env *TestEnv) {
+			failServer, _ := startFailingProvider(t)
+			registerProvider(env, "flag-salvage-upstream", failServer.URL, ai.EndpointModeChat)
+
+			addRule := func(reqModel string, flags typ.RuleFlags) {
+				rule := newHarnessRule(reqModel, typ.ScenarioOpenAI, reqModel, FailMockMidStreamClean,
+					harnessService("flag-salvage-upstream", FailMockMidStreamClean))
+				rule.Flags = flags
+				_ = env.appConfig.GetGlobalConfig().AddRequestConfig(rule)
+			}
+			addRule("pv-flag-salvage-on", typ.RuleFlags{SalvageTruncatedStream: true})
+			addRule("pv-flag-salvage-off", typ.RuleFlags{})
+
+			// Chat→Responses conversion (the Codex-shaped path), flag ON: the
+			// truncated chat upstream must reach the client as a clean
+			// response.completed carrying the partial delta, not a stream error.
+			res := sendFlag(t, env, protocol.TypeOpenAIResponses, protocol.TypeOpenAIChat, "pv-flag-salvage-on", true, nil, nil)
+			body := string(res.RawBody)
+			if !strings.Contains(body, "response.completed") {
+				t.Errorf("flag on: truncated stream not closed with response.completed; body=%s", truncate(body, 400))
+			}
+			if strings.Contains(body, "stream_error") {
+				t.Errorf("flag on: client still sees a stream error; body=%s", truncate(body, 400))
+			}
+			if !strings.Contains(body, "hello") {
+				t.Errorf("flag on: partial content lost from the salvaged stream; body=%s", truncate(body, 400))
+			}
+
+			// Same route, flag OFF: the honest default must survive — an
+			// explicit stream error and no fabricated completion.
+			res = sendFlag(t, env, protocol.TypeOpenAIResponses, protocol.TypeOpenAIChat, "pv-flag-salvage-off", true, nil, nil)
+			body = string(res.RawBody)
+			if strings.Contains(body, "response.completed") {
+				t.Errorf("flag off: truncated stream reported as completed; body=%s", truncate(body, 400))
+			}
+			if !strings.Contains(body, "stream_error") {
+				t.Errorf("flag off: no explicit stream error surfaced; body=%s", truncate(body, 400))
+			}
+
+			// Chat passthrough, flag ON: the truncated stream must end with a
+			// synthesized finish_reason:"stop" chunk plus [DONE].
+			res = sendFlag(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, "pv-flag-salvage-on", true, nil, nil)
+			body = string(res.RawBody)
+			if !strings.Contains(body, `"finish_reason":"stop"`) {
+				t.Errorf("flag on (chat passthrough): missing synthesized finish chunk; body=%s", truncate(body, 400))
+			}
+			if !strings.Contains(body, "[DONE]") {
+				t.Errorf("flag on (chat passthrough): missing [DONE]; body=%s", truncate(body, 400))
+			}
+			if strings.Contains(body, "upstream_truncated") {
+				t.Errorf("flag on (chat passthrough): client still sees upstream_truncated; body=%s", truncate(body, 400))
+			}
+
+			// Responses→Anthropic conversion (the claude_code-shaped path —
+			// an Anthropic client behind a Responses upstream, e.g. Codex):
+			// flag ON must close the truncated stream with message_stop.
+			registerProvider(env, "flag-salvage-upstream-resp", failServer.URL, ai.EndpointModeResponses)
+			addAnthRule := func(reqModel string, flags typ.RuleFlags) {
+				rule := newHarnessRule(reqModel, typ.ScenarioAnthropic, reqModel, FailMockMidStreamClean,
+					harnessService("flag-salvage-upstream-resp", FailMockMidStreamClean))
+				rule.Flags = flags
+				_ = env.appConfig.GetGlobalConfig().AddRequestConfig(rule)
+			}
+			addAnthRule("pv-flag-salvage-anth-on", typ.RuleFlags{SalvageTruncatedStream: true})
+			addAnthRule("pv-flag-salvage-anth-off", typ.RuleFlags{})
+
+			res = sendFlag(t, env, protocol.TypeAnthropicV1, protocol.TypeOpenAIResponses, "pv-flag-salvage-anth-on", true, nil, nil)
+			body = string(res.RawBody)
+			if !strings.Contains(body, "message_stop") {
+				t.Errorf("flag on (anthropic client): truncated stream not closed with message_stop; body=%s", truncate(body, 400))
+			}
+			if strings.Contains(body, "stream_error") {
+				t.Errorf("flag on (anthropic client): client still sees a stream error; body=%s", truncate(body, 400))
+			}
+
+			res = sendFlag(t, env, protocol.TypeAnthropicV1, protocol.TypeOpenAIResponses, "pv-flag-salvage-anth-off", true, nil, nil)
+			body = string(res.RawBody)
+			if !strings.Contains(body, "upstream stream ended before completion") {
+				t.Errorf("flag off (anthropic client): honest truncation error missing; body=%s", truncate(body, 400))
+			}
+			if strings.Contains(body, "message_stop") {
+				t.Errorf("flag off (anthropic client): truncated stream reported as message_stop; body=%s", truncate(body, 400))
+			}
+		}},
+
 		// ── thinking_effort ──────────────────────────────────────────────────
 		{key: "thinking_effort", run: func(t flagTB, env *TestEnv) {
 			model := env.SetupRouteWithFlags(protocol.TypeAnthropicV1, protocol.TypeAnthropicBeta, flagScenario(), typ.RuleFlags{ThinkingEffort: typ.ThinkingEffortHigh})

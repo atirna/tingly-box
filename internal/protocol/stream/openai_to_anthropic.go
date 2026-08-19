@@ -37,6 +37,7 @@ func handleResponsesToAnthropicStream(hc *protocol.HandleContext, stream Respons
 	}()
 
 	conv := newResponsesToAnthropicConverter(c.Request.Context(), stream, responseModel)
+	conv.salvageTruncated = hc.SalvageTruncatedStream
 	_, err := RunConverter(hc, conv, anthropicSSEWriterWithFirstChunk(c))
 
 	// Protocol-level error (response.failed, etc.): SSE error event already sent by converter.
@@ -63,7 +64,9 @@ func handleResponsesToAnthropicStream(hc *protocol.HandleContext, stream Respons
 		return conv.Usage(), err
 	}
 
-	if streamErr := stream.Err(); streamErr != nil {
+	// A salvaged stream already closed with a synthesized terminal sequence —
+	// its read error (if any) must not be re-surfaced as a stream_error event.
+	if streamErr := stream.Err(); streamErr != nil && !conv.salvaged {
 		if errors.Is(streamErr, context.Canceled) {
 			logrus.WithContext(c.Request.Context()).Debug("[ResponsesAPI] Stream canceled by client")
 			return conv.Usage(), nil
@@ -151,6 +154,7 @@ func handleOpenAIToAnthropicStreamResponse(
 	}()
 
 	conv := newOpenAIToAnthropicConverter(stream, responseModel, req, hooks, mapOpenAIFinishReasonToAnthropic)
+	conv.salvageTruncated = hc.SalvageTruncatedStream
 	_, err := RunConverter(hc, conv, anthropicSSEWriter(c))
 
 	if hookErr := conv.HookErr(); hookErr != nil {
@@ -177,7 +181,9 @@ func handleOpenAIToAnthropicStreamResponse(
 		}, nil)
 		return conv.Usage(), err
 	}
-	if streamErr := stream.Err(); streamErr != nil {
+	// A salvaged stream already closed with a synthesized terminal sequence —
+	// its read error (if any) must not be re-surfaced as a stream_error event.
+	if streamErr := stream.Err(); streamErr != nil && !conv.salvaged {
 		if errors.Is(streamErr, context.Canceled) {
 			logrus.WithContext(c.Request.Context()).Debug("OpenAI to Anthropic stream canceled by client")
 			return conv.Usage(), nil

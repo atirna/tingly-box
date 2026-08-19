@@ -65,6 +65,7 @@ func handleOpenAIToAnthropicBetaStream(
 	}()
 
 	conv := newOpenAIToAnthropicConverter(stream, responseModel, req, hooks, mapOpenAIFinishReasonToAnthropicBeta)
+	conv.salvageTruncated = hc.SalvageTruncatedStream
 	_, err := RunConverter(hc, conv, anthropicSSEWriter(c))
 
 	if hookErr := conv.HookErr(); hookErr != nil {
@@ -91,7 +92,9 @@ func handleOpenAIToAnthropicBetaStream(
 		}, nil)
 		return conv.Usage(), err
 	}
-	if streamErr := stream.Err(); streamErr != nil {
+	// A salvaged stream already closed with a synthesized terminal sequence —
+	// its read error (if any) must not be re-surfaced as a stream_error event.
+	if streamErr := stream.Err(); streamErr != nil && !conv.salvaged {
 		if errors.Is(streamErr, context.Canceled) {
 			logrus.WithContext(c.Request.Context()).Debug("OpenAI to Anthropic beta stream canceled by client")
 			return conv.Usage(), nil

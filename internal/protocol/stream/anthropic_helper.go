@@ -142,7 +142,14 @@ func sendAnthropicStreamEvent(c *gin.Context, eventType string, eventData any, f
 
 	// Anthropic SSE format: event: <type>\ndata: <json>\n\n
 	c.SSEvent(eventType, string(eventJSON))
-	flusher.Flush()
+	// Callers on error paths pass a nil flusher; fall back to the writer's own
+	// flusher instead of panicking on the nil interface.
+	if flusher == nil {
+		flusher, _ = c.Writer.(http.Flusher)
+	}
+	if flusher != nil {
+		flusher.Flush()
+	}
 
 	if recorder, exists := c.Get(constant.CtxKeyStreamEventRecorder); exists {
 		if r, ok := recorder.(StreamEventRecorder); ok {

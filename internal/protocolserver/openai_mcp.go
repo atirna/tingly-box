@@ -42,6 +42,7 @@ func (ph *ProtocolHandler) StreamOpenAIChatToAnthropicV1WithMCP(
 			hooks = ph.buildOpenAIToAnthropicMCPHooks(c.Request.Context(), provider.UUID, req)
 		}
 		hc := protocol.NewHandleContext(c, responseModel)
+		hc.SalvageTruncatedStream = typ.GetRuleFlags(c.Request.Context()).SalvageTruncatedStream
 		usage, err := stream.HandleOpenAIToAnthropicStreamResponseWithMCPHooks(hc, req, streamResp, responseModel, hooks)
 		if errors.Is(err, stream.ErrMCPStreamContinue) {
 			continue
@@ -98,6 +99,7 @@ func (ph *ProtocolHandler) StreamOpenAIChatToAnthropicBetaWithMCP(
 			hooks = ph.buildOpenAIToAnthropicMCPHooks(c.Request.Context(), provider.UUID, req)
 		}
 		hc := protocol.NewHandleContext(c, responseModel)
+		hc.SalvageTruncatedStream = typ.GetRuleFlags(c.Request.Context()).SalvageTruncatedStream
 		usage, err := stream.HandleOpenAIToAnthropicBetaStreamWithMCPHooks(hc, req, streamResp, responseModel, hooks)
 		if errors.Is(err, stream.ErrMCPStreamContinue) {
 			continue

@@ -159,6 +159,7 @@ func (ph *ProtocolHandler) streamResponsesToAnthropic(c *gin.Context, proxyModel
 	ph.forwardResponsesStream(c, proxyModel, actualModel, provider, responsesReq,
 		func(c *gin.Context, primed stream.ResponsesStreamIter) (*protocol.TokenUsage, error) {
 			hc := protocol.NewHandleContext(c, proxyModel)
+			hc.SalvageTruncatedStream = typ.GetRuleFlags(c.Request.Context()).SalvageTruncatedStream
 			return stream.HandleResponsesToAnthropicV1Stream(hc, primed, proxyModel)
 		})
 }
@@ -169,6 +170,7 @@ func (ph *ProtocolHandler) streamResponsesToAnthropicBeta(c *gin.Context, proxyM
 	ph.forwardResponsesStream(c, proxyModel, actualModel, provider, responsesReq,
 		func(c *gin.Context, primed stream.ResponsesStreamIter) (*protocol.TokenUsage, error) {
 			hc := protocol.NewHandleContext(c, proxyModel)
+			hc.SalvageTruncatedStream = typ.GetRuleFlags(c.Request.Context()).SalvageTruncatedStream
 			return stream.HandleResponsesToAnthropicBetaStream(hc, primed, proxyModel)
 		})
 }
