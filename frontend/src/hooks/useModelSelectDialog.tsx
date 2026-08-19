@@ -10,7 +10,7 @@ import { buildRuleUpdatePayload } from '@/components/rule-card/ruleUpdatePayload
 export interface ModelSelectOptions {
     ruleUuid: string;
     configRecord: ConfigRecord;
-    providerUuid?: string; // The uuid of the service to edit, or "smart:${index}" for adding to smart rule
+    serviceUuid?: string; // The uuid of the service to edit, or "smart:${index}" for adding to smart rule
     mode?: 'edit' | 'add';
     addTier?: number; // Tier to assign when mode='add' (for tier-based adds)
 }
@@ -45,7 +45,7 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
     // Dialog state
     const [open, setOpen] = useState(false);
     const [mode, setMode] = useState<'edit' | 'add' | 'create-rule'>('add');
-    const [editingProviderUuid, setEditingProviderUuid] = useState<string | null>(null);
+    const [editingServiceUuid, setEditingServiceUuid] = useState<string | null>(null);
     const [currentRuleUuid, setCurrentRuleUuid] = useState<string | null>(null);
     const [currentConfigRecord, setCurrentConfigRecord] = useState<ConfigRecord | null>(null);
     const [modelSelectionCleared, setModelSelectionCleared] = useState(false);
@@ -81,7 +81,7 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
 
     // Open the dialog
     const openModelSelect = useCallback((options: ModelSelectOptions) => {
-        const { ruleUuid, configRecord, providerUuid, mode: newMode = 'edit', addTier } = options;
+        const { ruleUuid, configRecord, serviceUuid, mode: newMode = 'edit', addTier } = options;
 
         setCurrentRuleUuid(ruleUuid);
         setCurrentConfigRecord(configRecord);
@@ -89,19 +89,19 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
         setModelSelectionCleared(false);
         setCurrentAddTier(addTier);
 
-        // Check if providerUuid is a smart rule reference (format: "smart:${index}")
-        if (providerUuid?.startsWith('smart:')) {
-            const index = parseInt(providerUuid.substring(6), 10);
+        // Check if serviceUuid is a smart rule reference (format: "smart:${index}")
+        if (serviceUuid?.startsWith('smart:')) {
+            const index = parseInt(serviceUuid.substring(6), 10);
             currentSmartRuleIndexRef.current = index;
-            setEditingProviderUuid(null);
+            setEditingServiceUuid(null);
             editingServiceContextRef.current = null;
         } else {
             currentSmartRuleIndexRef.current = null;
-            setEditingProviderUuid(providerUuid || null);
+            setEditingServiceUuid(serviceUuid || null);
 
-            // In edit mode, determine if providerUuid refers to a service in smartRouting or providers
-            if (newMode === 'edit' && providerUuid) {
-                const found = findService(configRecord, providerUuid);
+            // In edit mode, determine if serviceUuid refers to a service in smartRouting or providers
+            if (newMode === 'edit' && serviceUuid) {
+                const found = findService(configRecord, serviceUuid);
                 if (found) {
                     editingServiceContextRef.current = {
                         isSmartRouting: found.isSmartRouting,
@@ -122,7 +122,7 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
         setMode('create-rule');
         setCurrentRuleUuid(null);
         setCurrentConfigRecord(null);
-        setEditingProviderUuid(null);
+        setEditingServiceUuid(null);
         setModelSelectionCleared(false);
         setCurrentAddTier(undefined);
         currentSmartRuleIndexRef.current = null;
@@ -172,7 +172,7 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
                     { uuid: uuidv4(), provider: option.provider.uuid, model: option.model || '', isManualInput: false, tier: currentAddTier ?? 0 },
                 ],
             };
-        } else if (mode === 'edit' && editingProviderUuid) {
+        } else if (mode === 'edit' && editingServiceUuid) {
             // Edit existing provider or smart routing service
             if (editingContext?.isSmartRouting && editingContext.smartRuleIndex !== undefined) {
                 // Edit service in smart routing
@@ -183,7 +183,7 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
                             return {
                                 ...rule,
                                 services: (rule.services || []).map(service => {
-                                    if (service.uuid === editingProviderUuid) {
+                                    if (service.uuid === editingServiceUuid) {
                                         return { ...service, provider: option.provider.uuid, model: option.model || '' };
                                     }
                                     return service;
@@ -198,7 +198,7 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
                 updated = {
                     ...currentConfigRecord,
                     providers: currentConfigRecord.providers.map(p => {
-                        if (p.uuid === editingProviderUuid) {
+                        if (p.uuid === editingServiceUuid) {
                             return { ...p, provider: option.provider.uuid, model: option.model || '' };
                         }
                         return p;
@@ -241,32 +241,32 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
         setOpen(false);
         setCurrentRuleUuid(null);
         setCurrentConfigRecord(null);
-        setEditingProviderUuid(null);
+        setEditingServiceUuid(null);
         setCurrentAddTier(undefined);
         currentSmartRuleIndexRef.current = null;
         editingServiceContextRef.current = null;
-    }, [currentConfigRecord, currentAddTier, currentRuleUuid, mode, editingProviderUuid, rules, onRuleChange, showNotification, onCreateFromModel]);
+    }, [currentConfigRecord, currentAddTier, currentRuleUuid, mode, editingServiceUuid, rules, onRuleChange, showNotification, onCreateFromModel]);
 
     // Get selected provider and model for pre-selection
     const getSelectedProvider = useCallback(() => {
-        if (mode === 'edit' && editingProviderUuid && currentConfigRecord) {
-            const found = findService(currentConfigRecord, editingProviderUuid);
+        if (mode === 'edit' && editingServiceUuid && currentConfigRecord) {
+            const found = findService(currentConfigRecord, editingServiceUuid);
             return found?.service.provider;
         }
         return undefined;
-    }, [mode, editingProviderUuid, currentConfigRecord, findService]);
+    }, [mode, editingServiceUuid, currentConfigRecord, findService]);
 
     const getSelectedModel = useCallback(() => {
         // If model selection was cleared (e.g., after deleting a custom model), return undefined
         if (modelSelectionCleared) {
             return undefined;
         }
-        if (mode === 'edit' && editingProviderUuid && currentConfigRecord) {
-            const found = findService(currentConfigRecord, editingProviderUuid);
+        if (mode === 'edit' && editingServiceUuid && currentConfigRecord) {
+            const found = findService(currentConfigRecord, editingServiceUuid);
             return found?.service.model;
         }
         return undefined;
-    }, [mode, editingProviderUuid, currentConfigRecord, findService, modelSelectionCleared]);
+    }, [mode, editingServiceUuid, currentConfigRecord, findService, modelSelectionCleared]);
 
     // Get a unique key for ModelSelectTab to force remount when selection changes
     const dialogKey = open ? `${getSelectedProvider() || ''}-${getSelectedModel() || ''}` : 'closed';
@@ -276,7 +276,7 @@ export const useModelSelectDialog = (options: UseModelSelectDialogOptions) => {
         setOpen(false);
         setCurrentRuleUuid(null);
         setCurrentConfigRecord(null);
-        setEditingProviderUuid(null);
+        setEditingServiceUuid(null);
         setCurrentAddTier(undefined);
         currentSmartRuleIndexRef.current = null;
         editingServiceContextRef.current = null;
