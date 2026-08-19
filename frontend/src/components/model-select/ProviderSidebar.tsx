@@ -1,9 +1,10 @@
-import { CheckCircle, Search } from '@/components/icons';
-import { Box, Stack, Typography, TextField, InputAdornment } from '@mui/material';
+import { CheckCircle } from '@/components/icons';
+import { Box, Stack, Typography } from '@mui/material';
 import React, { useState, useMemo } from 'react';
 import type { Provider } from '../../types/provider';
 import { AuthTypeBadge } from '../AuthTypeBadge';
 import { ApiStyleBadge } from '../ApiStyleBadge';
+import SearchField from '../SearchField';
 
 export interface ProviderSidebarProps {
     groupedProviders: Array<{ authType: string; providers: Provider[] }>;
@@ -48,20 +49,10 @@ export function ProviderSidebar({
         }}>
             {/* Header */}
             <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                <TextField
-                    size="small"
+                <SearchField
                     placeholder="Search credentials..."
                     value={providerSearchTerm}
                     onChange={(e) => setProviderSearchTerm(e.target.value)}
-                    slotProps={{
-                        input: {
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <Search />
-                                </InputAdornment>
-                            ),
-                        },
-                    }}
                     sx={{ width: 200 }}
                 />
             </Box>

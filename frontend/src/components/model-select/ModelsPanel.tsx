@@ -9,9 +9,7 @@ import {
     Button,
     CircularProgress,
     IconButton,
-    InputAdornment,
     Stack,
-    TextField,
     Typography,
     Divider,
 } from '@mui/material';
@@ -20,7 +18,7 @@ import type { Provider } from '@/types/provider';
 import type { ProviderQuota } from '@/types/quota';
 import { QuotaBarItem } from '@/components/credential/QuotaBarItem';
 import { useQuotaBars } from '@/components/credential/QuotaBarRow';
-import { Search as SearchIcon } from '@/components/icons';
+import SearchField from '@/components/SearchField';
 import { getModelTypeInfo } from '@/utils/modelUtils';
 import { useCustomModels } from '@/hooks/useCustomModels';
 import { useProviderModels } from '@/hooks/useProviderModels';
@@ -292,20 +290,10 @@ export function ModelsPanel({
                     </Stack>
 
                     {/* Search box */}
-                    <TextField
-                        size="small"
+                    <SearchField
                         placeholder="Search models..."
                         value={searchTerms[provider.uuid] || ''}
                         onChange={(e) => handleSearchChange(provider.uuid, e.target.value)}
-                        slotProps={{
-                            input: {
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon fontSize="small" />
-                                    </InputAdornment>
-                                ),
-                            },
-                        }}
                         sx={{ width: 200 }}
                     />
                 </Stack>
