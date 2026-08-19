@@ -78,7 +78,7 @@ func SendErrorResponse(c *gin.Context, err error, desc string) {
 	// defaults to 500 Internal Server Error otherwise.
 	statusCode := protocol.UpstreamStatus(err, http.StatusInternalServerError)
 
-	asErr := fmt.Errorf("%s: %s", err.Error(), desc)
+	asErr := fmt.Errorf("%s: %s", protocol.UpstreamErrorMessage(err), desc)
 	c.Error(asErr).SetType(gin.ErrorTypePublic) //nolint:errcheck
 	c.JSON(statusCode, ErrorResponse{
 		Error: ErrorDetail{
