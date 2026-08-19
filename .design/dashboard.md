@@ -5,7 +5,7 @@ This document describes the usage analytics subsystem end to end: the two produc
 The two entry points answer different user questions:
 
 - **Usage Dashboard** — “What is happening across this time range, and where should I investigate?”
-- **Team Usage** — “Who consumed the shared access, and which models account for that person’s usage?”
+- **Team Usage** — “Who consumed the shared access, and which models/providers account for that person’s usage — or the reverse, which accounts are behind a given model’s or provider’s usage?”
 
 Primary frontend files:
 
@@ -50,12 +50,21 @@ Available ranges are `today | 7d | 30d | 90d`. Unlike Dashboard’s completed da
 - `today`: local midnight → now.
 - `7d` / `30d` / `90d`: local midnight of the first included day → now.
 
-The page is a two-stage, full-width drill-down:
+The page is a two-stage, full-width drill-down over one of three axes, chosen with a **By account / By model / By provider** toggle in the page header (default: By account):
 
-1. **Registered users table** — searchable, sortable, and paginated.
-2. **Selected user detail** — identity context, four summary metrics, and a full model-usage table.
+1. **Roster table** — searchable, sortable, and paginated.
+   - By account: registered users (roster is metadata-driven, from `listAPITokens`).
+   - By model: every model with usage in range (roster is stats-driven, from `group_by=model`).
+   - By provider: every provider with usage in range (roster is stats-driven, from `group_by=provider`).
 
-Selecting a user updates the second stage and scrolls it into view. The tables remain full width so Cache/Input/Output values can be compared as columns instead of being compressed into prose or progress bars.
+   Model and provider rosters have no "registered" concept, so unused ones simply don't appear — unlike the account roster, which keeps registered-but-unused identities visible.
+2. **Selected roster item detail** — identity context, four summary metrics, and the complementary breakdown table: model breakdown for a selected account; account breakdown for a selected model or provider. All three breakdown directions render through one shared `RosterBreakdownTable` component (`frontend/src/components/dashboard/RosterAxis.tsx`) — only the identity column(s), row key, and empty-state copy differ per direction.
+
+Selecting a row updates the second stage and scrolls it into view. The tables remain full width so Cache/Input/Output values can be compared as columns instead of being compressed into prose or progress bars.
+
+Account, model, and provider are genuinely orthogonal dimensions the backend already supports independently (`group_by` selects the axis; `user_id`/`model`/`provider` are independent filters — see API contract below), so the toggle exposes axes the backend already modeled rather than adding new backend surface. Each axis's search/sort/pagination/selection/detail-load lifecycle is driven by a shared `useRosterAxis` hook (same file), called once per axis — see "Roster-axis shared infrastructure" below. Each axis's state is fully independent — switching the toggle does not carry a filter typed for one axis over into another. All three rosters and all three detail panels load in parallel regardless of which axis is currently visible, so toggling never shows a loading spinner for already-fetched data; only a range change or manual refresh re-fetches.
+
+When the model axis is selected, "which accounts used this model" is filtered by **provider + model together**, not model name alone — the same model name can exist under more than one provider, and filtering on name alone would conflate them. The provider axis has no equivalent collision risk — `provider_uuid` alone is a stable key — so "which accounts used this provider" filters by `provider` only.
 
 ## Canonical metric semantics
 
@@ -130,10 +139,19 @@ Usage Dashboard:
 Team Usage:
 
 - `listAPITokens({ limit: 500 })` for the registered-user roster.
-- `/stats`, `group_by=user`, `limit=500` for user aggregates.
-- `/stats`, `group_by=model`, `user_id=<selection>`, `limit=1000` for the selected user’s model breakdown.
+- `/stats`, `group_by=user`, `limit=500` for user aggregates (account roster).
+- `/stats`, `group_by=model`, `limit=1000` for the model roster.
+- `/stats`, `group_by=provider`, `limit=200` for the provider roster.
 
-The Team table intentionally starts from registered tokens, then left-joins usage by `user_id`. A registered but unused or disabled sharing key therefore remains visible with zero usage. Usage associated with an unknown/unregistered identity is not added as a synthetic roster row.
+  All four of the above (`loadRosters`) load together on mount, range change, and manual refresh, regardless of which axis is currently shown, so toggling between axes is instant.
+
+- `/stats`, `group_by=model`, `user_id=<selection>`, `limit=1000` for the selected account’s model breakdown.
+- `/stats`, `group_by=user`, `model=<selection>`, `provider=<selection>`, `limit=500` for the selected model’s account breakdown.
+- `/stats`, `group_by=user`, `provider=<selection>`, `limit=500` for the selected provider’s account breakdown (no `model` filter — a provider spans every model under it).
+
+The account roster intentionally starts from registered tokens, then left-joins usage by `user_id`. A registered but unused or disabled sharing key therefore remains visible with zero usage. Usage associated with an unknown/unregistered identity is not added as a synthetic account-roster row, but it does still surface inside a model’s or provider’s account-breakdown table (those tables render exactly what `group_by=user` returns, with no roster join), labeled by its raw `user_id` when it has no matching token.
+
+The model and provider rosters have no equivalent "registered" concept — each is simply every `group_by=model`/`group_by=provider` bucket with usage in range.
 
 ### Contract maintenance note
 
@@ -266,18 +284,23 @@ Dashboard preserves its existing display conventions:
 
 ## Team Usage frontend data flow
 
-`loadUsers` fetches the token roster and `group_by=user` stats concurrently. It synthesizes the primary `admin` account, filters `admin` out of sharing-key metadata, then maps every registered identity to a `UserUsageRow`.
+`loadRosters` fetches the token roster, `group_by=user` stats, `group_by=model` stats, and `group_by=provider` stats concurrently — all four, regardless of which axis is currently toggled on. It synthesizes the primary `admin` account, filters `admin` out of sharing-key metadata, then maps every registered identity to a `UserUsageRow`. This roster fetch stays page-specific (not part of the shared hook below) because how each roster is fetched genuinely differs: the account roster is left-joined against registered tokens, model/provider rosters are pure stats reads.
 
-User and detail requests have independent sequence refs:
+Everything downstream of "here is a roster array" — search, sort, pagination, selection (with fallback to the first visible row when the current selection is filtered out or the roster changes), and the race-guarded load of that selection's "detail" data — is identical across axes and is driven by one shared hook, `useRosterAxis` (`frontend/src/components/dashboard/RosterAxis.tsx`), called once per axis:
 
-- `requestSeq` protects roster/aggregate loads.
-- `detailSeq` protects selected-user model loads.
+```ts
+const accountAxis = useRosterAxis({ roster: rows, getKey: accountKey, loadDetail: fetchModelsForAccount, ... })
+const modelAxis = useRosterAxis({ roster: modelRoster, getKey: getModelKey, loadDetail: fetchAccountsForModel, ... })
+const providerAxis = useRosterAxis({ roster: providerRoster, getKey: getProviderKey, loadDetail: fetchAccountsForProvider, ... })
+```
 
-Search and sorting are client-side. The selected user is kept when still visible; otherwise the first visible row becomes selected. Changing range or selection reloads model stats.
+`getKey`/`nameOf`/`searchText` and the three `loadDetail` functions (`fetchModelsForAccount`, `fetchAccountsForModel`, `fetchAccountsForProvider`) are stable module-level functions, not closures — so the hook's internal effects never see a changing function reference and never re-fire on an unrelated render. A model is keyed by `provider_uuid + model` together (`getModelKey`), not model name alone, because the same model name can exist under more than one provider; a provider is keyed by `provider_uuid` alone (`getProviderKey`) — it has no equivalent collision risk.
 
-The user summary is derived in one pass across roster rows. “Active” means `request_count > 0`.
+Each `useRosterAxis` call owns one axis's full state independently — its own search/sort/page/selection/detail/detailLoading, and its own internal sequence ref guarding the detail load against out-of-order responses. A filter typed while viewing one axis never silently applies once the user switches to another (see `.design/ux-principles.md` #12, scope side effects to the current surface). `rowsPerPage` is the one piece of state shared across axes (a display-density preference, not a filter), passed into all three hook calls. `activeAxis` (`viewMode === 'account' ? accountAxis : ...`) reads the fields common to every axis (`search`, `sortField`, `sortDirection`, `page`, `handleSort`, `detailLoading`, `visibleRows.length`, `detail.length`) without a three-way ternary at each call site; axis-specific fields (`selected`, `pagedRows`) are read off the specific `accountAxis`/`modelAxis`/`providerAxis` in whichever branch renders that axis's rows. Changing range, or a roster change, reloads all three detail queries; detail for axes not currently shown loads in the background so switching the toggle is instant once it resolves.
 
-### Registered users table
+Per-axis summary tiles and totals are derived from whichever roster backs the active axis (`rows` for accounts, the model roster for models, the provider roster for providers) via one shared reduction (`computeUsageSummary`, same file), so the "Total tokens / Cache hit rate / Requests / Errors" tiles always describe what the visible roster table shows — only the first tile (`Registered users` / `Models used` / `Providers used`, with a “N active” / “across N providers” / “across N models” hint respectively) is axis-specific. “Active” for accounts means `request_count > 0`.
+
+### Registered users table (By account)
 
 The user identity cell is page-specific. All numeric columns come from the shared usage metric definition:
 
@@ -295,19 +318,35 @@ The table:
 - shows Cache Write only when any roster row reports writes;
 - highlights the selected row and exposes the model drill-down via the arrow.
 
-### Selected user detail
+### Model roster table (By model)
 
-The header keeps identity/status context separate from usage numbers. Four summary cells show Input, Output, Cache Read, and Cache Hit Rate. Cache Write is annotated beneath Input because it is a subset.
+Mirrors the account roster: Provider and Model identity columns, then the same shared metric column sequence, same sort/search/pagination behavior. Unlike the account roster it is not left-joined against anything — a row exists only if that `(provider, model)` pair has usage in range, so there is no zero-row/disabled-row concept on this axis.
 
-The model table adds Provider and Model columns, then uses the same shared metric sequence as the user table. It requests up to 1000 model groups and does not add a second pagination control; the table body has a bounded, internally scrollable height.
+### Provider roster table (By provider)
 
-Backend model results are requested with `sort_by=total_tokens`, whose stored meaning is input + output. The displayed Total includes cache reads. If model ordering must exactly follow displayed Total, sort the returned rows by `getTotalTokens()` on the client or add a distinct backend sort contract—do not silently redefine `total_tokens`.
+Same shape again, but with a single Provider identity column (no second column, since provider is the whole axis) — otherwise identical behavior to the model roster table.
 
-Manual refresh currently reloads the roster and user aggregates. Selected-user model data reloads when the selected identity or range changes. If refresh is expanded to reload detail explicitly, keep the independent sequence guard.
+### Selected roster item detail
+
+The identity title/subtitle/status-chip block is factored into its own `RosterDetailHeader` component (in `UserUsagePage.tsx`, not shared — the three axes' identity shapes are genuinely different: account has display name + `user_id` + enabled/primary chip + last-used/joined lines; model has name + provider name + an account-count chip; provider has name only + an account-count chip, with no secondary identity line since a provider has no natural parent to show). It was pulled out specifically because inlining it left the page dominated by one large three-way ternary block.
+
+Four summary cells below it show Input, Output, Cache Read, and Cache Hit Rate, sourced from whichever roster row is selected on the active axis. Cache Write is annotated beneath Input because it is a subset.
+
+The breakdown table below that adds the complementary identity column(s) — Provider + Model for an account's model breakdown, a single User column (display name over the raw `user_id`, resolved from the token roster when known) for a model's or provider's account breakdown — then uses the same shared metric sequence as the roster table. All three directions render through one shared `RosterBreakdownTable` component (`components/dashboard/RosterAxis.tsx`); callers pass an `identityColumns` array (one column for accounts, two for account→model) and a `rowKey`, so the table markup exists once rather than being duplicated per direction. It requests up to 1000/500 rows respectively and does not add a second pagination control; the table body has a bounded, internally scrollable height.
+
+Backend model results are requested with `sort_by=total_tokens`, whose stored meaning is input + output. The displayed Total includes cache reads. If ordering must exactly follow displayed Total, sort the returned rows by `getTotalTokens()` on the client or add a distinct backend sort contract—do not silently redefine `total_tokens`.
+
+Manual refresh reloads both rosters and both aggregate queries (`loadRosters`). Selected-item detail for each axis reloads when that axis's selection, the roster backing it, or the range changes. If refresh is expanded to reload detail explicitly, keep the independent sequence guards (one per axis).
 
 ## Shared metric table architecture
 
 The shared layer intentionally owns metric columns, not the entire table. Dashboard and Team Usage have different identity columns, selection behavior, sorting, pagination, localization, and empty states; forcing those into one generic table component would couple unrelated UX.
+
+### `RosterAxis.tsx` — roster-axis shared infrastructure
+
+Team Usage's three axes (account/model/provider) share a genuinely identical *state* shape even though their *rendering* differs, so this file draws the line at state, not markup: it owns `MetricRow` (the common row shape), `filterAndSort`/`computeUsageSummary` (pure functions), the `useRosterAxis` hook (search/sort/page/selection/detail-load lifecycle for one axis), and `RosterBreakdownTable` (the one "which X used this Y" table shape, parameterized by identity columns). It does not know about accounts, models, or providers specifically — `UserUsagePage.tsx` supplies the axis-specific `getKey`/`nameOf`/`searchText`/`loadDetail` functions and the axis-specific identity columns/headers. A 4th roster axis (the backend already supports `group_by=scenario`/`group_by=rule`) would reuse this file entirely and only add a fourth `useRosterAxis` call plus its own roster fetch and column/header rendering.
+
+Exported via `components/dashboard/index.ts` like the rest of this directory's shared pieces.
 
 ### `usageMetricColumns.ts`
 
@@ -341,7 +380,7 @@ Callers choose presentation-only differences:
 
 ### Column-count rule
 
-Empty rows and spacer rows must derive `colSpan` from `getUsageMetricColumns(...)`. Never hard-code the span while optional columns exist.
+Empty rows and spacer rows must derive `colSpan` from the actual rendered column list (identity columns + `getUsageMetricColumns(...)` + the trailing selection-arrow column), never a hand-written arithmetic special case. Team Usage's primary-column arrays include every header cell — including non-sortable ones, like the model roster's leading Provider column (a `{ kind: 'label' }` entry, versus `{ kind: 'sort' }` for sortable ones) — specifically so `colSpan = primaryColumns.length + 1` stays correct without an axis-specific `+1`/`+2` branch.
 
 ## Responsive and interaction behavior
 
@@ -359,6 +398,8 @@ Mock usage endpoints live in `frontend/src/mocks/handlers.ts`. They must include
 - model groups from more than one provider;
 - non-zero Cache Read and Cache Write values;
 - enough variation to exercise sorting and responsive widths.
+
+`group_by=user` with a `model` or `provider` filter (the model/provider axes' account-breakdown queries) is mock-served by deterministically scaling/dropping the base user list per `(scope, user)` hash, where scope is `model:<name>` or `provider:<uuid>` — so different models/providers return different, sortable account mixes instead of one fixed list reused everywhere, and some accounts legitimately drop out of some scopes, exercising the "not every account used every model/provider" case. `group_by=model` and `group_by=provider` both derive from one unscaled `modelUsageBase` array in the handler — the provider branch reduces it by `provider_uuid` at request time — so there is a single source of truth for the mock figures instead of a hand-maintained sum that can drift out of sync.
 
 Shared column ordering is covered by `frontend/src/components/dashboard/usageMetricColumns.test.ts`. Cache hit and read/write formatting invariants are covered by `frontend/src/components/dashboard/cacheBreakdown.test.ts`.
 
@@ -388,7 +429,11 @@ Use the repository `ui-preview` workflow to inspect:
 - Preserve caller-specific precision and request formatting.
 - Use request sequence guards for new asynchronous loads.
 - Keep filter option snapshots independent of filtered result emptiness.
-- Keep Team roster membership metadata-driven.
+- Keep the account roster metadata-driven (left-joined against `listAPITokens`); the model roster is stats-driven and has no equivalent registered/unused concept.
+- Filter a single model by provider + model together, never model name alone — names can collide across providers. A single provider has no such collision risk and filters by `provider_uuid` alone.
+- Keep each axis's search/sort/pagination state independent; a filter typed on one axis must not silently apply to another.
+- A new roster axis (e.g. by scenario) should be built on the shared `useRosterAxis` hook and `RosterBreakdownTable` component (`components/dashboard/RosterAxis.tsx`) rather than re-implementing the search/sort/page/selection/detail-load lifecycle or the breakdown table markup per axis.
+- Never hand-derive one mock aggregation from another (e.g. provider sums from per-model figures) as a separately maintained literal — compute it from the one source array at request time.
 - Parse `YYYY-MM-DD` as local midnight (`new Date(\`${date}T00:00:00\`)`), not bare UTC-parsed dates.
 - `usage_daily` has no scenario/rule/status dimension; those filters require raw scans unless the aggregate schema is extended.
 - Adding a new summed column to both `usage_records` and `usage_daily` does not require dropping `usage_daily`; historical source rows contribute the migrated zero value.

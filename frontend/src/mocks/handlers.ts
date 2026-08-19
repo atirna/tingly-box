@@ -2375,6 +2375,8 @@ export const handlers = [
         const url = new URL(request.url)
         const groupBy = url.searchParams.get('group_by')
         const userID = url.searchParams.get('user_id')
+        const modelParam = url.searchParams.get('model')
+        const providerParam = url.searchParams.get('provider')
         const userUsage = [
             { key: 'admin', user_id: 'admin', request_count: 2310, total_tokens: 11200000, total_input_tokens: 6180000, total_output_tokens: 4220000, cache_read_tokens: 800000, cache_write_tokens: 96000, error_count: 9, error_rate: 0.0039 },
             { key: 'user-platform', user_id: 'user-platform', request_count: 1884, total_tokens: 8460000, total_input_tokens: 4620000, total_output_tokens: 3140000, cache_read_tokens: 700000, cache_write_tokens: 84000, error_count: 13, error_rate: 0.0069 },
@@ -2383,7 +2385,156 @@ export const handlers = [
             { key: 'user-support', user_id: 'user-support', request_count: 226, total_tokens: 930000, total_input_tokens: 540000, total_output_tokens: 370000, cache_read_tokens: 20000, cache_write_tokens: 2400, error_count: 1, error_rate: 0.0044 },
         ]
         if (groupBy === 'user') {
-            return HttpResponse.json({ success: true, data: userUsage })
+            const scopeKey = modelParam ? `model:${modelParam}` : providerParam ? `provider:${providerParam}` : ''
+            if (!scopeKey) {
+                return HttpResponse.json({ success: true, data: userUsage })
+            }
+            // "Which accounts used this model/provider" — deterministic per
+            // (scope, user) weight so different models/providers return
+            // different, sortable account mixes instead of always the same 5
+            // rows scaled uniformly. Accounts below the weight floor are
+            // dropped, so not every model/provider is used by every account.
+            const hash = (input: string) => {
+                let h = 0
+                for (let i = 0; i < input.length; i++) h = (h * 31 + input.charCodeAt(i)) >>> 0
+                return h
+            }
+            const scaledByScope = userUsage
+                .map((account) => {
+                    const weight = (hash(`${scopeKey}:${account.user_id}`) % 100) / 100
+                    const factor = weight > 0.15 ? weight : 0
+                    const scale = (value: number) => Math.round(value * factor)
+                    return {
+                        ...account,
+                        request_count: scale(account.request_count),
+                        total_tokens: scale(account.total_tokens),
+                        total_input_tokens: scale(account.total_input_tokens),
+                        total_output_tokens: scale(account.total_output_tokens),
+                        cache_read_tokens: scale(account.cache_read_tokens),
+                        cache_write_tokens: scale(account.cache_write_tokens),
+                        error_count: scale(account.error_count),
+                    }
+                })
+                .filter((account) => account.request_count > 0)
+            return HttpResponse.json({ success: true, data: scaledByScope })
+        }
+
+        // Unscaled per-model base figures. Both the model list below (scaled
+        // per-user when userID is set) and the provider list derive from this
+        // single array, so there's one source of truth to keep numbers
+        // consistent rather than a hand-maintained sum living separately.
+        const modelUsageBase = [
+            {
+                key: 'anthropic/claude-sonnet-5',
+                provider_uuid: 'mock-provider-anthropic',
+                provider_name: 'Anthropic',
+                model: 'claude-sonnet-5',
+                scenario: 'claude_code',
+                request_count: 1842,
+                total_tokens: 25920000,
+                total_input_tokens: 1140000,
+                total_output_tokens: 920000,
+                cache_read_tokens: 23860000,
+                cache_write_tokens: 2863200,
+                avg_latency_ms: 1240,
+                error_count: 12,
+                error_rate: 0.65,
+                streamed_count: 1800,
+            },
+            {
+                key: 'anthropic/claude-opus-4-8',
+                provider_uuid: 'mock-provider-anthropic',
+                provider_name: 'Anthropic',
+                model: 'claude-opus-4-8',
+                scenario: 'claude_code',
+                request_count: 420,
+                total_tokens: 8180000,
+                total_input_tokens: 620000,
+                total_output_tokens: 380000,
+                cache_read_tokens: 7180000,
+                cache_write_tokens: 861600,
+                avg_latency_ms: 2100,
+                error_count: 3,
+                error_rate: 0.71,
+                streamed_count: 415,
+            },
+            {
+                key: 'openai/gpt-5.6-sol',
+                provider_uuid: 'mock-provider-openai',
+                provider_name: 'OpenAI',
+                model: 'gpt-5.6-sol',
+                scenario: 'openai',
+                request_count: 938,
+                total_tokens: 6720000,
+                total_input_tokens: 890000,
+                total_output_tokens: 520000,
+                cache_read_tokens: 5310000,
+                cache_write_tokens: 637200,
+                avg_latency_ms: 980,
+                error_count: 8,
+                error_rate: 0.85,
+                streamed_count: 920,
+            },
+            {
+                key: 'openai/gpt-5.6-luna',
+                provider_uuid: 'mock-provider-openai',
+                provider_name: 'OpenAI',
+                model: 'gpt-5.6-luna',
+                scenario: 'openai',
+                request_count: 2150,
+                total_tokens: 4310000,
+                total_input_tokens: 390000,
+                total_output_tokens: 410000,
+                cache_read_tokens: 3510000,
+                cache_write_tokens: 421200,
+                avg_latency_ms: 420,
+                error_count: 5,
+                error_rate: 0.23,
+                streamed_count: 2100,
+            },
+            {
+                key: 'openrouter/deepseek-v4-pro',
+                provider_uuid: 'mock-provider-openrouter',
+                provider_name: 'OpenRouter',
+                model: 'deepseek/deepseek-v4-pro',
+                scenario: 'custom',
+                request_count: 312,
+                total_tokens: 1350000,
+                total_input_tokens: 1050000,
+                total_output_tokens: 120000,
+                cache_read_tokens: 180000,
+                cache_write_tokens: 21600,
+                avg_latency_ms: 3200,
+                error_count: 2,
+                error_rate: 0.64,
+                streamed_count: 308,
+            },
+        ]
+
+        if (groupBy === 'provider') {
+            const providerNames = new Map(modelUsageBase.map((m) => [m.provider_uuid, m.provider_name]))
+            const totalsByProvider = new Map<string, { request_count: number; total_tokens: number; total_input_tokens: number; total_output_tokens: number; cache_read_tokens: number; cache_write_tokens: number; error_count: number }>()
+            for (const m of modelUsageBase) {
+                const totals = totalsByProvider.get(m.provider_uuid) || { request_count: 0, total_tokens: 0, total_input_tokens: 0, total_output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, error_count: 0 }
+                totals.request_count += m.request_count
+                totals.total_tokens += m.total_tokens
+                totals.total_input_tokens += m.total_input_tokens
+                totals.total_output_tokens += m.total_output_tokens
+                totals.cache_read_tokens += m.cache_read_tokens
+                totals.cache_write_tokens += m.cache_write_tokens
+                totals.error_count += m.error_count
+                totalsByProvider.set(m.provider_uuid, totals)
+            }
+            return HttpResponse.json({
+                success: true,
+                data: Array.from(totalsByProvider, ([providerUuid, totals]) => ({
+                    key: providerUuid,
+                    provider_uuid: providerUuid,
+                    provider_name: providerNames.get(providerUuid) || providerUuid,
+                    ...totals,
+                    error_rate: totals.request_count > 0 ? totals.error_count / totals.request_count : 0,
+                })),
+            })
         }
 
         const userScale = userID
@@ -2392,93 +2543,18 @@ export const handlers = [
         const scale = (value: number) => Math.round(value * userScale)
         return HttpResponse.json({
             success: true,
-            data: [
-                {
-                    key: 'anthropic/claude-sonnet-5',
-                    provider_uuid: 'mock-provider-anthropic',
-                    provider_name: 'Anthropic',
-                    model: 'claude-sonnet-5',
-                    scenario: 'claude_code',
-                    request_count: scale(1842),
-                    total_tokens: scale(25920000),
-                    total_input_tokens: scale(1140000),
-                    total_output_tokens: scale(920000),
-                    cache_read_tokens: scale(23860000),
-                    cache_write_tokens: scale(2863200),
-                    avg_latency_ms: 1240,
-                    error_count: scale(12),
-                    error_rate: 0.65,
-                    streamed_count: 1800,
-                },
-                {
-                    key: 'anthropic/claude-opus-4-8',
-                    provider_uuid: 'mock-provider-anthropic',
-                    provider_name: 'Anthropic',
-                    model: 'claude-opus-4-8',
-                    scenario: 'claude_code',
-                    request_count: scale(420),
-                    total_tokens: scale(8180000),
-                    total_input_tokens: scale(620000),
-                    total_output_tokens: scale(380000),
-                    cache_read_tokens: scale(7180000),
-                    cache_write_tokens: scale(861600),
-                    avg_latency_ms: 2100,
-                    error_count: scale(3),
-                    error_rate: 0.71,
-                    streamed_count: 415,
-                },
-                {
-                    key: 'openai/gpt-5.6-sol',
-                    provider_uuid: 'mock-provider-openai',
-                    provider_name: 'OpenAI',
-                    model: 'gpt-5.6-sol',
-                    scenario: 'openai',
-                    request_count: scale(938),
-                    total_tokens: scale(6720000),
-                    total_input_tokens: scale(890000),
-                    total_output_tokens: scale(520000),
-                    cache_read_tokens: scale(5310000),
-                    cache_write_tokens: scale(637200),
-                    avg_latency_ms: 980,
-                    error_count: scale(8),
-                    error_rate: 0.85,
-                    streamed_count: 920,
-                },
-                {
-                    key: 'openai/gpt-5.6-luna',
-                    provider_uuid: 'mock-provider-openai',
-                    provider_name: 'OpenAI',
-                    model: 'gpt-5.6-luna',
-                    scenario: 'openai',
-                    request_count: scale(2150),
-                    total_tokens: scale(4310000),
-                    total_input_tokens: scale(390000),
-                    total_output_tokens: scale(410000),
-                    cache_read_tokens: scale(3510000),
-                    cache_write_tokens: scale(421200),
-                    avg_latency_ms: 420,
-                    error_count: scale(5),
-                    error_rate: 0.23,
-                    streamed_count: 2100,
-                },
-                {
-                    key: 'openrouter/deepseek-v4-pro',
-                    provider_uuid: 'mock-provider-openrouter',
-                    provider_name: 'OpenRouter',
-                    model: 'deepseek/deepseek-v4-pro',
-                    scenario: 'custom',
-                    request_count: scale(312),
-                    total_tokens: scale(1350000),
-                    total_input_tokens: scale(1050000),
-                    total_output_tokens: scale(120000),
-                    cache_read_tokens: scale(180000),
-                    cache_write_tokens: scale(21600),
-                    avg_latency_ms: 3200,
-                    error_count: scale(2),
-                    error_rate: 0.64,
-                    streamed_count: 308,
-                },
-            ].filter((stat) => !userID || stat.total_tokens > 0),
+            data: modelUsageBase
+                .map((model) => ({
+                    ...model,
+                    request_count: scale(model.request_count),
+                    total_tokens: scale(model.total_tokens),
+                    total_input_tokens: scale(model.total_input_tokens),
+                    total_output_tokens: scale(model.total_output_tokens),
+                    cache_read_tokens: scale(model.cache_read_tokens),
+                    cache_write_tokens: scale(model.cache_write_tokens),
+                    error_count: scale(model.error_count),
+                }))
+                .filter((stat) => !userID || stat.total_tokens > 0),
         })
     }),
 
