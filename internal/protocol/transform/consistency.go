@@ -199,9 +199,7 @@ func AlignToolMessagesForOpenAI(req *openai.ChatCompletionNewParams) {
 
 		if len(toolMsg.Content.OfArrayOfContentParts) > 0 {
 			parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(toolMsg.Content.OfArrayOfContentParts))
-			for _, part := range toolMsg.Content.OfArrayOfContentParts {
-				parts = append(parts, openai.TextContentPart(part.Text))
-			}
+			parts = append(parts, toolMsg.Content.OfArrayOfContentParts...)
 			req.Messages[i] = openai.UserMessage(parts)
 			continue
 		}

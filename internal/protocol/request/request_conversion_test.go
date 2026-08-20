@@ -208,8 +208,8 @@ func TestConvertOpenAIToAnthropicRequestArrayContent(t *testing.T) {
 				{OfTool: &openai.ChatCompletionToolMessageParam{
 					ToolCallID: "call_1",
 					Content: openai.ChatCompletionToolMessageParamContentUnion{
-						OfArrayOfContentParts: []openai.ChatCompletionContentPartTextParam{
-							{Text: "The secret word is ZANZIBAR"},
+						OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
+							{OfText: &openai.ChatCompletionContentPartTextParam{Text: "The secret word is ZANZIBAR"}},
 						},
 					},
 				}},

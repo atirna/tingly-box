@@ -160,17 +160,25 @@ func ConvertResponsesInputToMessages(items responses.ResponseInputParam) []opena
 				messages = append(messages, openai.ToolMessage(output.Output.OfString.Value, output.CallID))
 				continue
 			}
-			parts := make([]openai.ChatCompletionContentPartTextParam, 0,
+			parts := make([]openai.ChatCompletionContentPartUnionParam, 0,
 				len(output.Output.OfResponseFunctionCallOutputItemArray))
 			for _, item := range output.Output.OfResponseFunctionCallOutputItemArray {
-				if item.OfInputText == nil || item.OfInputText.Text == "" {
-					continue
+				switch {
+				case item.OfInputText != nil && item.OfInputText.Text != "":
+					part := openai.ChatCompletionContentPartTextParam{Text: item.OfInputText.Text}
+					if !param.IsOmitted(item.OfInputText.PromptCacheBreakpoint) {
+						part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+					}
+					parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfText: &part})
+				case item.OfInputImage != nil && item.OfInputImage.ImageURL.Valid():
+					part := openai.ChatCompletionContentPartImageParam{
+						ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: item.OfInputImage.ImageURL.Value},
+					}
+					if !param.IsOmitted(item.OfInputImage.PromptCacheBreakpoint) {
+						part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartImagePromptCacheBreakpointParam()
+					}
+					parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfImageURL: &part})
 				}
-				part := openai.ChatCompletionContentPartTextParam{Text: item.OfInputText.Text}
-				if !param.IsOmitted(item.OfInputText.PromptCacheBreakpoint) {
-					part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
-				}
-				parts = append(parts, part)
 			}
 			if len(parts) > 0 {
 				messages = append(messages, openai.ChatCompletionMessageParamUnion{

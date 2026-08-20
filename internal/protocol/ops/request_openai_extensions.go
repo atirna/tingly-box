@@ -114,7 +114,19 @@ func stripOpenAIPromptCacheFields(req *openai.ChatCompletionNewParams) {
 				}
 			}
 		case msg.OfTool != nil:
-			stripTextPartBreakpoints(msg.OfTool.Content.OfArrayOfContentParts)
+			for j := range msg.OfTool.Content.OfArrayOfContentParts {
+				part := &msg.OfTool.Content.OfArrayOfContentParts[j]
+				switch {
+				case part.OfText != nil:
+					part.OfText.PromptCacheBreakpoint = openai.ChatCompletionContentPartTextPromptCacheBreakpointParam{}
+				case part.OfImageURL != nil:
+					part.OfImageURL.PromptCacheBreakpoint = openai.ChatCompletionContentPartImagePromptCacheBreakpointParam{}
+				case part.OfInputAudio != nil:
+					part.OfInputAudio.PromptCacheBreakpoint = openai.ChatCompletionContentPartInputAudioPromptCacheBreakpointParam{}
+				case part.OfFile != nil:
+					part.OfFile.PromptCacheBreakpoint = openai.ChatCompletionContentPartFilePromptCacheBreakpointParam{}
+				}
+			}
 		}
 	}
 }
