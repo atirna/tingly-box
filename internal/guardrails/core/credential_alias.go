@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"sort"
 	"strings"
 )
@@ -29,10 +30,8 @@ func (s *CredentialMaskState) remember(credential ProtectedCredential) {
 	}
 	s.AliasToReal[credential.AliasToken] = credential.Secret
 	s.RealToAlias[credential.Secret] = credential.AliasToken
-	for _, id := range s.UsedRefs {
-		if id == credential.ID {
-			return
-		}
+	if slices.Contains(s.UsedRefs, credential.ID) {
+		return
 	}
 	s.UsedRefs = append(s.UsedRefs, credential.ID)
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -140,10 +141,8 @@ func (cw *Watcher) isConfigEvent(event fsnotify.Event) bool {
 	}
 
 	// Check if event file is in our watch list
-	for _, watchFile := range cw.watchFiles {
-		if event.Name == watchFile {
-			return event.Op&(fsnotify.Write|fsnotify.Create) != 0
-		}
+	if slices.Contains(cw.watchFiles, event.Name) {
+		return event.Op&(fsnotify.Write|fsnotify.Create) != 0
 	}
 
 	return false
@@ -223,10 +222,8 @@ func (cw *Watcher) AddWatchFile(filepath string) error {
 	defer cw.mu.Unlock()
 
 	// Check if already watching
-	for _, f := range cw.watchFiles {
-		if f == filepath {
-			return nil // Already watching
-		}
+	if slices.Contains(cw.watchFiles, filepath) {
+		return nil // Already watching
 	}
 
 	// Add to watch list

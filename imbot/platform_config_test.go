@@ -1,6 +1,7 @@
 package imbot
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/imbot/core"
@@ -55,12 +56,7 @@ func TestPlatformFormFieldsAgreeWithCoreAuthType(t *testing.T) {
 }
 
 func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 // TestBuildAuthConfigLark is the regression test for the defect the table

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -147,10 +148,5 @@ func NewTestServerFromConfig(appConfig *config.AppConfig) *TestServer {
 
 // containsStatus checks if status code is in expected list
 func containsStatus(actual int, expected []int) bool {
-	for _, code := range expected {
-		if actual == code {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(expected, actual)
 }

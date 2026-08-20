@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -137,12 +138,7 @@ func ParseShellCommand(raw string) *ShellCommand {
 }
 
 func isShellOperator(tok string) bool {
-	for _, op := range shellOperators {
-		if tok == op {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(shellOperators, tok)
 }
 
 func isShellRedirect(tok string) bool {

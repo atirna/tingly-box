@@ -234,11 +234,9 @@ func handleCommand(ctx context.Context, bot imbot.Bot, msg imbot.Message, text s
 			return
 		}
 		// Check aliases
-		for _, alias := range cmd.Aliases {
-			if alias == cmdName {
-				executeCommand(ctx, bot, msg, cmd, args)
-				return
-			}
+		if slices.Contains(cmd.Aliases, cmdName) {
+			executeCommand(ctx, bot, msg, cmd, args)
+			return
 		}
 	}
 

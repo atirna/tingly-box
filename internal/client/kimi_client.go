@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -194,12 +195,7 @@ func (c *KimiClient) isContentMeaningful(content openai.ChatCompletionAssistantM
 
 	// Handle array content (for multi-modal messages)
 	if len(content.OfArrayOfContentParts) > 0 {
-		for _, part := range content.OfArrayOfContentParts {
-			if c.isContentPartMeaningful(part) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(content.OfArrayOfContentParts, c.isContentPartMeaningful)
 	}
 
 	return false

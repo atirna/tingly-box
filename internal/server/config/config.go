@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -627,12 +628,7 @@ func (c *Config) InsertDefaultRule() error {
 
 // hasMigrationCompleted reports whether the named one-time migration has already run.
 func (c *Config) hasMigrationCompleted(name string) bool {
-	for _, m := range c.MigrationsCompleted {
-		if m == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.MigrationsCompleted, name)
 }
 
 // markMigrationCompleted records a one-time migration as done so it is skipped on future startups.

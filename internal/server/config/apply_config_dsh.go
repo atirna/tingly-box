@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	yamlpkg "gopkg.in/yaml.v3"
@@ -77,10 +78,8 @@ var dshProtocolValues = []string{"openai-completions", "openai-responses", "anth
 // (read) so the two stay in lockstep.
 func dshProtocolValue(val string) (string, bool) {
 	val = strings.TrimSpace(val)
-	for _, allowed := range dshProtocolValues {
-		if val == allowed {
-			return val, true
-		}
+	if slices.Contains(dshProtocolValues, val) {
+		return val, true
 	}
 	return "", false
 }

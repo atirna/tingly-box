@@ -2,6 +2,7 @@ package request
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -325,12 +326,7 @@ func responseMessageWithContent(role string, content responses.ResponseInputMess
 }
 
 func chatTextPartsHaveCacheBreakpoint(parts []openai.ChatCompletionContentPartTextParam) bool {
-	for _, part := range parts {
-		if hasOpenAITextCacheBreakpoint(part) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(parts, hasOpenAITextCacheBreakpoint)
 }
 
 // ConvertChatToolsToResponsesTools converts Chat Completion tools to Responses API tools.

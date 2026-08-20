@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -9,12 +10,7 @@ import (
 func newExt() *RuleExtractor { return NewRuleExtractor() }
 
 func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 func tokenValues(in []TokenCandidate) []string {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 )
 
@@ -153,10 +154,5 @@ func (c Content) HasAny(targets []ContentType) bool {
 }
 
 func hasContentType(list []ContentType, target ContentType) bool {
-	for _, item := range list {
-		if item == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, target)
 }

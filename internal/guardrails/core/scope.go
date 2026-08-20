@@ -1,5 +1,7 @@
 package core
 
+import "slices"
+
 // Scope limits when a policy is applied.
 type Scope struct {
 	Scenarios  []string      `json:"scenarios,omitempty" yaml:"scenarios,omitempty"`
@@ -30,21 +32,11 @@ func (s Scope) Matches(input Input) bool {
 }
 
 func stringInSlice(value string, items []string) bool {
-	for _, item := range items {
-		if value == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(items, value)
 }
 
 func directionInSlice(value Direction, items []Direction) bool {
-	for _, item := range items {
-		if value == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(items, value)
 }
 
 func anyTagMatches(inputTags, scopeTags []string) bool {

@@ -3,6 +3,7 @@ package swagger
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -148,12 +149,7 @@ func isIgnoredField(key string) bool {
 	ignoredFields := []string{
 		// Don't ignore any fields - we want to catch ALL siblings of $ref
 	}
-	for _, ignored := range ignoredFields {
-		if key == ignored {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ignoredFields, key)
 }
 
 // TestOpenAPIWithRealRoutes tests with actual route definitions

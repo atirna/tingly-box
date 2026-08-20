@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -173,10 +174,8 @@ func ValidateCredentialAPIStyle(a AuthType, apiStyle string) error {
 	if allowed == nil {
 		return nil
 	}
-	for _, s := range allowed {
-		if apiStyle == s {
-			return nil
-		}
+	if slices.Contains(allowed, apiStyle) {
+		return nil
 	}
 	return fmt.Errorf("%s providers require api_style %s, got %q", a, strings.Join(allowed, " or "), apiStyle)
 }
