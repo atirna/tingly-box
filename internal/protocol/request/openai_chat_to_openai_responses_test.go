@@ -415,8 +415,8 @@ func TestConvertChatToOpenAIResponsesArrayContent(t *testing.T) {
 			OfTool: &openai.ChatCompletionToolMessageParam{
 				ToolCallID: "call_1",
 				Content: openai.ChatCompletionToolMessageParamContentUnion{
-					OfArrayOfContentParts: []openai.ChatCompletionContentPartTextParam{
-						{Text: "The secret word is ZANZIBAR"},
+					OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
+						{OfText: &openai.ChatCompletionContentPartTextParam{Text: "The secret word is ZANZIBAR"}},
 					},
 				},
 			},
@@ -439,9 +439,9 @@ func TestConvertChatToOpenAIResponsesArrayContent(t *testing.T) {
 			OfTool: &openai.ChatCompletionToolMessageParam{
 				ToolCallID: "call_1",
 				Content: openai.ChatCompletionToolMessageParamContentUnion{
-					OfArrayOfContentParts: []openai.ChatCompletionContentPartTextParam{
-						{Text: "line one"},
-						{Text: "line two"},
+					OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
+						{OfText: &openai.ChatCompletionContentPartTextParam{Text: "line one"}},
+						{OfText: &openai.ChatCompletionContentPartTextParam{Text: "line two"}},
 					},
 				},
 			},

@@ -260,24 +260,40 @@ func convertChatAssistantMessageToResponses(assistantMsg *openai.ChatCompletionA
 }
 
 // convertChatToolMessageToResponses converts a Chat tool message to Responses function_call_output format.
+// Tool content may carry image_url parts (agent screenshots) alongside text, so the
+// array form is walked as the full content-part union rather than text-only.
 func convertChatToolMessageToResponses(toolMsg *openai.ChatCompletionToolMessageParam) responses.ResponseInputItemUnionParam {
 	content := toolMsg.Content.OfString.Value
 	output := responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}
 	if content != "" {
 		output.OfString = param.NewOpt(content)
-	} else if !chatTextPartsHaveCacheBreakpoint(toolMsg.Content.OfArrayOfContentParts) {
-		output.OfString = param.NewOpt(joinTextContentParts(toolMsg.Content.OfArrayOfContentParts))
+	} else if !chatUnionPartsHaveMedia(toolMsg.Content.OfArrayOfContentParts) &&
+		!chatUnionTextPartsHaveCacheBreakpoint(toolMsg.Content.OfArrayOfContentParts) {
+		output.OfString = param.NewOpt(joinTextContentPartsFromUnion(toolMsg.Content.OfArrayOfContentParts))
 	} else {
 		items := make(responses.ResponseFunctionCallOutputItemListParam, 0, len(toolMsg.Content.OfArrayOfContentParts))
 		for _, part := range toolMsg.Content.OfArrayOfContentParts {
-			if part.Text == "" {
-				continue
+			switch {
+			case part.OfText != nil:
+				if part.OfText.Text == "" {
+					continue
+				}
+				item := &responses.ResponseInputTextContentParam{Text: part.OfText.Text}
+				if hasOpenAITextCacheBreakpoint(*part.OfText) {
+					item.PromptCacheBreakpoint = responses.NewResponseInputTextContentPromptCacheBreakpointParam()
+				}
+				items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{OfInputText: item})
+			case part.OfImageURL != nil:
+				url := part.OfImageURL.ImageURL.URL
+				if url == "" {
+					continue
+				}
+				image := &responses.ResponseInputImageContentParam{ImageURL: param.NewOpt(url)}
+				if !param.IsOmitted(part.OfImageURL.PromptCacheBreakpoint) {
+					image.PromptCacheBreakpoint = responses.NewResponseInputImageContentPromptCacheBreakpointParam()
+				}
+				items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{OfInputImage: image})
 			}
-			item := &responses.ResponseInputTextContentParam{Text: part.Text}
-			if hasOpenAITextCacheBreakpoint(part) {
-				item.PromptCacheBreakpoint = responses.NewResponseInputTextContentPromptCacheBreakpointParam()
-			}
-			items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{OfInputText: item})
 		}
 		if len(items) > 0 {
 			output.OfResponseFunctionCallOutputItemArray = items
@@ -327,6 +343,38 @@ func responseMessageWithContent(role string, content responses.ResponseInputMess
 
 func chatTextPartsHaveCacheBreakpoint(parts []openai.ChatCompletionContentPartTextParam) bool {
 	return slices.ContainsFunc(parts, hasOpenAITextCacheBreakpoint)
+}
+
+// joinTextContentPartsFromUnion is joinTextContentParts for the full content-part
+// union, ignoring non-text parts (used by tool messages, which may carry image_url
+// parts alongside text).
+func joinTextContentPartsFromUnion(parts []openai.ChatCompletionContentPartUnionParam) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part.OfText != nil && part.OfText.Text != "" {
+			texts = append(texts, part.OfText.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
+// chatUnionTextPartsHaveCacheBreakpoint reports whether any text part in the union
+// carries a prompt-cache breakpoint.
+func chatUnionTextPartsHaveCacheBreakpoint(parts []openai.ChatCompletionContentPartUnionParam) bool {
+	return slices.ContainsFunc(parts, func(part openai.ChatCompletionContentPartUnionParam) bool {
+		return part.OfText != nil && hasOpenAITextCacheBreakpoint(*part.OfText)
+	})
+}
+
+// chatUnionPartsHaveMedia reports whether the union contains any non-text part
+// (e.g. image_url), which forces the array output form even without text.
+func chatUnionPartsHaveMedia(parts []openai.ChatCompletionContentPartUnionParam) bool {
+	return slices.ContainsFunc(parts, func(part openai.ChatCompletionContentPartUnionParam) bool {
+		return part.OfText == nil
+	})
 }
 
 // ConvertChatToolsToResponsesTools converts Chat Completion tools to Responses API tools.

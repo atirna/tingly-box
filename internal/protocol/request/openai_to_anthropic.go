@@ -111,9 +111,11 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 			content := msg.OfTool.Content.OfString.Value
 			hasCacheControl := false
 			if content == "" {
-				content = joinTextContentParts(msg.OfTool.Content.OfArrayOfContentParts)
+				content = joinTextContentPartsFromUnion(msg.OfTool.Content.OfArrayOfContentParts)
 				for _, part := range msg.OfTool.Content.OfArrayOfContentParts {
-					hasCacheControl = hasCacheControl || hasOpenAITextCacheBreakpoint(part)
+					if part.OfText != nil {
+						hasCacheControl = hasCacheControl || hasOpenAITextCacheBreakpoint(*part.OfText)
+					}
 				}
 			}
 			block := anthropic.NewBetaToolResultBlock(msg.OfTool.ToolCallID, content, false)

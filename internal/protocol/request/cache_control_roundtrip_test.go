@@ -442,7 +442,7 @@ func TestChatResponsesChatPreservesCacheControlsAndOptions(t *testing.T) {
 				OfTool: &openai.ChatCompletionToolMessageParam{
 					ToolCallID: "call_1",
 					Content: openai.ChatCompletionToolMessageParamContentUnion{
-						OfArrayOfContentParts: []openai.ChatCompletionContentPartTextParam{toolPart},
+						OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{{OfText: &toolPart}},
 					},
 				},
 			},
@@ -481,7 +481,7 @@ func TestChatResponsesChatPreservesCacheControlsAndOptions(t *testing.T) {
 	require.False(t, openaiparam.IsOmitted(
 		out.Messages[1].OfUser.Content.OfArrayOfContentParts[0].OfText.PromptCacheBreakpoint))
 	require.False(t, openaiparam.IsOmitted(
-		out.Messages[2].OfTool.Content.OfArrayOfContentParts[0].PromptCacheBreakpoint))
+		out.Messages[2].OfTool.Content.OfArrayOfContentParts[0].OfText.PromptCacheBreakpoint))
 }
 
 func requireResponsesTextBreakpoint(

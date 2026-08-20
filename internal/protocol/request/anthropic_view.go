@@ -426,7 +426,7 @@ func convertAnthropicViewUserToOpenAI(blocks []anthropic.ContentBlockParamUnion)
 						OfTool: &openai.ChatCompletionToolMessageParam{
 							ToolCallID: truncateToolCallID(block.OfToolResult.ToolUseID),
 							Content: openai.ChatCompletionToolMessageParamContentUnion{
-								OfArrayOfContentParts: []openai.ChatCompletionContentPartTextParam{part},
+								OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{{OfText: &part}},
 							},
 						},
 					})
