@@ -258,8 +258,8 @@ const ProfileSeparator = ":"
 // "claude_code" returns ("claude_code", "").
 func ParseScenarioProfile(raw RuleScenario) (base RuleScenario, profileID string) {
 	rawStr := string(raw)
-	if idx := strings.Index(rawStr, ProfileSeparator); idx >= 0 {
-		return RuleScenario(rawStr[:idx]), rawStr[idx+1:]
+	if before, after, ok := strings.Cut(rawStr, ProfileSeparator); ok {
+		return RuleScenario(before), after
 	}
 	return raw, ""
 }

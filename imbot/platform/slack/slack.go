@@ -164,8 +164,8 @@ func (b *Bot) EditMessage(ctx context.Context, messageID string, text string) er
 
 	// Parse thread ID if present (for threaded messages)
 	var threadTimestamp string
-	if threadIDIdx := strings.Index(messageID, ":thread:"); threadIDIdx != -1 {
-		threadTimestamp = messageID[threadIDIdx+8:]
+	if _, after, ok := strings.Cut(messageID, ":thread:"); ok {
+		threadTimestamp = after
 	}
 
 	options := []slack.MsgOption{}

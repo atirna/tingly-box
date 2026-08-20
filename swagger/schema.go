@@ -258,8 +258,8 @@ func tagName(tag string) string {
 	if tag == "" {
 		return ""
 	}
-	if idx := strings.Index(tag, ","); idx >= 0 {
-		return tag[:idx]
+	if before, _, ok := strings.Cut(tag, ","); ok {
+		return before
 	}
 	return tag
 }
