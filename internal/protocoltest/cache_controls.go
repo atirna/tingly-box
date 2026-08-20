@@ -2,6 +2,7 @@ package protocoltest
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 )
@@ -210,12 +211,7 @@ func countCacheMarkers(t flagTB, value any, markerKey, discriminator, wantValue 
 // a bug this suite should paper over — a dedicated vendor-transform suite
 // (protocoltest vendor category) exercises the allowlisted case.
 func cacheSurvivesPath(hops ...protocol.APIType) bool {
-	for _, hop := range hops {
-		if hop == protocol.TypeOpenAIChat {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(hops, protocol.TypeOpenAIChat)
 }
 
 func assertCapturedCacheState(t flagTB, env *TestEnv, target protocol.APIType, wantCached bool, label string) {

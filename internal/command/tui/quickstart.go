@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -683,13 +684,7 @@ func qsAgent(ctx StepContext, s quickstartState) (quickstartState, StepResult, e
 		return s, StepContinue, nil
 	}
 
-	hasClaudeCode := false
-	for _, t := range s.selectedAgents {
-		if t == agent.AgentTypeClaudeCode {
-			hasClaudeCode = true
-			break
-		}
-	}
+	hasClaudeCode := slices.Contains(s.selectedAgents, agent.AgentTypeClaudeCode)
 
 	if hasClaudeCode {
 		uni, err := Confirm("Use unified mode for Claude Code? (single config for all models)", ConfirmOptions{

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,10 +105,8 @@ func codexEnumValue(key, val string) (string, bool) {
 	if val == "" {
 		return "", false
 	}
-	for _, allowed := range codexEnumValues[key] {
-		if val == allowed {
-			return val, true
-		}
+	if slices.Contains(codexEnumValues[key], val) {
+		return val, true
 	}
 	return "", false
 }

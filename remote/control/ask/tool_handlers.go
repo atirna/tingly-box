@@ -3,6 +3,7 @@ package ask
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -293,10 +294,8 @@ func ParseTextResponse(text string) (approved bool, remember bool, isValid bool)
 	text = normalizeText(text)
 
 	for _, opt := range PermissionOptions {
-		for _, input := range opt.Inputs {
-			if text == input {
-				return opt.Approved, opt.Remember, true
-			}
+		if slices.Contains(opt.Inputs, text) {
+			return opt.Approved, opt.Remember, true
 		}
 	}
 	return false, false, false

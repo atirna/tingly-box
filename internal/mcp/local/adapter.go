@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/mcp/runtime"
@@ -29,12 +30,7 @@ func (a *MCPRuntimeAdapter) isSourceAllowed(sourceID string) bool {
 	if len(a.allowedSources) == 0 {
 		return true
 	}
-	for _, s := range a.allowedSources {
-		if s == sourceID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(a.allowedSources, sourceID)
 }
 
 // ListTools returns all available tools from all configured MCP sources.

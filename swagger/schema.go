@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 )
@@ -267,10 +268,5 @@ func tagName(tag string) string {
 // (e.g. "omitempty" in `json:"name,omitempty"`).
 func hasJSONOption(tag, option string) bool {
 	parts := strings.Split(tag, ",")
-	for _, part := range parts[1:] {
-		if part == option {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(parts[1:], option)
 }

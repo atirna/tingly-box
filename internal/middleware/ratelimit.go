@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -145,13 +146,7 @@ func RateLimitMiddleware(rl *RateLimiter, authPaths ...string) gin.HandlerFunc {
 
 		// Track the attempt for auth endpoints
 		path := c.Request.URL.Path
-		isAuthPath := false
-		for _, authPath := range authPaths {
-			if path == authPath {
-				isAuthPath = true
-				break
-			}
-		}
+		isAuthPath := slices.Contains(authPaths, path)
 
 		if isAuthPath && c.Request.Method == "POST" {
 			if !rl.recordAttempt(ip) {

@@ -1,6 +1,7 @@
 package smart_guide
 
 import (
+	"slices"
 	"time"
 )
 
@@ -105,10 +106,5 @@ func (c *SmartGuideConfig) IsToolEnabled(toolName string) bool {
 
 // IsHandoffCommand checks if text is a handoff command
 func (c *SmartGuideConfig) IsHandoffCommand(text string) bool {
-	for _, cmd := range c.HandoffCommands {
-		if text == cmd {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.HandoffCommands, text)
 }

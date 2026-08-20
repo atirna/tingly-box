@@ -2,6 +2,7 @@ package check
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -81,10 +82,8 @@ func AssertFinishReasonOneOf(accepted ...string) Assertion {
 	return Assertion{
 		Name: fmt.Sprintf("finish_reason_one_of(%v)", accepted),
 		Check: func(r *RoundTripResult) error {
-			for _, a := range accepted {
-				if r.FinishReason == a {
-					return nil
-				}
+			if slices.Contains(accepted, r.FinishReason) {
+				return nil
 			}
 			return fmt.Errorf("finish_reason: got %q, want one of %v", r.FinishReason, accepted)
 		},

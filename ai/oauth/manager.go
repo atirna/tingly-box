@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -276,13 +277,7 @@ func (m *Manager) buildAuthURL(config *ProviderConfig, state string, codeVerifie
 					return "", "", fmt.Errorf("invalid port in BaseURL: %w", err)
 				}
 			}
-			allowed := false
-			for _, allowedPort := range config.CallbackPorts {
-				if portInt == allowedPort {
-					allowed = true
-					break
-				}
-			}
+			allowed := slices.Contains(config.CallbackPorts, portInt)
 			if !allowed {
 				return "", "", fmt.Errorf("port %d is not allowed for provider %s (allowed ports: %v)", portInt, config.Type, config.CallbackPorts)
 			}

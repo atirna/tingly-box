@@ -3,6 +3,7 @@ package quota
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"time"
 )
@@ -89,12 +90,7 @@ func matchesKind(w *UsageWindow, kinds []WindowKind) bool {
 	if len(kinds) == 0 {
 		return true
 	}
-	for _, k := range kinds {
-		if w.Kind == k {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(kinds, w.Kind)
 }
 
 // RecoversAt returns when the binding window refills. It is nil when usage is

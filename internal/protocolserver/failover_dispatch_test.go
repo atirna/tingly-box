@@ -3,6 +3,7 @@ package protocolserver
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -413,13 +414,7 @@ func TestSelectFallbackService_TierVsRandomTactic(t *testing.T) {
 	}
 	// Random tactic doesn't guarantee tier ordering
 	validProviders := []string{"provider-a1", "provider-a2", "provider-b1", "provider-b2"}
-	found := false
-	for _, valid := range validProviders {
-		if randomService.Provider == valid {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(validProviders, randomService.Provider)
 	if !found {
 		t.Errorf("RandomTactic picked unexpected provider: %s", randomService.Provider)
 	}

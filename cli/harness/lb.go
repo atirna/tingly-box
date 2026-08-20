@@ -2,10 +2,10 @@ package main
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -362,11 +362,8 @@ func (c *LbCmd) checkExpect(scn *lbScenario, steps []lbStepOutput, finalBreakers
 	for _, wantID := range e.AttemptsContain {
 		found := false
 		if lastTrace != nil {
-			for _, gotID := range lastTrace.Attempts {
-				if gotID == wantID {
-					found = true
-					break
-				}
+			if slices.Contains(lastTrace.Attempts, wantID) {
+				found = true
 			}
 		}
 		if !found {
@@ -377,10 +374,8 @@ func (c *LbCmd) checkExpect(scn *lbScenario, steps []lbStepOutput, finalBreakers
 	// AttemptsExclude: last request must NOT include any serviceID.
 	for _, banID := range e.AttemptsExclude {
 		if lastTrace != nil {
-			for _, gotID := range lastTrace.Attempts {
-				if gotID == banID {
-					return fmt.Errorf("expect: attempts_exclude: service %q should not appear in attempts (got %v)", banID, lastTrace.Attempts)
-				}
+			if slices.Contains(lastTrace.Attempts, banID) {
+				return fmt.Errorf("expect: attempts_exclude: service %q should not appear in attempts (got %v)", banID, lastTrace.Attempts)
 			}
 		}
 	}

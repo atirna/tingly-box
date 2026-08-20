@@ -1,5 +1,7 @@
 package core
 
+import "slices"
+
 import "strings"
 
 // NormalizedCommand is a tool-agnostic semantic view used for matching.
@@ -185,21 +187,11 @@ func firstArgIn(args []string, values ...string) bool {
 		return false
 	}
 	first := args[0]
-	for _, value := range values {
-		if first == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, first)
 }
 
 func containsArg(args []string, target string) bool {
-	for _, arg := range args {
-		if arg == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, target)
 }
 
 func hasArgSequence(args []string, sequence ...string) bool {
@@ -235,10 +227,8 @@ func appendUniqueString(items []string, value string) []string {
 	if value == "" {
 		return items
 	}
-	for _, item := range items {
-		if item == value {
-			return items
-		}
+	if slices.Contains(items, value) {
+		return items
 	}
 	return append(items, value)
 }

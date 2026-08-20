@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -172,10 +173,8 @@ func withContext1MBeta(ctx context.Context, betas []anthropic.AnthropicBeta) []a
 	if !typ.GetRuleFlags(ctx).Context1M {
 		return betas
 	}
-	for _, b := range betas {
-		if b == anthropic.AnthropicBetaContext1m2025_08_07 {
-			return betas
-		}
+	if slices.Contains(betas, anthropic.AnthropicBetaContext1m2025_08_07) {
+		return betas
 	}
 	return append(betas, anthropic.AnthropicBetaContext1m2025_08_07)
 }

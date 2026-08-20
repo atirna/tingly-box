@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -733,10 +734,8 @@ func codexEnumValue(key, val string) (string, bool) {
 	if val == "" {
 		return "", false
 	}
-	for _, allowed := range codexEnumValues[key] {
-		if val == allowed {
-			return val, true
-		}
+	if slices.Contains(codexEnumValues[key], val) {
+		return val, true
 	}
 	return "", false
 }
@@ -1311,10 +1310,8 @@ var dshProtocolValues = []string{"openai-completions", "openai-responses", "anth
 // (read) so the two stay in lockstep.
 func dshProtocolValue(val string) (string, bool) {
 	val = strings.TrimSpace(val)
-	for _, allowed := range dshProtocolValues {
-		if val == allowed {
-			return val, true
-		}
+	if slices.Contains(dshProtocolValues, val) {
+		return val, true
 	}
 	return "", false
 }
