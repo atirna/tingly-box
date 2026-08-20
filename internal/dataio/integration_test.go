@@ -358,7 +358,7 @@ func TestProviderRoundTripByAuthType(t *testing.T) {
 // this is the boundary internal/dataio's export/import fix actually owns.
 func decodeExportedProvider(t *testing.T, jsonl string, wantUUID string) *typ.Provider {
 	t.Helper()
-	for _, line := range strings.Split(jsonl, "\n") {
+	for line := range strings.SplitSeq(jsonl, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

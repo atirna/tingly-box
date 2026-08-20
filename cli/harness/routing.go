@@ -50,7 +50,7 @@ func (cmd *RoutingCmd) Run() error {
 		scenarios, err = protocoltest.LoadRoutingScenarios(cmd.File)
 	} else {
 		var names []string
-		for _, n := range strings.Split(cmd.Scenarios, ",") {
+		for n := range strings.SplitSeq(cmd.Scenarios, ",") {
 			if n = strings.TrimSpace(n); n != "" {
 				names = append(names, n)
 			}

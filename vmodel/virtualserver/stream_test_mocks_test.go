@@ -126,7 +126,7 @@ func TestStreamTestMocks_AnthropicMessageDelta(t *testing.T) {
 func lastUsageChunk(t *testing.T, body string) map[string]interface{} {
 	t.Helper()
 	var last map[string]interface{}
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "data:") {
 			continue
@@ -153,7 +153,7 @@ func lastUsageChunk(t *testing.T, body string) map[string]interface{} {
 
 func findSSEEventData(body, eventName string) string {
 	current := ""
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		switch {
 		case strings.HasPrefix(line, "event:"):
 			current = strings.TrimSpace(strings.TrimPrefix(line, "event:"))

@@ -133,7 +133,7 @@ func TestAnthropicToOpenAIStream_RealFormatUsage(t *testing.T) {
 	body := w.Body.String()
 	var lastPromptTokens, lastCompletionTokens float64
 	foundNonZeroUsage := false
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
@@ -208,7 +208,7 @@ func TestAnthropicToOpenAIStream_FinalChunkOmitsEmptyRole(t *testing.T) {
 	require.NoError(t, err)
 
 	sawFinishChunk := false
-	for _, line := range strings.Split(w.Body.String(), "\n") {
+	for line := range strings.SplitSeq(w.Body.String(), "\n") {
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}

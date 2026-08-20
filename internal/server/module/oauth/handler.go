@@ -1246,8 +1246,8 @@ func normalizeAPIBase(baseURL, pathSuffix string) string {
 	}
 
 	if strings.Contains(baseURL, "/v") {
-		parts := strings.Split(baseURL, "/")
-		for _, part := range parts {
+		parts := strings.SplitSeq(baseURL, "/")
+		for part := range parts {
 			if strings.HasPrefix(part, "v") && len(part) > 1 && part[1] >= '0' && part[1] <= '9' {
 				return baseURL
 			}
