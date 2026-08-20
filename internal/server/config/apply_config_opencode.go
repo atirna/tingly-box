@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 )
@@ -89,9 +90,7 @@ func ApplyOpenCodeConfig(payload map[string]interface{}) (*ApplyResult, error) {
 
 	// Merge new providers from payload
 	if newProviders, ok := payload["provider"].(map[string]interface{}); ok {
-		for k, v := range newProviders {
-			existingProviders[k] = v
-		}
+		maps.Copy(existingProviders, newProviders)
 	}
 
 	existingConfig["provider"] = existingProviders

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 )
 
@@ -100,9 +101,7 @@ func (p ClaudeCodePrefs) Values() (map[string]string, error) {
 	if err := json.Unmarshal(b, &values); err != nil {
 		return nil, err
 	}
-	for key, value := range p.Extra {
-		values[key] = value
-	}
+	maps.Copy(values, p.Extra)
 	return values, nil
 }
 

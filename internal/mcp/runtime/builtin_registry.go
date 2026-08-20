@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -47,9 +48,7 @@ func RegisterBuiltinTools(getConfig func() *typ.MCPRuntimeConfig, setConfig func
 	// Preserve user's environment variables (especially SERPER_API_KEY)
 	preservedEnv := make(map[string]string)
 	if existingWebtools != nil && existingWebtools.Env != nil {
-		for k, v := range existingWebtools.Env {
-			preservedEnv[k] = v
-		}
+		maps.Copy(preservedEnv, existingWebtools.Env)
 	}
 
 	// Ensure SERPER_API_KEY is always present (use ${SERPER_API_KEY} to reference system env)
@@ -113,9 +112,7 @@ func RegisterBuiltinTools(getConfig func() *typ.MCPRuntimeConfig, setConfig func
 			advisorTools = existingAdvisor.Tools
 		}
 		// Preserve user's custom environment variables
-		for k, v := range existingAdvisor.Env {
-			advisorEnv[k] = v
-		}
+		maps.Copy(advisorEnv, existingAdvisor.Env)
 		if existingAdvisor.Advisor != nil {
 			copied := *existingAdvisor.Advisor
 			advisorCfg = &copied

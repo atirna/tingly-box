@@ -4,6 +4,7 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"time"
 
@@ -98,9 +99,7 @@ func (p *Provider) Send(ctx context.Context, notification *notify.Notification) 
 	}
 
 	headers := make(map[string]string, len(p.headers)+1)
-	for k, v := range p.headers {
-		headers[k] = v
-	}
+	maps.Copy(headers, p.headers)
 	if p.authHeader != "" {
 		headers["Authorization"] = p.authHeader
 	}

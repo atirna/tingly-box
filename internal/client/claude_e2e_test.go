@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"strings"
 	"testing"
@@ -200,9 +201,7 @@ func TestE2E_ClaudeRoundTripper(t *testing.T) {
 						input := lastTool["input"].(map[string]interface{})
 						var partialInput map[string]interface{}
 						json.Unmarshal([]byte(event.Delta.PartialJSON), &partialInput)
-						for k, v := range partialInput {
-							input[k] = v
-						}
+						maps.Copy(input, partialInput)
 					}
 				}
 

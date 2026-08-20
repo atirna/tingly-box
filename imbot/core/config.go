@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 )
@@ -179,9 +180,7 @@ func (c *Config) Clone() *Config {
 	// Clone options map
 	if c.Options != nil {
 		clone.Options = make(map[string]interface{})
-		for k, v := range c.Options {
-			clone.Options[k] = v
-		}
+		maps.Copy(clone.Options, c.Options)
 	}
 
 	// Clone logging config

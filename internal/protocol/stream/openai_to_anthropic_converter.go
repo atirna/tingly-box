@@ -3,6 +3,7 @@ package stream
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"time"
 
@@ -462,9 +463,7 @@ func (c *openAIToAnthropicConverter) emitMessageDelta(stopReason string) {
 		"stop_reason":   stopReason,
 		"stop_sequence": nil,
 	}
-	for k, v := range c.state.deltaExtras {
-		deltaMap[k] = v
-	}
+	maps.Copy(deltaMap, c.state.deltaExtras)
 	usageMap := c.Usage().ToAnthropicMessageDeltaUsageMap()
 	c.emitAnthropic(eventTypeMessageDelta, map[string]interface{}{
 		"type":  eventTypeMessageDelta,

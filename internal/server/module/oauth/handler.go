@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -1022,9 +1023,7 @@ func (h *Handler) createProviderFromToken(token *oauth.Token, issuer ai.Issuer, 
 
 	// Store account_id from token metadata for ChatGPT API
 	if token.Metadata != nil {
-		for k, v := range token.Metadata {
-			oauthDetail.ExtraFields[k] = v
-		}
+		maps.Copy(oauthDetail.ExtraFields, token.Metadata)
 	}
 	// Preserve id_token: required for native Codex `~/.codex/auth.json` export
 	// (chatgpt auth mode). Mirrors the CLI flow in internal/command/oauth.go.

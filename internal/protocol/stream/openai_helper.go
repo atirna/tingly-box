@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -177,9 +178,7 @@ func mergeMaps(base map[string]interface{}, extra map[string]interface{}) map[st
 	if base == nil {
 		base = make(map[string]interface{})
 	}
-	for k, v := range extra {
-		base[k] = v
-	}
+	maps.Copy(base, extra)
 	return base
 }
 

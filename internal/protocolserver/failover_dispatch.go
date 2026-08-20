@@ -21,6 +21,7 @@ package protocolserver
 
 import (
 	"bytes"
+	"maps"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -245,9 +246,7 @@ func (g *firstChunkGate) commit() {
 	}
 	g.committed = true
 	dst := g.real.Header()
-	for k, vs := range g.hdr {
-		dst[k] = vs
-	}
+	maps.Copy(dst, g.hdr)
 	status := g.status
 	if status == 0 {
 		status = http.StatusOK

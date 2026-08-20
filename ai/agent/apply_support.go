@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -314,9 +315,7 @@ func buildClaudeSettings(base []byte, env map[string]string, applyOpts *applyOpt
 	if applyOpts.defaultMode != "" {
 		existingConfig["defaultMode"] = applyOpts.defaultMode
 	}
-	for k, v := range applyOpts.extras {
-		existingConfig[k] = v
-	}
+	maps.Copy(existingConfig, applyOpts.extras)
 
 	output, err := json.MarshalIndent(existingConfig, "", "  ")
 	if err != nil {
@@ -537,9 +536,7 @@ func ApplyClaudeOnboarding(payload map[string]interface{}) (*ApplyResult, error)
 	}
 
 	// Merge top-level keys from payload
-	for k, v := range payload {
-		existingConfig[k] = v
-	}
+	maps.Copy(existingConfig, payload)
 
 	// Write the merged config
 	output, err := json.MarshalIndent(existingConfig, "", "  ")
@@ -631,9 +628,7 @@ func ApplyOpenCodeConfig(payload map[string]interface{}) (*ApplyResult, error) {
 
 	// Merge new providers from payload
 	if newProviders, ok := payload["provider"].(map[string]interface{}); ok {
-		for k, v := range newProviders {
-			existingProviders[k] = v
-		}
+		maps.Copy(existingProviders, newProviders)
 	}
 
 	existingConfig["provider"] = existingProviders
@@ -979,9 +974,7 @@ func mergeCodexConfig(cfg map[string]interface{}, baseURL string, models []strin
 	// default) and stamped into each generated profile so profiles are
 	// self-contained. Converted first so it can never carry a managed key.
 	coerced := prefs.toConfig()
-	for k, v := range coerced {
-		cfg[k] = v
-	}
+	maps.Copy(cfg, coerced)
 
 	// Managed fields — written after prefs so they always win, guaranteeing
 	// prefs cannot clobber them (defense in depth on top of the whitelist).
@@ -1027,9 +1020,7 @@ func mergeCodexConfig(cfg map[string]interface{}, baseURL string, models []strin
 			"model":          model,
 			"model_provider": codexGatewayProviderName,
 		}
-		for k, v := range coerced {
-			profile[k] = v
-		}
+		maps.Copy(profile, coerced)
 		profiles[sanitizeCodexProfileKey(model)] = profile
 	}
 	if len(profiles) > 0 {
@@ -1536,9 +1527,7 @@ func mergeDshSettings(cfg map[string]interface{}, baseURL string, models []strin
 	}
 	// prefs.toConfig() always emits "api" (defaulting when unset/invalid), so
 	// the stanza literal above no longer needs a hardcoded default.
-	for k, v := range prefs.toConfig() {
-		stanza[k] = v
-	}
+	maps.Copy(stanza, prefs.toConfig())
 
 	providers[dshGatewayProviderName] = stanza
 	root["providers"] = providers

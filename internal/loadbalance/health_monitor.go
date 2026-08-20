@@ -2,6 +2,7 @@ package loadbalance
 
 import (
 	"errors"
+	"maps"
 	"sync"
 	"time"
 
@@ -284,9 +285,7 @@ func (hm *HealthMonitor) GetAllHealth() map[string]*ServiceHealth {
 	defer hm.mutex.RUnlock()
 
 	result := make(map[string]*ServiceHealth, len(hm.services))
-	for k, v := range hm.services {
-		result[k] = v
-	}
+	maps.Copy(result, hm.services)
 	return result
 }
 

@@ -3,6 +3,7 @@ package imchannel
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -10,8 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/tingly-dev/tingly-box/agentboot"
-	"github.com/tingly-dev/tingly-box/remote/control/ask"
 	"github.com/tingly-dev/tingly-box/imbot"
+	"github.com/tingly-dev/tingly-box/remote/control/ask"
 )
 
 // IMPrompter implements ask.Prompter using IM (Telegram, etc.) for user interaction
@@ -253,9 +254,7 @@ func (p *IMPrompter) buildTimeoutQuestionResult(req ask.Request) ask.Result {
 	}
 
 	updatedInput := make(map[string]interface{})
-	for k, v := range req.Input {
-		updatedInput[k] = v
-	}
+	maps.Copy(updatedInput, req.Input)
 	updatedInput["answers"] = answers
 
 	return ask.Result{
@@ -355,9 +354,7 @@ func (p *IMPrompter) SubmitPartialAnswer(requestID, questionText, label string) 
 		answers[k] = v
 	}
 	updatedInput := make(map[string]interface{})
-	for k, v := range pending.request.Input {
-		updatedInput[k] = v
-	}
+	maps.Copy(updatedInput, pending.request.Input)
 	updatedInput["answers"] = answers
 
 	result := ask.Result{

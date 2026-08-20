@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -154,9 +155,7 @@ func (c *Config) findOrCreateScenarioConfigLocked(scenario typ.RuleScenario) *ty
 	if seed := c.scenarioConfigLocked(scenario); seed != nil {
 		newConfig.Flags = seed.Flags
 		newConfig.Extensions = make(map[string]interface{}, len(seed.Extensions))
-		for k, v := range seed.Extensions {
-			newConfig.Extensions[k] = v
-		}
+		maps.Copy(newConfig.Extensions, seed.Extensions)
 	}
 	c.Scenarios = append(c.Scenarios, newConfig)
 	return &c.Scenarios[len(c.Scenarios)-1]

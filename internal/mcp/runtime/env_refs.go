@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"maps"
 	"os"
 	"reflect"
 	"strconv"
@@ -59,9 +60,7 @@ func expandMCPSourceEnvRefs(source *typ.MCPSourceConfig, sourceIndex int, issues
 		sourceID = "sources[" + strconv.Itoa(sourceIndex) + "]"
 	}
 	sourceEnv := make(map[string]string, len(source.Env))
-	for k, v := range source.Env {
-		sourceEnv[k] = v
-	}
+	maps.Copy(sourceEnv, source.Env)
 	// Expand source env first, then use it as lookup for all other fields.
 	for k, v := range sourceEnv {
 		expanded, missing := expandStringEnvRefs(v, sourceEnv, true)

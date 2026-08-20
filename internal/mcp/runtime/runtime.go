@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -747,9 +748,7 @@ func (r *Runtime) IsClientToolAvailable(sourceID string, toolName string) bool {
 		// Expand env refs first so IsConfigured sees resolved values.
 		expandedSource := source
 		expandedSource.Env = make(map[string]string, len(source.Env))
-		for k, v := range source.Env {
-			expandedSource.Env[k] = v
-		}
+		maps.Copy(expandedSource.Env, source.Env)
 		expandSourceEnvInPlace(expandedSource.Env)
 		ts, err := r.toolSourceFactory.CreateToolSource(expandedSource)
 		if err != nil || !ts.IsConfigured() {

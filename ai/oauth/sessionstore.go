@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"maps"
 	"sync"
 	"time"
 )
@@ -125,8 +126,6 @@ func (s *MemorySessionStorage) GetSessions() map[string]*SessionState {
 	defer s.mu.RUnlock()
 
 	result := make(map[string]*SessionState, len(s.sessions))
-	for k, v := range s.sessions {
-		result[k] = v
-	}
+	maps.Copy(result, s.sessions)
 	return result
 }

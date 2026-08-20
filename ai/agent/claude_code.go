@@ -3,6 +3,7 @@ package agent
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"strings"
 )
 
@@ -78,9 +79,7 @@ func (p *ClaudeCodeParams) BuildEnv() map[string]string {
 	env["CLAUDE_CODE_SUBAGENT_MODEL"] = cmp.Or(p.ModelConfig.SubAgent, defaultModel)
 
 	// Add extra env vars
-	for k, v := range p.ExtraEnv {
-		env[k] = v
-	}
+	maps.Copy(env, p.ExtraEnv)
 
 	return env
 }

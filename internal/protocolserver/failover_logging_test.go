@@ -3,6 +3,7 @@ package protocolserver
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,9 +30,7 @@ func (h *logCapture) Levels() []logrus.Level { return logrus.AllLevels }
 func (h *logCapture) Fire(e *logrus.Entry) error {
 	// Copy fields to avoid mutation after Fire returns.
 	fields := make(logrus.Fields, len(e.Data))
-	for k, v := range e.Data {
-		fields[k] = v
-	}
+	maps.Copy(fields, e.Data)
 	h.entries = append(h.entries, &logrus.Entry{
 		Logger:  e.Logger,
 		Data:    fields,

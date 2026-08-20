@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"strings"
 )
 
@@ -39,8 +40,8 @@ func (m *Message) IsCallback() bool {
 
 // TextContent represents text message content
 type TextContent struct {
-	Text     string    `json:"text"`
-	Entities []Entity  `json:"entities,omitempty"`
+	Text     string   `json:"text"`
+	Entities []Entity `json:"entities,omitempty"`
 	// Segments preserves an ordered multi-segment body (e.g. interleaved
 	// body + thinking) on inbound messages. Nil for ordinary single-text
 	// messages. See core.Segment.
@@ -369,9 +370,7 @@ func cloneStringAnyMap(m map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 	out := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }
 
@@ -380,8 +379,6 @@ func (m *Message) WithMetadata(metadata map[string]interface{}) *Message {
 	if m.Metadata == nil {
 		m.Metadata = make(map[string]interface{})
 	}
-	for k, v := range metadata {
-		m.Metadata[k] = v
-	}
+	maps.Copy(m.Metadata, metadata)
 	return m
 }

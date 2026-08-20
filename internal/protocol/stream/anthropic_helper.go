@@ -3,6 +3,7 @@ package stream
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"sort"
 	"time"
@@ -239,9 +240,7 @@ func sendMessageDelta(c *gin.Context, state *streamState, stopReason string, flu
 		"stop_sequence": nil,
 	}
 	// Merge all collected extra fields
-	for k, v := range state.deltaExtras {
-		deltaMap[k] = v
-	}
+	maps.Copy(deltaMap, state.deltaExtras)
 
 	usageMap := map[string]interface{}{
 		"output_tokens": state.outputTokens,
