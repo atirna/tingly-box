@@ -14,7 +14,6 @@ import (
 // observable effect. *testing.T satisfies the flagTB the cases use.
 func TestRuleFlags(t *testing.T) {
 	for _, fc := range ruleFlagCases() {
-		fc := fc
 		t.Run(fc.key, func(t *testing.T) {
 			t.Parallel()
 			env := NewTestEnv(t)

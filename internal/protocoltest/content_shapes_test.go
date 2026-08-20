@@ -11,7 +11,6 @@ import "testing"
 // upstream. *testing.T satisfies the flagTB the cases use.
 func TestContentShapes(t *testing.T) {
 	for _, c := range contentShapeCases() {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			env := NewTestEnv(t)

@@ -727,7 +727,6 @@ func qsAgent(ctx StepContext, s quickstartState) (quickstartState, StepResult, e
 
 	agentUC := usecase.NewAgentUseCase(s.mgr.GetGlobalConfig(), "localhost")
 	for _, t := range s.selectedAgents {
-		t := t
 		req := &agent.ApplyAgentRequest{
 			AgentType:         t,
 			Provider:          s.provider.UUID,

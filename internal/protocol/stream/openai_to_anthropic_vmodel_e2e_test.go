@@ -117,7 +117,6 @@ func TestOpenAIToAnthropicStream_VModelFullUsage(t *testing.T) {
 	)
 
 	for _, modelID := range []string{"virtual-stream-test", "virtual-stream-test-tool"} {
-		modelID := modelID
 		t.Run(modelID, func(t *testing.T) {
 			stream := client.Chat.Completions.NewStreaming(context.Background(), openai.ChatCompletionNewParams{
 				Model: modelID,

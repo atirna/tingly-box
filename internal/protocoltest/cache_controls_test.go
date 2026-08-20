@@ -8,9 +8,7 @@ import "testing"
 func TestCacheControls(t *testing.T) {
 	m := DefaultMatrix()
 	for _, pair := range m.Pairs {
-		pair := pair
 		for _, streaming := range m.Streaming {
-			streaming := streaming
 			t.Run("single/"+pair.String()+"/"+streamMode(streaming), func(t *testing.T) {
 				t.Parallel()
 				env := NewTestEnv(t)
@@ -21,9 +19,7 @@ func TestCacheControls(t *testing.T) {
 	}
 
 	for _, ic := range DefaultIdempotentCases() {
-		ic := ic
 		for _, streaming := range m.Streaming {
-			streaming := streaming
 			t.Run("aba/"+ic.Name+"/"+streamMode(streaming), func(t *testing.T) {
 				t.Parallel()
 				env := NewTestEnv(t)

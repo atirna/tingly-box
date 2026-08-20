@@ -10,9 +10,7 @@ import "testing"
 func TestVendorTransforms(t *testing.T) {
 	m := DefaultMatrix()
 	for _, fx := range vendorFixtures {
-		fx := fx
 		for _, streaming := range m.Streaming {
-			streaming := streaming
 			t.Run("vendor/"+fx.name+"/"+streamMode(streaming), func(t *testing.T) {
 				t.Parallel()
 				env := NewTestEnv(t)

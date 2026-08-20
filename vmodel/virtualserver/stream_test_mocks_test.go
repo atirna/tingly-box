@@ -46,7 +46,6 @@ func TestStreamTestMocks_OpenAIUsageChunk(t *testing.T) {
 	srv := newStreamTestServer(t)
 
 	for _, modelID := range []string{"virtual-stream-test", "virtual-stream-test-tool"} {
-		modelID := modelID
 		t.Run(modelID, func(t *testing.T) {
 			body := map[string]interface{}{
 				"model":  modelID,
@@ -86,7 +85,6 @@ func TestStreamTestMocks_AnthropicMessageDelta(t *testing.T) {
 	srv := newStreamTestServer(t)
 
 	for _, modelID := range []string{"virtual-stream-test", "virtual-stream-test-tool"} {
-		modelID := modelID
 		t.Run(modelID, func(t *testing.T) {
 			body := map[string]interface{}{
 				"model":      modelID,
