@@ -82,7 +82,6 @@ func TestClientPool_ClientConstruction(t *testing.T) {
 	t.Run("constructors", func(t *testing.T) {
 		pool := NewClientPool()
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				var client interface{}
 				switch tc.kind {

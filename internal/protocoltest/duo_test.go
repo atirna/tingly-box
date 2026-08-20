@@ -59,7 +59,6 @@ func TestDuoFunctional(t *testing.T) {
 	defer env.Close()
 
 	for _, route := range AllDuoRoutes() {
-		route := route
 		t.Run(route.Name, func(t *testing.T) {
 			checks := env.RunFunctionalChecks(route, 256*1024)
 			if len(checks) == 0 {
@@ -111,7 +110,6 @@ func TestDuoRouting(t *testing.T) {
 	defer env.Close()
 
 	for _, sc := range BuiltinRoutingScenarios() {
-		sc := sc
 		t.Run(sc.Name, func(t *testing.T) {
 			checks := env.RunRoutingScenario(sc)
 			if len(checks) == 0 {

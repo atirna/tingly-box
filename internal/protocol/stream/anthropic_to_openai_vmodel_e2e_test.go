@@ -42,7 +42,6 @@ func TestAnthropicToOpenAIStream_VModelFullUsage(t *testing.T) {
 	)
 
 	for _, modelID := range []string{"virtual-stream-test", "virtual-stream-test-tool"} {
-		modelID := modelID
 		t.Run(modelID, func(t *testing.T) {
 			stream := client.Beta.Messages.NewStreaming(context.Background(), anthropic.BetaMessageNewParams{
 				Model:     anthropic.Model(modelID),

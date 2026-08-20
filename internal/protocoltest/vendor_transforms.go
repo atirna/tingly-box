@@ -145,9 +145,7 @@ func runVendorTransformCase(t flagTB, env *TestEnv, fx vendorFixture, streaming 
 func (m *Matrix) ExecuteAllVendorTransforms() []TestResult {
 	var cases []recorderCase
 	for _, fx := range vendorFixtures {
-		fx := fx
 		for _, streaming := range m.Streaming {
-			streaming := streaming
 			name := fmt.Sprintf("vendor/%s/%s", fx.name, streamMode(streaming))
 			cases = append(cases, recorderCase{
 				name:      name,

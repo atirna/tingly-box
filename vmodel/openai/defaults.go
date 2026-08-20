@@ -32,7 +32,6 @@ func RegisterDefaults(r *Registry) {
 	}
 
 	for _, sc := range vmodel.DefaultSequenceConfigs() {
-		sc := sc
 		_ = r.Register(NewSequenceModel(&sc))
 	}
 }

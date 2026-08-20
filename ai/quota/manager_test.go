@@ -127,7 +127,6 @@ func TestInferProviderTypeAPIBaseCaseInsensitive(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.apiBase, func(t *testing.T) {
 			t.Parallel()
 			got := inferProviderType(&typ.Provider{APIBase: tt.apiBase})
@@ -266,7 +265,6 @@ func TestInferProviderTypeIgnoresPathAndLocalHosts(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := inferProviderType(&typ.Provider{APIBase: tt.apiBase}); got != tt.want {

@@ -65,7 +65,6 @@ func TestErrorInjection_PreContent_OpenAI(t *testing.T) {
 	srv := newInjectionServer(t, model, nil)
 
 	for _, streaming := range []bool{false, true} {
-		streaming := streaming
 		t.Run(map[bool]string{false: "nonstream", true: "stream"}[streaming], func(t *testing.T) {
 			resp := postJSON(t, srv.URL+"/v1/chat/completions", map[string]any{
 				"model":    "inj-precontent-openai",
