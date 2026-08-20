@@ -46,27 +46,10 @@ func chatToolImageRequest(t *testing.T) *openai.ChatCompletionNewParams {
 	return req
 }
 
-// TestChatToolMessageImage_SDKParse verifies the openai-go union itself: a
-// tool message content array keeps its image_url part through parse+marshal.
-func TestChatToolMessageImage_SDKParse(t *testing.T) {
-	req := chatToolImageRequest(t)
-	out, err := json.Marshal(req)
-	require.NoError(t, err)
-
-	var m map[string]any
-	require.NoError(t, json.Unmarshal(out, &m))
-	msgs := m["messages"].([]any)
-	tool := msgs[2].(map[string]any)
-	parts, ok := tool["content"].([]any)
-	require.True(t, ok, "tool content should stay an array, got %v", tool["content"])
-	require.Len(t, parts, 2)
-
-	img := parts[1].(map[string]any)
-	assert.Equal(t, "image_url", img["type"])
-	imgURL, ok := img["image_url"].(map[string]any)
-	require.True(t, ok, "image_url field must survive, got part: %v", img)
-	assert.Equal(t, toolImgDataURL, imgURL["url"])
-}
+// The SDK-level parse/marshal survival of tool image parts is locked by the
+// fork's chatcompletion_toolmessage_patch_test.go and the gateway-level round
+// trip in internal/protocol/multimodal_roundtrip_test.go; the tests here
+// cover the conversions on top of the parsed request.
 
 // TestConvertOpenAIToAnthropic_ToolMessageImage: Chat tool message with
 // [text, image_url] must become an Anthropic tool_result whose content holds
@@ -150,32 +133,7 @@ func TestConvertOpenAIResponsesToChat_FunctionCallOutputImage(t *testing.T) {
 
 	out := ConvertOpenAIResponsesToChat(params, 1024)
 	require.NotNil(t, out)
-
-	var tool *openai.ChatCompletionToolMessageParam
-	for _, msg := range out.Messages {
-		if msg.OfTool != nil {
-			tool = msg.OfTool
-		}
-	}
-	require.NotNil(t, tool)
-
-	raw, err := json.Marshal(openai.ChatCompletionMessageParamUnion{OfTool: tool})
-	require.NoError(t, err)
-	var m map[string]any
-	require.NoError(t, json.Unmarshal(raw, &m))
-	parts, ok := m["content"].([]any)
-	require.True(t, ok, "tool content should be an array, got %v", m["content"])
-	require.Len(t, parts, 2)
-
-	text := parts[0].(map[string]any)
-	assert.Equal(t, "text", text["type"])
-	assert.Equal(t, "Image loaded.", text["text"])
-
-	img := parts[1].(map[string]any)
-	assert.Equal(t, "image_url", img["type"])
-	imgURL, ok := img["image_url"].(map[string]any)
-	require.True(t, ok, "image_url field must survive, got %v", img)
-	assert.Equal(t, toolImgDataURL, imgURL["url"])
+	assertOpenAIToolMessageHasImage(t, out, "Image loaded.")
 }
 
 // anthropicV1ToolResultImageRequest builds an Anthropic v1 request whose
@@ -251,7 +209,7 @@ func anthropicBetaToolResultImageRequest() *anthropic.BetaMessageNewParams {
 
 // assertOpenAIToolMessageHasImage marshals the OpenAI request and asserts the
 // tool message carries [text, image_url] content parts with the data URL.
-func assertOpenAIToolMessageHasImage(t *testing.T, out *openai.ChatCompletionNewParams) {
+func assertOpenAIToolMessageHasImage(t *testing.T, out *openai.ChatCompletionNewParams, expectedText string) {
 	t.Helper()
 	var tool *openai.ChatCompletionToolMessageParam
 	for _, msg := range out.Messages {
@@ -271,7 +229,7 @@ func assertOpenAIToolMessageHasImage(t *testing.T, out *openai.ChatCompletionNew
 
 	text := parts[0].(map[string]any)
 	assert.Equal(t, "text", text["type"])
-	assert.Equal(t, "took screenshot", text["text"])
+	assert.Equal(t, expectedText, text["text"])
 
 	img := parts[1].(map[string]any)
 	assert.Equal(t, "image_url", img["type"])
@@ -285,13 +243,13 @@ func assertOpenAIToolMessageHasImage(t *testing.T, out *openai.ChatCompletionNew
 // screenshot-tool shape).
 func TestConvertAnthropicV1ToOpenAI_ToolResultImage(t *testing.T) {
 	out, _ := ConvertAnthropicToOpenAIRequest(anthropicV1ToolResultImageRequest(), false, false, false)
-	assertOpenAIToolMessageHasImage(t, out)
+	assertOpenAIToolMessageHasImage(t, out, "took screenshot")
 }
 
 // TestConvertAnthropicBetaToOpenAI_ToolResultImage is the beta twin.
 func TestConvertAnthropicBetaToOpenAI_ToolResultImage(t *testing.T) {
 	out, _ := ConvertAnthropicBetaToOpenAIRequest(anthropicBetaToolResultImageRequest(), false, false, false)
-	assertOpenAIToolMessageHasImage(t, out)
+	assertOpenAIToolMessageHasImage(t, out, "took screenshot")
 }
 
 // assertResponsesFunctionCallOutputHasImage asserts the function_call_output

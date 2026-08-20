@@ -2,6 +2,7 @@ package request
 
 import (
 	"encoding/json"
+	"slices"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -121,6 +122,56 @@ func markFunctionCallOutputBreakpoint(item *responses.ResponseFunctionCallOutput
 	}
 }
 
+// responsesFunctionCallOutputFromToolResult converts a tool_result block into
+// a Responses function_call_output input item. Text-only results without
+// cache control collapse to the compact output string; results carrying
+// images (tool screenshots — issue #1606) or cache breakpoints keep the
+// structured output item list. Shared by the v1 and beta converters — the
+// beta path bridges through viewAnthropicBetaBlock first.
+func responsesFunctionCallOutputFromToolResult(block *anthropic.ToolResultBlockParam) responses.ResponseInputItemUnionParam {
+	output := responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}
+	hasCache := !param.IsOmitted(block.CacheControl)
+	hasImage := slices.ContainsFunc(block.Content, func(c anthropic.ToolResultBlockParamContentUnion) bool {
+		return c.OfImage != nil
+	})
+
+	if !hasImage && !hasCache {
+		output.OfString = param.NewOpt(convertV1ToolResultContentToString(block.Content))
+	} else {
+		items := make(responses.ResponseFunctionCallOutputItemListParam, 0, len(block.Content))
+		for _, c := range block.Content {
+			switch {
+			case c.OfText != nil:
+				items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
+					OfInputText: &responses.ResponseInputTextContentParam{Text: c.OfText.Text},
+				})
+			case c.OfImage != nil:
+				if url := imageBlockToOpenAIURL(c.OfImage); url != "" {
+					items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
+						OfInputImage: &responses.ResponseInputImageContentParam{ImageURL: param.NewOpt(url)},
+					})
+				}
+			}
+		}
+		if len(items) == 0 {
+			output.OfString = param.NewOpt("")
+		} else {
+			if hasCache {
+				markFunctionCallOutputBreakpoint(&items[len(items)-1])
+			}
+			output.OfResponseFunctionCallOutputItemArray = items
+		}
+	}
+
+	return responses.ResponseInputItemUnionParam{
+		OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+			CallID: block.ToolUseID,
+			Output: output,
+			Status: "completed",
+		},
+	}
+}
+
 // convertV1UserMessageToResponsesInput converts Anthropic v1 user message to Responses API input items
 func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []responses.ResponseInputItemUnionParam {
 	var items []responses.ResponseInputItemUnionParam
@@ -142,71 +193,15 @@ func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []response
 		// When there are tool_result blocks, we need to create separate items
 		for _, block := range msg.Content {
 			if block.OfToolResult != nil {
-				// Convert tool_result to function_call_output. Image content
-				// entries (tool screenshots — issue #1606) keep the
-				// structured output item list as input_image items.
-				output := responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}
-				hasCache := !param.IsOmitted(block.OfToolResult.CacheControl)
-				hasResultImage := false
-				for _, c := range block.OfToolResult.Content {
-					if c.OfImage != nil {
-						hasResultImage = true
-					}
-				}
-				if !hasResultImage && !hasCache {
-					output.OfString = param.NewOpt(convertV1ToolResultContentToString(block.OfToolResult.Content))
-				} else {
-					outputItems := make(responses.ResponseFunctionCallOutputItemListParam, 0, len(block.OfToolResult.Content))
-					for _, c := range block.OfToolResult.Content {
-						switch {
-						case c.OfText != nil:
-							outputItems = append(outputItems, responses.ResponseFunctionCallOutputItemUnionParam{
-								OfInputText: &responses.ResponseInputTextContentParam{Text: c.OfText.Text},
-							})
-						case c.OfImage != nil:
-							url := imageBlockToOpenAIURL(c.OfImage)
-							if url == "" {
-								continue
-							}
-							outputItems = append(outputItems, responses.ResponseFunctionCallOutputItemUnionParam{
-								OfInputImage: &responses.ResponseInputImageContentParam{ImageURL: param.NewOpt(url)},
-							})
-						}
-					}
-					if len(outputItems) == 0 {
-						output.OfString = param.NewOpt("")
-					} else {
-						if hasCache {
-							markFunctionCallOutputBreakpoint(&outputItems[len(outputItems)-1])
-						}
-						output.OfResponseFunctionCallOutputItemArray = outputItems
-					}
-				}
-				outputItem := responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: block.OfToolResult.ToolUseID,
-					Output: output,
-					Status: "completed",
-				}
-				items = append(items, responses.ResponseInputItemUnionParam{
-					OfFunctionCallOutput: &outputItem,
-				})
+				items = append(items, responsesFunctionCallOutputFromToolResult(block.OfToolResult))
 			} else if block.OfImage != nil {
 				// Image content alongside tool results (issue #1606): forward
 				// as a user message with an input_image part instead of
 				// dropping it.
 				if url := imageBlockToOpenAIURL(block.OfImage); url != "" {
-					messageItem := responses.EasyInputMessageParam{
-						Type: responses.EasyInputMessageTypeMessage,
-						Role: responses.EasyInputMessageRole("user"),
-						Content: responses.EasyInputMessageContentUnionParam{
-							OfInputItemContentList: responses.ResponseInputMessageContentListParam{
-								{OfInputImage: &responses.ResponseInputImageParam{ImageURL: param.NewOpt(url)}},
-							},
-						},
-					}
-					items = append(items, responses.ResponseInputItemUnionParam{
-						OfMessage: &messageItem,
-					})
+					items = append(items, responseMessageWithContent("user", responses.ResponseInputMessageContentListParam{
+						{OfInputImage: &responses.ResponseInputImageParam{ImageURL: param.NewOpt(url)}},
+					}))
 				}
 			} else if block.OfText != nil {
 				// Text content alongside tool results

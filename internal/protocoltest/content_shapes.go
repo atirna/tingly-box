@@ -362,6 +362,8 @@ func contentShapeCases() []contentShapeCase {
 	}
 
 	assistantContent := func(body map[string]any) (string, bool) { return responsesMessageContent(body, "assistant") }
+	toolImageURL := func(body map[string]any) (string, bool) { return chatMessageImageURL(body, "tool") }
+	userImageURL := func(body map[string]any) (string, bool) { return chatMessageImageURL(body, "user") }
 	instructions := func(body map[string]any) (string, bool) {
 		v, ok := body["instructions"].(string)
 		return v, ok
@@ -416,16 +418,12 @@ func contentShapeCases() []contentShapeCase {
 		// Chat passthrough is the exact repro from the issue.
 		{name: "chat_to_chat/tool_image_content", run: func(t flagTB, env *TestEnv) {
 			assertUpstreamText(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, EndpointChat,
-				toolImageBody(), func(body map[string]any) (string, bool) {
-					return chatMessageImageURL(body, "tool")
-				}, imgDataURL)
+				toolImageBody(), toolImageURL, imgDataURL)
 		}},
 
 		{name: "chat_to_chat/user_image_content", run: func(t flagTB, env *TestEnv) {
 			assertUpstreamText(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, EndpointChat,
-				userImageBody(), func(body map[string]any) (string, bool) {
-					return chatMessageImageURL(body, "user")
-				}, imgDataURL)
+				userImageBody(), userImageURL, imgDataURL)
 		}},
 
 		{name: "chat_to_responses/tool_image_content", run: func(t flagTB, env *TestEnv) {
@@ -440,16 +438,12 @@ func contentShapeCases() []contentShapeCase {
 
 		{name: "anthropic_to_chat/user_image_content", run: func(t flagTB, env *TestEnv) {
 			assertUpstreamText(t, env, protocol.TypeAnthropicV1, protocol.TypeOpenAIChat, EndpointChat,
-				anthropicUserImageBody(), func(body map[string]any) (string, bool) {
-					return chatMessageImageURL(body, "user")
-				}, imgDataURL)
+				anthropicUserImageBody(), userImageURL, imgDataURL)
 		}},
 
 		{name: "anthropic_to_chat/tool_result_image_content", run: func(t flagTB, env *TestEnv) {
 			assertUpstreamText(t, env, protocol.TypeAnthropicV1, protocol.TypeOpenAIChat, EndpointChat,
-				anthropicToolResultImageBody(), func(body map[string]any) (string, bool) {
-					return chatMessageImageURL(body, "tool")
-				}, imgDataURL)
+				anthropicToolResultImageBody(), toolImageURL, imgDataURL)
 		}},
 
 		{name: "anthropic_to_responses/tool_result_image_content", run: func(t flagTB, env *TestEnv) {

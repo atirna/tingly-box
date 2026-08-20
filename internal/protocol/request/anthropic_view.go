@@ -2,6 +2,7 @@ package request
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -102,17 +103,8 @@ func viewAnthropicBetaBlock(block anthropic.BetaContentBlockParamUnion) anthropi
 					OfText: &anthropic.TextBlockParam{Text: c.OfText.Text},
 				})
 			case c.OfImage != nil:
-				image := &anthropic.ImageBlockParam{}
-				if c.OfImage.Source.OfBase64 != nil {
-					image.Source.OfBase64 = &anthropic.Base64ImageSourceParam{
-						Data:      c.OfImage.Source.OfBase64.Data,
-						MediaType: anthropic.Base64ImageSourceMediaType(c.OfImage.Source.OfBase64.MediaType),
-					}
-				} else if c.OfImage.Source.OfURL != nil {
-					image.Source.OfURL = &anthropic.URLImageSourceParam{
-						URL: c.OfImage.Source.OfURL.URL,
-					}
-				} else {
+				image := viewAnthropicBetaImage(c.OfImage)
+				if image.Source.OfBase64 == nil && image.Source.OfURL == nil {
 					continue
 				}
 				content = append(content, anthropic.ToolResultBlockParamContentUnion{OfImage: image})
@@ -125,22 +117,28 @@ func viewAnthropicBetaBlock(block anthropic.BetaContentBlockParamUnion) anthropi
 			Content:      content,
 		}}
 	case block.OfImage != nil:
-		image := &anthropic.ImageBlockParam{
-			CacheControl: viewAnthropicBetaCacheControl(&block.OfImage.CacheControl),
-		}
-		if block.OfImage.Source.OfBase64 != nil {
-			image.Source.OfBase64 = &anthropic.Base64ImageSourceParam{
-				Data:      block.OfImage.Source.OfBase64.Data,
-				MediaType: anthropic.Base64ImageSourceMediaType(block.OfImage.Source.OfBase64.MediaType),
-			}
-		} else if block.OfImage.Source.OfURL != nil {
-			image.Source.OfURL = &anthropic.URLImageSourceParam{
-				URL: block.OfImage.Source.OfURL.URL,
-			}
-		}
-		return anthropic.ContentBlockParamUnion{OfImage: image}
+		return anthropic.ContentBlockParamUnion{OfImage: viewAnthropicBetaImage(block.OfImage)}
 	}
 	return anthropic.ContentBlockParamUnion{}
+}
+
+// viewAnthropicBetaImage bridges a beta image block into the canonical v1
+// type, carrying the source (base64 or URL) and cache control across.
+func viewAnthropicBetaImage(img *anthropic.BetaImageBlockParam) *anthropic.ImageBlockParam {
+	image := &anthropic.ImageBlockParam{
+		CacheControl: viewAnthropicBetaCacheControl(&img.CacheControl),
+	}
+	if img.Source.OfBase64 != nil {
+		image.Source.OfBase64 = &anthropic.Base64ImageSourceParam{
+			Data:      img.Source.OfBase64.Data,
+			MediaType: anthropic.Base64ImageSourceMediaType(img.Source.OfBase64.MediaType),
+		}
+	} else if img.Source.OfURL != nil {
+		image.Source.OfURL = &anthropic.URLImageSourceParam{
+			URL: img.Source.OfURL.URL,
+		}
+	}
+	return image
 }
 
 func viewAnthropicBetaMessage(msg anthropic.BetaMessageParam) anthropic.MessageParam {
@@ -464,12 +462,7 @@ func convertAnthropicViewUserToOpenAI(blocks []anthropic.ContentBlockParamUnion)
 				if url == "" {
 					continue
 				}
-				imagePart := openai.ChatCompletionContentPartImageParam{
-					ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: url},
-				}
-				if hasAnthropicCacheControl(block.OfImage.CacheControl) {
-					imagePart.PromptCacheBreakpoint = openai.NewChatCompletionContentPartImagePromptCacheBreakpointParam()
-				}
+				imagePart := openAIImagePart(url, hasAnthropicCacheControl(block.OfImage.CacheControl))
 				parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfImageURL: &imagePart})
 			}
 		}
@@ -501,12 +494,9 @@ func convertAnthropicViewUserToOpenAI(blocks []anthropic.ContentBlockParamUnion)
 func openAIToolMessageFromAnthropicToolResult(block *anthropic.ToolResultBlockParam) openai.ChatCompletionMessageParamUnion {
 	toolCallID := truncateToolCallID(block.ToolUseID)
 	hasCache := hasAnthropicCacheControl(block.CacheControl)
-	hasImage := false
-	for _, c := range block.Content {
-		if c.OfImage != nil {
-			hasImage = true
-		}
-	}
+	hasImage := slices.ContainsFunc(block.Content, func(c anthropic.ToolResultBlockParamContentUnion) bool {
+		return c.OfImage != nil
+	})
 
 	if !hasImage && !hasCache {
 		return openai.ToolMessage(convertToolResultContent(block.Content), toolCallID)
@@ -523,11 +513,8 @@ func openAIToolMessageFromAnthropicToolResult(block *anthropic.ToolResultBlockPa
 			if url == "" {
 				continue
 			}
-			parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-				OfImageURL: &openai.ChatCompletionContentPartImageParam{
-					ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: url},
-				},
-			})
+			part := openAIImagePart(url, false)
+			parts = append(parts, openai.ChatCompletionContentPartUnionParam{OfImageURL: &part})
 		}
 	}
 	if len(parts) == 0 {
@@ -559,6 +546,18 @@ func openAITextPart(text string, cacheControl bool) openai.ChatCompletionContent
 	part := openai.ChatCompletionContentPartTextParam{Text: text}
 	if cacheControl {
 		part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartTextPromptCacheBreakpointParam()
+	}
+	return part
+}
+
+// openAIImagePart is the image twin of openAITextPart: an image_url content
+// part from a URL string, optionally carrying a prompt-cache breakpoint.
+func openAIImagePart(url string, cacheControl bool) openai.ChatCompletionContentPartImageParam {
+	part := openai.ChatCompletionContentPartImageParam{
+		ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: url},
+	}
+	if cacheControl {
+		part.PromptCacheBreakpoint = openai.NewChatCompletionContentPartImagePromptCacheBreakpointParam()
 	}
 	return part
 }
