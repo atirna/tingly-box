@@ -182,6 +182,81 @@ func anthropicSystemText(body map[string]any) (string, bool) {
 	return "", false
 }
 
+// ─── Image content-shape helpers (issue #1606) ───────────────────────────
+
+// chatMessageImageURL returns the image_url.url of the first image_url part
+// on the first message with the given role in a captured Chat request body.
+func chatMessageImageURL(body map[string]any, role string) (string, bool) {
+	msgs, _ := body["messages"].([]any)
+	for _, raw := range msgs {
+		msg, _ := raw.(map[string]any)
+		if msg["role"] != role {
+			continue
+		}
+		parts, _ := msg["content"].([]any)
+		for _, rawPart := range parts {
+			part, _ := rawPart.(map[string]any)
+			if part["type"] != "image_url" {
+				continue
+			}
+			img, _ := part["image_url"].(map[string]any)
+			url, ok := img["url"].(string)
+			return url, ok
+		}
+	}
+	return "", false
+}
+
+// responsesFunctionCallOutputImageURL returns the image_url of the first
+// input_image item in the first function_call_output of a captured OpenAI
+// Responses request body.
+func responsesFunctionCallOutputImageURL(body map[string]any) (string, bool) {
+	input, _ := body["input"].([]any)
+	for _, raw := range input {
+		item, _ := raw.(map[string]any)
+		if item["type"] != "function_call_output" {
+			continue
+		}
+		parts, _ := item["output"].([]any)
+		for _, rawPart := range parts {
+			part, _ := rawPart.(map[string]any)
+			if part["type"] != "input_image" {
+				continue
+			}
+			url, ok := part["image_url"].(string)
+			return url, ok
+		}
+	}
+	return "", false
+}
+
+// anthropicToolResultImageData returns the base64 data of the first image
+// block inside the first tool_result of a captured Anthropic request body.
+func anthropicToolResultImageData(body map[string]any) (string, bool) {
+	msgs, _ := body["messages"].([]any)
+	for _, raw := range msgs {
+		msg, _ := raw.(map[string]any)
+		blocks, _ := msg["content"].([]any)
+		for _, rawBlock := range blocks {
+			block, _ := rawBlock.(map[string]any)
+			if block["type"] != "tool_result" {
+				continue
+			}
+			parts, _ := block["content"].([]any)
+			for _, rawPart := range parts {
+				part, _ := rawPart.(map[string]any)
+				if part["type"] != "image" {
+					continue
+				}
+				source, _ := part["source"].(map[string]any)
+				data, ok := source["data"].(string)
+				return data, ok
+			}
+		}
+	}
+	return "", false
+}
+
 // ─── Cases ─────────────────────────────────────────────────────────────────
 
 func contentShapeCases() []contentShapeCase {
@@ -223,6 +298,65 @@ func contentShapeCases() []contentShapeCase {
 			"messages": []map[string]any{
 				{"role": "system", "content": []map[string]any{{"type": "text", "text": systemPrompt}}},
 				{"role": "user", "content": "Hello"},
+			},
+		}
+	}
+
+	// Image fixtures (issue #1606): a tiny data-URL image returned by a tool
+	// (the shape agent frameworks use for screenshots) and, on the Anthropic
+	// side, the equivalent base64 image inside a tool_result block.
+	const imgBase64 = "iVBORw0KGgo="
+	const imgDataURL = "data:image/png;base64," + imgBase64
+
+	toolImageBody := func() map[string]any {
+		return map[string]any{
+			"messages": slices.Concat(toolCallTurns, []map[string]any{
+				{"role": "tool", "tool_call_id": "call_1",
+					"content": []map[string]any{
+						{"type": "text", "text": "Image loaded."},
+						{"type": "image_url", "image_url": map[string]any{"url": imgDataURL}},
+					}},
+			}),
+		}
+	}
+	userImageBody := func() map[string]any {
+		return map[string]any{
+			"messages": []map[string]any{
+				{"role": "user", "content": []map[string]any{
+					{"type": "text", "text": "What color is this image?"},
+					{"type": "image_url", "image_url": map[string]any{"url": imgDataURL}},
+				}},
+			},
+		}
+	}
+	anthropicUserImageBody := func() map[string]any {
+		return map[string]any{
+			"max_tokens": 64,
+			"messages": []map[string]any{
+				{"role": "user", "content": []map[string]any{
+					{"type": "text", "text": "What color is this image?"},
+					{"type": "image", "source": map[string]any{
+						"type": "base64", "media_type": "image/png", "data": imgBase64,
+					}},
+				}},
+			},
+		}
+	}
+	anthropicToolResultImageBody := func() map[string]any {
+		return map[string]any{
+			"max_tokens": 64,
+			"messages": []map[string]any{
+				{"role": "assistant", "content": []map[string]any{
+					{"type": "tool_use", "id": "toolu_1", "name": "screenshot", "input": map[string]any{}},
+				}},
+				{"role": "user", "content": []map[string]any{
+					{"type": "tool_result", "tool_use_id": "toolu_1", "content": []map[string]any{
+						{"type": "text", "text": "took screenshot"},
+						{"type": "image", "source": map[string]any{
+							"type": "base64", "media_type": "image/png", "data": imgBase64,
+						}},
+					}},
+				}},
 			},
 		}
 	}
@@ -274,6 +408,53 @@ func contentShapeCases() []contentShapeCase {
 		{name: "chat_to_anthropic/system_array_content", run: func(t flagTB, env *TestEnv) {
 			assertUpstreamText(t, env, protocol.TypeOpenAIChat, protocol.TypeAnthropicBeta, EndpointAnthropic,
 				systemArrayBody(), anthropicSystemText, systemPrompt)
+		}},
+
+		// ── Image content shapes (issue #1606) ─────────────────────────
+		// The gateway must forward tool-returned images (and user images)
+		// intact on every path; the tool-role image_url corruption in the
+		// Chat passthrough is the exact repro from the issue.
+		{name: "chat_to_chat/tool_image_content", run: func(t flagTB, env *TestEnv) {
+			assertUpstreamText(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, EndpointChat,
+				toolImageBody(), func(body map[string]any) (string, bool) {
+					return chatMessageImageURL(body, "tool")
+				}, imgDataURL)
+		}},
+
+		{name: "chat_to_chat/user_image_content", run: func(t flagTB, env *TestEnv) {
+			assertUpstreamText(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIChat, EndpointChat,
+				userImageBody(), func(body map[string]any) (string, bool) {
+					return chatMessageImageURL(body, "user")
+				}, imgDataURL)
+		}},
+
+		{name: "chat_to_responses/tool_image_content", run: func(t flagTB, env *TestEnv) {
+			assertUpstreamText(t, env, protocol.TypeOpenAIChat, protocol.TypeOpenAIResponses, EndpointResponses,
+				toolImageBody(), responsesFunctionCallOutputImageURL, imgDataURL)
+		}},
+
+		{name: "chat_to_anthropic/tool_image_content", run: func(t flagTB, env *TestEnv) {
+			assertUpstreamText(t, env, protocol.TypeOpenAIChat, protocol.TypeAnthropicBeta, EndpointAnthropic,
+				toolImageBody(), anthropicToolResultImageData, imgBase64)
+		}},
+
+		{name: "anthropic_to_chat/user_image_content", run: func(t flagTB, env *TestEnv) {
+			assertUpstreamText(t, env, protocol.TypeAnthropicV1, protocol.TypeOpenAIChat, EndpointChat,
+				anthropicUserImageBody(), func(body map[string]any) (string, bool) {
+					return chatMessageImageURL(body, "user")
+				}, imgDataURL)
+		}},
+
+		{name: "anthropic_to_chat/tool_result_image_content", run: func(t flagTB, env *TestEnv) {
+			assertUpstreamText(t, env, protocol.TypeAnthropicV1, protocol.TypeOpenAIChat, EndpointChat,
+				anthropicToolResultImageBody(), func(body map[string]any) (string, bool) {
+					return chatMessageImageURL(body, "tool")
+				}, imgDataURL)
+		}},
+
+		{name: "anthropic_to_responses/tool_result_image_content", run: func(t flagTB, env *TestEnv) {
+			assertUpstreamText(t, env, protocol.TypeAnthropicV1, protocol.TypeOpenAIResponses, EndpointResponses,
+				anthropicToolResultImageBody(), responsesFunctionCallOutputImageURL, imgDataURL)
 		}},
 	}
 }

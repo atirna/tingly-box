@@ -153,20 +153,44 @@ func ConvertOpenAIToGoogleRequest(req *openai.ChatCompletionNewParams, defaultMa
 			}
 
 		case msg.OfTool != nil:
-			// Tool result message → function_response in user content
+			// Tool result message → function_response in user content.
+			// Array-of-content-parts form joins its text parts; image parts
+			// (issue #1606) become inline-data function response blobs so
+			// they are not silently dropped.
+			responseParts := []*genai.FunctionResponsePart{}
+			if text := msg.OfTool.Content.OfString.Value; text != "" || len(msg.OfTool.Content.OfArrayOfContentParts) == 0 {
+				responseParts = append(responseParts, &genai.FunctionResponsePart{
+					InlineData: &genai.FunctionResponseBlob{Data: []byte(text)},
+				})
+			} else {
+				if text := joinTextContentPartsFromUnion(msg.OfTool.Content.OfArrayOfContentParts); text != "" {
+					responseParts = append(responseParts, &genai.FunctionResponsePart{
+						InlineData: &genai.FunctionResponseBlob{Data: []byte(text)},
+					})
+				}
+				for _, part := range msg.OfTool.Content.OfArrayOfContentParts {
+					if part.OfImageURL == nil {
+						continue
+					}
+					mediaType, data, _ := ParseImageURLToAnthropicSource(part.OfImageURL.ImageURL.URL)
+					if mediaType == "" || data == "" {
+						continue
+					}
+					responseParts = append(responseParts, &genai.FunctionResponsePart{
+						InlineData: &genai.FunctionResponseBlob{
+							MIMEType: mediaType,
+							Data:     []byte(data),
+						},
+					})
+				}
+			}
 			toolContent := &genai.Content{
 				Role: "user",
 				Parts: []*genai.Part{
 					{
 						FunctionResponse: &genai.FunctionResponse{
-							Name: msg.OfTool.ToolCallID,
-							Parts: []*genai.FunctionResponsePart{
-								{
-									InlineData: &genai.FunctionResponseBlob{
-										Data: []byte(msg.OfTool.Content.OfString.Value),
-									},
-								},
-							},
+							Name:  msg.OfTool.ToolCallID,
+							Parts: responseParts,
 						},
 					},
 				},

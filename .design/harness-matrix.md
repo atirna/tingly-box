@@ -578,6 +578,12 @@ See `contentShapeCases()` in `content_shapes.go` for current coverage. Extend
 that list, not the matrix's `Scenario`/`buildRequest`, when a future bug is
 "the gateway dropped an unusual request shape while forwarding it."
 
+The image cases (`*_image_content`) are the multimodal half of this suite,
+added for issue #1606 (tool-returned `image_url` parts corrupted in
+`role:"tool"` messages). The full catalog of where multimodal content can
+appear per protocol, and the conversion contract those cases enforce, lives
+in [`multimodal-content.md`](./multimodal-content.md).
+
 ### 10.2 Prompt-cache request suite (`cache_controls.go`)
 
 Prompt-cache metadata is also request-shaped and therefore cannot be exercised
