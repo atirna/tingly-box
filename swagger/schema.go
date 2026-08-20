@@ -92,8 +92,8 @@ func (g *schemaGen) structSchema(t reflect.Type) Schema {
 // Embedded structs without an explicit json name are flattened, matching
 // encoding/json marshaling behavior.
 func (g *schemaGen) addStructFields(schema *Schema, t reflect.Type) {
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
+		field := field
 
 		// encoding/json promotes exported fields from anonymous embedded structs,
 		// including unexported helper types used for response composition.

@@ -272,8 +272,8 @@ func TestClaudeCodePrefs_JSONRoundTripPreservesFields(t *testing.T) {
 // and ToEnv would write spurious blank envs into settings.json.
 func TestClaudeCodePrefs_AllTypedFieldsUseOmitempty(t *testing.T) {
 	rt := reflect.TypeOf(ClaudeCodePrefs{})
-	for i := 0; i < rt.NumField(); i++ {
-		f := rt.Field(i)
+	for f := range rt.Fields() {
+		f := f
 		tag := f.Tag.Get("json")
 		if tag == "" || tag == "-" {
 			continue // Extra map (json:"-") is excluded by design.

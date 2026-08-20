@@ -417,8 +417,8 @@ func modelQueryParams(model interface{}) []queryParamSpec {
 func structQueryParams(modelType reflect.Type) []queryParamSpec {
 	var parameters []queryParamSpec
 
-	for i := 0; i < modelType.NumField(); i++ {
-		field := modelType.Field(i)
+	for field := range modelType.Fields() {
+		field := field
 		if field.PkgPath != "" {
 			continue
 		}
