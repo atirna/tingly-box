@@ -48,8 +48,8 @@ func TestRuleFlagRegistry_KeysMatchStructFields(t *testing.T) {
 	flagsType := reflect.TypeOf(RuleFlags{})
 
 	jsonTags := map[string]bool{}
-	for i := 0; i < flagsType.NumField(); i++ {
-		tag := flagsType.Field(i).Tag.Get("json")
+	for field := range flagsType.Fields() {
+		tag := field.Tag.Get("json")
 		name := strings.SplitN(tag, ",", 2)[0]
 		if name != "" && name != "-" {
 			jsonTags[name] = true
