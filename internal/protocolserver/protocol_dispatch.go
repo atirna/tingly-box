@@ -49,8 +49,8 @@ func ShouldUseGenericMCPForProvider(cfg *config.Config, provider *typ.Provider) 
 
 	// Parse comma-separated limits and check if provider is in the list
 	// This is a simple implementation - can be improved with proper parsing
-	parts := strings.Split(limits, ",")
-	for _, part := range parts {
+	parts := strings.SplitSeq(limits, ",")
+	for part := range parts {
 		if strings.TrimSpace(part) == provider.Name {
 			return true
 		}

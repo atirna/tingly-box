@@ -295,7 +295,7 @@ func extractPathParams(path string) []Parameter {
 	var params []Parameter
 
 	// Find all path parameters like :name, :uuid, etc.
-	for _, part := range strings.Split(path, "/") {
+	for part := range strings.SplitSeq(path, "/") {
 		if !strings.HasPrefix(part, ":") {
 			continue
 		}

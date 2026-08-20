@@ -42,7 +42,7 @@ func parseBlockTools(raw string) []string {
 		return nil
 	}
 	var names []string
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		if name := strings.TrimSpace(part); name != "" {
 			names = append(names, name)
 		}

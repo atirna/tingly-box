@@ -366,8 +366,8 @@ func parseVersion(output string) string {
 	firstLine := strings.TrimSpace(lines[0])
 
 	// Try to extract version number (e.g., "1.0.0" from "Claude CLI v1.0.0")
-	parts := strings.Fields(firstLine)
-	for _, part := range parts {
+	parts := strings.FieldsSeq(firstLine)
+	for part := range parts {
 		if strings.HasPrefix(part, "v") && len(part) > 1 && part[1] >= '0' && part[1] <= '9' {
 			return strings.TrimPrefix(part, "v")
 		}

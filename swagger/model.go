@@ -27,7 +27,7 @@ func (rm *RouteManager) getModelNameWithFallback(model interface{}, explicitName
 func generateAutoModelName(method, path, modelType string) string {
 	// Clean path and convert to PascalCase: /api/v1/users/:id -> ApiV1UsersId
 	var nameParts []string
-	for _, part := range strings.Split(path, "/") {
+	for part := range strings.SplitSeq(path, "/") {
 		part = strings.TrimPrefix(part, ":")
 		if part == "" {
 			continue
@@ -47,7 +47,7 @@ func generateAutoModelName(method, path, modelType string) string {
 func generateOperationID(method, swaggerPath string) string {
 	// Convert path to camelCase: /api/v1/auth/validate -> apiV1AuthValidate
 	var nameParts []string
-	for _, part := range strings.Split(swaggerPath, "/") {
+	for part := range strings.SplitSeq(swaggerPath, "/") {
 		// Remove braces from path params: {id} -> Id
 		part = strings.Trim(part, "{}")
 		if part == "" {

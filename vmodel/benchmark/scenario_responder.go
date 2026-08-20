@@ -125,7 +125,7 @@ func (sr *scenarioResponder) detect(body []byte) scenario.Scenario {
 
 func (sr *scenarioResponder) detectFromURLOrBody(urlPath string, body []byte) scenario.Scenario {
 	const prefix = "virtual-model-"
-	for _, part := range strings.Split(urlPath, "/") {
+	for part := range strings.SplitSeq(urlPath, "/") {
 		if strings.HasPrefix(part, prefix) {
 			remaining := part[len(prefix):]
 			name := remaining

@@ -388,9 +388,9 @@ func TestChatStreamUsage_NilDetails(t *testing.T) {
 // parseResponsesSSEEvents parses SSE response body into a map of events
 func parseResponsesSSEEvents(t *testing.T, body string) map[string]map[string]interface{} {
 	events := make(map[string]map[string]interface{})
-	lines := strings.Split(body, "\n")
+	lines := strings.SplitSeq(body, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 
 		if strings.HasPrefix(line, "data: ") {

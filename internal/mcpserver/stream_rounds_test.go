@@ -67,10 +67,10 @@ type sliceStream struct {
 	idx    int
 }
 
-func (s *sliceStream) Next() bool    { s.idx++; return s.idx <= len(s.events) }
-func (s *sliceStream) Current() any  { return s.events[s.idx-1] }
-func (s *sliceStream) Err() error    { return nil }
-func (s *sliceStream) Close() error  { return nil }
+func (s *sliceStream) Next() bool   { s.idx++; return s.idx <= len(s.events) }
+func (s *sliceStream) Current() any { return s.events[s.idx-1] }
+func (s *sliceStream) Err() error   { return nil }
+func (s *sliceStream) Close() error { return nil }
 
 type roundsForwarder struct {
 	rounds [][]anthropic.BetaRawMessageStreamEventUnion
@@ -118,7 +118,7 @@ func (e cannedExecutor) ExecuteTools(ctx context.Context, tools []Tool, m []map[
 // sseEventNames returns the `event:` names in order, as a client would read them.
 func sseEventNames(body string) []string {
 	var names []string
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if strings.HasPrefix(line, "event: ") {
 			names = append(names, strings.TrimPrefix(line, "event: "))
 		}

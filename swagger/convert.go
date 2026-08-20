@@ -51,7 +51,7 @@ func parseValidationRules(schema *Schema, bindingTag string, goType reflect.Type
 		}
 	}
 
-	for _, rule := range strings.Split(bindingTag, ",") {
+	for rule := range strings.SplitSeq(bindingTag, ",") {
 		rule = strings.TrimSpace(rule)
 
 		switch {

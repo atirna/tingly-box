@@ -46,7 +46,7 @@ func resolveRoutes(spec string) ([]protocoltest.DuoRoute, error) {
 		return protocoltest.AllDuoRoutes(), nil
 	}
 	var routes []protocoltest.DuoRoute
-	for _, name := range strings.Split(spec, ",") {
+	for name := range strings.SplitSeq(spec, ",") {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue

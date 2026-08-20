@@ -92,7 +92,7 @@ func TestAnthropicToOpenAIStream_VModelFullUsage(t *testing.T) {
 func lastOpenAIChunkUsage(t *testing.T, body string) map[string]interface{} {
 	t.Helper()
 	var last map[string]interface{}
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "data:") {
 			continue

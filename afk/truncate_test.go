@@ -75,7 +75,7 @@ func TestTruncate_CutsOnLineBoundaries(t *testing.T) {
 	got := Truncate(in, TruncateOptions{MaxBytes: 55})
 
 	require.True(t, got.Truncated)
-	for _, line := range strings.Split(got.Text, "\n") {
+	for line := range strings.SplitSeq(got.Text, "\n") {
 		assert.Equal(t, "abcdefghij", line, "every retained line should be whole")
 	}
 }

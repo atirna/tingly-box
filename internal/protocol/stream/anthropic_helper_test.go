@@ -71,8 +71,8 @@ func collectStopEventIndexes(body string) []int {
 	if trimmed == "" {
 		return indexes
 	}
-	chunks := strings.Split(trimmed, "\n\n")
-	for _, chunk := range chunks {
+	chunks := strings.SplitSeq(trimmed, "\n\n")
+	for chunk := range chunks {
 		if strings.TrimSpace(chunk) == "" {
 			continue
 		}
@@ -134,7 +134,7 @@ func TestSendMessageDelta_WithCacheTokens(t *testing.T) {
 
 	// Extract the data line from SSE output
 	var usageMap map[string]interface{}
-	for _, line := range strings.Split(w.Body.String(), "\n") {
+	for line := range strings.SplitSeq(w.Body.String(), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "data:") {
 			continue

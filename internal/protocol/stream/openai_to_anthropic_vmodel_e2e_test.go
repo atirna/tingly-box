@@ -178,7 +178,7 @@ func TestOpenAIToAnthropicStream_VModelFullUsage(t *testing.T) {
 func splitSSEEventsByType(body string) map[string]string {
 	out := make(map[string]string)
 	current := ""
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		switch {
 		case strings.HasPrefix(line, "event:"):
 			current = strings.TrimSpace(strings.TrimPrefix(line, "event:"))

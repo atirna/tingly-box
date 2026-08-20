@@ -217,8 +217,8 @@ func (r *recordingReader) Close() error {
 func parseSSEAndAssemble(sseContent string, apiStyle protocol.APIStyle) ([]string, map[string]any) {
 	chunks := make([]string, 0)
 
-	lines := strings.Split(sseContent, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(sseContent, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, ":") {

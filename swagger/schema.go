@@ -226,7 +226,7 @@ func (g *schemaGen) typeSchema(t reflect.Type) Schema {
 }
 
 func hasValidationRule(tag, rule string) bool {
-	for _, item := range strings.Split(tag, ",") {
+	for item := range strings.SplitSeq(tag, ",") {
 		if strings.TrimSpace(item) == rule {
 			return true
 		}

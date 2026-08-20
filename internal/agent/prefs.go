@@ -145,7 +145,7 @@ func (p ClaudeCodePrefs) ToEnv(baseURL, apiKey string) (map[string]string, error
 func appendNoProxy(current string, hosts ...string) string {
 	existing := make(map[string]bool)
 	if current != "" {
-		for _, h := range strings.Split(current, ",") {
+		for h := range strings.SplitSeq(current, ",") {
 			existing[strings.TrimSpace(h)] = true
 		}
 	}
