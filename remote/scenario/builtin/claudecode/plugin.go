@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -309,9 +310,7 @@ func parseToolInput(input HookInput) map[string]interface{} {
 	if strings.TrimSpace(input.ToolInput) != "" {
 		var parsed map[string]interface{}
 		if err := json.Unmarshal([]byte(input.ToolInput), &parsed); err == nil {
-			for k, v := range parsed {
-				out[k] = v
-			}
+			maps.Copy(out, parsed)
 		} else {
 			out["_raw_input"] = input.ToolInput
 		}

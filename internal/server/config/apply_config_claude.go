@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -49,9 +50,7 @@ func buildClaudeSettings(base []byte, env map[string]string, applyOpts *applyOpt
 	if applyOpts.showThinkingSummaries != nil {
 		existingConfig["showThinkingSummaries"] = *applyOpts.showThinkingSummaries
 	}
-	for k, v := range applyOpts.extras {
-		existingConfig[k] = v
-	}
+	maps.Copy(existingConfig, applyOpts.extras)
 
 	output, err := json.MarshalIndent(existingConfig, "", "  ")
 	if err != nil {
@@ -480,9 +479,7 @@ func ApplyClaudeOnboarding(payload map[string]interface{}) (*ApplyResult, error)
 	}
 
 	// Merge top-level keys from payload
-	for k, v := range payload {
-		existingConfig[k] = v
-	}
+	maps.Copy(existingConfig, payload)
 
 	// Write the merged config
 	output, err := json.MarshalIndent(existingConfig, "", "  ")

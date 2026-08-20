@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -234,9 +235,7 @@ func (tm *TemplateManager) GetAllTemplates() map[string]*ProviderTemplate {
 
 	// Return a copy to avoid concurrent modification
 	result := make(map[string]*ProviderTemplate, len(tm.templates))
-	for k, v := range tm.templates {
-		result[k] = v
-	}
+	maps.Copy(result, tm.templates)
 	return result
 }
 
@@ -326,9 +325,7 @@ func (tm *TemplateManager) fetchFromHTTP(ctx context.Context) (*ProviderTemplate
 		// Return current state without modification
 		tm.mu.RLock()
 		providers := make(map[string]*ProviderTemplate, len(tm.templates))
-		for k, v := range tm.templates {
-			providers[k] = v
-		}
+		maps.Copy(providers, tm.templates)
 		version := tm.version
 		lastUpdated := tm.lastUpdated
 		tm.mu.RUnlock()
@@ -516,9 +513,7 @@ func (tm *TemplateManager) mergeEmbeddedOnly(external map[string]*ProviderTempla
 	for id, tmpl := range tm.embedded {
 		merged[id] = deepCopyTemplate(tmpl)
 	}
-	for id, tmpl := range external {
-		merged[id] = tmpl
-	}
+	maps.Copy(merged, external)
 	return merged
 }
 
@@ -683,9 +678,7 @@ func deepCopyTemplate(tmpl *ProviderTemplate) *ProviderTemplate {
 	// Copy model capacities map
 	if tmpl.ModelCapacities != nil {
 		result.ModelCapacities = make(map[string]int, len(tmpl.ModelCapacities))
-		for k, v := range tmpl.ModelCapacities {
-			result.ModelCapacities[k] = v
-		}
+		maps.Copy(result.ModelCapacities, tmpl.ModelCapacities)
 	}
 
 	// Copy pointer scalars so the copy shares no memory with the original
@@ -708,9 +701,7 @@ func deepCopyCapabilitySchema(schema *CapabilitySchema) *CapabilitySchema {
 	// Deep copy ResultFormat.Structure if it exists
 	if schema.ResultFormat.Structure != nil {
 		result.ResultFormat.Structure = make(map[string]interface{})
-		for k, v := range schema.ResultFormat.Structure {
-			result.ResultFormat.Structure[k] = v
-		}
+		maps.Copy(result.ResultFormat.Structure, schema.ResultFormat.Structure)
 	}
 
 	return &result

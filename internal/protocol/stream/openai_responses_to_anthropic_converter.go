@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"time"
 
@@ -205,9 +206,7 @@ func (r *responsesToAnthropicConverter) emitMessageDelta(stopReason string) {
 		"stop_reason":   stopReason,
 		"stop_sequence": nil,
 	}
-	for k, v := range r.state.deltaExtras {
-		deltaMap[k] = v
-	}
+	maps.Copy(deltaMap, r.state.deltaExtras)
 	usageMap := r.Usage().ToAnthropicMessageDeltaUsageMap()
 	r.emitAnthropic(eventTypeMessageDelta, map[string]interface{}{
 		"type":  eventTypeMessageDelta,

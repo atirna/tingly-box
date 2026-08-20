@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"maps"
 	"sync"
 	"time"
 )
@@ -104,8 +105,6 @@ func (s *MemoryStateStorage) GetStates() map[string]*StateData {
 	defer s.mu.RUnlock()
 
 	result := make(map[string]*StateData, len(s.states))
-	for k, v := range s.states {
-		result[k] = v
-	}
+	maps.Copy(result, s.states)
 	return result
 }

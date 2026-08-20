@@ -1,6 +1,7 @@
 package request
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -37,9 +38,7 @@ func convertAnthropicInputSchemaToOpenAIParameters(properties any, required []st
 	if schema, ok := properties.(map[string]any); ok {
 		if _, hasNestedProperties := schema["properties"]; hasNestedProperties {
 			parameters := make(shared.FunctionParameters, len(schema)+1)
-			for key, value := range schema {
-				parameters[key] = value
-			}
+			maps.Copy(parameters, schema)
 			if _, ok := parameters["type"]; !ok {
 				parameters["type"] = "object"
 			}

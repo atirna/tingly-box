@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"strings"
 )
 
@@ -134,14 +135,10 @@ func buildMCPArgs(config Config, opts CommonOptions) []string {
 	// Merge MCP servers from config and opts
 	mcpServers := make(map[string]interface{})
 	if config.MCPServers != nil {
-		for k, v := range config.MCPServers {
-			mcpServers[k] = v
-		}
+		maps.Copy(mcpServers, config.MCPServers)
 	}
 	if opts.MCPServers != nil {
-		for k, v := range opts.MCPServers {
-			mcpServers[k] = v
-		}
+		maps.Copy(mcpServers, opts.MCPServers)
 	}
 
 	if len(mcpServers) > 0 {

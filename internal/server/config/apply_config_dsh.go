@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -292,9 +293,7 @@ func mergeDshSettings(cfg map[string]interface{}, baseURL string, models []strin
 	}
 	// prefs.toConfig() always emits "api" (defaulting when unset/invalid), so
 	// the stanza literal above no longer needs a hardcoded default.
-	for k, v := range prefs.toConfig() {
-		stanza[k] = v
-	}
+	maps.Copy(stanza, prefs.toConfig())
 
 	providers[dshGatewayProviderName] = stanza
 	root["providers"] = providers

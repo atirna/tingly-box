@@ -1,5 +1,7 @@
 package claudecode
 
+import "maps"
+
 import "github.com/tingly-dev/tingly-box/remote/interaction"
 
 // encodeDecision converts an interaction.Reply into the JSON shape
@@ -12,9 +14,7 @@ func encodeDecision(input HookInput, reply interaction.Reply) map[string]any {
 		if reply.Meta != nil {
 			if updated, ok := reply.Meta["updated_input"].(map[string]interface{}); ok {
 				if a, ok := updated["answers"].(map[string]interface{}); ok {
-					for k, v := range a {
-						answers[k] = v
-					}
+					maps.Copy(answers, a)
 				}
 			}
 		}

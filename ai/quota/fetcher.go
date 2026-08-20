@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"net/url"
 	"sync"
@@ -82,9 +83,7 @@ func (r *Registry) List() map[ProviderType]Fetcher {
 	defer r.mu.RUnlock()
 	// Return a copy so callers cannot mutate the registry.
 	result := make(map[ProviderType]Fetcher, len(r.fetchers))
-	for k, v := range r.fetchers {
-		result[k] = v
-	}
+	maps.Copy(result, r.fetchers)
 	return result
 }
 

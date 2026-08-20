@@ -3,6 +3,7 @@ package imbot
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -192,9 +193,7 @@ func (h *Handler) CreateSettings(c *gin.Context) {
 			access.CapabilityRemoteControl: {Enabled: true},
 			access.CapabilityNotify:        {Enabled: false},
 		}
-		for name, value := range req.Capabilities {
-			initial[name] = value
-		}
+		maps.Copy(initial, req.Capabilities)
 		for name, value := range initial {
 			if err := h.accessStore.PutCapability(c.Request.Context(), access.BotCapability{BotUUID: created.UUID, Name: name, Enabled: value.Enabled, Config: value.Config}); err != nil {
 				_ = h.store.DeleteSettings(created.UUID)

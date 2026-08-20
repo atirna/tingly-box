@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -139,9 +140,7 @@ func (t *Transport) parseControlRequest(ev protocol.Event) (agentboot.StreamEven
 			stamped = make(map[string]any)
 		} else {
 			cp := make(map[string]any, len(stamped)+2)
-			for k, v := range stamped {
-				cp[k] = v
-			}
+			maps.Copy(cp, stamped)
 			stamped = cp
 		}
 		if t.execCtx.chatID != "" {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -330,9 +331,7 @@ func createProviderFromToken(appConfig *config.AppConfig, config *ProviderOAuthC
 
 	// Add extra fields from token metadata
 	if token.Metadata != nil {
-		for k, v := range token.Metadata {
-			oauthDetail.ExtraFields[k] = v
-		}
+		maps.Copy(oauthDetail.ExtraFields, token.Metadata)
 	}
 	if token.IDToken != "" {
 		oauthDetail.ExtraFields["id_token"] = token.IDToken

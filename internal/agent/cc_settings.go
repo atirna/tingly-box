@@ -254,15 +254,11 @@ func ResolveCCProfileSettings(cfg *serverconfig.Config, baseURL, apiKey, scenari
 		if valuesErr != nil {
 			return CCProfileSettingsResolution{}, valuesErr
 		}
-		for key, value := range defaultValues {
-			baseEnv[key] = value
-		}
+		maps.Copy(baseEnv, defaultValues)
 	}
 
 	generated := GenerateCCEnv(cfg, baseURL, apiKey, scenarioPath, profile.Unified, true)
-	for key, value := range generated {
-		baseEnv[key] = value
-	}
+	maps.Copy(baseEnv, generated)
 	basePreferences, err := ClaudeCodePrefsFromEnv(baseEnv)
 	if err != nil {
 		return CCProfileSettingsResolution{}, err

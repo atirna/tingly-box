@@ -2,6 +2,7 @@ package ask
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -118,9 +119,7 @@ func (h *AskUserQuestionHandler) ParseResponse(req Request, response Response) (
 
 	// Build updated input with answers
 	updatedInput := make(map[string]interface{})
-	for k, v := range req.Input {
-		updatedInput[k] = v
-	}
+	maps.Copy(updatedInput, req.Input)
 	updatedInput["answers"] = answers
 
 	return Result{

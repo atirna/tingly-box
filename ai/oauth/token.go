@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"maps"
 	"time"
 
 	"github.com/tingly-dev/tingly-box/ai"
@@ -102,7 +103,5 @@ func (t *Token) mergeMetadata(src map[string]any) {
 	if t.Metadata == nil {
 		t.Metadata = make(map[string]any)
 	}
-	for k, v := range src {
-		t.Metadata[k] = v
-	}
+	maps.Copy(t.Metadata, src)
 }

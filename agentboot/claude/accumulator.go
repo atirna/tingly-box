@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"maps"
 	"sync"
 
 	"github.com/tingly-dev/tingly-box/agentboot/protocol"
@@ -170,9 +171,7 @@ func (a *MessageAccumulator) GetToolUses() map[string]*PendingToolUse {
 
 	// Return a copy
 	result := make(map[string]*PendingToolUse)
-	for k, v := range a.pendingToolUses {
-		result[k] = v
-	}
+	maps.Copy(result, a.pendingToolUses)
 	return result
 }
 

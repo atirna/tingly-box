@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -374,9 +375,7 @@ func mergeCodexConfig(cfg map[string]interface{}, baseURL string, models []strin
 	// default) and stamped into each generated profile so profiles are
 	// self-contained. Converted first so it can never carry a managed key.
 	coerced := prefs.toConfig()
-	for k, v := range coerced {
-		cfg[k] = v
-	}
+	maps.Copy(cfg, coerced)
 
 	// Managed fields — written after prefs so they always win, guaranteeing
 	// prefs cannot clobber them (defense in depth on top of the whitelist).
@@ -424,9 +423,7 @@ func mergeCodexConfig(cfg map[string]interface{}, baseURL string, models []strin
 			"model":          model,
 			"model_provider": codexGatewayProviderName,
 		}
-		for k, v := range coerced {
-			profile[k] = v
-		}
+		maps.Copy(profile, coerced)
 		profiles[sanitizeCodexProfileKey(model)] = profile
 	}
 	if len(profiles) > 0 {

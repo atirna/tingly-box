@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -123,9 +124,7 @@ func (c *dashscopeClient) submit(ctx context.Context, req *Request) (string, err
 	}
 	// Allow callers to pass DashScope-native knobs (seed, prompt_extend,
 	// watermark, ...) straight through.
-	for k, v := range req.Extra {
-		params[k] = v
-	}
+	maps.Copy(params, req.Extra)
 
 	body := dashscopeSubmitBody{
 		Model:      req.Model,

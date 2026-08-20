@@ -3,6 +3,7 @@ package guardrails
 import (
 	"context"
 	"errors"
+	"maps"
 	"sort"
 	"sync"
 	"time"
@@ -170,9 +171,7 @@ func (g *Guardrails) CredentialCacheSnapshot() CredentialCache {
 	defer g.mu.RUnlock()
 
 	out := NewCredentialCache()
-	for id, credential := range g.CredentialCache.ByID {
-		out.ByID[id] = credential
-	}
+	maps.Copy(out.ByID, g.CredentialCache.ByID)
 	for scenario, credentials := range g.CredentialCache.ByScenario {
 		copied := make([]guardrailscore.ProtectedCredential, len(credentials))
 		copy(copied, credentials)

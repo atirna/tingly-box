@@ -3,6 +3,7 @@ package transform
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
@@ -195,9 +196,7 @@ func (ctx *TransformContext) configExtraForMetadata() map[string]any {
 		extra["device"] = ctx.Config.Device
 	}
 	// Merge any existing Extra entries (for backward compat with cursor_compat etc.)
-	for k, v := range ctx.Extra {
-		extra[k] = v
-	}
+	maps.Copy(extra, ctx.Extra)
 	return extra
 }
 
