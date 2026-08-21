@@ -732,7 +732,7 @@ export const api = {
                     target_type: 'provider' as const,
                     provider_uuid: uuid,
                     model: model,
-                    test_mode: 'simple' as const,
+                    stream: false,
                     message: 'Hello, this is a test message. Please respond with a short greeting.',
                 }
             });
@@ -775,7 +775,7 @@ export const api = {
                     api_style: api_style as any,
                     api_base: api_base,
                     token: token,
-                    test_mode: 'simple' as const,
+                    stream: false,
                     message: 'Hello, this is a test message. Please respond with a short greeting.',
                 }
             });
