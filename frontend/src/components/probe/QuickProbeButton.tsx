@@ -50,7 +50,7 @@ export const QuickProbeButton: React.FC<QuickProbeButtonProps> = ({ ruleUuid, ru
             target_type: 'rule',
             scenario: scenario || 'openai',
             rule_uuid: ruleUuid,
-            test_mode: 'streaming',
+            stream: true,
         });
         if (!mounted.current) return;
         setResult(res);

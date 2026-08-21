@@ -33,43 +33,50 @@ func NewE2EProber(cfg *config.Config, pool *client.ClientPool) *E2EProber {
 }
 
 // Probe performs an SDK probe against the target described by req. It serves
-// all test modes — simple/streaming/tool — the stream decision is made inside
-// the SDK helpers from req.TestMode. Only the narrow direct-endpoint
-// capability-check shape is cached; everything else dispatches for real.
+// all probe shapes — non-stream/stream × plain/tool — the stream decision is
+// made inside the SDK helpers from req.ResolveAxes(). Only the narrow
+// direct-endpoint capability-check shape is cached; everything else
+// dispatches for real.
 func (e *E2EProber) Probe(ctx context.Context, req *E2ERequest) (*E2EData, error) {
 	provider, model, probeHeaders, err := e.resolveTargetToProviderModel(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
+	// Resolve the wire axes into flat decisions once, here, so the SDK
+	// helpers read booleans instead of re-branching. Tool composes with both
+	// stream values: non-stream lifts structured tool_calls; stream keeps the
+	// raw chunk array.
+	stream, tool := req.ResolveAxes()
+	endpointOverride := req.ResolveOpenAIEndpointOverride()
+
 	// Narrow cache: only the direct provider+model+endpoint capability-check
 	// shape (target_type=provider, direct=true, endpoint forced) is
 	// cacheable — see endpointProbeCache's doc comment for why. Every other
 	// probe shape (rule tests, tool-mode/streaming checks, generic
-	// connectivity) always dispatches for real.
+	// connectivity) always dispatches for real. shapeKey guards against a
+	// cached success from one stream/tool combination short-circuiting a
+	// differently-shaped check against the same provider/model/endpoint.
 	cacheable := req.TargetType == E2ETargetProvider && req.Direct &&
-		(req.Endpoint == "chat" || req.Endpoint == "responses")
-	if cacheable && e.endpointCache.hit(provider.UUID, model, req.Endpoint, string(req.TestMode)) {
+		(endpointOverride == "chat" || endpointOverride == "responses")
+	shapeKey := fmt.Sprintf("%v-%v", stream, tool)
+	if cacheable && e.endpointCache.hit(provider.UUID, model, endpointOverride, shapeKey) {
 		return &Result{Success: true, Message: "Verified recently (cached)"}, nil
 	}
 
 	if len(probeHeaders) > 0 {
 		ctx = client.WithProbeHeaders(ctx, probeHeaders)
 	}
-	message := E2EMessage(req.TestMode, req.Message)
-	// Resolve the wire test_mode into flat decisions once, here, so the SDK
-	// helpers read booleans instead of re-branching on the three-valued mode.
-	//   streaming → Stream ; tool → Tool (tool always takes the non-stream path)
 	params := probeParams{
 		Model:    model,
-		Message:  message,
-		Stream:   req.TestMode == E2EModeStreaming,
-		Tool:     req.TestMode == E2EModeTool,
+		Message:  E2EMessage(tool, req.Message),
+		Stream:   stream,
+		Tool:     tool,
 		Thinking: req.Thinking,
 	}
-	result, err := e.probeProviderWithSDK(ctx, provider, params, req.Endpoint)
+	result, err := e.probeProviderWithSDK(ctx, provider, params, endpointOverride)
 	if cacheable && err == nil && result != nil && result.Success {
-		e.endpointCache.remember(provider.UUID, model, req.Endpoint, string(req.TestMode))
+		e.endpointCache.remember(provider.UUID, model, endpointOverride, shapeKey)
 	}
 	return result, err
 }
@@ -142,14 +149,15 @@ func (e *E2EProber) resolveProviderTarget(ctx context.Context, req *E2ERequest) 
 
 	// Direct probe: caller wants to test the upstream provider in isolation,
 	// bypassing TB's middleware stack entirely. Useful for diagnosing whether
-	// a failure is upstream vs TB-internal.
+	// a failure is upstream vs TB-internal. A protocol override selects the
+	// matching dual URL for dual-base providers (no-op for single-protocol).
 	if req.Direct {
 		logrus.Debugf("[probe-e2e] direct probe for provider %s (bypassing TB loopback)", provider.UUID)
-		return provider, model, nil, nil
+		return provider.ResolveStyle(req.ResolveClientStyle(provider.APIStyle)), model, nil, nil
 	}
 
 	// Google providers don't have a matching /tingly/{scenario} endpoint;
-	// probe them directly via SDK.
+	// probe them directly via SDK. They also have no protocol override path.
 	if provider.APIStyle == protocol.APIStyleGoogle {
 		return provider, model, nil, nil
 	}
@@ -164,16 +172,21 @@ func (e *E2EProber) resolveProviderTarget(ctx context.Context, req *E2ERequest) 
 		return provider, model, nil, nil
 	}
 
-	// Prefer the scenario the caller is probing under (the page's scenario, which
-	// may carry a profile suffix like "claude_code:p4") so the loopback URL
-	// matches the page. The api-style stays the provider's own — we test the
-	// provider with its real protocol, just under the page's scenario context.
+	// The client protocol the probe speaks: the provider's own by default,
+	// or the requested override. With an override the loopback scenario is
+	// the protocol family's canonical one (the SDK path and the URL must
+	// agree); without one we prefer the scenario the caller is probing under
+	// (the page's scenario, which may carry a profile suffix like
+	// "claude_code:p4") so the loopback URL matches the page.
+	clientStyle := req.ResolveClientStyle(provider.APIStyle)
 	scenario := typ.RuleScenario(req.Scenario)
-	if scenario == "" {
+	if req.Protocol != "" {
+		scenario, _ = defaultScenarioForAPIStyle(clientStyle)
+	} else if scenario == "" {
 		scenario, _ = defaultScenarioForAPIStyle(provider.APIStyle)
 	}
 	apiBase, _ := loopbackAPIBase(port, scenario)
-	apiStyle := provider.APIStyle
+	apiStyle := clientStyle
 	probeHeaders := map[string]string{
 		"X-Tingly-Probe-Service": req.ProviderUUID + ":" + model,
 		"X-Tingly-Debug-Routing": "1",
@@ -335,11 +348,16 @@ func (e *E2EProber) probeProviderWithSDK(ctx context.Context, provider *typ.Prov
 			return nil, fmt.Errorf("failed to get OpenAI client for provider: %s", provider.Name)
 		}
 		apply := maybeCapture(oc)
-		switch resolveOpenAIProbeEndpoint(endpointOverride, provider) {
+		switch ep := resolveOpenAIProbeEndpoint(endpointOverride, provider); ep {
 		case "chat":
 			result, err = probeOpenAIChat(ctx, oc, params)
 		case "responses":
 			result, err = probeOpenAIResponses(ctx, oc, params)
+		default:
+			// Unreachable: resolveOpenAIProbeEndpoint only returns "chat" or
+			// "responses". Explicit so a future third value fails loudly
+			// instead of silently returning (nil, nil).
+			return nil, fmt.Errorf("probe: unhandled openai endpoint %q", ep)
 		}
 		if err == nil {
 			apply(result)

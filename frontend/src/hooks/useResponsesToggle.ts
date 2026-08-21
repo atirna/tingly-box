@@ -25,9 +25,9 @@ async function probeResponsesSupport(service: ConfigProvider) {
         target_type: 'provider',
         provider_uuid: service.provider,
         model: service.model,
-        test_mode: 'simple',
+        stream: false,
         direct: true,
-        endpoint: 'responses',
+        protocol: 'openai_responses',
     });
 }
 

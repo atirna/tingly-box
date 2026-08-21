@@ -56,7 +56,6 @@ func TestResolveProviderTarget_OpenAI_RoutesLoopback(t *testing.T) {
 		TargetType:   E2ETargetProvider,
 		ProviderUUID: "p-openai",
 		Model:        "gpt-4",
-		TestMode:     E2EModeSimple,
 	}
 
 	loopback, model, headers, err := svc.resolveProviderTarget(context.Background(), req)
@@ -90,7 +89,6 @@ func TestResolveProviderTarget_Anthropic_RoutesLoopback(t *testing.T) {
 		TargetType:   E2ETargetProvider,
 		ProviderUUID: "p-anthropic",
 		Model:        "claude-3-5-sonnet-20241022",
-		TestMode:     E2EModeSimple,
 	}
 
 	loopback, model, headers, err := svc.resolveProviderTarget(context.Background(), req)
@@ -122,7 +120,6 @@ func TestResolveProviderTarget_Google_DirectSDK(t *testing.T) {
 		TargetType:   E2ETargetProvider,
 		ProviderUUID: "p-google",
 		Model:        "gemini-2.0-flash",
-		TestMode:     E2EModeSimple,
 	}
 
 	got, model, headers, err := svc.resolveProviderTarget(context.Background(), req)
@@ -153,7 +150,6 @@ func TestResolveProviderTarget_NoPort_FallsBackDirect(t *testing.T) {
 		TargetType:   E2ETargetProvider,
 		ProviderUUID: "p-openai",
 		Model:        "gpt-4",
-		TestMode:     E2EModeSimple,
 	}
 
 	got, _, headers, err := svc.resolveProviderTarget(context.Background(), req)
@@ -285,15 +281,14 @@ func TestProbe_CachedEndpointCheck_SkipsDispatch(t *testing.T) {
 	addProvider(t, cfg, p)
 
 	svc := NewE2EProber(cfg, nil) // nil clientPool: dispatch would panic
-	svc.endpointCache.remember("p-cache", "gpt-4o", "responses", string(E2EModeSimple))
+	svc.endpointCache.remember("p-cache", "gpt-4o", "responses", "false-false")
 
 	result, err := svc.Probe(context.Background(), &E2ERequest{
 		TargetType:   E2ETargetProvider,
 		ProviderUUID: "p-cache",
 		Model:        "gpt-4o",
-		TestMode:     E2EModeSimple,
 		Direct:       true,
-		Endpoint:     "responses",
+		Protocol:     ProtocolOpenAIResponses,
 	})
 
 	require.NoError(t, err)
@@ -302,11 +297,11 @@ func TestProbe_CachedEndpointCheck_SkipsDispatch(t *testing.T) {
 }
 
 // TestProbe_CachedEndpointCheck_DoesNotCrossTestModes proves a cache entry
-// recorded for one test mode does not short-circuit a probe requested under a
-// different test mode — streaming/tool checks must always dispatch for real,
-// even if a simple-mode check for the same provider+model+endpoint recently
-// succeeded. Regression test for the Probe/ProbeStream merge silently
-// widening the cache's reach across test modes.
+// recorded for one probe shape does not short-circuit a probe requested under
+// a different shape — streaming/tool checks must always dispatch for real,
+// even if a non-stream/non-tool check for the same provider+model+endpoint
+// recently succeeded. Regression test for the Probe/ProbeStream merge
+// silently widening the cache's reach across probe shapes.
 func TestProbe_CachedEndpointCheck_DoesNotCrossTestModes(t *testing.T) {
 	cfg := newTestConfig(t)
 	p := &typ.Provider{
@@ -316,10 +311,10 @@ func TestProbe_CachedEndpointCheck_DoesNotCrossTestModes(t *testing.T) {
 	addProvider(t, cfg, p)
 
 	svc := NewE2EProber(cfg, nil) // nil clientPool: dispatch would panic if reached
-	svc.endpointCache.remember("p-cache", "gpt-4o", "responses", string(E2EModeSimple))
+	svc.endpointCache.remember("p-cache", "gpt-4o", "responses", "false-false")
 
-	assert.False(t, svc.endpointCache.hit("p-cache", "gpt-4o", "responses", string(E2EModeStreaming)),
-		"a simple-mode cache entry must not satisfy a streaming-mode check")
-	assert.False(t, svc.endpointCache.hit("p-cache", "gpt-4o", "responses", string(E2EModeTool)),
-		"a simple-mode cache entry must not satisfy a tool-mode check")
+	assert.False(t, svc.endpointCache.hit("p-cache", "gpt-4o", "responses", "true-false"),
+		"a non-stream cache entry must not satisfy a streaming check")
+	assert.False(t, svc.endpointCache.hit("p-cache", "gpt-4o", "responses", "false-true"),
+		"a non-stream cache entry must not satisfy a tool check")
 }

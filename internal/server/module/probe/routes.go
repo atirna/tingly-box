@@ -14,6 +14,13 @@ func RegisterRoutes(router *swagger.RouteGroup, h *Handler) {
 		swagger.WithResponseModel(E2EResponse{}),
 	)
 
+	router.POST("/probe/curl", h.HandleCurlProbe,
+		swagger.WithDescription("Generate the curl command equivalent to a probe request without executing it (secrets as placeholder env vars)"),
+		swagger.WithTags("testing"),
+		swagger.WithRequestModel(probe.E2ERequest{}),
+		swagger.WithResponseModel(CurlResponse{}),
+	)
+
 	router.POST("/probe/lightweight", h.HandleLightweightProbe,
 		swagger.WithDescription("Lightweight probe for optional key validation using OPTIONS and models endpoint"),
 		swagger.WithTags("testing"),

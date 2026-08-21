@@ -13,6 +13,7 @@ The probe subsystem provides two diagnostics for different user questions:
 |--------------|---------------|---------------|------------------|-------------------|
 | Connect AI → Test Connection | `runProviderProbe` → `api.probeProviderLightweight` | `POST /api/v2/probe/lightweight` | `LightProber` | Are these credentials/endpoints reachable enough to continue? |
 | Probe dialog / Troubleshoot | `runProbe` | `POST /api/v2/probe` | `E2EProber` | Does a real request work, how did it route, and what came back? |
+| Probe dialog → cURL section | `buildProbeCurl` | `POST /api/v2/probe/curl` | `E2EProber.BuildCurl` | What exact curl reproduces this probe? |
 
 The similarly named frontend helper `api.probeProvider` targets the E2E
 `provider_config` API, but Connect AI does not call it. Keep the two paths
@@ -40,19 +41,27 @@ Provider probes have two modes controlled by `E2ERequest.Direct`:
 
 When a through-TB probe fails and a direct probe succeeds, the problem is in TB's middleware stack. When both fail, the upstream itself is the cause. This is the primary diagnostic value of the distinction.
 
-### Test Modes
+### Test axes
 
-`test_mode` controls the shape of the probe request:
+The request shape is described by orthogonal fields; the legacy `test_mode` enum (`simple`/`streaming`/`tool`) mixed two axes and is kept only as a compatibility spelling (it wins when present): `simple` → off/off, `streaming` → on/off, `tool` → off/on (tool mode historically takes the non-stream path so structured `tool_calls` come back).
 
-| Mode        | Description                                         |
-|-------------|-----------------------------------------------------|
-| `simple`    | Single non-streaming completion                     |
-| `streaming` | Streaming completion (SSE)                          |
-| `tool`      | Streaming completion with a tool definition + auto tool choice; tool events remain in the raw chunk array |
+| Axis | Field | Notes |
+|------|-------|-------|
+| Shape (stream) | `stream bool` | SSE vs single response |
+| Tool | `tool bool` | attaches probe tools; composes with both stream values (non-stream lifts structured `tool_calls`; stream keeps raw chunks) |
+| Thinking | `thinking` | `none`/`low`/`medium`/`high`, unchanged |
+| Protocol | `protocol` | `openai_chat` / `openai_responses` / `anthropic_v1` — no "auto"; empty = target's primary (provider APIStyle, Codex OAuth → Responses). Replaces the OpenAI-only legacy `endpoint` field (still accepted; `protocol` wins). Not allowed for rule targets (scenario fixes it). |
+| Scope | `direct bool` | unchanged |
 
-Tool mode intentionally preserves the SDK's raw streamed chunks in `content`.
-It does not assemble a parallel normalized tool-call result; the raw response is
-the diagnostic artifact.
+Resolution helpers live on `E2ERequest` (`ResolveAxes`, `ResolveClientStyle`, `ResolveOpenAIEndpointOverride`); the SDK helpers read flat `probeParams{Stream, Tool, Thinking}` booleans and never branch on the wire enum.
+
+Protocol override behavior: for **direct** probes a dual-base provider's matching URL is selected via `Provider.ResolveStyle`; for **through-TB** probes the loopback speaks the requested protocol (loopback scenario = the protocol family's canonical one when overridden) and TB's transform pipeline converts to the upstream exactly as production traffic does.
+
+### cURL generation
+
+`POST /api/v2/probe/curl` takes the same body as `/api/v2/probe` and returns `probe.CurlData` (`command`, `method`, `url`, `headers`, `body`, `key_env_var`) **without executing anything**. It resolves the target through the same `resolveTargetToProviderModel` path and marshals the *same* param builders the SDK helpers use (`buildOpenAIChatParams` / `buildOpenAIResponsesParams` / `buildAnthropicMessageParams` in `helper.go`) — the constructed body cannot drift from a real probe. The `stream: true` member the SDKs inject via `WithJSONSet` is added by `marshalStreamAware`. Secrets are never embedded: `$TB_API_KEY` for through-TB curls (loopback URL + gateway-key header), `$UPSTREAM_API_KEY` for direct ones. Google targets are rejected explicitly.
+
+The rendered command puts the **URL first**, then headers, then the body; the payload is pretty-printed and **single-quoted** (`shellQuote`, embedded quotes escaped as `'\''`) so the JSON reads verbatim. `CurlData.Body` stays compact for programmatic use.
 
 ## TB Loopback Pattern
 
@@ -147,23 +156,29 @@ Probe headers are stored in the `context.Context` via `client.WithProbeHeaders(c
 
 `captureRoutingRoundTripper` wraps the same transport chain and reads routing headers from each response.
 
-Neither round tripper is installed on production clients. `ProbeProviderWithSDK` calls `ApplyProbeHeadersToClient` and `ApplyRoutingCaptureToClient` only when `GetProbeHeaders(ctx)` returns true.
+Neither round tripper is installed on production clients. `probeProviderWithSDK` calls `ApplyProbeHeadersToClient` and `ApplyRoutingCaptureToClient` only when `GetProbeHeaders(ctx)` returns true.
 
 ## Code layout
 
 ```
 internal/probe/
   types.go          — Result (= E2EData): Success/Content/Usage/ToolCalls + routing trace;
-                      E2ERequest (incl. Direct field) / E2EMode / E2ETarget,
+                      E2ERequest (Stream/Tool/Protocol axes + legacy test_mode/endpoint),
+                      E2ETarget, ProbeProtocol, ValidateE2ERequest, ResolveAxes *,
                       ScenarioEndpoint(), toProbeResult
   e2e_probe.go      — E2EProber: resolveTargetToProviderModel, loopbackAPIBase,
-                      probeProviderWithSDK, applyRoutingCapture
-  sdk.go            — SDK dispatch helpers (probeOpenAIChat, probeOpenAIResponses,
-                      probeAnthropicMessages, probeGoogleGenerate, probeOptions) and
+                      probeProviderWithSDK, applyRoutingCapture, e2eMessage
+  helper.go         — probeParams + shared param builders (buildOpenAIChatParams /
+                      buildOpenAIResponsesParams / buildAnthropicMessageParams) and the
+                      SDK dispatch helpers (probeOpenAIChat, probeOpenAIResponses,
+                      probeAnthropicMessages, probeGoogleGenerate, probeOptions) with
                       per-provider usage extraction (via internal/protocol/usage)
+  curl.go           — CurlData, E2EProber.BuildCurl, marshalStreamAware, shellQuote,
+                      renderCurl — construct-only cURL generation sharing the param
+                      builders above
   light_probe.go    — LightProber (direct advisory connectivity matrix; reuses
                       SDK clients for models/chat/responses)
-  probetools.go     — Tool definitions used by E2EModeTool
+  probetools.go     — Tool definitions used by tool-axis probes
   endpoint_probe_cache.go — narrow direct-endpoint capability cache
 
 internal/protocol/usage/
@@ -175,10 +190,25 @@ internal/client/
                       probeHeaderRoundTripper, ApplyProbeHeadersToClient
                       RoutingCapture, captureRoutingRoundTripper, ApplyRoutingCaptureToClient
 
-internal/server/
-  handlers.go       — determineRuleWithScenario: X-Tingly-Probe-Rule / X-Tingly-Probe-Service handling
-  routing/
-    simple.go       — SelectService: X-Tingly-Probe-Service pin + X-Tingly-Debug-Routing response headers
+internal/protocolserver/
+  protocol_handler.go   — determineRuleWithScenario: X-Tingly-Probe-Rule /
+                          X-Tingly-Probe-Service handling
+
+internal/routing/
+  simple.go             — SelectService: X-Tingly-Probe-Service pin +
+                          X-Tingly-Debug-Routing response headers
+
+internal/server/module/probe/
+  handler.go / routes.go — HTTP endpoints: /api/v2/probe, /api/v2/probe/curl,
+                          /api/v2/probe/lightweight (+ swagger registration)
+
+frontend/src/components/probe/
+  probeConfig.ts    — ProbeAxes model, open-time association chain (props →
+                      initialResult.stream → persisted per-target-type config →
+                      defaults), per-target protocol availability
+  ProbeControls.tsx — control rail (primary axes + Advanced expander)
+  ProbeDialog.tsx   — rail + results + full-width cURL section, CopyBlock
+  runProbe.ts       — runProbe / buildProbeCurl envelopes
 ```
 
 ## Result fields
@@ -188,8 +218,8 @@ internal/server/
 - `success`, `content` (raw marshaled upstream response — object for non-stream,
   chunk array for stream), `latency_ms` (pure upstream call time, measured by the
   SDK probe — the HTTP handler does not overwrite it), `error_message`.
-- `stream` — true for streaming probes (explicit; the caller's `test_mode` is the
-  other source of truth).
+- `stream` — true for streaming probes (explicit; the caller's `stream` axis is
+  the other source of truth).
 - `usage` — normalized `*protocol.TokenUsage` parsed via `internal/protocol/usage`
   for OpenAI Chat / Responses and Anthropic (non-stream always; stream when the
   provider emits a final usage block). Uses the canonical `protocol.TokenUsage`
@@ -200,8 +230,10 @@ internal/server/
 - OpenAI Chat requests set `stream_options.include_usage` only on the streaming
   branch. It is a stream-only parameter and must not be sent by non-streaming or
   lightweight Chat checks because strict OpenAI-compatible providers may reject it.
-- Tool-mode calls are represented in the raw streamed `content`; `tool_calls` is
-  not assembled as a second representation.
+- Tool handling depends on the stream axis: **non-stream** tool probes lift
+  structured `tool_calls` out of the response; **stream** tool probes keep the
+  raw chunk array as the diagnostic artifact and do not assemble a second
+  representation.
 - Routing trace fields (see below) — populated for TB-loopback probes only.
 
 ## Trade-offs and constraints

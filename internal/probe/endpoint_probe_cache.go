@@ -43,19 +43,20 @@ func newEndpointProbeCache() *endpointProbeCache {
 	return &endpointProbeCache{entries: make(map[string]time.Time)}
 }
 
-// endpointProbeCacheKey includes testMode so a cached success from one mode
-// (e.g. "simple", the only mode the Codex toggle actually issues) can never
-// short-circuit a differently-shaped check (e.g. "streaming"/"tool") against
-// the same provider/model/endpoint — those exercise materially different
-// request paths and must always dispatch for real.
-func endpointProbeCacheKey(providerUUID, model, endpoint, testMode string) string {
-	return providerUUID + "\x00" + model + "\x00" + endpoint + "\x00" + testMode
+// endpointProbeCacheKey includes shape so a cached success from one probe
+// shape (e.g. "false-false", the only shape the Codex toggle actually
+// issues) can never short-circuit a differently-shaped check (e.g.
+// stream/tool combinations) against the same provider/model/endpoint — those
+// exercise materially different request paths and must always dispatch for
+// real.
+func endpointProbeCacheKey(providerUUID, model, endpoint, shape string) string {
+	return providerUUID + "\x00" + model + "\x00" + endpoint + "\x00" + shape
 }
 
 // hit reports whether a cached success is still fresh for this key, evicting
 // it if it has expired.
-func (c *endpointProbeCache) hit(providerUUID, model, endpoint, testMode string) bool {
-	key := endpointProbeCacheKey(providerUUID, model, endpoint, testMode)
+func (c *endpointProbeCache) hit(providerUUID, model, endpoint, shape string) bool {
+	key := endpointProbeCacheKey(providerUUID, model, endpoint, shape)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	cachedAt, ok := c.entries[key]
@@ -73,8 +74,8 @@ func (c *endpointProbeCache) hit(providerUUID, model, endpoint, testMode string)
 // entries (the lock is already held, and this is the only other write path
 // besides the lazy per-key eviction in hit) so a key that's checked once and
 // never queried again doesn't sit in the map forever.
-func (c *endpointProbeCache) remember(providerUUID, model, endpoint, testMode string) {
-	key := endpointProbeCacheKey(providerUUID, model, endpoint, testMode)
+func (c *endpointProbeCache) remember(providerUUID, model, endpoint, shape string) {
+	key := endpointProbeCacheKey(providerUUID, model, endpoint, shape)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()

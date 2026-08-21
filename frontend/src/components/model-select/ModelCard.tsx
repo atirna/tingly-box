@@ -197,6 +197,7 @@ export default function ModelCard({
             targetId={provider.uuid}
             targetName={provider.name}
             model={model}
+            provider={provider}
             initialResult={probe.result ?? undefined}
             onResult={probe.setResult}
         />

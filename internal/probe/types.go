@@ -149,18 +149,35 @@ const (
 	E2ETargetProviderConfig E2ETarget = "provider_config"
 )
 
-// E2EMode defines the test mode.
-type E2EMode string
+// ProbeProtocol is a concrete client-side wire protocol for a probe. There is
+// deliberately no "auto" value — the panel always speaks a concrete protocol,
+// defaulting to the provider's primary one (ResolveProbeProtocol).
+type ProbeProtocol string
 
 const (
-	E2EModeSimple    E2EMode = "simple"
-	E2EModeStreaming E2EMode = "streaming"
-	E2EModeTool      E2EMode = "tool"
+	// ProtocolOpenAIChat probes via OpenAI Chat Completions.
+	ProtocolOpenAIChat ProbeProtocol = "openai_chat"
+	// ProtocolOpenAIResponses probes via the OpenAI Responses API.
+	ProtocolOpenAIResponses ProbeProtocol = "openai_responses"
+	// ProtocolAnthropic probes via the Anthropic Messages API.
+	ProtocolAnthropic ProbeProtocol = "anthropic_v1"
 )
 
+// ProtocolFamily maps a ProbeProtocol onto the client API style it implies.
+func (p ProbeProtocol) Family() protocol.APIStyle {
+	switch p {
+	case ProtocolAnthropic:
+		return protocol.APIStyleAnthropic
+	case ProtocolOpenAIChat, ProtocolOpenAIResponses:
+		return protocol.APIStyleOpenAI
+	default:
+		return ""
+	}
+}
+
 // ThinkingLevel is the probe-facing subset of the canonical thinking-effort
-// ladder (internal/protocol/thinking). Orthogonal to E2EMode — composes with
-// both streaming and non-streaming probes. "none" (and the empty string) send
+// ladder (internal/protocol/thinking). Orthogonal to the Stream/Tool axes —
+// composes with both streaming and non-streaming probes. "none" (and the empty string) send
 // no thinking param; the other levels map to each provider's native thinking
 // knob (Anthropic budget_tokens, OpenAI reasoning_effort, Gemini
 // thinking_budget) via thinking.BudgetMapping / the effort value.
@@ -192,7 +209,12 @@ type E2ERequest struct {
 	APIStyle string `json:"api_style,omitempty"`
 	Token    string `json:"token,omitempty"`
 
-	TestMode E2EMode `json:"test_mode" binding:"required"`
+	// Stream and Tool are the orthogonal axes describing the probe shape.
+	// nil normalizes to false. Tool does NOT force either stream value — both
+	// combinations are valid (non-stream lifts structured tool_calls; stream
+	// keeps raw chunks).
+	Stream *bool `json:"stream,omitempty" example:"true"`
+	Tool   *bool `json:"tool,omitempty" example:"false"`
 
 	Message string `json:"message,omitempty"`
 
@@ -201,16 +223,18 @@ type E2ERequest struct {
 	// a failure is in the upstream provider or in TB's own middleware stack.
 	Direct bool `json:"direct,omitempty"`
 
-	// Endpoint forces which OpenAI endpoint to probe: "chat" or "responses".
-	// Only meaningful for OpenAI-style providers; ignored otherwise. Empty
-	// (default) keeps the existing behavior: Codex OAuth providers probe
-	// Responses, everything else probes Chat. Used to test whether a
-	// provider genuinely supports Responses before a rule starts routing
-	// there (e.g. the Codex-page "enable native Responses" toggle).
-	Endpoint string `json:"endpoint,omitempty" example:"responses"`
+	// Protocol forces the client-side wire protocol: openai_chat,
+	// openai_responses, or anthropic_v1. No "auto" value — empty (default)
+	// keeps the provider's primary protocol (its APIStyle, plus the Codex
+	// OAuth → Responses default for OpenAI providers). For dual-base
+	// providers the matching dual URL is selected; for through-TB probes the
+	// loopback speaks the requested protocol and TB's transform pipeline
+	// handles the upstream exactly as production traffic does.
+	// Not supported for rule targets (the rule's scenario fixes the protocol).
+	Protocol ProbeProtocol `json:"protocol,omitempty" example:"openai_responses"`
 
 	// Thinking sets the extended-thinking effort for the probe. Orthogonal to
-	// TestMode — composes with both streaming and non-streaming probes. "none"
+	// Stream/Tool — composes with both streaming and non-streaming probes. "none"
 	// (and the empty string, the default) sends no thinking param; "low"/
 	// "medium"/"high" map to each provider's native thinking knob via
 	// internal/protocol/thinking. Used to verify a model/provider actually
@@ -264,10 +288,16 @@ func ValidateE2ERequest(req *E2ERequest) error {
 		return &ValidationError{Field: "target_type", Message: "target_type must be 'rule', 'provider', or 'provider_config'"}
 	}
 
-	switch req.TestMode {
-	case E2EModeSimple, E2EModeStreaming, E2EModeTool:
+	switch req.Protocol {
+	case "", ProtocolOpenAIChat, ProtocolOpenAIResponses, ProtocolAnthropic:
 	default:
-		return &ValidationError{Field: "test_mode", Message: "test_mode must be 'simple', 'streaming', or 'tool'"}
+		return &ValidationError{Field: "protocol", Message: "protocol must be 'openai_chat', 'openai_responses', or 'anthropic_v1'"}
+	}
+
+	// A rule's scenario already fixes the wire protocol; an override there
+	// would be silently ignored, so reject it instead.
+	if req.TargetType == E2ETargetRule && req.Protocol != "" {
+		return &ValidationError{Field: "protocol", Message: "protocol override is not supported for rule targets (fixed by the rule's scenario)"}
 	}
 
 	// Thinking is optional; empty normalizes to "none". Only the probe-facing
@@ -282,19 +312,52 @@ func ValidateE2ERequest(req *E2ERequest) error {
 	return nil
 }
 
-// E2EMessage returns the probe message body based on test mode, with an
-// optional caller-provided override.
-func E2EMessage(mode E2EMode, customMsg string) string {
+// ResolveAxes returns the effective stream/tool decisions (nil → false).
+func (req *E2ERequest) ResolveAxes() (stream, tool bool) {
+	if req.Stream != nil {
+		stream = *req.Stream
+	}
+	if req.Tool != nil {
+		tool = *req.Tool
+	}
+	return stream, tool
+}
+
+// ResolveClientStyle returns the client-side API style the probe should speak,
+// after applying the protocol override (if any) to the provider's own style.
+// Returns the provider style unchanged for "", google, and unsupported
+// combinations — callers decide whether that is an error.
+func (req *E2ERequest) ResolveClientStyle(providerStyle protocol.APIStyle) protocol.APIStyle {
+	if req.Protocol == "" {
+		return providerStyle
+	}
+	return req.Protocol.Family()
+}
+
+// ResolveOpenAIEndpointOverride translates Protocol into the endpointOverride
+// consumed by resolveOpenAIProbeEndpoint ("chat"/"responses", or "" to keep
+// the provider's default).
+func (req *E2ERequest) ResolveOpenAIEndpointOverride() string {
+	switch req.Protocol {
+	case ProtocolOpenAIChat:
+		return "chat"
+	case ProtocolOpenAIResponses:
+		return "responses"
+	}
+	return ""
+}
+
+// E2EMessage returns the probe message body: a caller-provided override when
+// given, otherwise a default message chosen by whether the probe attaches
+// tools.
+func E2EMessage(tool bool, customMsg string) string {
 	if customMsg != "" {
 		return customMsg
 	}
-
-	switch mode {
-	case E2EModeTool:
+	if tool {
 		return "Please use the bash tool to list the current directory contents with 'ls -la'."
-	default:
-		return "Hello, this is a test message. Please respond with a short greeting."
 	}
+	return "Hello, this is a test message. Please respond with a short greeting."
 }
 
 // ScenarioEndpoint returns the API endpoint and api-style for a scenario name.

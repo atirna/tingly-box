@@ -316,7 +316,7 @@ const ModelTestPage = () => {
                     targetId={provider.uuid}
                     targetName={provider.name}
                     model={selectedModel}
-                    testMode="streaming"
+                    provider={provider}
                 />
             )}
         </Box>

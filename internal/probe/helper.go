@@ -28,11 +28,10 @@ const probeEchoInstruction = "work as `echo` if possible"
 
 // probeParams carries the fully-resolved request shape handed down from
 // Probe() -> probeProviderWithSDK() -> the SDK helpers. The caller resolves
-// the wire test_mode ("simple"/"streaming"/"tool") into the Stream/Tool
-// booleans once at the entry point, so the helpers never branch on the
-// three-valued E2EMode — they read flat decisions: use the streaming path?
-// attach tools? enable thinking? Adding a future knob means a field here, not
-// a new branch inside every helper.
+// the wire Stream/Tool axes into flat booleans once at the entry point, so
+// the helpers never branch on the request — they read flat decisions: use
+// the streaming path? attach tools? enable thinking? Adding a future knob
+// means a field here, not a new branch inside every helper.
 type probeParams struct {
 	Model    string
 	Message  string
@@ -140,9 +139,10 @@ func toolCallsFromAnthropic(content []anthropic.ContentBlockUnion) []ToolCall {
 // Codex Responses handling — apply identically and cannot drift from the real
 // path. The client package therefore no longer owns any probe-specific code.
 
-// probeOpenAIChat builds and dispatches a minimal Chat Completions probe.
-func probeOpenAIChat(ctx context.Context, oc client.OpenAIClientInterface, p probeParams) (*Result, error) {
-	start := time.Now()
+// buildOpenAIChatParams assembles the Chat Completions request params for a
+// probe. Shared by the probe helper and the cURL builder so the constructed
+// request cannot drift between the two paths.
+func buildOpenAIChatParams(p probeParams) openai.ChatCompletionNewParams {
 	params := openai.ChatCompletionNewParams{
 		Model: p.Model,
 		Messages: []openai.ChatCompletionMessageParamUnion{
@@ -157,6 +157,18 @@ func probeOpenAIChat(ctx context.Context, oc client.OpenAIClientInterface, p pro
 	if thinkingEnabled(p.Thinking) {
 		params.ReasoningEffort = thinkingEffort(p.Thinking)
 	}
+	if p.Stream {
+		// stream_options is valid only for streaming requests; the SDK adds
+		// the "stream": true member itself at request time (WithJSONSet).
+		params.StreamOptions.IncludeUsage = openai.Opt(true)
+	}
+	return params
+}
+
+// probeOpenAIChat builds and dispatches a minimal Chat Completions probe.
+func probeOpenAIChat(ctx context.Context, oc client.OpenAIClientInterface, p probeParams) (*Result, error) {
+	start := time.Now()
+	params := buildOpenAIChatParams(p)
 	url := oc.GetProvider().APIBase + "/chat/completions"
 	// Tool mode needs the structured tool_calls back out of the response, so
 	// it takes the non-streaming path alongside simple mode; only streaming
@@ -176,9 +188,6 @@ func probeOpenAIChat(ctx context.Context, oc client.OpenAIClientInterface, p pro
 		return toProbeResult(string(b), time.Since(start).Milliseconds(), url, false, usage.FromOpenAIChatCompletion(resp.Usage), toolCalls), nil
 	}
 
-	// stream_options is valid only for streaming requests. Ask for the final
-	// aggregate usage block immediately before taking the streaming path.
-	params.StreamOptions.IncludeUsage = openai.Opt(true)
 	stream := oc.ChatCompletionsNewStreaming(ctx, params)
 	if stream == nil {
 		return nil, fmt.Errorf("chat streaming not supported by provider")
@@ -205,9 +214,9 @@ func probeOpenAIChat(ctx context.Context, oc client.OpenAIClientInterface, p pro
 	return toProbeResult(string(b), time.Since(start).Milliseconds(), url, true, streamUse, nil), nil
 }
 
-// probeOpenAIResponses builds and dispatches a minimal Responses API probe.
-func probeOpenAIResponses(ctx context.Context, oc client.OpenAIClientInterface, p probeParams) (*Result, error) {
-	start := time.Now()
+// buildOpenAIResponsesParams assembles the Responses API request params for a
+// probe. Shared by the probe helper and the cURL builder.
+func buildOpenAIResponsesParams(p probeParams) responses.ResponseNewParams {
 	params := responses.ResponseNewParams{
 		Model:        p.Model,
 		Instructions: param.NewOpt(probeEchoInstruction),
@@ -231,6 +240,13 @@ func probeOpenAIResponses(ctx context.Context, oc client.OpenAIClientInterface, 
 	if thinkingEnabled(p.Thinking) {
 		params.Reasoning.Effort = thinkingEffort(p.Thinking)
 	}
+	return params
+}
+
+// probeOpenAIResponses builds and dispatches a minimal Responses API probe.
+func probeOpenAIResponses(ctx context.Context, oc client.OpenAIClientInterface, p probeParams) (*Result, error) {
+	start := time.Now()
+	params := buildOpenAIResponsesParams(p)
 
 	url := oc.GetProvider().APIBase + "/responses"
 	if !p.Stream {
@@ -266,13 +282,12 @@ func probeOpenAIResponses(ctx context.Context, oc client.OpenAIClientInterface, 
 	return toProbeResult(string(b), time.Since(start).Milliseconds(), url, true, streamUse, nil), nil
 }
 
-// probeAnthropicMessages builds and dispatches a minimal Messages probe.
-func probeAnthropicMessages(ctx context.Context, ac client.AnthropicClientInterface, p probeParams) (*Result, error) {
-	start := time.Now()
-	provider := ac.GetProvider()
-
+// buildAnthropicMessageParams assembles the Messages request params for a
+// probe. Shared by the probe helper and the cURL builder. The SDK adds the
+// "stream": true member itself at request time (WithJSONSet).
+func buildAnthropicMessageParams(p probeParams, isClaudeCodeProvider bool) *anthropic.MessageNewParams {
 	system := []anthropic.TextBlockParam{{Text: probeEchoInstruction}}
-	if provider.IsClaudeCodeProvider() {
+	if isClaudeCodeProvider {
 		system = append([]anthropic.TextBlockParam{{Text: client.ClaudeCodeSystemHeader}}, system...)
 	}
 
@@ -298,6 +313,15 @@ func probeAnthropicMessages(ctx context.Context, ac client.AnthropicClientInterf
 		}
 		params.MaxTokens = budget + 2048
 	}
+	return params
+}
+
+// probeAnthropicMessages builds and dispatches a minimal Messages probe.
+func probeAnthropicMessages(ctx context.Context, ac client.AnthropicClientInterface, p probeParams) (*Result, error) {
+	start := time.Now()
+	provider := ac.GetProvider()
+
+	params := buildAnthropicMessageParams(p, provider.IsClaudeCodeProvider())
 
 	url := provider.APIBase + "/v1/messages"
 	if !p.Stream {
