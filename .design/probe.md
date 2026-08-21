@@ -13,6 +13,7 @@ The probe subsystem provides two diagnostics for different user questions:
 |--------------|---------------|---------------|------------------|-------------------|
 | Connect AI → Test Connection | `runProviderProbe` → `api.probeProviderLightweight` | `POST /api/v2/probe/lightweight` | `LightProber` | Are these credentials/endpoints reachable enough to continue? |
 | Probe dialog / Troubleshoot | `runProbe` | `POST /api/v2/probe` | `E2EProber` | Does a real request work, how did it route, and what came back? |
+| Probe dialog → cURL section | `buildProbeCurl` | `POST /api/v2/probe/curl` | `E2EProber.BuildCurl` | What exact curl reproduces this probe? |
 
 The similarly named frontend helper `api.probeProvider` targets the E2E
 `provider_config` API, but Connect AI does not call it. Keep the two paths
@@ -53,6 +54,24 @@ When a through-TB probe fails and a direct probe succeeds, the problem is in TB'
 Tool mode intentionally preserves the SDK's raw streamed chunks in `content`.
 It does not assemble a parallel normalized tool-call result; the raw response is
 the diagnostic artifact.
+
+### Test axes (2026-08-21 redesign)
+
+The legacy `test_mode` enum (`simple`/`streaming`/`tool`) mixed two axes and has been split into orthogonal request fields. `test_mode` still works (it wins when present): `simple` → off/off, `streaming` → on/off, `tool` → off/on (tool mode historically takes the non-stream path so structured `tool_calls` come back).
+
+| Axis | Field | Notes |
+|------|-------|-------|
+| Shape (stream) | `stream bool` | SSE vs single response |
+| Tool | `tool bool` | attaches probe tools; composes with both stream values (non-stream lifts structured `tool_calls`; stream keeps raw chunks) |
+| Thinking | `thinking` | `none`/`low`/`medium`/`high`, unchanged |
+| Protocol | `protocol` | `openai_chat` / `openai_responses` / `anthropic_v1` — no "auto"; empty = target's primary (provider APIStyle, Codex OAuth → Responses). Replaces the OpenAI-only legacy `endpoint` field (still accepted; `protocol` wins). Not allowed for rule targets (scenario fixes it). |
+| Scope | `direct bool` | unchanged |
+
+Protocol override behavior: for **direct** probes a dual-base provider's matching URL is selected via `Provider.ResolveStyle`; for **through-TB** probes the loopback speaks the requested protocol (loopback scenario = the protocol family's canonical one when overridden) and TB's transform pipeline converts to the upstream exactly as production traffic does.
+
+### cURL generation
+
+`POST /api/v2/probe/curl` takes the same body as `/api/v2/probe` and returns `probe.CurlData` (`command`, `method`, `url`, `headers`, `body`, `key_env_var`) **without executing anything**. It resolves the target through the same `resolveTargetToProviderModel` path and marshals the *same* param builders the SDK helpers use (`buildOpenAIChatParams` / `buildOpenAIResponsesParams` / `buildAnthropicMessageParams` in `helper.go`) — the constructed body cannot drift from a real probe. The `stream: true` member the SDKs inject via `WithJSONSet` is added by `marshalStreamAware`. Secrets are never embedded: `$TB_API_KEY` for through-TB curls (loopback URL + gateway-key header), `$UPSTREAM_API_KEY` for direct ones. Google targets are rejected explicitly.
 
 ## TB Loopback Pattern
 
