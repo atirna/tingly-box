@@ -50,6 +50,7 @@ The request shape is described by orthogonal fields; the legacy `test_mode` enum
 | Shape (stream) | `stream bool` | SSE vs single response |
 | Tool | `tool bool` | attaches probe tools; composes with both stream values (non-stream lifts structured `tool_calls`; stream keeps raw chunks) |
 | Thinking | `thinking` | `none`/`low`/`medium`/`high`, unchanged |
+| Vision | `vision` | `none`/`user`/`tool` — attaches the canonical image fixture (`internal/protocol/vision`, a 1×1 red PNG + "what color?" prompt) in the user message or as a synthetic tool-result turn: the two channels of issue #1606. A vision-capable route answers "red"; anything else reveals a drop or corruption. Drops the echo instruction (it would echo the prompt instead of answering). Not supported for Google targets. |
 | Protocol | `protocol` | `openai_chat` / `openai_responses` / `anthropic_v1` — no "auto"; empty = target's primary (provider APIStyle, Codex OAuth → Responses). Replaces the OpenAI-only legacy `endpoint` field (still accepted; `protocol` wins). Not allowed for rule targets (scenario fixes it). |
 | Scope | `direct bool` | unchanged |
 

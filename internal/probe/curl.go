@@ -53,6 +53,7 @@ func (e *E2EProber) BuildCurl(ctx context.Context, req *E2ERequest) (*CurlData, 
 		Stream:   stream,
 		Tool:     tool,
 		Thinking: req.Thinking,
+		Vision:   req.Vision,
 	}
 
 	// resolveTargetToProviderModel has already applied the protocol override

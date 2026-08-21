@@ -25,6 +25,7 @@ import (
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/thinking"
+	"github.com/tingly-dev/tingly-box/internal/protocol/vision"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -50,6 +51,7 @@ type Result struct {
 	Direct   bool          `json:"direct,omitempty"`
 	Protocol ProbeProtocol `json:"protocol,omitempty"`
 	Thinking ThinkingLevel `json:"thinking,omitempty"`
+	Vision   VisionChannel `json:"vision,omitempty"`
 
 	// Usage is the normalized token usage for the probe round-trip, parsed via
 	// internal/protocol/usage from each provider's native usage struct. It uses
@@ -201,6 +203,16 @@ const (
 	ThinkingHigh   ThinkingLevel = thinking.LevelHigh
 )
 
+// VisionChannel is the probe-facing alias of the canonical vision channel
+// (internal/protocol/vision), following the ThinkingLevel pattern.
+type VisionChannel = vision.Channel
+
+const (
+	VisionNone VisionChannel = vision.ChannelNone
+	VisionUser VisionChannel = vision.ChannelUser
+	VisionTool VisionChannel = vision.ChannelTool
+)
+
 // E2ERequest represents a Probe V2 request.
 type E2ERequest struct {
 	TargetType E2ETarget `json:"target_type" binding:"required"`
@@ -247,6 +259,15 @@ type E2ERequest struct {
 	// internal/protocol/thinking. Used to verify a model/provider actually
 	// returns reasoning tokens before trusting it with a rule.
 	Thinking ThinkingLevel `json:"thinking,omitempty" example:"medium"`
+
+	// Vision attaches the canonical probe image (internal/protocol/vision) to
+	// the request: "user" puts it in the user message, "tool" returns it from
+	// a synthetic tool round — the two channels of issue #1606. "none" (and
+	// the empty string, the default) sends no image. Orthogonal to Stream and
+	// Protocol. A vision-capable route answers the fixture prompt with "red";
+	// any other answer reveals a drop or corruption along the path. Not
+	// supported for Google-style targets.
+	Vision VisionChannel `json:"vision,omitempty" example:"user"`
 }
 
 // E2EData is an alias to Result — the canonical SDK-level probe result.
@@ -314,6 +335,15 @@ func ValidateE2ERequest(req *E2ERequest) error {
 	case "", ThinkingNone, ThinkingLow, ThinkingMedium, ThinkingHigh:
 	default:
 		return &ValidationError{Field: "thinking", Message: "thinking must be 'none', 'low', 'medium', or 'high'"}
+	}
+
+	// Vision is optional; empty normalizes to "none". Google-style targets
+	// are rejected later at dispatch (the style is only known after target
+	// resolution).
+	switch req.Vision {
+	case "", VisionNone, VisionUser, VisionTool:
+	default:
+		return &ValidationError{Field: "vision", Message: "vision must be 'none', 'user', or 'tool'"}
 	}
 
 	return nil

@@ -19,6 +19,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/thinking"
 	"github.com/tingly-dev/tingly-box/internal/protocol/usage"
+	"github.com/tingly-dev/tingly-box/internal/protocol/vision"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -38,6 +39,7 @@ type probeParams struct {
 	Stream   bool // true → take the SSE round-trip; false → single response
 	Tool     bool // true → attach probe tools + auto tool_choice (tool mode)
 	Thinking ThinkingLevel
+	Vision   VisionChannel // user/tool → attach the canonical vision fixture turn
 }
 
 // thinkingEnabled reports whether the probe should enable extended thinking.
@@ -144,15 +146,15 @@ func toolCallsFromAnthropic(content []anthropic.ContentBlockUnion) []ToolCall {
 // request cannot drift between the two paths.
 func buildOpenAIChatParams(p probeParams) openai.ChatCompletionNewParams {
 	params := openai.ChatCompletionNewParams{
-		Model: p.Model,
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(probeEchoInstruction),
-			openai.UserMessage(p.Message),
-		},
+		Model:    p.Model,
+		Messages: buildOpenAIChatVisionMessages(p),
 	}
 	if p.Tool {
 		params.Tools = getProbeToolsOpenAI()
 		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.Opt("auto")}
+	}
+	if p.Vision == VisionTool {
+		params.Tools = append(params.Tools, getVisionToolOpenAI())
 	}
 	if thinkingEnabled(p.Thinking) {
 		params.ReasoningEffort = thinkingEffort(p.Thinking)
@@ -163,6 +165,50 @@ func buildOpenAIChatParams(p probeParams) openai.ChatCompletionNewParams {
 		params.StreamOptions.IncludeUsage = openai.Opt(true)
 	}
 	return params
+}
+
+// buildOpenAIChatVisionMessages returns the Chat message list for the probe's
+// vision channel. The echo system instruction is dropped for vision probes —
+// the fixture prompt ("what color…") is the diagnostic, and an echoing model
+// would answer with the question instead of the color.
+func buildOpenAIChatVisionMessages(p probeParams) []openai.ChatCompletionMessageParamUnion {
+	switch p.Vision {
+	case VisionUser:
+		return []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage([]openai.ChatCompletionContentPartUnionParam{
+				{OfText: &openai.ChatCompletionContentPartTextParam{Text: vision.Prompt}},
+				{OfImageURL: &openai.ChatCompletionContentPartImageParam{
+					ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: vision.FixtureDataURL},
+				}},
+			}),
+		}
+	case VisionTool:
+		return []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage(vision.ToolUserText),
+			{OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+				ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{
+					{OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: vision.ToolCallID,
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name:      vision.ToolName,
+							Arguments: "{}",
+						},
+					}},
+				},
+			}},
+			openai.ToolMessage([]openai.ChatCompletionContentPartUnionParam{
+				{OfText: &openai.ChatCompletionContentPartTextParam{Text: vision.ToolResultText}},
+				{OfImageURL: &openai.ChatCompletionContentPartImageParam{
+					ImageURL: openai.ChatCompletionContentPartImageImageURLParam{URL: vision.FixtureDataURL},
+				}},
+			}, vision.ToolCallID),
+		}
+	default:
+		return []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(probeEchoInstruction),
+			openai.UserMessage(p.Message),
+		}
+	}
 }
 
 // probeOpenAIChat builds and dispatches a minimal Chat Completions probe.
@@ -218,18 +264,15 @@ func probeOpenAIChat(ctx context.Context, oc client.OpenAIClientInterface, p pro
 // probe. Shared by the probe helper and the cURL builder.
 func buildOpenAIResponsesParams(p probeParams) responses.ResponseNewParams {
 	params := responses.ResponseNewParams{
-		Model:        p.Model,
-		Instructions: param.NewOpt(probeEchoInstruction),
+		Model: p.Model,
 		Input: responses.ResponseNewParamsInputUnion{
-			OfInputItemList: []responses.ResponseInputItemUnionParam{
-				responses.ResponseInputItemParamOfMessage(
-					responses.ResponseInputMessageContentListParam{
-						responses.ResponseInputContentParamOfInputText(p.Message),
-					},
-					responses.EasyInputMessageRoleUser,
-				),
-			},
+			OfInputItemList: buildOpenAIResponsesVisionInput(p),
 		},
+	}
+	if !p.Vision.Enabled() {
+		// Echo instruction only for non-vision probes — the vision fixture
+		// prompt is the diagnostic and must not be echoed back.
+		params.Instructions = param.NewOpt(probeEchoInstruction)
 	}
 	if p.Tool {
 		params.Tools = getProbeToolsResponses()
@@ -237,10 +280,66 @@ func buildOpenAIResponsesParams(p probeParams) responses.ResponseNewParams {
 			OfToolChoiceMode: param.NewOpt(responses.ToolChoiceOptionsAuto),
 		}
 	}
+	if p.Vision == VisionTool {
+		params.Tools = append(params.Tools, getVisionToolResponses())
+	}
 	if thinkingEnabled(p.Thinking) {
 		params.Reasoning.Effort = thinkingEffort(p.Thinking)
 	}
 	return params
+}
+
+// buildOpenAIResponsesVisionInput returns the Responses input item list for
+// the probe's vision channel.
+func buildOpenAIResponsesVisionInput(p probeParams) []responses.ResponseInputItemUnionParam {
+	switch p.Vision {
+	case VisionUser:
+		return []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfMessage(
+				responses.ResponseInputMessageContentListParam{
+					responses.ResponseInputContentParamOfInputText(vision.Prompt),
+					{OfInputImage: &responses.ResponseInputImageParam{
+						ImageURL: param.NewOpt(vision.FixtureDataURL),
+					}},
+				},
+				responses.EasyInputMessageRoleUser,
+			),
+		}
+	case VisionTool:
+		return []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfMessage(
+				responses.ResponseInputMessageContentListParam{
+					responses.ResponseInputContentParamOfInputText(vision.ToolUserText),
+				},
+				responses.EasyInputMessageRoleUser,
+			),
+			{OfFunctionCall: &responses.ResponseFunctionToolCallParam{
+				CallID:    vision.ToolCallID,
+				Name:      vision.ToolName,
+				Arguments: "{}",
+			}},
+			{OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+				CallID: vision.ToolCallID,
+				Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+					OfResponseFunctionCallOutputItemArray: responses.ResponseFunctionCallOutputItemListParam{
+						{OfInputText: &responses.ResponseInputTextContentParam{Text: vision.ToolResultText}},
+						{OfInputImage: &responses.ResponseInputImageContentParam{
+							ImageURL: param.NewOpt(vision.FixtureDataURL),
+						}},
+					},
+				},
+			}},
+		}
+	default:
+		return []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfMessage(
+				responses.ResponseInputMessageContentListParam{
+					responses.ResponseInputContentParamOfInputText(p.Message),
+				},
+				responses.EasyInputMessageRoleUser,
+			),
+		}
+	}
 }
 
 // probeOpenAIResponses builds and dispatches a minimal Responses API probe.
@@ -286,7 +385,12 @@ func probeOpenAIResponses(ctx context.Context, oc client.OpenAIClientInterface, 
 // probe. Shared by the probe helper and the cURL builder. The SDK adds the
 // "stream": true member itself at request time (WithJSONSet).
 func buildAnthropicMessageParams(p probeParams, isClaudeCodeProvider bool) *anthropic.MessageNewParams {
-	system := []anthropic.TextBlockParam{{Text: probeEchoInstruction}}
+	var system []anthropic.TextBlockParam
+	if !p.Vision.Enabled() {
+		// Echo instruction only for non-vision probes — the vision fixture
+		// prompt is the diagnostic and must not be echoed back.
+		system = []anthropic.TextBlockParam{{Text: probeEchoInstruction}}
+	}
 	if isClaudeCodeProvider {
 		system = append([]anthropic.TextBlockParam{{Text: client.ClaudeCodeSystemHeader}}, system...)
 	}
@@ -295,13 +399,14 @@ func buildAnthropicMessageParams(p probeParams, isClaudeCodeProvider bool) *anth
 		Model:     anthropic.Model(p.Model),
 		MaxTokens: 1024,
 		System:    system,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(p.Message)),
-		},
+		Messages:  buildAnthropicVisionMessages(p),
 	}
 	if p.Tool {
 		params.Tools = getProbeToolsAnthropic()
 		params.ToolChoice = getProbeToolChoiceAutoAnthropic()
+	}
+	if p.Vision == VisionTool {
+		params.Tools = append(params.Tools, getVisionToolAnthropic())
 	}
 	if thinkingEnabled(p.Thinking) {
 		// Extended thinking requires 1024 <= budget_tokens < max_tokens, so
@@ -314,6 +419,50 @@ func buildAnthropicMessageParams(p probeParams, isClaudeCodeProvider bool) *anth
 		params.MaxTokens = budget + 2048
 	}
 	return params
+}
+
+// buildAnthropicVisionMessages returns the Messages list for the probe's
+// vision channel.
+func buildAnthropicVisionMessages(p probeParams) []anthropic.MessageParam {
+	switch p.Vision {
+	case VisionUser:
+		return []anthropic.MessageParam{
+			anthropic.NewUserMessage(
+				anthropic.NewTextBlock(vision.Prompt),
+				anthropic.NewImageBlockBase64(vision.FixtureMediaType, vision.FixturePNGBase64),
+			),
+		}
+	case VisionTool:
+		return []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(vision.ToolUserText)),
+			{
+				Role: anthropic.MessageParamRoleAssistant,
+				Content: []anthropic.ContentBlockParamUnion{
+					anthropic.NewToolUseBlock(vision.ToolCallID, map[string]any{}, vision.ToolName),
+				},
+			},
+			anthropic.NewUserMessage(anthropic.ContentBlockParamUnion{
+				OfToolResult: &anthropic.ToolResultBlockParam{
+					ToolUseID: vision.ToolCallID,
+					Content: []anthropic.ToolResultBlockParamContentUnion{
+						{OfText: &anthropic.TextBlockParam{Text: vision.ToolResultText}},
+						{OfImage: &anthropic.ImageBlockParam{
+							Source: anthropic.ImageBlockParamSourceUnion{
+								OfBase64: &anthropic.Base64ImageSourceParam{
+									MediaType: vision.FixtureMediaType,
+									Data:      vision.FixturePNGBase64,
+								},
+							},
+						}},
+					},
+				},
+			}),
+		}
+	default:
+		return []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(p.Message)),
+		}
+	}
 }
 
 // probeAnthropicMessages builds and dispatches a minimal Messages probe.
@@ -358,6 +507,11 @@ func probeAnthropicMessages(ctx context.Context, ac client.AnthropicClientInterf
 
 // probeGoogleGenerate builds and dispatches a minimal GenerateContent probe.
 func probeGoogleGenerate(ctx context.Context, gc *client.GoogleClient, p probeParams) (*Result, error) {
+	// The Google SDK path has no loopback and no vision fixture mapping —
+	// refuse explicitly rather than silently probing without the image.
+	if p.Vision.Enabled() {
+		return nil, fmt.Errorf("vision probes are not supported for Google-style providers")
+	}
 	start := time.Now()
 	contents := []*genai.Content{
 		{Role: "user", Parts: []*genai.Part{{Text: p.Message}}},
