@@ -162,6 +162,11 @@ func TestBuildCurl_ThroughTB_OpenAIChat_Stream(t *testing.T) {
 	// URL leads: it must appear before the first header flag.
 	assert.Less(t, strings.Index(curl.Command, curl.URL), strings.Index(curl.Command, "-H "),
 		"URL must lead the command, got: %s", curl.Command)
+	// Single-quoted payload: JSON reads verbatim (no \" escapes) and is
+	// pretty-printed under -d.
+	assert.Contains(t, curl.Command, "-d '{")
+	assert.Contains(t, curl.Command, `"model": "gpt-4"`)
+	assert.NotContains(t, curl.Command, `\"`, "payload should not be backslash-escaped, got: %s", curl.Command)
 	assert.Contains(t, curl.Command, "$TB_API_KEY")
 }
 

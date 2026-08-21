@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -141,9 +142,16 @@ func marshalStreamAware(bodyObj any, stream bool) (string, error) {
 	return string(out), nil
 }
 
+// shellQuote wraps s in single quotes, escaping embedded quotes as '\'' —
+// single-quoted shell strings need no backslash escaping, so a JSON payload
+// reads verbatim instead of drowning in \" escapes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // renderCurl composes the copy-pasteable multi-line curl command. The URL
 // leads — it is the address the user scans first — followed by headers and
-// the body.
+// the pretty-printed body.
 func renderCurl(url string, headers map[string]string, body string, stream bool) string {
 	var sb strings.Builder
 	sb.WriteString("curl")
@@ -159,8 +167,14 @@ func renderCurl(url string, headers map[string]string, body string, stream bool)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		fmt.Fprintf(&sb, " \\\n  -H %q", name+": "+headers[name])
+		fmt.Fprintf(&sb, " \\\n  -H %s", shellQuote(name+": "+headers[name]))
 	}
-	fmt.Fprintf(&sb, " \\\n  -d %q", body)
+	// Pretty-print the payload and align continuation lines under -d.
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, []byte(body), "", "  "); err != nil {
+		fmt.Fprintf(&sb, " \\\n  -d %s", shellQuote(body))
+		return sb.String()
+	}
+	fmt.Fprintf(&sb, " \\\n  -d %s", shellQuote(strings.ReplaceAll(indented.String(), "\n", "\n  ")))
 	return sb.String()
 }
