@@ -32,6 +32,8 @@ export {
     hasCacheWrites,
     getErrorRateColor,
 } from './chartStyles';
+export { default as RosterTopList, computeShare } from './RosterTopList';
+export type { ShareBarItem, ShareBarRow, ShareResult } from './RosterTopList';
 export {
     computeUsageSummary,
     filterAndSort,

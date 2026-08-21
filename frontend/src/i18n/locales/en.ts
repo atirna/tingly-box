@@ -1220,7 +1220,6 @@ export default {
       "accountsUsingModel_other": "{{count}} accounts",
       "accountsUsingModelTitle": "Accounts using this model",
       "accountsUsingProviderTitle": "Accounts using this provider",
-      "allProviders": "All providers",
       "selectModel": "Select a model to see details.",
       "selectProvider": "Select a provider to see details.",
       "registeredUsers": "Registered users",
@@ -1239,7 +1238,6 @@ export default {
       "requests": "Requests",
       "averagePerUser": "{{value}} per active user",
       "errors": "Errors",
-      "allUsers": "All registered users",
       "rowHint": "Select a user to inspect their usage mix.",
       "search": "Search users",
       "sortBy": "Sort users",
@@ -1269,7 +1267,12 @@ export default {
       "noUsers": "No users match your search.",
       "noUsage": "No usage in this period",
       "noUsageHint": "The user remains listed because their access is registered.",
-      "selectUser": "Select a user to see details."
+      "selectUser": "Select a user to see details.",
+      "topAccounts": "Top accounts",
+      "topModels": "Top models",
+      "topProviders": "Top providers",
+      "others": "Others",
+      "noUsageHintShort": "Try a longer time range."
     },
     "agentNav": {
       "title": "Quick Start",
