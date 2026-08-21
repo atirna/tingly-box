@@ -100,36 +100,3 @@ export interface ProbeResult {
     data?: ProbeResultData;
 }
 
-export interface ProbeResponse {
-    success: boolean;
-    error?: {
-        message: string;
-        type: string;
-    };
-    data?: {
-        success?: boolean;
-        message?: string;
-        content?: string;
-        latency_ms: number;
-        request_url?: string;
-        stream?: boolean;
-
-        // Canonical token usage (protocol.TokenUsage shape).
-        usage?: ProbeTokenUsage;
-
-        // Tool calls
-        tool_calls?: ProbeToolCall[];
-
-        // Routing trace — populated for TB-loopback probes (provider/rule
-        // through-TB). Empty for direct and provider_config probes.
-        selected_provider?: string;
-        selected_provider_uuid?: string;
-        selected_model?: string;
-        routing_source?: string;
-        matched_smart_rule?: number;
-
-        // Other fields
-        models_count?: number;
-        error_message?: string;
-    };
-}

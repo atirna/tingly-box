@@ -48,8 +48,8 @@ type LightweightResponse struct {
 
 // CurlResponse is the JSON envelope returned by POST /probe/curl.
 type CurlResponse struct {
-	Success bool           `json:"success"`
-	Error   *errorDetail   `json:"error,omitempty"`
+	Success bool            `json:"success"`
+	Error   *errorDetail    `json:"error,omitempty"`
 	Data    *probe.CurlData `json:"data,omitempty"`
 }
 

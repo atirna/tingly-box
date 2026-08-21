@@ -142,7 +142,7 @@ func marshalStreamAware(bodyObj any, stream bool) (string, error) {
 	return string(out), nil
 }
 
-// shellQuote wraps s in single quotes, escaping embedded quotes as '\'' —
+// shellQuote wraps s in single quotes, escaping embedded quotes as '\” —
 // single-quoted shell strings need no backslash escaping, so a JSON payload
 // reads verbatim instead of drowning in \" escapes.
 func shellQuote(s string) string {

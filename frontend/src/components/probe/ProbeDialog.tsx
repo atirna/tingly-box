@@ -38,7 +38,9 @@ import {
     scopeAvailable,
 } from './probeConfig';
 import { ProbeControls } from './ProbeControls';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import api from '@/services/api';
+import { ProbeDevControls } from './ProbeDialogDevControls';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -220,13 +222,7 @@ const CollapsibleSection = memo(({ title, defaultExpanded = false, children }: C
 // artifact section (cURL, Response, Raw JSON) hands over the exact text.
 const CopyBlock = memo(({ text, maxHeight, fontSize = '0.78rem' }: { text: string; maxHeight?: number; fontSize?: string }) => {
     const { t } = useTranslation();
-    const [copied, setCopied] = useState(false);
-    const copy = () => {
-        navigator.clipboard.writeText(text).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        });
-    };
+    const { copied, copy } = useCopyFeedback();
     return (
         <Box sx={{ position: 'relative' }}>
             <Box
@@ -249,7 +245,7 @@ const CopyBlock = memo(({ text, maxHeight, fontSize = '0.78rem' }: { text: strin
             <Tooltip title={copied ? t('probe.copied') : t('probe.copy')}>
                 <IconButton
                     size="small"
-                    onClick={copy}
+                    onClick={() => copy(text)}
                     sx={{ position: 'absolute', top: 4, right: 4, color: 'text.secondary' }}
                 >
                     <CopyIcon fontSize="small" />
@@ -436,7 +432,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
     const [message, setMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [result, setResult] = useState<ProbeResult | null>(null);
-    const [copyTooltipOpen, setCopyTooltipOpen] = useState(false);
+    const { copied: copyTooltipOpen, copy: copyText } = useCopyFeedback();
     const [providerInfo, setProviderInfo] = useState<Provider | null>(provider ?? null);
     const [curl, setCurl] = useState<ProbeCurlResult | null>(null);
     const [curlLoading, setCurlLoading] = useState(false);
@@ -588,18 +584,12 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
             command = res.data?.command;
         }
         if (!command) return;
-        navigator.clipboard.writeText(command).then(() => {
-            setCopyTooltipOpen(true);
-            setTimeout(() => setCopyTooltipOpen(false), 2000);
-        });
-    }, [curl, buildBody]);
+        copyText(command);
+    }, [curl, buildBody, copyText]);
 
     const handleCopy = () => {
         if (!result) return;
-        navigator.clipboard.writeText(JSON.stringify(result, null, 2)).then(() => {
-            setCopyTooltipOpen(true);
-            setTimeout(() => setCopyTooltipOpen(false), 2000);
-        });
+        copyText(JSON.stringify(result, null, 2));
     };
 
     const bypassed = targetType === 'provider' && axes.direct;
@@ -625,61 +615,15 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                     </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                    {import.meta.env.DEV && (
-                        <>
-                            <Tooltip title="Simulate Success">
-                                <IconButton
-                                    size="small"
-                                    onClick={() => {
-                                        setResult({
-                                            success: true,
-                                            data: {
-                                                content: 'Simulated success response for demo purposes',
-                                                latency_ms: 450,
-                                                request_url: 'https://api.example.com/v1/chat',
-                                                stream: axes.stream,
-                                                usage: {
-                                                    input_tokens: 25,
-                                                    output_tokens: 18,
-                                                },
-                                                selected_provider: targetName,
-                                                selected_model: model || 'claude-sonnet-4-20250514',
-                                                routing_source: 'smart_routing',
-                                                matched_smart_rule: 1,
-                                                upstream_api: 'anthropic_v1',
-                                                upstream_url: 'https://api.anthropic.com/v1/messages',
-                                                matched_rule: 'test-rule',
-                                                matched_rule_desc: 'Test Rule Description',
-                                                applied_flags: 'stream,bypass_cache',
-                                            },
-                                        });
-                                        setIsLoading(false);
-                                    }}
-                                    sx={{ color: 'success.main' }}
-                                >
-                                    <CheckIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Simulate Failure">
-                            <IconButton
-                                size="small"
-                                onClick={() => {
-                                    setResult({
-                                        success: false,
-                                        error: {
-                                            message: 'Simulated error for demo purposes: Connection timeout',
-                                            type: 'upstream_error',
-                                        },
-                                    });
-                                    setIsLoading(false);
-                                }}
-                                sx={{ color: 'error.main' }}
-                            >
-                                <ErrorIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        </>
-                    )}
+                    <ProbeDevControls
+                        targetName={targetName}
+                        model={model}
+                        stream={axes.stream}
+                        onSimulate={(r) => {
+                            setResult(r);
+                            setIsLoading(false);
+                        }}
+                    />
                     <Tooltip
                         title={copyTooltipOpen ? t('probe.copied') : t('probe.curlCopy')}
                         open={copyTooltipOpen || undefined}
