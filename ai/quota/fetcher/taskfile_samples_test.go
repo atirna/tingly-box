@@ -72,8 +72,8 @@ func TestTaskfileSamples(t *testing.T) {
 	// DeepSeek only reports what remains. Without the original balance there is
 	// no honest percentage, and topping up — not waiting — restores the resource.
 	check(t, "deepseek", u, want{ok: false, windows: 1})
-	if got := findWindow(t, u, "cny").Used; got != 81.41 {
-		t.Errorf("deepseek: CNY balance = %v; want 81.41", got)
+	if available := findWindow(t, u, "cny").Available; available == nil || *available != 81.41 {
+		t.Errorf("deepseek: CNY available = %v; want 81.41", available)
 	}
 
 	// ── anthropic (build/Taskfile.quota.yml) ──

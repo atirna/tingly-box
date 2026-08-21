@@ -61,10 +61,16 @@ func TestDeepSeekFetcherBalances(t *testing.T) {
 	if cny.Kind != quota.WindowKindResource || !cny.Unknown {
 		t.Errorf("CNY semantics = kind %q unknown %v, want resource true", cny.Kind, cny.Unknown)
 	}
-	if cny.Used != 81.41 {
-		t.Errorf("CNY balance = %v, want 81.41", cny.Used)
+	if cny.Available == nil || *cny.Available != 81.41 {
+		t.Errorf("CNY available = %v, want 81.41", cny.Available)
 	}
-	if cny.Label != "CNY Balance" || !strings.Contains(cny.Description, "Available: 81.41 CNY") {
+	if cny.Used != 0 {
+		t.Errorf("CNY used = %v, want 0 because upstream reports remaining balance", cny.Used)
+	}
+	if cny.CurrencyCode != "CNY" {
+		t.Errorf("CNY CurrencyCode = %q, want CNY", cny.CurrencyCode)
+	}
+	if cny.Label != "CNY Balance" || !strings.Contains(cny.Description, "Granted: 0.00 CNY") {
 		t.Errorf("CNY display = %q / %q", cny.Label, cny.Description)
 	}
 }

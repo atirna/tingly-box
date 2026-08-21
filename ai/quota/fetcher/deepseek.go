@@ -120,13 +120,14 @@ func (f *DeepSeekFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*qu
 			key = fmt.Sprintf("balance_%d", i)
 		}
 		usage.AddWindow(key, &quota.UsageWindow{
-			Type:        quota.WindowTypeBalance,
-			Kind:        quota.WindowKindResource,
-			Used:        total,
-			Unknown:     true,
-			Unit:        quota.UsageUnitCurrency,
-			Label:       currency + " Balance",
-			Description: fmt.Sprintf("Available: %.2f %s (granted: %.2f, topped up: %.2f)", total, currency, granted, toppedUp),
+			Type:         quota.WindowTypeBalance,
+			Kind:         quota.WindowKindResource,
+			Available:    &total,
+			Unknown:      true,
+			Unit:         quota.UsageUnitCurrency,
+			CurrencyCode: currency,
+			Label:        currency + " Balance",
+			Description:  fmt.Sprintf("Granted: %.2f %s · Topped up: %.2f %s", granted, currency, toppedUp, currency),
 		})
 	}
 

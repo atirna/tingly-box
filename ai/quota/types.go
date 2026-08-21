@@ -118,16 +118,18 @@ type UsageWindow struct {
 	Type WindowType `json:"type"` // session, weekly, monthly, daily, custom, balance
 
 	// Quota data
-	Used        float64 `json:"used"`         // used amount
-	Limit       float64 `json:"limit"`        // quota limit (0 means unlimited)
-	UsedPercent float64 `json:"used_percent"` // usage percentage (0-100)
+	Used        float64  `json:"used"`                // used amount
+	Limit       float64  `json:"limit"`               // quota limit (0 means unlimited)
+	Available   *float64 `json:"available,omitempty"` // amount currently available when upstream does not report the original limit
+	UsedPercent float64  `json:"used_percent"`        // usage percentage (0-100)
 
 	// Time window
 	ResetsAt      *time.Time `json:"resets_at,omitempty"`      // reset time (if known)
 	WindowMinutes int        `json:"window_minutes,omitempty"` // time window size (minutes)
 
 	// Unit information
-	Unit UsageUnit `json:"unit"` // tokens, requests, credits, usd
+	Unit         UsageUnit `json:"unit"`                    // tokens, requests, credits, currency
+	CurrencyCode string    `json:"currency_code,omitempty"` // ISO currency code when Unit is currency
 
 	// Metadata
 	Label       string `json:"label"`       // display label, e.g., "Session Quota"
