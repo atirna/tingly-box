@@ -752,9 +752,9 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                 <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                     {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1.5 }} />}
 
-                    {!isLoading && !result && (                        <Box
+                    {!isLoading && !result && (
+                        <Box
                             sx={{
-                                mt: 2,
                                 flex: 1,
                                 display: 'flex',
                                 flexDirection: 'column',
