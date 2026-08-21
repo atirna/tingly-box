@@ -355,11 +355,16 @@ func (e *E2EProber) probeProviderWithSDK(ctx context.Context, provider *typ.Prov
 			return nil, fmt.Errorf("failed to get OpenAI client for provider: %s", provider.Name)
 		}
 		apply := maybeCapture(oc)
-		switch resolveOpenAIProbeEndpoint(endpointOverride, provider) {
+		switch ep := resolveOpenAIProbeEndpoint(endpointOverride, provider); ep {
 		case "chat":
 			result, err = probeOpenAIChat(ctx, oc, params)
 		case "responses":
 			result, err = probeOpenAIResponses(ctx, oc, params)
+		default:
+			// Unreachable: resolveOpenAIProbeEndpoint only returns "chat" or
+			// "responses". Explicit so a future third value fails loudly
+			// instead of silently returning (nil, nil).
+			return nil, fmt.Errorf("probe: unhandled openai endpoint %q", ep)
 		}
 		if err == nil {
 			apply(result)

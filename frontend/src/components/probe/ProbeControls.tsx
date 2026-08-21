@@ -32,17 +32,12 @@ interface ProbeControlsProps {
     scopeHint: string;
 }
 
-// Rail-short labels; the full name rides in the hover tooltip.
-export const PROTOCOL_LABELS: Partial<Record<ProbeProtocol | '', string>> = {
-    openai_chat: 'O Chat',
-    openai_responses: 'O Resp.',
-    anthropic_v1: 'A',
-};
-
-const PROTOCOL_FULL: Partial<Record<ProbeProtocol | '', string>> = {
-    openai_chat: 'OpenAI Chat Completions',
-    openai_responses: 'OpenAI Responses API',
-    anthropic_v1: 'Anthropic Messages',
+// Rail-short label + full name (hover tooltip) per protocol — one map so the
+// two never drift out of sync.
+const PROTOCOL_META: Partial<Record<ProbeProtocol | '', { short: string; full: string }>> = {
+    openai_chat: { short: 'O Chat', full: 'OpenAI Chat Completions' },
+    openai_responses: { short: 'O Resp.', full: 'OpenAI Responses API' },
+    anthropic_v1: { short: 'A', full: 'Anthropic Messages' },
 };
 
 // THINKING_LADDER orders the effort steps for the slider control bar.
@@ -84,6 +79,40 @@ const Axis = memo(({ label, hint, children }: { label: string; hint?: string; ch
     );
 });
 
+// ExclusiveToggle: the rail's one two-state-or-more control primitive — every
+// axis (shape, scope, tool, protocol) is a single-select ToggleButtonGroup
+// with the same rail styling and the same "ignore the null-deselect click"
+// guard. Centralizing it here means railGroupStyle is wired once, not once
+// per axis.
+function ExclusiveToggle<T extends string>({
+    value,
+    onChange,
+    options,
+    disabled,
+}: {
+    value: T;
+    onChange: (value: T) => void;
+    options: { value: T; label: React.ReactNode }[];
+    disabled?: boolean;
+}) {
+    return (
+        <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={value}
+            onChange={(_, v) => v && onChange(v)}
+            sx={railGroupStyle}
+            disabled={disabled}
+        >
+            {options.map((o) => (
+                <ToggleButton key={o.value} value={o.value}>
+                    {o.label}
+                </ToggleButton>
+            ))}
+        </ToggleButtonGroup>
+    );
+}
+
 export const ProbeControls: React.FC<ProbeControlsProps> = ({
     axes,
     onAxesChange,
@@ -103,31 +132,28 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
         <Stack spacing={1.5}>
             {/* Primary axes: what 80% of probes touch. */}
             <Axis label={t('probe.shape')} hint={t('probe.shapeHint')}>
-                <ToggleButtonGroup
-                    size="small"
-                    exclusive
+                <ExclusiveToggle
                     value={axes.stream ? 'stream' : 'nonstream'}
-                    onChange={(_, v) => v && set({ stream: v === 'stream' })}
-                    sx={railGroupStyle}
-                >
-                    <ToggleButton value="nonstream">{t('probe.nonstream')}</ToggleButton>
-                    <ToggleButton value="stream">{t('probe.stream')}</ToggleButton>
-                </ToggleButtonGroup>
+                    onChange={(v) => set({ stream: v === 'stream' })}
+                    options={[
+                        { value: 'nonstream', label: t('probe.nonstream') },
+                        { value: 'stream', label: t('probe.stream') },
+                    ]}
+                />
             </Axis>
 
             <Axis label={t('probe.scope')} hint={scopeHint}>
-                <ToggleButtonGroup
-                    size="small"
-                    exclusive
+                <ExclusiveToggle
                     value={axes.direct ? 'direct' : 'tb'}
-                    onChange={(_, v) => v && set({ direct: v === 'direct' })}
-                    sx={railGroupStyle}
+                    onChange={(v) => set({ direct: v === 'direct' })}
+                    options={[
+                        { value: 'tb', label: t('probe.throughTB') },
+                        { value: 'direct', label: t('probe.direct') },
+                    ]}
                     disabled={scopeDisabled}
-                >
-                    <ToggleButton value="tb">{t('probe.throughTB')}</ToggleButton>
-                    <ToggleButton value="direct">{t('probe.direct')}</ToggleButton>
-                </ToggleButtonGroup>
+                />
             </Axis>
+
 
             {/* Everything else is advanced — collapsed out of the way until asked for. */}
             <Box>
@@ -150,16 +176,14 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
                 <Collapse in={advancedOpen}>
                     <Stack spacing={1.5} sx={{ mt: 0.5 }}>
                         <Axis label={t('probe.tool')} hint={t('probe.toolHint')}>
-                            <ToggleButtonGroup
-                                size="small"
-                                exclusive
+                            <ExclusiveToggle
                                 value={axes.tool ? 'on' : 'off'}
-                                onChange={(_, v) => v && set({ tool: v === 'on' })}
-                                sx={railGroupStyle}
-                            >
-                                <ToggleButton value="off">{t('probe.toolOff')}</ToggleButton>
-                                <ToggleButton value="on">{t('probe.toolOn')}</ToggleButton>
-                            </ToggleButtonGroup>
+                                onChange={(v) => set({ tool: v === 'on' })}
+                                options={[
+                                    { value: 'off', label: t('probe.toolOff') },
+                                    { value: 'on', label: t('probe.toolOn') },
+                                ]}
+                            />
                         </Axis>
 
                         {/* Thinking as a stepped control bar: the effort is a ladder, and a
@@ -191,23 +215,18 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
                             hint={
                                 protocol.locked || protocol.disabled
                                     ? protocol.lockHint
-                                    : `${PROTOCOL_FULL[protocol.value] || ''} · ${t('probe.protocolHint')}`
+                                    : `${PROTOCOL_META[protocol.value]?.full || ''} · ${t('probe.protocolHint')}`
                             }
                         >
-                            <ToggleButtonGroup
-                                size="small"
-                                exclusive
+                            <ExclusiveToggle
                                 value={protocol.value}
-                                onChange={(_, v) => v && set({ protocol: v as ProbeProtocol })}
-                                sx={railGroupStyle}
+                                onChange={(v) => set({ protocol: v as ProbeProtocol })}
+                                options={(protocol.options.length ? protocol.options : [protocol.value]).map((p) => ({
+                                    value: p,
+                                    label: PROTOCOL_META[p]?.short || p,
+                                }))}
                                 disabled={protocol.locked || protocol.disabled}
-                            >
-                                {(protocol.options.length ? protocol.options : [protocol.value]).map((p) => (
-                                    <ToggleButton key={p} value={p}>
-                                        {PROTOCOL_LABELS[p] || p}
-                                    </ToggleButton>
-                                ))}
-                            </ToggleButtonGroup>
+                            />
                         </Axis>
 
                         {/* Message override lives here — the default per-tool message is
