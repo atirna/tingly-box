@@ -141,7 +141,9 @@ func marshalStreamAware(bodyObj any, stream bool) (string, error) {
 	return string(out), nil
 }
 
-// renderCurl composes the copy-pasteable multi-line curl command.
+// renderCurl composes the copy-pasteable multi-line curl command. The URL
+// leads — it is the address the user scans first — followed by headers and
+// the body.
 func renderCurl(url string, headers map[string]string, body string, stream bool) string {
 	var sb strings.Builder
 	sb.WriteString("curl")
@@ -149,6 +151,7 @@ func renderCurl(url string, headers map[string]string, body string, stream bool)
 		// -N disables buffering so SSE chunks arrive as they are emitted.
 		sb.WriteString(" -N")
 	}
+	sb.WriteString(" \\\n  " + url)
 	// Deterministic order: Content-Type first, then the rest alphabetically.
 	names := make([]string, 0, len(headers))
 	for name := range headers {
@@ -159,6 +162,5 @@ func renderCurl(url string, headers map[string]string, body string, stream bool)
 		fmt.Fprintf(&sb, " \\\n  -H %q", name+": "+headers[name])
 	}
 	fmt.Fprintf(&sb, " \\\n  -d %q", body)
-	fmt.Fprintf(&sb, " \\\n  %s", url)
 	return sb.String()
 }

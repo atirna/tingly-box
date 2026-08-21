@@ -159,7 +159,9 @@ func TestBuildCurl_ThroughTB_OpenAIChat_Stream(t *testing.T) {
 	assert.Equal(t, true, streamOptions["include_usage"])
 
 	assert.Contains(t, curl.Command, curl.URL)
-	assert.Contains(t, curl.Command, "-N")
+	// URL leads: it must appear before the first header flag.
+	assert.Less(t, strings.Index(curl.Command, curl.URL), strings.Index(curl.Command, "-H "),
+		"URL must lead the command, got: %s", curl.Command)
 	assert.Contains(t, curl.Command, "$TB_API_KEY")
 }
 

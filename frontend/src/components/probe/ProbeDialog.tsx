@@ -216,6 +216,49 @@ const CollapsibleSection = memo(({ title, defaultExpanded = false, children }: C
     );
 });
 
+// CopyBlock: a monospace content panel with its own copy affordance — every
+// artifact section (cURL, Response, Raw JSON) hands over the exact text.
+const CopyBlock = memo(({ text, maxHeight, fontSize = '0.78rem' }: { text: string; maxHeight?: number; fontSize?: string }) => {
+    const { t } = useTranslation();
+    const [copied, setCopied] = useState(false);
+    const copy = () => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+    return (
+        <Box sx={{ position: 'relative' }}>
+            <Box
+                sx={{
+                    p: 1.5,
+                    pr: 5,
+                    bgcolor: 'background.default',
+                    color: 'text.primary',
+                    borderRadius: 1.5,
+                    fontFamily: 'monospace',
+                    fontSize,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                    maxHeight,
+                    overflow: 'auto',
+                }}
+            >
+                {text}
+            </Box>
+            <Tooltip title={copied ? t('probe.copied') : t('probe.copy')}>
+                <IconButton
+                    size="small"
+                    onClick={copy}
+                    sx={{ position: 'absolute', top: 4, right: 4, color: 'text.secondary' }}
+                >
+                    <CopyIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
+        </Box>
+    );
+});
+
 // StatusBar: the one-glance verdict — success/failure, latency, tokens.
 const StatusBar = memo(({ result }: { result: ProbeResult }) => {
     const theme = useTheme();
@@ -563,8 +606,10 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
     const extracted = useMemo(() => extractText(result?.data?.content), [result?.data?.content]);
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth slotProps={{
-            paper: { sx: { minHeight: 460 } }
+        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth slotProps={{
+            // Resizable like a window: the user pulls the corner when they need
+            // more room for the journey/cURL instead of being stuck at md.
+            paper: { sx: { minHeight: 460, minWidth: 560, resize: 'both', overflow: 'hidden' } }
         }}>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', minWidth: 0, overflow: 'hidden' }}>
@@ -675,13 +720,14 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                  *  Results own the visual anchor; controls live beside them. */}
                 <Box
                     sx={{
-                        width: 236,
+                        width: 300,
                         flexShrink: 0,
                         border: '1px solid',
                         borderColor: 'divider',
                         borderRadius: 1.5,
                         p: 1.5,
-                        alignSelf: 'flex-start',
+                        alignSelf: 'stretch',
+                        overflowY: 'auto',
                     }}
                 >
                     <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>
@@ -701,15 +747,31 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                 </Box>
 
                 {/* Results column: the subject — what came back and how it went. */}
-                <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                     {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1.5 }} />}
 
                     {!isLoading && !result && (
-                        <Box sx={{ textAlign: 'center', py: 8 }}>
-                            <Typography variant="body2" sx={{
-                                color: "text.secondary"
-                            }}>
-                                {t('probe.runHint')}
+                        <Box
+                            sx={{
+                                mt: 2,
+                                flex: 1,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                border: '1px dashed',
+                                borderColor: 'divider',
+                                borderRadius: 2,
+                                px: 3,
+                                py: 6,
+                                textAlign: 'center',
+                            }}
+                        >
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {t('probe.emptyTitle')}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                                {t('probe.emptyBody')}
                             </Typography>
                         </Box>
                     )}
@@ -731,43 +793,13 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
 
                         {result.success && (
                             <CollapsibleSection title={t('probe.response')} defaultExpanded={false}>
-                                <Box
-                                    sx={{
-                                        p: 1.5,
-                                        bgcolor: 'background.default',
-                                        color: 'text.primary',
-                                        borderRadius: 1.5,
-                                        fontFamily: 'monospace',
-                                        fontSize: '0.8rem',
-                                        whiteSpace: 'pre-wrap',
-                                        wordBreak: 'break-word',
-                                        maxHeight: 180,
-                                        overflow: 'auto',
-                                    }}
-                                >
-                                    {extracted || t('probe.noText')}
-                                </Box>
+                                <CopyBlock text={extracted || t('probe.noText')} maxHeight={180} />
                             </CollapsibleSection>
                         )}
 
                         {result.success && result.data?.content && (
                             <CollapsibleSection title={t('probe.rawJson')} defaultExpanded={false}>
-                                <Box
-                                    sx={{
-                                        p: 1.5,
-                                        bgcolor: 'background.default',
-                                        color: 'text.primary',
-                                        borderRadius: 1.5,
-                                        fontFamily: 'monospace',
-                                        fontSize: '0.72rem',
-                                        whiteSpace: 'pre-wrap',
-                                        wordBreak: 'break-all',
-                                        maxHeight: 240,
-                                        overflow: 'auto',
-                                    }}
-                                >
-                                    {result.data.content}
-                                </Box>
+                                <CopyBlock text={result.data.content} maxHeight={240} fontSize="0.72rem" />
                             </CollapsibleSection>
                         )}
                     </Box>
@@ -778,20 +810,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                     {curlLoading && <LinearProgress sx={{ height: 4, borderRadius: 2 }} />}
                     {!curlLoading && curl?.data?.command && (
                         <Box>
-                            <Box
-                                sx={{
-                                    p: 1.5,
-                                    bgcolor: 'background.default',
-                                    color: 'text.primary',
-                                    borderRadius: 1.5,
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.72rem',
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-all',
-                                }}
-                            >
-                                {curl.data.command}
-                            </Box>
+                            <CopyBlock text={curl.data.command} fontSize="0.72rem" />
                             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
                                 {t('probe.curlKeyHint', { key: curl.data.key_env_var })}
                             </Typography>
