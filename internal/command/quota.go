@@ -272,6 +272,16 @@ func printWindowWithProgress(window *quota.UsageWindow) {
 	// printing one would read as a green "0.00 / 0.00 (0.0%)". What it does
 	// carry (this month's spend, a balance) goes out as-is.
 	if !window.Countable() {
+		if window.Available != nil {
+			unit := string(window.Unit)
+			value := formatUsageValue(*window.Available, window.Unit)
+			if window.Unit == quota.UsageUnitCurrency {
+				value = fmt.Sprintf("%.2f", *window.Available)
+				unit = window.CurrencyCode
+			}
+			fmt.Printf("· %s: %s%s\n", window.Label, value, formatQuotaUnit(unit))
+			return
+		}
 		fmt.Printf("· %s: %s\n", window.Label, cmp.Or(window.Description, "no limit reported"))
 		return
 	}
@@ -295,6 +305,13 @@ func printWindowWithProgress(window *quota.UsageWindow) {
 
 	// Print line: [icon] Label: usage [progress_bar] reset_info
 	fmt.Printf("%s %s: %s [%s]%s\n", statusIcon, window.Label, usageStr, progressBar, resetInfo)
+}
+
+func formatQuotaUnit(unit string) string {
+	if unit == "" {
+		return ""
+	}
+	return " " + unit
 }
 
 // renderProgressBar creates a visual progress bar
