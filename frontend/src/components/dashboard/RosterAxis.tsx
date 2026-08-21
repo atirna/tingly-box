@@ -8,6 +8,8 @@ import {
     TableHead,
     TableRow,
     Typography,
+    alpha,
+    useTheme,
 } from '@mui/material';
 import { getTotalTokens, getCacheHitRate, hasCacheWrites } from './chartStyles';
 import { UsageMetricHeaderCells, UsageMetricValueCells } from './UsageMetricCells';
@@ -210,6 +212,7 @@ export function RosterBreakdownTable<D extends MetricRow>({
     noUsageHint?: string;
     usageMetricLabels: UsageMetricLabels;
 }) {
+    const theme = useTheme();
     const showCacheWrite = hasCacheWrites(items);
     if (items.length === 0) {
         return (
@@ -220,21 +223,24 @@ export function RosterBreakdownTable<D extends MetricRow>({
         );
     }
     return (
+        // No own border/radius: this table lives inside the detail-panel Paper,
+        // and a nested box-in-box read as a different table style than the
+        // roster table sitting flush in its card.
         <TableContainer
             sx={{
                 maxHeight: 520,
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1.5,
                 overscrollBehavior: 'contain',
             }}
             role="region"
             aria-label={ariaLabel}
         >
-            <Table stickyHeader sx={{ minWidth: showCacheWrite ? 1060 : 960 }}>
+            <Table stickyHeader sx={{ minWidth: showCacheWrite ? 1080 : 980 }}>
                 <TableHead>
                     <TableRow
                         sx={{
+                            // Same translucent sticky-header background as the
+                            // roster table, so both tables read as one style.
+                            backgroundColor: alpha(theme.palette.background.paper, 0.8),
                             '& .MuiTableCell-root': {
                                 fontWeight: 600,
                                 fontSize: '0.75rem',
