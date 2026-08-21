@@ -754,7 +754,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                     {curlLoading && <LinearProgress sx={{ height: 4, borderRadius: 2 }} />}
                     {!curlLoading && curl?.data?.command && (
                         <Box>
-                            <CopyBlock text={curl.data.command} fontSize="0.72rem" />
+                            <CopyBlock text={curl.data.command} maxHeight={240} fontSize="0.72rem" />
                             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
                                 {t('probe.curlKeyHint', { key: curl.data.key_env_var })}
                             </Typography>
