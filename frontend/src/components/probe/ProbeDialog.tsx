@@ -715,9 +715,11 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                     </Button>
                 </Box>
             </DialogTitle>
-            <DialogContent sx={{ display: 'flex', gap: 2, alignItems: 'stretch' }}>
-                {/* Control rail: the instrument panel — what will be sent.
-                 *  Results own the visual anchor; controls live beside them. */}
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {/* Control rail + results — controls are what you send, results are
+                 *  what you asked; the split keeps the results as the anchor. */}
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch', minHeight: 0, flex: 1 }}>
+                {/* Control rail: the instrument panel — what will be sent. */}
                 <Box
                     sx={{
                         width: 300,
@@ -750,8 +752,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                 <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                     {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1.5 }} />}
 
-                    {!isLoading && !result && (
-                        <Box
+                    {!isLoading && !result && (                        <Box
                             sx={{
                                 mt: 2,
                                 flex: 1,
@@ -804,8 +805,11 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                         )}
                     </Box>
                 )}
+                </Box>
+                </Box>
 
-                {/* cURL: the artifact for the next action — mirrors the config above */}
+                {/* cURL spans the full dialog width — its lines are long, and it
+                 *  belongs to the whole panel (config + target), not the results. */}
                 <CollapsibleSection title={t('probe.curl')} defaultExpanded={false}>
                     {curlLoading && <LinearProgress sx={{ height: 4, borderRadius: 2 }} />}
                     {!curlLoading && curl?.data?.command && (
@@ -822,7 +826,6 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                         </Typography>
                     )}
                 </CollapsibleSection>
-                </Box>
             </DialogContent>
         </Dialog>
     );

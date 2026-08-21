@@ -163,23 +163,27 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
                         </Axis>
 
                         {/* Thinking as a stepped control bar: the effort is a ladder, and a
-                            marked slider reads as one knob instead of four buttons. */}
+                            marked slider reads as one knob instead of four buttons. End-mark
+                            labels center on their ticks and would stick out of the rail, so
+                            the slider is inset and the wrapper clips the rest. */}
                         <Axis label={t('probe.thinking')} hint={t('probe.thinkingHint')}>
-                            <Slider
-                                size="small"
-                                value={THINKING_LADDER.indexOf(axes.thinking)}
-                                min={0}
-                                max={THINKING_LADDER.length - 1}
-                                step={null}
-                                marks={THINKING_LADDER.map((lvl, i) => ({
-                                    value: i,
-                                    label: t(`probe.thinking${lvl.charAt(0).toUpperCase()}${lvl.slice(1)}`),
-                                }))}
-                                onChange={(_, v) => set({ thinking: THINKING_LADDER[v as number] })}
-                                sx={{
-                                    '& .MuiSlider-markLabel': { fontSize: '0.7rem' },
-                                }}
-                            />
+                            <Box sx={{ px: 1.25, overflowX: 'hidden' }}>
+                                <Slider
+                                    size="small"
+                                    value={THINKING_LADDER.indexOf(axes.thinking)}
+                                    min={0}
+                                    max={THINKING_LADDER.length - 1}
+                                    step={null}
+                                    marks={THINKING_LADDER.map((lvl, i) => ({
+                                        value: i,
+                                        label: t(`probe.thinking${lvl.charAt(0).toUpperCase()}${lvl.slice(1)}`),
+                                    }))}
+                                    onChange={(_, v) => set({ thinking: THINKING_LADDER[v as number] })}
+                                    sx={{
+                                        '& .MuiSlider-markLabel': { fontSize: '0.7rem' },
+                                    }}
+                                />
+                            </Box>
                         </Axis>
 
                         <Axis
