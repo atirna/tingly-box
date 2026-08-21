@@ -6,6 +6,26 @@ vars:
   PROXY: ""
 
 tasks:
+  deepseek:
+    cmds:
+      - |
+        echo "example"
+        cat << EOF
+        {
+            "is_available": true,
+            "balance_infos": [
+                {
+                    "currency": "CNY",
+                    "total_balance": "81.41",
+                    "granted_balance": "0.00",
+                    "topped_up_balance": "81.41"
+                }
+            ]
+        }
+        EOF
+      - |
+        curl https://api.deepseek.com/user/balance \
+          -H "Authorization: Bearer ${{.DEEPSEEK_API_KEY}}"
   anthropic:
     cmds:
       - |
