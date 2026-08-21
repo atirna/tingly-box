@@ -27,27 +27,44 @@ assume SDK knowledge; "Anthropic" needs no suffix (single protocol in that famil
 ## 2. Dialog layout (provider target — richest case)
 
 Left control rail (instrument panel) + right results column (the visual
-anchor) — controls are what you *send*, results are what you *asked*; the
-split keeps the results from being crowded out by control rows.
+anchor), with cURL spanning the full width at the bottom (its lines are long
+and it belongs to the whole panel). The dialog itself is resizable
+(`resize: both`, min bounds). Primary axes stay visible; everything else
+folds behind Advanced.
 
 ```
 ┌─ Probe · Kimi · kimi-k2-0905-preview ──────────────── [⧉ cURL] [⟳] [▶ Run] ─┐
 │ ┌─ Request Config ──┐  ┌─ Results ────────────────────────────────────────┐ │
-│ │ Shape             │  │ ✅ Success · 850ms · 43 tokens                    │ │
-│ │  ▤ Nonstream│Stream│ │                                                   │ │
-│ │ Tool              │  │ ▸ Request Journey                                 │ │
-│ │  ▤ Off│On         │  │   Rule → Flags → Routing → Provider → Endpoint    │ │
-│ │ Thinking          │  │                                                   │ │
-│ │  ▤ none│low│med│high│ │ ▸ Response                                       │ │
-│ │ Protocol          │  │ ▸ Raw JSON                                        │ │
-│ │  ▤ OpenAI Chat│…   │  │ ▸ cURL                                           │ │
-│ │ Scope             │  └───────────────────────────────────────────────────┘ │
-│ │  ▤ Through TB│Direct│                                                   │
-│ │ Message           │                                                       │
-│ │  [ …         ]    │                                                       │
-│ └───────────────────┘                                                       │
-└──────────────────────────────────────────────────────────────────────────────┘
+│ │ Shape             │  │ ┌─ Not run yet (dashed, fills column) ──────┐   │ │
+│ │  ▤ Nonstream│Stream│ │ │ Set the config on the left, then Run Test │   │ │
+│ │ Scope             │  │ └───────────────────────────────────────────┘   │ │
+│ │  ▤ Through TB│Direct│ │                                                │ │
+│ │ ▸ Advanced        │  │ (after run: ✅ Success · 850ms · 43 tokens      │ │
+│ │   ├ Tool  ▤ Off│On │  │  ▸ Request Journey   ▸ Response                │ │
+│ │   ├ Thinking ─●─  │  │  ▸ Raw JSON           [each block copyable])   │ │
+│ │   │  (slider w/   │  │                                                │ │
+│ │   │   marks)      │  │                                                │ │
+│ │   ├ Protocol      │  │                                                │ │
+│ │   │  ▤ OChat│OResp│A│ └────────────────────────────────────────────────┘ │
+│ │   └ Message [ … ] │                                                    │
+│ └───────────────────┘                                                    │
+│ ▸ cURL ── full width ──────────────────────────────────────────────────   │
+│   curl -N http://localhost:9999/tingly/openai/v1/chat/completions \       │
+│     -H 'Authorization: Bearer $TB_API_KEY' \                              │
+│     -d '{                                                                  │
+│       "model": "kimi-k2-…", "stream": true, …   (pretty, single-quoted)    │
+│     }'  ⧉ copy   caption: replace $TB_API_KEY with your gateway key        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Rail styling notes (learned the hard way):
+- Groups fill the rail width with **equal-width options** — layout-only
+  deltas over the shared theme style; padding/colors/shape stay themed.
+- Never wrap ToggleButtons in Tooltip inside a group (breaks direct-child
+  CSS); hover detail goes on the axis label instead.
+- Protocol buttons are abbreviated (`O Chat` / `O Resp.` / `A`) with the full
+  name in the label tooltip; Thinking is a marked slider (labels visible),
+  inset + clipped so end-mark labels don't overflow the rail.
 
 Target-type degradation (Protocol reduces to the concrete protocols the target
 speaks — unavailable options simply don't render; single-protocol ⇒ locked):
