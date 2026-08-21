@@ -49,7 +49,7 @@ func (e *E2EProber) BuildCurl(ctx context.Context, req *E2ERequest) (*CurlData, 
 	stream, tool := req.ResolveAxes()
 	params := probeParams{
 		Model:    model,
-		Message:  e2eMessage(req.Message, tool),
+		Message:  E2EMessage(tool, req.Message),
 		Stream:   stream,
 		Tool:     tool,
 		Thinking: req.Thinking,

@@ -2,7 +2,6 @@
 // Note: These are custom types not in the codegen schema
 
 export type ProbeTargetType = 'rule' | 'provider' | 'provider_config';
-export type ProbeTestMode = 'simple' | 'streaming' | 'tool';
 
 // Concrete client-side wire protocol (brand-first labels in the UI: OpenAI
 // Chat / OpenAI Responses / Anthropic). No "auto" value — the panel always
@@ -25,8 +24,7 @@ export interface ProbeRequest {
     provider_uuid?: string;
     model?: string;
 
-    // Orthogonal axes — preferred spelling. A legacy test_mode, when present,
-    // wins on the backend (simple → off/off, streaming → on/off, tool → off/on).
+    // Orthogonal axes.
     stream?: boolean;
     tool?: boolean;
 
@@ -41,10 +39,6 @@ export interface ProbeRequest {
     // Protocol: force the client-side wire protocol. Empty keeps the target's
     // primary protocol. Not supported for rule targets (scenario fixes it).
     protocol?: ProbeProtocol;
-
-    // Legacy endpoint override (openai chat|responses) — protocol wins when
-    // both are set. Kept for old callers.
-    endpoint?: 'chat' | 'responses';
 
     // Thinking: extended-thinking effort. 'none' (default) sends no thinking
     // param; 'low'/'medium'/'high' map to the provider's native thinking knob.

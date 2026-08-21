@@ -1838,8 +1838,7 @@ export const handlers = [
             })
         }
 
-        // stream axes: explicit stream field wins, legacy test_mode as fallback.
-        const isStream = body?.stream ?? (body?.test_mode ? body.test_mode !== 'simple' : true)
+        const isStream = body?.stream ?? true
         const content = isStream
             ? JSON.stringify([{ choices: [{ delta: { content: 'Hello! Mock streaming probe response.' } }] }])
             : JSON.stringify({ choices: [{ message: { content: 'Hello! Mock nonstream probe response.' } }] })

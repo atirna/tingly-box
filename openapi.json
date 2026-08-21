@@ -9316,11 +9316,6 @@
             "type": "boolean",
             "description": "Field direct"
           },
-          "endpoint": {
-            "type": "string",
-            "description": "Field endpoint",
-            "example": "responses"
-          },
           "message": {
             "type": "string",
             "description": "Field message"
@@ -9359,11 +9354,6 @@
           "target_type": {
             "type": "string",
             "description": "Field target_type"
-          },
-          "test_mode": {
-            "type": "string",
-            "description": "Field test_mode",
-            "example": "streaming"
           },
           "thinking": {
             "type": "string",

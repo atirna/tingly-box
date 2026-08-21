@@ -1,4 +1,4 @@
-import type { ProbeThinking, ProbeProtocol, ProbeResult, ProbeTargetType, ProbeTestMode } from '@/types/probe';
+import type { ProbeThinking, ProbeProtocol, ProbeResult, ProbeTargetType } from '@/types/probe';
 import type { Provider } from '@/types/provider';
 
 // ProbeAxes is the panel's orthogonal control state. Every axis is one knob:
@@ -47,28 +47,14 @@ export function persistAxes(targetType: ProbeTargetType, axes: ProbeAxes) {
     }
 }
 
-// legacyModeToAxes maps the old test_mode prop spelling onto the axes. Tool
-// mode historically takes the non-stream path (structured tool_calls).
-function legacyModeToAxes(mode: ProbeTestMode): Partial<ProbeAxes> {
-    switch (mode) {
-        case 'streaming':
-            return { stream: true, tool: false };
-        case 'tool':
-            return { stream: false, tool: true };
-        case 'simple':
-            return { stream: false, tool: false };
-    }
-}
-
 // resolveInitialAxes applies the open-time association priority:
-//   1. explicit prop overrides (legacy testMode/thinkingLevel props)
+//   1. explicit prop overrides (thinkingLevel prop)
 //   2. the pre-computed initialResult — the visible state must match the
 //      result the user is looking at (shape from result.data.stream)
 //   3. last-used axes persisted for this target-type surface
 //   4. defaults (Stream / no tool / no thinking / provider's primary protocol / Through TB)
 export function resolveInitialAxes(opts: {
     targetType: ProbeTargetType;
-    testMode?: ProbeTestMode;
     thinkingLevel?: ProbeThinking;
     initialResult?: ProbeResult;
     provider?: Provider | null;
@@ -84,8 +70,7 @@ export function resolveInitialAxes(opts: {
         axes.stream = opts.initialResult.data.stream;
     }
 
-    // Priority 1: explicit props (kept for callers that know better).
-    if (opts.testMode) Object.assign(axes, legacyModeToAxes(opts.testMode));
+    // Priority 1: explicit prop (kept for callers that know better).
     if (opts.thinkingLevel) axes.thinking = opts.thinkingLevel;
 
     // Protocol/scope availability clamp (e.g. '' protocol for google targets

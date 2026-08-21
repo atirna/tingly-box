@@ -52,9 +52,6 @@ interface ProbeDialogProps {
     targetName: string;
     scenario?: string;
     model?: string;
-    /** Initial shape override. Unset fields fall back to the associated
-     *  result / persisted last-used config (see probeConfig.resolveInitialAxes). */
-    testMode?: 'simple' | 'streaming' | 'tool';
     /** Initial thinking effort; overrides the persisted config when given. */
     thinkingLevel?: ProbeThinking;
     /** Provider record when the caller already holds it; fetched by UUID otherwise. */
@@ -419,7 +416,6 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
     targetName,
     scenario,
     model,
-    testMode,
     thinkingLevel,
     provider,
     initialResult,
@@ -427,7 +423,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
 }) => {
     const { t } = useTranslation();
     const [axes, setAxes] = useState<ProbeAxes>(() =>
-        resolveInitialAxes({ targetType, testMode, thinkingLevel, initialResult, provider: provider ?? null }),
+        resolveInitialAxes({ targetType, thinkingLevel, initialResult, provider: provider ?? null }),
     );
     const [message, setMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -461,7 +457,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
     // defaults), so the toggles always describe the result on screen.
     useEffect(() => {
         if (open) {
-            setAxes(resolveInitialAxes({ targetType, testMode, thinkingLevel, initialResult, provider: providerInfo }));
+            setAxes(resolveInitialAxes({ targetType, thinkingLevel, initialResult, provider: providerInfo }));
             setMessage('');
             setResult(initialResult ?? null);
             setIsLoading(false);
@@ -470,7 +466,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
         // providerInfo intentionally excluded — a late provider load only
         // clamps the protocol axis via the effect below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, testMode, thinkingLevel, initialResult]);
+    }, [open, thinkingLevel, initialResult]);
 
     // Clamp the protocol axis when the provider record arrives (or changes):
     // a persisted protocol that this target can't speak falls back to the

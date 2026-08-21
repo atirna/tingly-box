@@ -81,8 +81,9 @@ func (h *Handler) HandleE2EProbe(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Probe handles all test modes (simple/streaming/tool); the stream-vs-
-	// non-stream decision is made inside the SDK helpers from req.TestMode.
+	// Probe handles all probe shapes (non-stream/stream × plain/tool); the
+	// stream-vs-non-stream decision is made inside the SDK helpers from
+	// req.ResolveAxes().
 	data, err := h.e2e.Probe(ctx, &req)
 
 	if err != nil {

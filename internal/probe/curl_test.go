@@ -13,32 +13,27 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
-// ---- ResolveAxes: legacy test_mode vs orthogonal Stream/Tool ----
+// ---- ResolveAxes: orthogonal Stream/Tool ----
 
 func boolPtr(b bool) *bool { return &b }
 
 func TestResolveAxes(t *testing.T) {
 	cases := []struct {
 		name       string
-		testMode   E2EMode
 		stream     *bool
 		tool       *bool
 		wantStream bool
 		wantTool   bool
 	}{
-		{"legacy simple", E2EModeSimple, nil, nil, false, false},
-		{"legacy streaming", E2EModeStreaming, nil, nil, true, false},
-		{"legacy tool (non-stream path)", E2EModeTool, nil, nil, false, true},
-		{"legacy wins over fields", E2EModeStreaming, boolPtr(false), boolPtr(true), true, false},
-		{"fields stream", "", boolPtr(true), nil, true, false},
-		{"fields tool", "", nil, boolPtr(true), false, true},
-		{"fields tool+stream", "", boolPtr(true), boolPtr(true), true, true},
-		{"fields absent", "", nil, nil, false, false},
-		{"fields explicit false", "", boolPtr(false), boolPtr(false), false, false},
+		{"stream", boolPtr(true), nil, true, false},
+		{"tool", nil, boolPtr(true), false, true},
+		{"tool+stream", boolPtr(true), boolPtr(true), true, true},
+		{"absent", nil, nil, false, false},
+		{"explicit false", boolPtr(false), boolPtr(false), false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := &E2ERequest{TestMode: tc.testMode, Stream: tc.stream, Tool: tc.tool}
+			req := &E2ERequest{Stream: tc.stream, Tool: tc.tool}
 			gotStream, gotTool := req.ResolveAxes()
 			assert.Equal(t, tc.wantStream, gotStream)
 			assert.Equal(t, tc.wantTool, gotTool)
@@ -59,7 +54,7 @@ func TestValidateE2ERequest_NewAxes(t *testing.T) {
 		}
 	}
 
-	t.Run("axes only, no test_mode, is valid", func(t *testing.T) {
+	t.Run("axes only, is valid", func(t *testing.T) {
 		assert.NoError(t, ValidateE2ERequest(base()))
 	})
 
@@ -69,14 +64,6 @@ func TestValidateE2ERequest_NewAxes(t *testing.T) {
 		err := ValidateE2ERequest(req)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "protocol")
-	})
-
-	t.Run("invalid legacy endpoint rejected", func(t *testing.T) {
-		req := base()
-		req.Endpoint = "bogus"
-		err := ValidateE2ERequest(req)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "endpoint")
 	})
 
 	t.Run("protocol rejected for rule targets", func(t *testing.T) {
@@ -100,15 +87,18 @@ func TestValidateE2ERequest_NewAxes(t *testing.T) {
 }
 
 func TestResolveOpenAIEndpointOverride(t *testing.T) {
-	req := &E2ERequest{Endpoint: "chat", Protocol: ProtocolOpenAIResponses}
-	assert.Equal(t, "responses", req.ResolveOpenAIEndpointOverride(), "protocol wins over legacy endpoint")
-
-	req = &E2ERequest{Endpoint: "responses"}
+	req := &E2ERequest{Protocol: ProtocolOpenAIResponses}
 	assert.Equal(t, "responses", req.ResolveOpenAIEndpointOverride())
+
+	req = &E2ERequest{Protocol: ProtocolOpenAIChat}
+	assert.Equal(t, "chat", req.ResolveOpenAIEndpointOverride())
 
 	req = &E2ERequest{Protocol: ProtocolAnthropic}
 	assert.Equal(t, "", req.ResolveOpenAIEndpointOverride(),
 		"anthropic protocol implies no openai endpoint override")
+
+	req = &E2ERequest{}
+	assert.Equal(t, "", req.ResolveOpenAIEndpointOverride(), "no protocol implies no override")
 }
 
 // ---- BuildCurl golden tests ----

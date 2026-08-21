@@ -33,59 +33,52 @@ func NewE2EProber(cfg *config.Config, pool *client.ClientPool) *E2EProber {
 }
 
 // Probe performs an SDK probe against the target described by req. It serves
-// all test modes — simple/streaming/tool — the stream decision is made inside
-// the SDK helpers from req.TestMode. Only the narrow direct-endpoint
-// capability-check shape is cached; everything else dispatches for real.
+// all probe shapes — non-stream/stream × plain/tool — the stream decision is
+// made inside the SDK helpers from req.ResolveAxes(). Only the narrow
+// direct-endpoint capability-check shape is cached; everything else
+// dispatches for real.
 func (e *E2EProber) Probe(ctx context.Context, req *E2ERequest) (*E2EData, error) {
 	provider, model, probeHeaders, err := e.resolveTargetToProviderModel(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
+	// Resolve the wire axes into flat decisions once, here, so the SDK
+	// helpers read booleans instead of re-branching. Tool composes with both
+	// stream values: non-stream lifts structured tool_calls; stream keeps the
+	// raw chunk array.
+	stream, tool := req.ResolveAxes()
+	endpointOverride := req.ResolveOpenAIEndpointOverride()
+
 	// Narrow cache: only the direct provider+model+endpoint capability-check
 	// shape (target_type=provider, direct=true, endpoint forced) is
 	// cacheable — see endpointProbeCache's doc comment for why. Every other
 	// probe shape (rule tests, tool-mode/streaming checks, generic
-	// connectivity) always dispatches for real.
+	// connectivity) always dispatches for real. shapeKey guards against a
+	// cached success from one stream/tool combination short-circuiting a
+	// differently-shaped check against the same provider/model/endpoint.
 	cacheable := req.TargetType == E2ETargetProvider && req.Direct &&
-		(req.Endpoint == "chat" || req.Endpoint == "responses")
-	if cacheable && e.endpointCache.hit(provider.UUID, model, req.Endpoint, string(req.TestMode)) {
+		(endpointOverride == "chat" || endpointOverride == "responses")
+	shapeKey := fmt.Sprintf("%v-%v", stream, tool)
+	if cacheable && e.endpointCache.hit(provider.UUID, model, endpointOverride, shapeKey) {
 		return &Result{Success: true, Message: "Verified recently (cached)"}, nil
 	}
 
 	if len(probeHeaders) > 0 {
 		ctx = client.WithProbeHeaders(ctx, probeHeaders)
 	}
-	// Resolve the wire axes (legacy test_mode or Stream/Tool fields) into flat
-	// decisions once, here, so the SDK helpers read booleans instead of
-	// re-branching. Tool composes with both stream values: non-stream lifts
-	// structured tool_calls; stream keeps the raw chunk array.
-	stream, tool := req.ResolveAxes()
 	params := probeParams{
 		Model:    model,
-		Message:  e2eMessage(req.Message, tool),
+		Message:  E2EMessage(tool, req.Message),
 		Stream:   stream,
 		Tool:     tool,
 		Thinking: req.Thinking,
 	}
-	result, err := e.probeProviderWithSDK(ctx, provider, params, req.ResolveOpenAIEndpointOverride())
+	result, err := e.probeProviderWithSDK(ctx, provider, params, endpointOverride)
 	if cacheable && err == nil && result != nil && result.Success {
-		e.endpointCache.remember(provider.UUID, model, req.Endpoint, string(req.TestMode))
+		e.endpointCache.remember(provider.UUID, model, endpointOverride, shapeKey)
 	}
 	return result, err
-}
-
-// e2eMessage resolves the probe message: a custom override always wins; the
-// default switches on the tool axis (tool probes ask for a bash invocation,
-// everything else sends a greeting).
-func e2eMessage(custom string, tool bool) string {
-	if custom != "" {
-		return custom
-	}
-	if tool {
-		return E2EMessage(E2EModeTool, "")
-	}
-	return E2EMessage(E2EModeSimple, "")
 }
 
 // resolveTargetToProviderModel resolves an E2ERequest to a provider, model,

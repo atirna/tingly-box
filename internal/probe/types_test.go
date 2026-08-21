@@ -28,7 +28,6 @@ func TestValidateE2ERequest(t *testing.T) {
 				TargetType: E2ETargetRule,
 				Scenario:   "anthropic",
 				RuleUUID:   "rule-1",
-				TestMode:   E2EModeSimple,
 			},
 		},
 		{
@@ -36,7 +35,6 @@ func TestValidateE2ERequest(t *testing.T) {
 			req: E2ERequest{
 				TargetType: E2ETargetRule,
 				RuleUUID:   "rule-1",
-				TestMode:   E2EModeSimple,
 			},
 			wantErr: "scenario",
 		},
@@ -45,7 +43,6 @@ func TestValidateE2ERequest(t *testing.T) {
 			req: E2ERequest{
 				TargetType: E2ETargetRule,
 				Scenario:   "anthropic",
-				TestMode:   E2EModeSimple,
 			},
 			wantErr: "rule_uuid",
 		},
@@ -55,7 +52,6 @@ func TestValidateE2ERequest(t *testing.T) {
 				TargetType:   E2ETargetProvider,
 				ProviderUUID: "p-1",
 				Model:        "gpt-4",
-				TestMode:     E2EModeStreaming,
 			},
 		},
 		{
@@ -63,7 +59,6 @@ func TestValidateE2ERequest(t *testing.T) {
 			req: E2ERequest{
 				TargetType: E2ETargetProvider,
 				Model:      "gpt-4",
-				TestMode:   E2EModeSimple,
 			},
 			wantErr: "provider_uuid",
 		},
@@ -72,7 +67,6 @@ func TestValidateE2ERequest(t *testing.T) {
 			req: E2ERequest{
 				TargetType:   E2ETargetProvider,
 				ProviderUUID: "p-1",
-				TestMode:     E2EModeSimple,
 			},
 			wantErr: "model",
 		},
@@ -83,7 +77,6 @@ func TestValidateE2ERequest(t *testing.T) {
 				APIBase:    "https://api.openai.com/v1",
 				APIStyle:   "openai",
 				Token:      "sk-x",
-				TestMode:   E2EModeTool,
 			},
 		},
 		{
@@ -92,7 +85,6 @@ func TestValidateE2ERequest(t *testing.T) {
 				TargetType: E2ETargetProviderConfig,
 				APIBase:    "https://api.openai.com/v1",
 				APIStyle:   "openai",
-				TestMode:   E2EModeSimple,
 			},
 			wantErr: "token",
 		},
@@ -100,19 +92,8 @@ func TestValidateE2ERequest(t *testing.T) {
 			name: "unknown target type",
 			req: E2ERequest{
 				TargetType: E2ETarget("nope"),
-				TestMode:   E2EModeSimple,
 			},
 			wantErr: "target_type",
-		},
-		{
-			name: "unknown test mode",
-			req: E2ERequest{
-				TargetType:   E2ETargetProvider,
-				ProviderUUID: "p-1",
-				Model:        "m",
-				TestMode:     E2EMode("bogus"),
-			},
-			wantErr: "test_mode",
 		},
 		{
 			name: "thinking medium ok",
@@ -120,7 +101,6 @@ func TestValidateE2ERequest(t *testing.T) {
 				TargetType:   E2ETargetProvider,
 				ProviderUUID: "p-1",
 				Model:        "m",
-				TestMode:     E2EModeSimple,
 				Thinking:     ThinkingMedium,
 			},
 		},
@@ -130,7 +110,6 @@ func TestValidateE2ERequest(t *testing.T) {
 				TargetType:   E2ETargetProvider,
 				ProviderUUID: "p-1",
 				Model:        "m",
-				TestMode:     E2EModeSimple,
 			},
 		},
 		{
@@ -139,7 +118,6 @@ func TestValidateE2ERequest(t *testing.T) {
 				TargetType:   E2ETargetProvider,
 				ProviderUUID: "p-1",
 				Model:        "m",
-				TestMode:     E2EModeSimple,
 				Thinking:     ThinkingLevel("xhigh"),
 			},
 			wantErr: "thinking",
@@ -171,14 +149,14 @@ func TestValidateE2ERequest(t *testing.T) {
 }
 
 func TestE2EMessage(t *testing.T) {
-	if got := E2EMessage(E2EModeSimple, "custom!"); got != "custom!" {
+	if got := E2EMessage(false, "custom!"); got != "custom!" {
 		t.Errorf("custom override ignored: got %q", got)
 	}
-	if got := E2EMessage(E2EModeTool, ""); !strings.Contains(got, "bash tool") {
+	if got := E2EMessage(true, ""); !strings.Contains(got, "bash tool") {
 		t.Errorf("tool default should mention bash tool, got %q", got)
 	}
-	if got := E2EMessage(E2EModeSimple, ""); got == "" || strings.Contains(got, "bash tool") {
-		t.Errorf("simple default should be a greeting, got %q", got)
+	if got := E2EMessage(false, ""); got == "" || strings.Contains(got, "bash tool") {
+		t.Errorf("non-tool default should be a greeting, got %q", got)
 	}
 }
 

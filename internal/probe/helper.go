@@ -28,11 +28,10 @@ const probeEchoInstruction = "work as `echo` if possible"
 
 // probeParams carries the fully-resolved request shape handed down from
 // Probe() -> probeProviderWithSDK() -> the SDK helpers. The caller resolves
-// the wire test_mode ("simple"/"streaming"/"tool") into the Stream/Tool
-// booleans once at the entry point, so the helpers never branch on the
-// three-valued E2EMode — they read flat decisions: use the streaming path?
-// attach tools? enable thinking? Adding a future knob means a field here, not
-// a new branch inside every helper.
+// the wire Stream/Tool axes into flat booleans once at the entry point, so
+// the helpers never branch on the request — they read flat decisions: use
+// the streaming path? attach tools? enable thinking? Adding a future knob
+// means a field here, not a new branch inside every helper.
 type probeParams struct {
 	Model    string
 	Message  string
