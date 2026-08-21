@@ -113,6 +113,7 @@ func TestInferProviderTypeAPIBaseCaseInsensitive(t *testing.T) {
 		want    ProviderType
 	}{
 		{"HTTPS://API.ANTHROPIC.COM/V1", ProviderTypeAnthropic},
+		{"HTTPS://API.DEEPSEEK.COM/V1", ProviderTypeDeepSeek},
 		// OpenAI is intentionally unclassified (see the OpenAI-disabling
 		// commit): its legacy usage API's current requirements are unverified,
 		// so the manager skips it rather than reading it wrong.
@@ -259,6 +260,9 @@ func TestInferProviderTypeIgnoresPathAndLocalHosts(t *testing.T) {
 		{"vendor name only in the path", "https://gateway.example.com/proxy/openrouter.ai/api/v1", ""},
 		{"lookalike domain", "https://api.openai.com.evil.test/v1", ""},
 		{"scheme-less base", "api.anthropic.com/v1", ProviderTypeAnthropic},
+		{"scheme-less deepseek base", "api.deepseek.com/v1", ProviderTypeDeepSeek},
+		{"deepseek subdomain", "https://eu.api.deepseek.com/v1", ProviderTypeDeepSeek},
+		{"deepseek lookalike domain", "https://api.deepseek.com.evil.test/v1", ""},
 		{"subdomain of a vendor", "https://eu.api.anthropic.com/v1", ProviderTypeAnthropic},
 		{"kimi coding needs its path", "https://api.kimi.com/coding/v1", ProviderTypeKimiCode},
 		{"kimi without the coding path", "https://api.kimi.com/v1", ""},

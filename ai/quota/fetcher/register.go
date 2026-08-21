@@ -9,6 +9,7 @@ import (
 func RegisterAll(r quota.FetcherRegistrar, logger *logrus.Logger) {
 	fetchers := []quota.Fetcher{
 		NewAnthropicFetcher(),
+		NewDeepSeekFetcher(),
 		NewOpenAIFetcher(),
 		NewGeminiFetcher(),
 		NewCursorFetcher(),
