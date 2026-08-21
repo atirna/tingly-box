@@ -26,29 +26,27 @@ assume SDK knowledge; "Anthropic" needs no suffix (single protocol in that famil
 
 ## 2. Dialog layout (provider target — richest case)
 
+Left control rail (instrument panel) + right results column (the visual
+anchor) — controls are what you *send*, results are what you *asked*; the
+split keeps the results from being crowded out by control rows.
+
 ```
 ┌─ Probe · Kimi · kimi-k2-0905-preview ──────────────── [⧉ cURL] [⟳] [▶ Run] ─┐
-│                                                                                │
-│  REQUEST CONFIG                                                                │
-│  ┌──────────────────────────────────────────────────────────────────────────┐  │
-│  │  Shape     ▤ Nonstream │ Stream        Tool       ▤ Off │ On             │  │
-│  │  Thinking  ▤ none │ low │ med │ high   Protocol  ▤ OpenAI Chat │ OA-Resp │ Anthropic │
-│  │  Scope     ▤ Through TB │ Direct        Message   [Hello, this is a te…] │  │
-│  └──────────────────────────────────────────────────────────────────────────┘  │
-│                                                                                │
-│  ▸ cURL  ── mirrors the config above · copy ⧉ ──────────────────────────────   │
-│  │   (expanded:)                                                               │
-│  │   curl -N http://localhost:9999/tingly/openai/v1/chat/completions \        │
-│  │     -H "Authorization: Bearer $TB_API_KEY" \                                │
-│  │     -H "Content-Type: application/json" \                                   │
-│  │     -d '{"model":"kimi-k2-…","stream":true,"messages":[…]}'                 │
-│  │   caption: replace $TB_API_KEY with your gateway key                        │
-│                                                                                │
-│  ✅ Success · 850ms · 43 tokens                                                 │
-│  ▸ Request Journey   Rule → Flags → Routing → Provider → Endpoint → URL        │
-│  ▸ Response          (extracted text)                                           │
-│  ▸ Raw JSON          (raw upstream payload)                                    │
-└────────────────────────────────────────────────────────────────────────────────┘
+│ ┌─ Request Config ──┐  ┌─ Results ────────────────────────────────────────┐ │
+│ │ Shape             │  │ ✅ Success · 850ms · 43 tokens                    │ │
+│ │  ▤ Nonstream│Stream│ │                                                   │ │
+│ │ Tool              │  │ ▸ Request Journey                                 │ │
+│ │  ▤ Off│On         │  │   Rule → Flags → Routing → Provider → Endpoint    │ │
+│ │ Thinking          │  │                                                   │ │
+│ │  ▤ none│low│med│high│ │ ▸ Response                                       │ │
+│ │ Protocol          │  │ ▸ Raw JSON                                        │ │
+│ │  ▤ OpenAI Chat│…   │  │ ▸ cURL                                           │ │
+│ │ Scope             │  └───────────────────────────────────────────────────┘ │
+│ │  ▤ Through TB│Direct│                                                   │
+│ │ Message           │                                                       │
+│ │  [ …         ]    │                                                       │
+│ └───────────────────┘                                                       │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Target-type degradation (Protocol reduces to the concrete protocols the target

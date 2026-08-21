@@ -563,8 +563,8 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
     const extracted = useMemo(() => extractText(result?.data?.content), [result?.data?.content]);
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth slotProps={{
-            paper: { sx: { minHeight: 420 } }
+        <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth slotProps={{
+            paper: { sx: { minHeight: 460 } }
         }}>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', minWidth: 0, overflow: 'hidden' }}>
@@ -670,33 +670,52 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                     </Button>
                 </Box>
             </DialogTitle>
-            <DialogContent>
-                {/* Request Config: orthogonal axes — shape × tool × thinking × protocol × scope (+ message) */}
-                <ProbeControls
-                    axes={axes}
-                    onAxesChange={setAxes}
-                    message={message}
-                    onMessageChange={setMessage}
-                    messagePlaceholder={defaultMessage(axes.tool)}
-                    protocol={protocolControl}
-                    scopeDisabled={scopeDisabled}
-                    scopeHint={scopeHint}
-                />
+            <DialogContent sx={{ display: 'flex', gap: 2, alignItems: 'stretch' }}>
+                {/* Control rail: the instrument panel — what will be sent.
+                 *  Results own the visual anchor; controls live beside them. */}
+                <Box
+                    sx={{
+                        width: 236,
+                        flexShrink: 0,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1.5,
+                        p: 1.5,
+                        alignSelf: 'flex-start',
+                    }}
+                >
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>
+                        {t('probe.requestConfig')}
+                    </Typography>
+                    {/* Orthogonal axes — shape × tool × thinking × protocol × scope (+ message) */}
+                    <ProbeControls
+                        axes={axes}
+                        onAxesChange={setAxes}
+                        message={message}
+                        onMessageChange={setMessage}
+                        messagePlaceholder={defaultMessage(axes.tool)}
+                        protocol={protocolControl}
+                        scopeDisabled={scopeDisabled}
+                        scopeHint={scopeHint}
+                    />
+                </Box>
 
-                {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1.5 }} />}
+                {/* Results column: the subject — what came back and how it went. */}
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                    {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1.5 }} />}
 
-                {!isLoading && !result && (
-                    <Box sx={{ textAlign: 'center', py: 8 }}>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            {t('probe.runHint')}
-                        </Typography>
-                    </Box>
-                )}
+                    {!isLoading && !result && (
+                        <Box sx={{ textAlign: 'center', py: 8 }}>
+                            <Typography variant="body2" sx={{
+                                color: "text.secondary"
+                            }}>
+                                {t('probe.runHint')}
+                            </Typography>
+                        </Box>
+                    )}
 
-                {!isLoading && result && (
-                    <Box>
+                    {!isLoading && result && (
+                        <Box>
                         <StatusBar result={result} />
 
                         <CollapsibleSection title={t('probe.journey')} defaultExpanded={false}>
@@ -784,6 +803,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                         </Typography>
                     )}
                 </CollapsibleSection>
+                </Box>
             </DialogContent>
         </Dialog>
     );
