@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import {
     Dialog,
     DialogTitle,
@@ -10,8 +10,6 @@ import {
     IconButton,
     Tooltip,
     Button,
-    ToggleButton,
-    ToggleButtonGroup,
     Collapse,
     Alert,
 } from '@mui/material';
@@ -25,12 +23,22 @@ import {
     PlayArrow as RunIcon,
     ExpandMore as ExpandMoreIcon,
     ExpandLess as ExpandLessIcon,
+    Terminal as TerminalIcon,
 } from '@/components/icons';
 import { useTheme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
-import { toggleButtonGroupStyle } from '@/styles/toggleStyles';
-import type { ProbeResult, ProbeTestMode, ProbeThinking, ProbeTargetType } from '@/types/probe.ts';
-import { runProbe } from './runProbe';
+import type { ProbeResult, ProbeThinking, ProbeProtocol, ProbeTargetType } from '@/types/probe.ts';
+import type { Provider } from '@/types/provider';
+import { runProbe, buildProbeCurl, type ProbeCurlResult } from './runProbe';
+import {
+    type ProbeAxes,
+    resolveInitialAxes,
+    persistAxes,
+    protocolAvailability,
+    scopeAvailable,
+} from './probeConfig';
+import { ProbeControls } from './ProbeControls';
+import api from '@/services/api';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -42,10 +50,13 @@ interface ProbeDialogProps {
     targetName: string;
     scenario?: string;
     model?: string;
-    /** Initial request shape; can be changed inside the dialog. Defaults to stream. */
-    testMode?: ProbeTestMode;
-    /** Initial thinking effort; can be changed inside the dialog. Defaults to none. */
+    /** Initial shape override. Unset fields fall back to the associated
+     *  result / persisted last-used config (see probeConfig.resolveInitialAxes). */
+    testMode?: 'simple' | 'streaming' | 'tool';
+    /** Initial thinking effort; overrides the persisted config when given. */
     thinkingLevel?: ProbeThinking;
+    /** Provider record when the caller already holds it; fetched by UUID otherwise. */
+    provider?: Provider | null;
     /** Pre-computed result to show on open (e.g. from the quick test); re-run replaces it. */
     initialResult?: ProbeResult;
     /** Called with every fresh result this dialog produces (including re-runs), so a caller holding its own copy (e.g. a card's persistent status badge) stays in sync. */
@@ -53,24 +64,6 @@ interface ProbeDialogProps {
 }
 
 // ── Constants / helpers ────────────────────────────────────────────────────
-
-// Request shapes the probe exercises (the "形态" dimension): we only need
-// non-streaming vs streaming. ('simple' is the backend's value for nonstream.)
-const MODES: { value: ProbeTestMode; tKey: string }[] = [
-    { value: 'simple', tKey: 'probe.nonstream' },
-    { value: 'streaming', tKey: 'probe.stream' },
-];
-
-// Extended-thinking effort ladder — an axis orthogonal to Shape (composes with
-// both stream and nonstream). 'none' (default) sends no thinking param; the
-// other levels map to the provider's native thinking knob. Subset of the
-// backend protocol thinking ladder.
-const THINKING_LEVELS: { value: ProbeThinking; tKey: string }[] = [
-    { value: 'none', tKey: 'probe.thinkingNone' },
-    { value: 'low', tKey: 'probe.thinkingLow' },
-    { value: 'medium', tKey: 'probe.thinkingMedium' },
-    { value: 'high', tKey: 'probe.thinkingHigh' },
-];
 
 // Human-friendly labels for routing_source values from the backend.
 const ROUTING_SOURCE_LABELS: Record<string, string> = {
@@ -80,19 +73,27 @@ const ROUTING_SOURCE_LABELS: Record<string, string> = {
     probe_pin: 'Pinned (probe)',
 };
 
-// Human-friendly labels for the resolved upstream API type.
+// Human-friendly labels for the resolved upstream API type. Brand-first —
+// the same vocabulary the Protocol axis uses (bare "Responses"/"Messages"
+// assume SDK knowledge users don't have).
 const UPSTREAM_API_LABELS: Record<string, string> = {
-    openai_chat: 'Chat Completions',
-    openai_responses: 'Responses',
-    anthropic_v1: 'Messages',
-    anthropic_beta: 'Messages (beta)',
+    openai_chat: 'OpenAI Chat',
+    openai_responses: 'OpenAI Responses',
+    anthropic_v1: 'Anthropic Messages',
+    anthropic_beta: 'Anthropic Messages (beta)',
     google: 'GenerateContent',
 };
 
-const defaultMessage = (mode: ProbeTestMode): string =>
-    mode === 'tool'
-        ? "Please use the bash tool to list the current directory contents with 'ls -la'."
-        : 'Hello, this is a test message. Please respond with a short greeting.';
+const defaultToolMessage = "Please use the bash tool to list the current directory contents with 'ls -la'.";
+const defaultPlainMessage = 'Hello, this is a test message. Please respond with a short greeting.';
+const defaultMessage = (tool: boolean): string => (tool ? defaultToolMessage : defaultPlainMessage);
+
+// ruleProtocolForScenario derives the (locked) protocol a rule target speaks,
+// mirroring the backend's ScenarioEndpoint scenario→api-style mapping.
+function ruleProtocolForScenario(scenario?: string): ProbeProtocol {
+    const base = (scenario || 'openai').split(':')[0];
+    return ['anthropic', 'claude_code', 'opencode'].includes(base) ? 'anthropic_v1' : 'openai_chat';
+}
 
 // extractText pulls the assistant's text out of the raw (JSON-marshaled) SDK
 // response so the user sees plain words instead of a serialized object. Returns
@@ -379,52 +380,176 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
     targetName,
     scenario,
     model,
-    testMode = 'streaming',
-    thinkingLevel = 'none',
+    testMode,
+    thinkingLevel,
+    provider,
     initialResult,
     onResult,
 }) => {
     const { t } = useTranslation();
-    const [mode, setMode] = useState<ProbeTestMode>(testMode);
-    // Thinking effort: orthogonal to the shape axis; 'none' (default) sends no thinking param.
-    const [thinking, setThinking] = useState<ProbeThinking>(thinkingLevel);
-    // 范围: false = 经过 TB (default), true = 直连上游. Provider targets only.
-    const [direct, setDirect] = useState(false);
+    const [axes, setAxes] = useState<ProbeAxes>(() =>
+        resolveInitialAxes({ targetType, testMode, thinkingLevel, initialResult, provider: provider ?? null }),
+    );
+    const [message, setMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [result, setResult] = useState<ProbeResult | null>(null);
     const [copyTooltipOpen, setCopyTooltipOpen] = useState(false);
+    const [providerInfo, setProviderInfo] = useState<Provider | null>(provider ?? null);
+    const [curl, setCurl] = useState<ProbeCurlResult | null>(null);
+    const [curlLoading, setCurlLoading] = useState(false);
 
-    // Reset on open — do NOT auto-run; the user clicks 运行测试. When a quick
-    // test already produced a result, show it instead of the empty hint.
+    // Provider record for the Protocol axis: use the prop when the caller has
+    // it, otherwise fetch by UUID (provider targets only).
+    useEffect(() => {
+        if (provider !== undefined) {
+            setProviderInfo(provider);
+            return;
+        }
+        if (!open || targetType !== 'provider') return;
+        let cancelled = false;
+        api.getProvider(targetId)
+            .then((r: any) => {
+                if (!cancelled && r?.success && r.data) setProviderInfo(r.data);
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [open, provider, targetType, targetId]);
+
+    // Reset on open — do NOT auto-run; the user clicks Run Test. State comes
+    // from the association chain (props → initialResult → persisted config →
+    // defaults), so the toggles always describe the result on screen.
     useEffect(() => {
         if (open) {
-            setMode(testMode);
-            setThinking(thinkingLevel);
-            setDirect(false);
+            setAxes(resolveInitialAxes({ targetType, testMode, thinkingLevel, initialResult, provider: providerInfo }));
+            setMessage('');
             setResult(initialResult ?? null);
             setIsLoading(false);
+            setCurl(null);
         }
+        // providerInfo intentionally excluded — a late provider load only
+        // clamps the protocol axis via the effect below.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, testMode, thinkingLevel, initialResult]);
+
+    // Clamp the protocol axis when the provider record arrives (or changes):
+    // a persisted protocol that this target can't speak falls back to the
+    // concrete default.
+    const protoAvail = useMemo(() => protocolAvailability(providerInfo), [providerInfo]);
+    useEffect(() => {
+        setAxes((prev) => {
+            if (protoAvail.locked && prev.protocol !== protoAvail.default) {
+                return { ...prev, protocol: protoAvail.default };
+            }
+            if (!protoAvail.locked && prev.protocol && !protoAvail.options.includes(prev.protocol)) {
+                return { ...prev, protocol: protoAvail.default };
+            }
+            if (!protoAvail.locked && prev.protocol === '' && protoAvail.default) {
+                // No "Auto" — materialize the concrete primary protocol.
+                return { ...prev, protocol: protoAvail.default };
+            }
+            return prev;
+        });
+    }, [protoAvail]);
+
+    // Persist any manual change (not the programmatic resets above) so the
+    // dialog re-opens in the shape the user last used on this surface.
+    const axesInitialized = useRef(false);
+    useEffect(() => {
+        if (!axesInitialized.current) {
+            axesInitialized.current = true;
+            return;
+        }
+        if (open) persistAxes(targetType, axes);
+    }, [axes, open, targetType]);
+
+    // Protocol axis per target type: providers reduce to what they can speak;
+    // rule targets are locked to their scenario's protocol.
+    const protocolControl = useMemo(() => {
+        if (targetType === 'rule') {
+            const value = ruleProtocolForScenario(scenario);
+            return { value, options: [value], locked: true, disabled: false, lockHint: t('probe.protocolLockedRule') };
+        }
+        if (providerInfo?.api_style === 'google') {
+            return { value: axes.protocol, options: [], locked: true, disabled: true, lockHint: t('probe.protocolGoogle') };
+        }
+        return {
+            value: axes.protocol,
+            options: protoAvail.options,
+            locked: protoAvail.locked,
+            disabled: false,
+            lockHint: t('probe.protocolLockedProvider'),
+        };
+    }, [targetType, scenario, providerInfo, axes.protocol, protoAvail, t]);
+
+    const scopeDisabled = !scopeAvailable(targetType);
+    const scopeHint = scopeDisabled ? t('probe.scopeRuleLocked') : t('probe.scopeHint');
+
+    // buildBody is the single request constructor shared by Run Test and the
+    // cURL section — the two can never disagree about what would be sent.
+    const buildBody = useCallback(
+        () => ({
+            target_type: targetType,
+            ...(targetType === 'rule'
+                ? { scenario: scenario || 'openai', rule_uuid: targetId }
+                : {
+                      provider_uuid: targetId,
+                      model: model || '',
+                      direct: axes.direct,
+                      ...(axes.protocol ? { protocol: axes.protocol } : {}),
+                      ...(scenario ? { scenario } : {}),
+                  }),
+            stream: axes.stream,
+            tool: axes.tool,
+            thinking: axes.thinking,
+            ...(message ? { message } : {}),
+        }),
+        [targetType, scenario, targetId, model, axes, message],
+    );
 
     const runTest = useCallback(async () => {
         setIsLoading(true);
         setResult(null);
-
-        const body = {
-            target_type: targetType,
-            ...(targetType === 'rule'
-                ? { scenario: scenario || 'openai', rule_uuid: targetId }
-                : { provider_uuid: targetId, model: model || '', direct, ...(scenario ? { scenario } : {}) }),
-            test_mode: mode,
-            thinking,
-            message: defaultMessage(mode),
-        };
-
-        const res = await runProbe(body);
+        const res = await runProbe(buildBody());
         setResult(res);
         setIsLoading(false);
         onResult?.(res);
-    }, [targetType, scenario, targetId, model, direct, mode, thinking, onResult]);
+    }, [buildBody, onResult]);
+
+    // cURL section: regenerate (debounced) from the current config while the
+    // dialog is open. Pure construction — nothing is executed.
+    const bodyDeps = useMemo(() => JSON.stringify(buildBody()), [buildBody]);
+    useEffect(() => {
+        if (!open) return;
+        let cancelled = false;
+        setCurlLoading(true);
+        const timer = setTimeout(async () => {
+            const res = await buildProbeCurl(buildBody());
+            if (cancelled) return;
+            setCurl(res);
+            setCurlLoading(false);
+        }, 500);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+            setCurlLoading(false);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, bodyDeps]);
+
+    const copyCurl = useCallback(async () => {
+        let command = curl?.data?.command;
+        if (!command) {
+            const res = await buildProbeCurl(buildBody());
+            command = res.data?.command;
+        }
+        if (!command) return;
+        navigator.clipboard.writeText(command).then(() => {
+            setCopyTooltipOpen(true);
+            setTimeout(() => setCopyTooltipOpen(false), 2000);
+        });
+    }, [curl, buildBody]);
 
     const handleCopy = () => {
         if (!result) return;
@@ -434,7 +559,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
         });
     };
 
-    const bypassed = targetType === 'provider' && direct;
+    const bypassed = targetType === 'provider' && axes.direct;
     const extracted = useMemo(() => extractText(result?.data?.content), [result?.data?.content]);
 
     return (
@@ -467,7 +592,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                                                 content: 'Simulated success response for demo purposes',
                                                 latency_ms: 450,
                                                 request_url: 'https://api.example.com/v1/chat',
-                                                stream: mode === 'streaming',
+                                                stream: axes.stream,
                                                 usage: {
                                                     input_tokens: 25,
                                                     output_tokens: 18,
@@ -491,32 +616,37 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                                 </IconButton>
                             </Tooltip>
                             <Tooltip title="Simulate Failure">
-                                <IconButton
-                                    size="small"
-                                    onClick={() => {
-                                        setResult({
-                                            success: false,
-                                            error: {
-                                                message: 'Simulated error for demo purposes: Connection timeout',
-                                                type: 'upstream_error',
-                                            },
-                                        });
-                                        setIsLoading(false);
-                                    }}
-                                    sx={{ color: 'error.main' }}
-                                >
-                                    <ErrorIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
+                            <IconButton
+                                size="small"
+                                onClick={() => {
+                                    setResult({
+                                        success: false,
+                                        error: {
+                                            message: 'Simulated error for demo purposes: Connection timeout',
+                                            type: 'upstream_error',
+                                        },
+                                    });
+                                    setIsLoading(false);
+                                }}
+                                sx={{ color: 'error.main' }}
+                            >
+                                <ErrorIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
                         </>
                     )}
+                    <Tooltip
+                        title={copyTooltipOpen ? t('probe.copied') : t('probe.curlCopy')}
+                        open={copyTooltipOpen || undefined}
+                        disableHoverListener={copyTooltipOpen}
+                    >
+                        <IconButton onClick={copyCurl} size="small" sx={{ color: 'text.secondary' }}>
+                            <TerminalIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
                     {result && (
                         <>
-                            <Tooltip
-                                title={copyTooltipOpen ? t('probe.copied') : t('probe.copyResponse')}
-                                open={copyTooltipOpen || undefined}
-                                disableHoverListener={copyTooltipOpen}
-                            >
+                            <Tooltip title={t('probe.copyResponse')}>
                                 <IconButton onClick={handleCopy} size="small" sx={{ color: 'text.secondary' }}>
                                     <CopyIcon fontSize="small" />
                                 </IconButton>
@@ -541,76 +671,19 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                 </Box>
             </DialogTitle>
             <DialogContent>
-                {/* Controls: request type + thinking + scope */}
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, flexWrap: 'wrap', mb: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="caption" sx={{
-                            color: "text.secondary"
-                        }}>
-                            {t('probe.shape')}
-                        </Typography>
-                        <ToggleButtonGroup
-                            size="small"
-                            exclusive
-                            value={mode}
-                            onChange={(_, v) => v && setMode(v)}
-                            sx={toggleButtonGroupStyle}
-                        >
-                            {MODES.map((m) => (
-                                <ToggleButton key={m.value} value={m.value}>
-                                    {t(m.tKey)}
-                                </ToggleButton>
-                            ))}
-                        </ToggleButtonGroup>
-                    </Box>
+                {/* Request Config: orthogonal axes — shape × tool × thinking × protocol × scope (+ message) */}
+                <ProbeControls
+                    axes={axes}
+                    onAxesChange={setAxes}
+                    message={message}
+                    onMessageChange={setMessage}
+                    messagePlaceholder={defaultMessage(axes.tool)}
+                    protocol={protocolControl}
+                    scopeDisabled={scopeDisabled}
+                    scopeHint={scopeHint}
+                />
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Tooltip title={t('probe.thinkingHint')}>
-                            <Typography variant="caption" sx={{
-                                color: "text.secondary"
-                            }}>
-                                {t('probe.thinking')}
-                            </Typography>
-                        </Tooltip>
-                        <ToggleButtonGroup
-                            size="small"
-                            exclusive
-                            value={thinking}
-                            onChange={(_, v) => v && setThinking(v)}
-                            sx={toggleButtonGroupStyle}
-                        >
-                            {THINKING_LEVELS.map((lvl) => (
-                                <ToggleButton key={lvl.value} value={lvl.value}>
-                                    {t(lvl.tKey)}
-                                </ToggleButton>
-                            ))}
-                        </ToggleButtonGroup>
-                    </Box>
-
-                    {targetType === 'provider' && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Tooltip title={t('probe.scopeHint')}>
-                                <Typography variant="caption" sx={{
-                                    color: "text.secondary"
-                                }}>
-                                    {t('probe.scope')}
-                                </Typography>
-                            </Tooltip>
-                            <ToggleButtonGroup
-                                size="small"
-                                exclusive
-                                value={direct ? 'direct' : 'tb'}
-                                onChange={(_, v) => v && setDirect(v === 'direct')}
-                                sx={toggleButtonGroupStyle}
-                            >
-                                <ToggleButton value="tb">{t('probe.throughTB')}</ToggleButton>
-                                <ToggleButton value="direct">{t('probe.direct')}</ToggleButton>
-                            </ToggleButtonGroup>
-                        </Box>
-                    )}
-                </Box>
-
-                {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1 }} />}
+                {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1.5 }} />}
 
                 {!isLoading && !result && (
                     <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -680,9 +753,45 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                         )}
                     </Box>
                 )}
+
+                {/* cURL: the artifact for the next action — mirrors the config above */}
+                <CollapsibleSection title={t('probe.curl')} defaultExpanded={false}>
+                    {curlLoading && <LinearProgress sx={{ height: 4, borderRadius: 2 }} />}
+                    {!curlLoading && curl?.data?.command && (
+                        <Box>
+                            <Box
+                                sx={{
+                                    p: 1.5,
+                                    bgcolor: 'background.default',
+                                    color: 'text.primary',
+                                    borderRadius: 1.5,
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.72rem',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-all',
+                                }}
+                            >
+                                {curl.data.command}
+                            </Box>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
+                                {t('probe.curlKeyHint', { key: curl.data.key_env_var })}
+                            </Typography>
+                        </Box>
+                    )}
+                    {!curlLoading && curl && !curl.success && (
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                            {curl.error?.message || t('probe.curlFailed')}
+                        </Typography>
+                    )}
+                </CollapsibleSection>
             </DialogContent>
         </Dialog>
     );
 };
 
 export default ProbeDialog;
+
+
+
+
+

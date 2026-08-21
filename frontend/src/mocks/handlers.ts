@@ -1838,13 +1838,19 @@ export const handlers = [
             })
         }
 
+        // stream axes: explicit stream field wins, legacy test_mode as fallback.
+        const isStream = body?.stream ?? (body?.test_mode ? body.test_mode !== 'simple' : true)
+        const content = isStream
+            ? JSON.stringify([{ choices: [{ delta: { content: 'Hello! Mock streaming probe response.' } }] }])
+            : JSON.stringify({ choices: [{ message: { content: 'Hello! Mock nonstream probe response.' } }] })
+
         return HttpResponse.json({
             success: true,
             data: {
-                content: JSON.stringify([{ choices: [{ delta: { content: 'Hello! Mock streaming probe response.' } }] }]),
+                content,
                 latency_ms: Math.floor(Math.random() * 2200) + 400,
                 request_url: 'http://localhost:12222/tingly/openai/chat/completions',
-                stream: body?.test_mode !== 'simple',
+                stream: isStream,
                 usage: {
                     input_tokens: 21,
                     output_tokens: 14,
@@ -1857,6 +1863,41 @@ export const handlers = [
                 upstream_url: 'https://api.anthropic.com/v1/messages',
                 matched_rule_desc: 'Route gpt-5.6-sol to Anthropic claude-opus-4-8',
                 applied_flags: '',
+            },
+        })
+    }),
+
+    // Probe cURL — mirrors the request config so the cURL section previews.
+    http.post('/api/v2/probe/curl', async ({ request }) => {
+        const body = await request.json() as any
+        const isStream = body?.stream ?? false
+        const protocol = body?.protocol || 'openai_chat'
+        const throughTB = !body?.direct
+        const url =
+            protocol === 'anthropic_v1'
+                ? 'http://localhost:12222/tingly/anthropic/v1/messages'
+                : protocol === 'openai_responses'
+                  ? 'http://localhost:12222/tingly/openai/responses'
+                  : 'http://localhost:12222/tingly/openai/chat/completions'
+        const headers: Record<string, string> =
+            protocol === 'anthropic_v1'
+                ? { 'Content-Type': 'application/json', 'x-api-key': '$TB_API_KEY', 'anthropic-version': '2023-06-01' }
+                : { 'Content-Type': 'application/json', Authorization: 'Bearer $TB_API_KEY' }
+        const headersOut = throughTB
+            ? headers
+            : Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, v.replace('$TB_API_KEY', '$UPSTREAM_API_KEY')]))
+        const mockBody = JSON.stringify({ model: body?.model || 'mock-model', stream: isStream, messages: [{ role: 'user', content: body?.message || 'Hello, this is a test message.' }] })
+        const headerArgs = Object.entries(headersOut).map(([k, v]) => `  -H '${k}: ${v}'`).join(' \\\n')
+        const command = `curl${isStream ? ' -N' : ''} \\\n${headerArgs} \\\n  -d '${mockBody}' \\\n  ${url}`
+        return HttpResponse.json({
+            success: true,
+            data: {
+                command,
+                method: 'POST',
+                url,
+                headers: headersOut,
+                body: mockBody,
+                key_env_var: throughTB ? '$TB_API_KEY' : '$UPSTREAM_API_KEY',
             },
         })
     }),

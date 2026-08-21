@@ -4,9 +4,14 @@
 export type ProbeTargetType = 'rule' | 'provider' | 'provider_config';
 export type ProbeTestMode = 'simple' | 'streaming' | 'tool';
 
+// Concrete client-side wire protocol (brand-first labels in the UI: OpenAI
+// Chat / OpenAI Responses / Anthropic). No "auto" value — the panel always
+// speaks a concrete protocol, defaulting to the target's primary one.
+export type ProbeProtocol = 'openai_chat' | 'openai_responses' | 'anthropic_v1';
+
 // Extended-thinking effort ladder (subset of the backend protocol thinking
-// ladder). Orthogonal to ProbeTestMode — composes with both stream and
-// nonstream. '' (absent) == 'none' == no thinking param sent.
+// ladder). Orthogonal to the stream/tool axes — composes with all four
+// combinations. '' (absent) == 'none' == no thinking param sent.
 export type ProbeThinking = 'none' | 'low' | 'medium' | 'high';
 
 export interface ProbeRequest {
@@ -20,8 +25,10 @@ export interface ProbeRequest {
     provider_uuid?: string;
     model?: string;
 
-    // Test mode
-    test_mode: ProbeTestMode;
+    // Orthogonal axes — preferred spelling. A legacy test_mode, when present,
+    // wins on the backend (simple → off/off, streaming → on/off, tool → off/on).
+    stream?: boolean;
+    tool?: boolean;
 
     // Optional custom message
     message?: string;
@@ -31,14 +38,17 @@ export interface ProbeRequest {
     // is in the upstream provider or in TB's own middleware stack.
     direct?: boolean;
 
-    // Endpoint: force which OpenAI endpoint to probe ('chat' | 'responses').
-    // OpenAI-style providers only; ignored otherwise. Empty keeps the default
-    // (Codex OAuth providers probe responses, everything else probes chat).
+    // Protocol: force the client-side wire protocol. Empty keeps the target's
+    // primary protocol. Not supported for rule targets (scenario fixes it).
+    protocol?: ProbeProtocol;
+
+    // Legacy endpoint override (openai chat|responses) — protocol wins when
+    // both are set. Kept for old callers.
     endpoint?: 'chat' | 'responses';
 
     // Thinking: extended-thinking effort. 'none' (default) sends no thinking
     // param; 'low'/'medium'/'high' map to the provider's native thinking knob.
-    // Orthogonal to test_mode.
+    // Orthogonal to stream/tool.
     thinking?: ProbeThinking;
 }
 
