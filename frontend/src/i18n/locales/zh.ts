@@ -1219,7 +1219,6 @@ export default {
       "accountsUsingModel": "{{count}} 个账号",
       "accountsUsingModelTitle": "使用该模型的账号",
       "accountsUsingProviderTitle": "使用该 Provider 的账号",
-      "allProviders": "全部 Provider",
       "selectModel": "选择模型后查看详细用量。",
       "selectProvider": "选择 Provider 后查看详细用量。",
       "registeredUsers": "在册用户",
@@ -1236,7 +1235,6 @@ export default {
       "requests": "请求数",
       "averagePerUser": "活跃用户人均 {{value}} 次",
       "errors": "错误数",
-      "allUsers": "全部在册用户",
       "rowHint": "选择用户，查看具体用量构成。",
       "search": "搜索用户",
       "sortBy": "用户排序",
@@ -1266,7 +1264,12 @@ export default {
       "noUsers": "没有匹配的用户。",
       "noUsage": "本周期暂无用量",
       "noUsageHint": "该用户已在册，因此仍保留在列表中。",
-      "selectUser": "选择用户后查看详细用量。"
+      "selectUser": "选择用户后查看详细用量。",
+      "topAccounts": "用量最高的账户",
+      "topModels": "用量最高的模型",
+      "topProviders": "用量最高的服务商",
+      "others": "其他",
+      "noUsageHintShort": "试试更长的时间范围。"
     },
     "agentNav": {
       "title": "快速开始",

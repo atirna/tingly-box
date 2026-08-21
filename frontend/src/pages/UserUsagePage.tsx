@@ -27,12 +27,9 @@ import {
     useTheme,
 } from '@mui/material';
 import {
-    AccessTime,
     ArrowForward,
     Autorenew as CachedIcon,
     BarChart,
-    Block,
-    CheckCircle,
     Cloud,
     ErrorOutline,
     Refresh,
@@ -45,7 +42,7 @@ import SearchField from '@/components/SearchField';
 import {
     formatNumber,
     StatCard,
-    TOKEN_COLORS,
+    RosterTopList,
     getTotalTokens,
     getCacheHitRate,
     getCacheHitRateColor,
@@ -58,7 +55,7 @@ import {
     useRosterAxis,
     RosterBreakdownTable,
 } from '@/components/dashboard';
-import type { AggregatedStat, MetricRow, SortField, SortDirection, UsageMetricLabels } from '@/components/dashboard';
+import type { AggregatedStat, MetricRow, SortField, SortDirection, UsageMetricLabels, ShareBarItem } from '@/components/dashboard';
 import api from '@/services/api';
 
 type TimeRange = 'today' | '7d' | '30d' | '90d';
@@ -218,98 +215,49 @@ const UserUsageSkeleton = () => (
     </Box>
 );
 
-// Identity title/subtitle/status-chip block for the detail panel. Isolated
-// into its own component because the three axes' identity shapes genuinely
-// differ (account: name + user_id + enabled/primary + last-used/joined;
-// model: name + provider name; provider: name only) — inlining it kept the
-// page body dominated by one large three-way ternary.
+// Identity line for the detail card's header bar. Single baseline row (name +
+// id/provider + joined) so the header stays at the shared 72px minHeight and
+// its bottom border aligns with the sibling Top card's — a stacked subtitle
+// made this card visibly taller. Carries only what the selected roster row
+// does NOT already show; status chip and "last used" live in that row.
 function RosterDetailHeader({
     viewMode,
     selectedUser,
     selectedModel,
     selectedProvider,
-    accountsCount,
     t,
 }: {
     viewMode: ViewMode;
     selectedUser?: UserUsageRow;
     selectedModel?: AggregatedStat;
     selectedProvider?: AggregatedStat;
-    accountsCount: number;
     t: (key: string, options?: Record<string, unknown>) => string;
 }) {
     return (
-        <Box>
-            <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="h6" noWrap sx={{ fontWeight: 650 }}>
-                        {viewMode === 'account'
-                            ? selectedUser!.display_name
-                            : viewMode === 'model'
-                            ? (selectedModel!.model || selectedModel!.key)
-                            : (selectedProvider!.provider_name || selectedProvider!.key)}
-                    </Typography>
-                    {viewMode !== 'provider' && (
-                        <Typography variant="body2" sx={{ fontFamily: viewMode === 'account' ? 'monospace' : undefined }}>
-                            {viewMode === 'account' ? selectedUser!.user_id : (selectedModel!.provider_name || '—')}
-                        </Typography>
-                    )}
-                </Box>
-                {viewMode === 'account' ? (
-                    selectedUser!.account_type === 'primary' ? (
-                        <Chip
-                            size="small"
-                            color="primary"
-                            label={t('dashboard.userUsage.primaryAccount', { defaultValue: 'Primary account' })}
-                            variant="outlined"
-                        />
-                    ) : (
-                        <Chip
-                            size="small"
-                            icon={selectedUser!.enabled ? <CheckCircle /> : <Block />}
-                            color={selectedUser!.enabled ? 'success' : 'default'}
-                            label={selectedUser!.enabled
-                                ? t('dashboard.userUsage.enabled', { defaultValue: 'Enabled' })
-                                : t('dashboard.userUsage.disabled', { defaultValue: 'Disabled' })}
-                            variant="outlined"
-                        />
-                    )
-                ) : (
-                    <Chip
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        label={t('dashboard.userUsage.accountsUsingModel', {
-                            count: accountsCount,
-                            defaultValue: `${accountsCount} accounts`,
-                        })}
-                    />
-                )}
-            </Stack>
-            {viewMode === 'account' && (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 2 }} sx={{ mt: 1.25 }}>
-                    <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
-                        <AccessTime sx={{ fontSize: 17, color: 'text.secondary' }} />
-                        <Typography variant="body2">
-                            {selectedUser!.account_type === 'primary'
-                                ? t('dashboard.userUsage.globalTokenUsage', { defaultValue: 'Usage through the global model token' })
-                                : selectedUser!.last_used_at
-                                ? t('dashboard.userUsage.lastUsed', {
-                                    value: formatDateTime(selectedUser!.last_used_at),
-                                    defaultValue: `Last used ${formatDateTime(selectedUser!.last_used_at)}`,
-                                })
-                                : t('dashboard.userUsage.neverUsed', { defaultValue: 'Never used' })}
-                        </Typography>
-                    </Stack>
-                    {selectedUser!.created_at && (
-                        <Typography variant="body2">
-                            {t('dashboard.userUsage.joined', {
-                                value: formatDateTime(selectedUser!.created_at),
-                                defaultValue: `Added ${formatDateTime(selectedUser!.created_at)}`,
-                            })}
-                        </Typography>
-                    )}
-                </Stack>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 1.5, minWidth: 0 }}>
+            <Typography variant="h6" noWrap sx={{ fontWeight: 650 }}>
+                {viewMode === 'account'
+                    ? selectedUser!.display_name
+                    : viewMode === 'model'
+                    ? (selectedModel!.model || selectedModel!.key)
+                    : (selectedProvider!.provider_name || selectedProvider!.key)}
+            </Typography>
+            {viewMode !== 'provider' && (
+                <Typography
+                    variant="body2"
+                    noWrap
+                    sx={{ color: 'text.secondary', fontFamily: viewMode === 'account' ? 'monospace' : undefined }}
+                >
+                    {viewMode === 'account' ? selectedUser!.user_id : (selectedModel!.provider_name || '—')}
+                </Typography>
+            )}
+            {viewMode === 'account' && selectedUser!.created_at && (
+                <Typography variant="body2" noWrap sx={{ color: 'text.secondary' }}>
+                    {t('dashboard.userUsage.joined', {
+                        value: formatDateTime(selectedUser!.created_at),
+                        defaultValue: `Added ${formatDateTime(selectedUser!.created_at)}`,
+                    })}
+                </Typography>
             )}
         </Box>
     );
@@ -318,7 +266,7 @@ function RosterDetailHeader({
 export default function UserUsagePage() {
     const { t } = useTranslation();
     const theme = useTheme();
-    const [range, setRange] = useState<TimeRange>('7d');
+    const [range, setRange] = useState<TimeRange>('today');
     const [viewMode, setViewMode] = useState<ViewMode>('account');
     const [tokens, setTokens] = useState<APITokenInfo[]>([]);
     const [userStats, setUserStats] = useState<AggregatedStat[]>([]);
@@ -481,6 +429,54 @@ export default function UserUsagePage() {
         : viewMode === 'model'
         ? selectedModel
         : selectedProvider;
+
+    // Share-bar input for the visual band — follows the active axis and uses
+    // each axis' own key space, so a bar click selects the exact roster row.
+    const shareItems = useMemo<ShareBarItem[]>(() => {
+        if (viewMode === 'account') {
+            return rows.map((row) => ({
+                key: accountKey(row),
+                name: row.display_name || row.user_id,
+                tokens: row.total_tokens,
+            }));
+        }
+        if (viewMode === 'model') {
+            return modelRoster.map((row) => ({
+                key: getModelKey(row),
+                name: modelName(row),
+                tokens: getTotalTokens(row),
+            }));
+        }
+        return providerRoster.map((row) => ({
+            key: getProviderKey(row),
+            name: providerName(row),
+            tokens: getTotalTokens(row),
+        }));
+    }, [viewMode, rows, modelRoster, providerRoster]);
+
+    // Detail-panel Top list input — ranks the selected subject's breakdown
+    // (their models, or the accounts using the selected model/provider).
+    // Display-only: the breakdown table has no row-selection state to link.
+    const detailList = viewMode === 'account'
+        ? accountAxis.detail
+        : viewMode === 'model'
+        ? modelAxis.detail
+        : providerAxis.detail;
+    const showDetailTop = !activeAxis.detailLoading && detailList.length > 0;
+    const detailShareItems = useMemo<ShareBarItem[]>(() => {
+        if (viewMode === 'account') {
+            return detailList.map((model) => ({
+                key: `${model.provider_uuid}-${model.model || model.key}`,
+                name: model.model || model.key,
+                tokens: getTotalTokens(model),
+            }));
+        }
+        return detailList.map((account) => ({
+            key: account.user_id || account.key,
+            name: accountDisplayName(account.user_id || account.key),
+            tokens: getTotalTokens(account),
+        }));
+    }, [viewMode, detailList, accountDisplayName]);
 
     // Single pass over the active axis' rows for every summary aggregate.
     const summary = useMemo(() => {
@@ -662,23 +658,6 @@ export default function UserUsagePage() {
                         <ToggleButtonGroup
                             size="small"
                             exclusive
-                            value={viewMode}
-                            onChange={(_, value: ViewMode | null) => value && setViewMode(value)}
-                            aria-label={t('dashboard.userUsage.viewMode', { defaultValue: 'View' })}
-                        >
-                            <ToggleButton value="account">
-                                {t('dashboard.userUsage.byAccount', { defaultValue: 'By account' })}
-                            </ToggleButton>
-                            <ToggleButton value="model">
-                                {t('dashboard.userUsage.byModel', { defaultValue: 'By model' })}
-                            </ToggleButton>
-                            <ToggleButton value="provider">
-                                {t('dashboard.userUsage.byProvider', { defaultValue: 'By provider' })}
-                            </ToggleButton>
-                        </ToggleButtonGroup>
-                        <ToggleButtonGroup
-                            size="small"
-                            exclusive
                             value={range}
                             onChange={(_, value: TimeRange | null) => value && setRange(value)}
                             aria-label={t('dashboard.userUsage.timeRange', { defaultValue: 'Time range' })}
@@ -719,14 +698,19 @@ export default function UserUsagePage() {
                 ))}
             </Grid>
 
+            {/* Roster table with the ranked Top list beside it (right) —
+                same active axis, one selection state; clicking a Top entry
+                selects the same subject the roster row would. Trend over time
+                is the personal Usage Dashboard's job, not this page's. */}
             <Grid container spacing={2} sx={{ alignItems: 'stretch' }}>
-                <Grid size={{ xs: 12 }} sx={{ display: 'flex' }}>
+                <Grid size={{ xs: 12, lg: 9 }} sx={{ display: 'flex', minWidth: 0 }}>
                     <Paper
                         elevation={0}
                         sx={{ ...usageTableCardSx, display: 'flex', flexDirection: 'column' }}
                     >
                         <Box
                             sx={{
+                                minHeight: 72,
                                 p: 2.5,
                                 display: 'flex',
                                 flexWrap: 'wrap',
@@ -737,14 +721,36 @@ export default function UserUsagePage() {
                                 borderColor: 'divider',
                             }}
                         >
-                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '0.875rem' }}>
-                                    {viewMode === 'account'
-                                        ? t('dashboard.userUsage.allUsers', { defaultValue: 'All registered users' })
-                                        : viewMode === 'model'
-                                        ? t('dashboard.userUsage.allModels', { defaultValue: 'All models' })
-                                        : t('dashboard.userUsage.allProviders', { defaultValue: 'All providers' })}
-                                </Typography>
+                            {/* Axis switcher lives on the table it controls
+                                (conventional dashboard position), and doubles
+                                as the card's title — a separate "All users"
+                                caption would repeat it. */}
+                            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                                <ToggleButtonGroup
+                                    size="small"
+                                    exclusive
+                                    value={viewMode}
+                                    onChange={(_, value: ViewMode | null) => value && setViewMode(value)}
+                                    aria-label={t('dashboard.userUsage.viewMode', { defaultValue: 'View' })}
+                                    sx={{
+                                        '& .MuiToggleButton-root': {
+                                            px: 1.5,
+                                            py: 0.25,
+                                            fontSize: '0.78rem',
+                                            textTransform: 'none',
+                                        },
+                                    }}
+                                >
+                                    <ToggleButton value="account">
+                                        {t('dashboard.userUsage.byAccount', { defaultValue: 'By account' })}
+                                    </ToggleButton>
+                                    <ToggleButton value="model">
+                                        {t('dashboard.userUsage.byModel', { defaultValue: 'By model' })}
+                                    </ToggleButton>
+                                    <ToggleButton value="provider">
+                                        {t('dashboard.userUsage.byProvider', { defaultValue: 'By provider' })}
+                                    </ToggleButton>
+                                </ToggleButtonGroup>
                                 <Chip
                                     size="small"
                                     label={activeAxis.visibleRows.length}
@@ -959,177 +965,132 @@ export default function UserUsagePage() {
                         )}
                     </Paper>
                 </Grid>
+                <Grid size={{ xs: 12, lg: 3, xl: 2.4 }} sx={{ display: 'flex', minWidth: 0 }}>
+                    <RosterTopList
+                        items={shareItems}
+                        selectedKey={activeAxis.selectedKey}
+                        onSelect={(key) => { activeAxis.setSelectedKey(key); scrollDetailIntoView(); }}
+                        title={viewMode === 'account'
+                            ? t('dashboard.userUsage.topAccounts', { defaultValue: 'Top accounts' })
+                            : viewMode === 'model'
+                            ? t('dashboard.userUsage.topModels', { defaultValue: 'Top models' })
+                            : t('dashboard.userUsage.topProviders', { defaultValue: 'Top providers' })}
+                        othersLabel={t('dashboard.userUsage.others', { defaultValue: 'Others' })}
+                        emptyLabel={t('dashboard.userUsage.noUsage', { defaultValue: 'No usage in this period' })}
+                        emptyHint={t('dashboard.userUsage.noUsageHintShort', { defaultValue: 'Try a longer time range.' })}
+                    />
+                </Grid>
 
-                <Grid
-                    ref={detailPanelRef}
-                    size={{ xs: 12 }}
-                    sx={{ display: 'flex', scrollMarginTop: { xs: 72, lg: 0 } }}
-                >
-                    <Paper elevation={0} sx={{ ...usageTableCardSx, display: 'flex' }}>
-                        <Box sx={{
-                            p: { xs: 2, sm: 2.5 },
-                            width: '100%',
-                            display: 'flex',
-                            flexDirection: 'column',
-                        }}>
-                        {detailSubject ? (
-                            <Stack spacing={2.5}>
+            </Grid>
+
+            {/* Detail section: the breakdown table gets the exact same card
+                anatomy as the roster card above (header bar + count chip +
+                flush table), so both tables read as one style. Subject
+                identity lives in the card's header bar; the "All models [N]"
+                sub-header it used to have is the same info as the chip. */}
+            <Grid
+                container
+                spacing={2}
+                ref={detailPanelRef}
+                sx={{ alignItems: 'stretch', scrollMarginTop: { xs: 72, lg: 0 } }}
+            >
+                {detailSubject ? (<>
+                    <Grid size={{ xs: 12, lg: showDetailTop ? 9 : 12 }} sx={{ display: 'flex', minWidth: 0 }}>
+                        <Paper elevation={0} sx={{ ...usageTableCardSx, display: 'flex', flexDirection: 'column' }}>
+                            <Box
+                                sx={{
+                                    minHeight: 72,
+                                    p: 2.5,
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 1.5,
+                                    borderBottom: '1px solid',
+                                    borderColor: 'divider',
+                                }}
+                            >
                                 <RosterDetailHeader
                                     viewMode={viewMode}
                                     selectedUser={selectedUser}
                                     selectedModel={selectedModel}
                                     selectedProvider={selectedProvider}
-                                    accountsCount={viewMode === 'model' ? modelAxis.detail.length : providerAxis.detail.length}
                                     t={t}
                                 />
-
-                                <Grid
-                                    container
-                                    sx={{
-                                        border: '1px solid',
-                                        borderColor: 'divider',
-                                        borderRadius: 1.5,
-                                        overflow: 'hidden',
-                                    }}
-                                >
-                                    {[
+                                <Chip size="small" label={activeAxis.detail.length} sx={{ height: 22 }} />
+                            </Box>
+                            {activeAxis.detailLoading ? (
+                                <Stack spacing={1.5} sx={{ overflow: 'hidden', p: 2.5 }}>
+                                    {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} variant="rounded" height={44} />)}
+                                </Stack>
+                            ) : viewMode === 'account' ? (
+                                <RosterBreakdownTable
+                                    items={accountAxis.detail}
+                                    rowKey={(model) => `${model.provider_uuid}-${model.model || model.key}`}
+                                    identityColumns={[
                                         {
-                                            label: t('dashboard.userUsage.input', { defaultValue: 'Input' }),
-                                            value: detailSubject.total_input_tokens,
-                                            color: TOKEN_COLORS.input.main,
-                                            detail: (detailSubject.cache_write_tokens || 0) > 0
-                                                ? t('dashboard.userUsage.cacheWriteIncluded', {
-                                                    value: formatNumber(detailSubject.cache_write_tokens || 0),
-                                                    defaultValue: `incl. ${formatNumber(detailSubject.cache_write_tokens || 0)} written`,
-                                                })
-                                                : '',
+                                            key: 'provider',
+                                            label: t('dashboard.userUsage.provider', { defaultValue: 'Provider' }),
+                                            render: (model) => model.provider_name || '—',
                                         },
                                         {
-                                            label: t('dashboard.userUsage.output', { defaultValue: 'Output' }),
-                                            value: detailSubject.total_output_tokens,
-                                            color: TOKEN_COLORS.output.main,
-                                            detail: '',
+                                            key: 'model',
+                                            label: t('dashboard.userUsage.model', { defaultValue: 'Model' }),
+                                            render: (model) => (
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>{model.model || model.key}</Typography>
+                                            ),
                                         },
+                                    ]}
+                                    ariaLabel={t('dashboard.userUsage.allModels', { defaultValue: 'All models' })}
+                                    noUsageLabel={t('dashboard.userUsage.noUsage', { defaultValue: 'No usage in this period' })}
+                                    noUsageHint={t('dashboard.userUsage.noUsageHint', { defaultValue: 'The user remains listed because their access is registered.' })}
+                                    usageMetricLabels={usageMetricLabels}
+                                />
+                            ) : (
+                                <RosterBreakdownTable
+                                    items={activeAxis.detail}
+                                    rowKey={(account) => account.user_id || account.key}
+                                    identityColumns={[
                                         {
-                                            label: t('dashboard.userUsage.cacheRead', { defaultValue: 'Cache Read' }),
-                                            value: detailSubject.cache_read_tokens || 0,
-                                            color: TOKEN_COLORS.cache.main,
-                                            detail: '',
-                                        },
-                                        {
-                                            label: t('dashboard.userUsage.cacheHitRate', { defaultValue: 'Cache hit rate' }),
-                                            value: `${getCacheHitRate(detailSubject.cache_read_tokens || 0, detailSubject.total_input_tokens).toFixed(1)}%`,
-                                            color: theme.palette[getCacheHitRateColor(getCacheHitRate(detailSubject.cache_read_tokens || 0, detailSubject.total_input_tokens))].main,
-                                            detail: '',
-                                        },
-                                    ].map(({ label, value, color, detail }, index) => (
-                                        <Grid
-                                            key={label}
-                                            size={{ xs: 6, sm: 3 }}
-                                            sx={{
-                                                borderColor: 'divider',
-                                                borderRight: {
-                                                    xs: index % 2 === 0 ? '1px solid' : 0,
-                                                    sm: index < 3 ? '1px solid' : 0,
-                                                },
-                                                borderBottom: {
-                                                    xs: index < 2 ? '1px solid' : 0,
-                                                    sm: 0,
-                                                },
-                                            }}
-                                        >
-                                            <Box sx={{ px: 1.5, py: 1.25 }}>
-                                                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
-                                                    <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>{label}</Typography>
-                                                </Stack>
-                                                <Typography variant="h4" sx={{ fontVariantNumeric: 'tabular-nums', mt: 0.5 }}>
-                                                    {typeof value === 'number' ? formatNumber(value) : value}
-                                                </Typography>
-                                                {detail && (
-                                                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
-                                                        {detail}
+                                            key: 'user',
+                                            label: t('dashboard.userUsage.user', { defaultValue: 'User' }),
+                                            render: (account) => (
+                                                <>
+                                                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                        {accountDisplayName(account.user_id || account.key)}
                                                     </Typography>
-                                                )}
-                                            </Box>
-                                        </Grid>
-                                    ))}
-                                </Grid>
-
-                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                    <Stack direction="row" sx={{ mb: 1.25, justifyContent: 'space-between', alignItems: 'baseline' }}>
-                                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                                            <Typography variant="subtitle2" sx={{ fontWeight: 650 }}>
-                                                {viewMode === 'account'
-                                                    ? t('dashboard.userUsage.allModels', { defaultValue: 'All models' })
-                                                    : viewMode === 'model'
-                                                    ? t('dashboard.userUsage.accountsUsingModelTitle', { defaultValue: 'Accounts using this model' })
-                                                    : t('dashboard.userUsage.accountsUsingProviderTitle', { defaultValue: 'Accounts using this provider' })}
-                                            </Typography>
-                                            <Chip size="small" label={activeAxis.detail.length} sx={{ height: 22 }} />
-                                        </Stack>
-                                        <Typography variant="body2">
-                                            {formatNumber(getTotalTokens(detailSubject))} {t('dashboard.userUsage.tokens', { defaultValue: 'tokens' }).toLocaleLowerCase()}
-                                        </Typography>
-                                    </Stack>
-                                    {activeAxis.detailLoading ? (
-                                        <Stack spacing={1.5} sx={{ overflow: 'hidden' }}>
-                                            {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} variant="rounded" height={44} />)}
-                                        </Stack>
-                                    ) : viewMode === 'account' ? (
-                                        <RosterBreakdownTable
-                                            items={accountAxis.detail}
-                                            rowKey={(model) => `${model.provider_uuid}-${model.model || model.key}`}
-                                            identityColumns={[
-                                                {
-                                                    key: 'provider',
-                                                    label: t('dashboard.userUsage.provider', { defaultValue: 'Provider' }),
-                                                    render: (model) => model.provider_name || '—',
-                                                },
-                                                {
-                                                    key: 'model',
-                                                    label: t('dashboard.userUsage.model', { defaultValue: 'Model' }),
-                                                    render: (model) => (
-                                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{model.model || model.key}</Typography>
-                                                    ),
-                                                },
-                                            ]}
-                                            ariaLabel={t('dashboard.userUsage.allModels', { defaultValue: 'All models' })}
-                                            noUsageLabel={t('dashboard.userUsage.noUsage', { defaultValue: 'No usage in this period' })}
-                                            noUsageHint={t('dashboard.userUsage.noUsageHint', { defaultValue: 'The user remains listed because their access is registered.' })}
-                                            usageMetricLabels={usageMetricLabels}
-                                        />
-                                    ) : (
-                                        <RosterBreakdownTable
-                                            items={activeAxis.detail}
-                                            rowKey={(account) => account.user_id || account.key}
-                                            identityColumns={[
-                                                {
-                                                    key: 'user',
-                                                    label: t('dashboard.userUsage.user', { defaultValue: 'User' }),
-                                                    render: (account) => (
-                                                        <>
-                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                                {accountDisplayName(account.user_id || account.key)}
-                                                            </Typography>
-                                                            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace' }}>
-                                                                {account.user_id || account.key}
-                                                            </Typography>
-                                                        </>
-                                                    ),
-                                                },
-                                            ]}
-                                            ariaLabel={viewMode === 'model'
-                                                ? t('dashboard.userUsage.accountsUsingModelTitle', { defaultValue: 'Accounts using this model' })
-                                                : t('dashboard.userUsage.accountsUsingProviderTitle', { defaultValue: 'Accounts using this provider' })}
-                                            noUsageLabel={t('dashboard.userUsage.noUsage', { defaultValue: 'No usage in this period' })}
-                                            usageMetricLabels={usageMetricLabels}
-                                        />
-                                    )}
-                                </Box>
-                            </Stack>
-                        ) : (
-                            <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+                                                    <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace' }}>
+                                                        {account.user_id || account.key}
+                                                    </Typography>
+                                                </>
+                                            ),
+                                        },
+                                    ]}
+                                    ariaLabel={viewMode === 'model'
+                                        ? t('dashboard.userUsage.accountsUsingModelTitle', { defaultValue: 'Accounts using this model' })
+                                        : t('dashboard.userUsage.accountsUsingProviderTitle', { defaultValue: 'Accounts using this provider' })}
+                                    noUsageLabel={t('dashboard.userUsage.noUsage', { defaultValue: 'No usage in this period' })}
+                                    usageMetricLabels={usageMetricLabels}
+                                />
+                            )}
+                        </Paper>
+                    </Grid>
+                    {showDetailTop && (
+                        <Grid size={{ xs: 12, lg: 3, xl: 2.4 }} sx={{ display: 'flex', minWidth: 0 }}>
+                            <RosterTopList
+                                items={detailShareItems}
+                                title={viewMode === 'account'
+                                    ? t('dashboard.userUsage.topModels', { defaultValue: 'Top models' })
+                                    : t('dashboard.userUsage.topAccounts', { defaultValue: 'Top accounts' })}
+                                othersLabel={t('dashboard.userUsage.others', { defaultValue: 'Others' })}
+                                emptyLabel={t('dashboard.userUsage.noUsage', { defaultValue: 'No usage in this period' })}
+                            />
+                        </Grid>
+                    )}
+                </>) : (
+                    <Grid size={{ xs: 12 }} sx={{ display: 'flex' }}>
+                        <Paper elevation={0} sx={{ ...usageTableCardSx, display: 'flex' }}>
+                            <Box sx={{ width: '100%', py: 6, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
                                 <Box>
                                     {viewMode === 'account'
                                         ? <Users sx={{ fontSize: 42, color: 'text.disabled', mb: 1 }} />
@@ -1145,10 +1106,9 @@ export default function UserUsagePage() {
                                     </Typography>
                                 </Box>
                             </Box>
-                        )}
-                        </Box>
-                    </Paper>
-                </Grid>
+                        </Paper>
+                    </Grid>
+                )}
             </Grid>
         </Box>
     );
