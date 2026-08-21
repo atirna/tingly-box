@@ -56,22 +56,36 @@ func (e *E2EProber) Probe(ctx context.Context, req *E2ERequest) (*E2EData, error
 	if len(probeHeaders) > 0 {
 		ctx = client.WithProbeHeaders(ctx, probeHeaders)
 	}
-	message := E2EMessage(req.TestMode, req.Message)
-	// Resolve the wire test_mode into flat decisions once, here, so the SDK
-	// helpers read booleans instead of re-branching on the three-valued mode.
-	//   streaming → Stream ; tool → Tool (tool always takes the non-stream path)
+	// Resolve the wire axes (legacy test_mode or Stream/Tool fields) into flat
+	// decisions once, here, so the SDK helpers read booleans instead of
+	// re-branching. Tool composes with both stream values: non-stream lifts
+	// structured tool_calls; stream keeps the raw chunk array.
+	stream, tool := req.ResolveAxes()
 	params := probeParams{
 		Model:    model,
-		Message:  message,
-		Stream:   req.TestMode == E2EModeStreaming,
-		Tool:     req.TestMode == E2EModeTool,
+		Message:  e2eMessage(req.Message, tool),
+		Stream:   stream,
+		Tool:     tool,
 		Thinking: req.Thinking,
 	}
-	result, err := e.probeProviderWithSDK(ctx, provider, params, req.Endpoint)
+	result, err := e.probeProviderWithSDK(ctx, provider, params, req.ResolveOpenAIEndpointOverride())
 	if cacheable && err == nil && result != nil && result.Success {
 		e.endpointCache.remember(provider.UUID, model, req.Endpoint, string(req.TestMode))
 	}
 	return result, err
+}
+
+// e2eMessage resolves the probe message: a custom override always wins; the
+// default switches on the tool axis (tool probes ask for a bash invocation,
+// everything else sends a greeting).
+func e2eMessage(custom string, tool bool) string {
+	if custom != "" {
+		return custom
+	}
+	if tool {
+		return E2EMessage(E2EModeTool, "")
+	}
+	return E2EMessage(E2EModeSimple, "")
 }
 
 // resolveTargetToProviderModel resolves an E2ERequest to a provider, model,
@@ -142,14 +156,15 @@ func (e *E2EProber) resolveProviderTarget(ctx context.Context, req *E2ERequest) 
 
 	// Direct probe: caller wants to test the upstream provider in isolation,
 	// bypassing TB's middleware stack entirely. Useful for diagnosing whether
-	// a failure is upstream vs TB-internal.
+	// a failure is upstream vs TB-internal. A protocol override selects the
+	// matching dual URL for dual-base providers (no-op for single-protocol).
 	if req.Direct {
 		logrus.Debugf("[probe-e2e] direct probe for provider %s (bypassing TB loopback)", provider.UUID)
-		return provider, model, nil, nil
+		return provider.ResolveStyle(req.ResolveClientStyle(provider.APIStyle)), model, nil, nil
 	}
 
 	// Google providers don't have a matching /tingly/{scenario} endpoint;
-	// probe them directly via SDK.
+	// probe them directly via SDK. They also have no protocol override path.
 	if provider.APIStyle == protocol.APIStyleGoogle {
 		return provider, model, nil, nil
 	}
@@ -164,16 +179,21 @@ func (e *E2EProber) resolveProviderTarget(ctx context.Context, req *E2ERequest) 
 		return provider, model, nil, nil
 	}
 
-	// Prefer the scenario the caller is probing under (the page's scenario, which
-	// may carry a profile suffix like "claude_code:p4") so the loopback URL
-	// matches the page. The api-style stays the provider's own — we test the
-	// provider with its real protocol, just under the page's scenario context.
+	// The client protocol the probe speaks: the provider's own by default,
+	// or the requested override. With an override the loopback scenario is
+	// the protocol family's canonical one (the SDK path and the URL must
+	// agree); without one we prefer the scenario the caller is probing under
+	// (the page's scenario, which may carry a profile suffix like
+	// "claude_code:p4") so the loopback URL matches the page.
+	clientStyle := req.ResolveClientStyle(provider.APIStyle)
 	scenario := typ.RuleScenario(req.Scenario)
-	if scenario == "" {
+	if req.Protocol != "" {
+		scenario, _ = defaultScenarioForAPIStyle(clientStyle)
+	} else if scenario == "" {
 		scenario, _ = defaultScenarioForAPIStyle(provider.APIStyle)
 	}
 	apiBase, _ := loopbackAPIBase(port, scenario)
-	apiStyle := provider.APIStyle
+	apiStyle := clientStyle
 	probeHeaders := map[string]string{
 		"X-Tingly-Probe-Service": req.ProviderUUID + ":" + model,
 		"X-Tingly-Debug-Routing": "1",

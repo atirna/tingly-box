@@ -149,7 +149,10 @@ const (
 	E2ETargetProviderConfig E2ETarget = "provider_config"
 )
 
-// E2EMode defines the test mode.
+// E2EMode defines the test mode. Legacy wire enum from before the stream/tool
+// axes were split — still accepted (and still sent by old callers), but the
+// orthogonal Stream/Tool fields below are the preferred spelling. See
+// E2ERequest.ResolveAxes for the precedence rules.
 type E2EMode string
 
 const (
@@ -157,6 +160,32 @@ const (
 	E2EModeStreaming E2EMode = "streaming"
 	E2EModeTool      E2EMode = "tool"
 )
+
+// ProbeProtocol is a concrete client-side wire protocol for a probe. There is
+// deliberately no "auto" value — the panel always speaks a concrete protocol,
+// defaulting to the provider's primary one (ResolveProbeProtocol).
+type ProbeProtocol string
+
+const (
+	// ProtocolOpenAIChat probes via OpenAI Chat Completions.
+	ProtocolOpenAIChat ProbeProtocol = "openai_chat"
+	// ProtocolOpenAIResponses probes via the OpenAI Responses API.
+	ProtocolOpenAIResponses ProbeProtocol = "openai_responses"
+	// ProtocolAnthropic probes via the Anthropic Messages API.
+	ProtocolAnthropic ProbeProtocol = "anthropic_v1"
+)
+
+// ProtocolFamily maps a ProbeProtocol onto the client API style it implies.
+func (p ProbeProtocol) Family() protocol.APIStyle {
+	switch p {
+	case ProtocolAnthropic:
+		return protocol.APIStyleAnthropic
+	case ProtocolOpenAIChat, ProtocolOpenAIResponses:
+		return protocol.APIStyleOpenAI
+	default:
+		return ""
+	}
+}
 
 // ThinkingLevel is the probe-facing subset of the canonical thinking-effort
 // ladder (internal/protocol/thinking). Orthogonal to E2EMode — composes with
@@ -192,7 +221,15 @@ type E2ERequest struct {
 	APIStyle string `json:"api_style,omitempty"`
 	Token    string `json:"token,omitempty"`
 
-	TestMode E2EMode `json:"test_mode" binding:"required"`
+	TestMode E2EMode `json:"test_mode,omitempty" example:"streaming"`
+
+	// Stream and Tool are the orthogonal axes that replace the legacy
+	// three-valued test_mode. When test_mode is set it wins (legacy callers);
+	// when it is empty these fields apply (nil normalizes to false).
+	// Note: tool does NOT force either stream value — both combinations are
+	// valid (non-stream lifts structured tool_calls; stream keeps raw chunks).
+	Stream *bool `json:"stream,omitempty" example:"true"`
+	Tool   *bool `json:"tool,omitempty" example:"false"`
 
 	Message string `json:"message,omitempty"`
 
@@ -207,7 +244,20 @@ type E2ERequest struct {
 	// Responses, everything else probes Chat. Used to test whether a
 	// provider genuinely supports Responses before a rule starts routing
 	// there (e.g. the Codex-page "enable native Responses" toggle).
+	//
+	// Legacy field — Protocol below is the preferred spelling and wins when
+	// both are set.
 	Endpoint string `json:"endpoint,omitempty" example:"responses"`
+
+	// Protocol forces the client-side wire protocol: openai_chat,
+	// openai_responses, or anthropic_v1. No "auto" value — empty (default)
+	// keeps the provider's primary protocol (its APIStyle, plus the Codex
+	// OAuth → Responses default for OpenAI providers). For dual-base
+	// providers the matching dual URL is selected; for through-TB probes the
+	// loopback speaks the requested protocol and TB's transform pipeline
+	// handles the upstream exactly as production traffic does.
+	// Not supported for rule targets (the rule's scenario fixes the protocol).
+	Protocol ProbeProtocol `json:"protocol,omitempty" example:"openai_responses"`
 
 	// Thinking sets the extended-thinking effort for the probe. Orthogonal to
 	// TestMode — composes with both streaming and non-streaming probes. "none"
@@ -265,9 +315,27 @@ func ValidateE2ERequest(req *E2ERequest) error {
 	}
 
 	switch req.TestMode {
-	case E2EModeSimple, E2EModeStreaming, E2EModeTool:
+	case "", E2EModeSimple, E2EModeStreaming, E2EModeTool:
 	default:
 		return &ValidationError{Field: "test_mode", Message: "test_mode must be 'simple', 'streaming', or 'tool'"}
+	}
+
+	switch req.Endpoint {
+	case "", "chat", "responses":
+	default:
+		return &ValidationError{Field: "endpoint", Message: "endpoint must be 'chat' or 'responses'"}
+	}
+
+	switch req.Protocol {
+	case "", ProtocolOpenAIChat, ProtocolOpenAIResponses, ProtocolAnthropic:
+	default:
+		return &ValidationError{Field: "protocol", Message: "protocol must be 'openai_chat', 'openai_responses', or 'anthropic_v1'"}
+	}
+
+	// A rule's scenario already fixes the wire protocol; an override there
+	// would be silently ignored, so reject it instead.
+	if req.TargetType == E2ETargetRule && req.Protocol != "" {
+		return &ValidationError{Field: "protocol", Message: "protocol override is not supported for rule targets (fixed by the rule's scenario)"}
 	}
 
 	// Thinking is optional; empty normalizes to "none". Only the probe-facing
@@ -280,6 +348,51 @@ func ValidateE2ERequest(req *E2ERequest) error {
 	}
 
 	return nil
+}
+
+// ResolveAxes returns the effective stream/tool decisions. A non-empty legacy
+// test_mode wins (mapping: simple → off/off, streaming → on/off, tool → off/on
+// — tool mode historically takes the non-stream path so structured tool_calls
+// come back); with test_mode empty the Stream/Tool fields apply (nil → false).
+func (req *E2ERequest) ResolveAxes() (stream, tool bool) {
+	switch req.TestMode {
+	case E2EModeStreaming:
+		return true, false
+	case E2EModeTool:
+		return false, true
+	case E2EModeSimple:
+		return false, false
+	}
+	if req.Stream != nil {
+		stream = *req.Stream
+	}
+	if req.Tool != nil {
+		tool = *req.Tool
+	}
+	return stream, tool
+}
+
+// ResolveClientStyle returns the client-side API style the probe should speak,
+// after applying the protocol override (if any) to the provider's own style.
+// Returns the provider style unchanged for "", google, and unsupported
+// combinations — callers decide whether that is an error.
+func (req *E2ERequest) ResolveClientStyle(providerStyle protocol.APIStyle) protocol.APIStyle {
+	if req.Protocol == "" {
+		return providerStyle
+	}
+	return req.Protocol.Family()
+}
+
+// ResolveOpenAIEndpointOverride collapses Protocol + legacy Endpoint into the
+// endpointOverride consumed by resolveOpenAIProbeEndpoint. Protocol wins.
+func (req *E2ERequest) ResolveOpenAIEndpointOverride() string {
+	switch req.Protocol {
+	case ProtocolOpenAIChat:
+		return "chat"
+	case ProtocolOpenAIResponses:
+		return "responses"
+	}
+	return req.Endpoint
 }
 
 // E2EMessage returns the probe message body based on test mode, with an

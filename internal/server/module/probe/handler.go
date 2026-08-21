@@ -46,6 +46,13 @@ type LightweightResponse struct {
 	Data    *probe.LightweightProbeResponseData `json:"data,omitempty"`
 }
 
+// CurlResponse is the JSON envelope returned by POST /probe/curl.
+type CurlResponse struct {
+	Success bool           `json:"success"`
+	Error   *errorDetail   `json:"error,omitempty"`
+	Data    *probe.CurlData `json:"data,omitempty"`
+}
+
 // HandleE2EProbe handles SDK-level end-to-end probes (unified endpoint for
 // rules, saved providers, and unsaved provider configs).
 func (h *Handler) HandleE2EProbe(c *gin.Context) {
@@ -92,6 +99,48 @@ func (h *Handler) HandleE2EProbe(c *gin.Context) {
 	// LatencyMs is owned by the SDK probe (pure upstream round-trip time) — do
 	// not overwrite it here.
 	c.JSON(http.StatusOK, E2EResponse{Success: true, Data: data})
+}
+
+// HandleCurlProbe constructs the curl equivalent of a probe request without
+// executing it. Same request body and validation as POST /probe; secrets are
+// returned as placeholder env vars ($TB_API_KEY / $UPSTREAM_API_KEY).
+func (h *Handler) HandleCurlProbe(c *gin.Context) {
+	var req probe.E2ERequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, CurlResponse{
+			Success: false,
+			Error: &errorDetail{
+				Message: "Invalid request body: " + err.Error(),
+				Type:    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	if err := probe.ValidateE2ERequest(&req); err != nil {
+		c.JSON(http.StatusBadRequest, CurlResponse{
+			Success: false,
+			Error: &errorDetail{
+				Message: err.Error(),
+				Type:    "validation_error",
+			},
+		})
+		return
+	}
+
+	data, err := h.e2e.BuildCurl(c.Request.Context(), &req)
+	if err != nil {
+		c.JSON(http.StatusOK, CurlResponse{
+			Success: false,
+			Error: &errorDetail{
+				Message: err.Error(),
+				Type:    "probe_error",
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, CurlResponse{Success: true, Data: data})
 }
 
 // HandleLightweightProbe handles the optional "Test Connection" probe used
