@@ -6,6 +6,8 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
+
+	"github.com/tingly-dev/tingly-box/internal/protocol/vision"
 )
 
 // getProbeToolsAnthropic returns predefined tools in Anthropic format for probe
@@ -120,5 +122,44 @@ func getProbeToolsResponses() []responses.ToolUnionParam {
 func getProbeToolChoiceAutoAnthropic() anthropic.ToolChoiceUnionParam {
 	return anthropic.ToolChoiceUnionParam{
 		OfAuto: &anthropic.ToolChoiceAutoParam{},
+	}
+}
+
+// Vision-channel tool definitions: the synthetic capture tool the tool-channel
+// vision probe pretends to have called (vision.ToolName). Declared so the
+// tool-call history in the probe request is self-consistent for providers
+// that validate tool references.
+
+func getVisionToolOpenAI() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name:        vision.ToolName,
+		Description: param.NewOpt("Capture an image for analysis"),
+		Parameters: shared.FunctionParameters{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	})
+}
+
+func getVisionToolResponses() responses.ToolUnionParam {
+	return responses.ToolParamOfFunction(
+		vision.ToolName,
+		map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+		false,
+	)
+}
+
+func getVisionToolAnthropic() anthropic.ToolUnionParam {
+	return anthropic.ToolUnionParam{
+		OfTool: &anthropic.ToolParam{
+			Name: vision.ToolName,
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Type:       "object",
+				Properties: map[string]any{},
+			},
+		},
 	}
 }

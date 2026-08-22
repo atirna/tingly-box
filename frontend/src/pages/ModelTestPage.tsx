@@ -170,7 +170,13 @@ const ModelTestPage = () => {
             setLoading(false);
         };
         init();
-    }, [fetchProvider, fetchModels]);
+        // Depend on the route param only. fetchModels' identity changes every
+        // time fetchProvider stores a fresh provider object, so depending on
+        // the callbacks re-runs init forever: the page flips back to the
+        // loading branch every few seconds, unmounting the probe dialog
+        // mid-use and pinning the models list on "Refreshing…".
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [providerUuid]);
 
     const handleTestModel = async (model: string) => {
         if (!provider || testingModel) return;

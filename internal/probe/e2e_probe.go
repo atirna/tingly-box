@@ -60,6 +60,11 @@ func (e *E2EProber) Probe(ctx context.Context, req *E2ERequest) (*E2EData, error
 	cacheable := req.TargetType == E2ETargetProvider && req.Direct &&
 		(endpointOverride == "chat" || endpointOverride == "responses")
 	shapeKey := fmt.Sprintf("%v-%v", stream, tool)
+	if req.Vision.Enabled() {
+		// Vision probes are a distinct shape; the non-vision key format stays
+		// unchanged so existing cache entries remain valid.
+		shapeKey += "-" + string(req.Vision)
+	}
 	if cacheable && e.endpointCache.hit(provider.UUID, model, endpointOverride, shapeKey) {
 		return &Result{Success: true, Message: "Verified recently (cached)"}, nil
 	}
@@ -73,6 +78,7 @@ func (e *E2EProber) Probe(ctx context.Context, req *E2ERequest) (*E2EData, error
 		Stream:   stream,
 		Tool:     tool,
 		Thinking: req.Thinking,
+		Vision:   req.Vision,
 	}
 	result, err := e.probeProviderWithSDK(ctx, provider, params, endpointOverride)
 	if cacheable && err == nil && result != nil && result.Success {

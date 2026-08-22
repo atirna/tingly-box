@@ -90,7 +90,19 @@ this extension — `chatcompletion_toolmessage_patch_test.go` (in the fork) lock
 
 ## 4. Harness coverage (vmodel-driven)
 
-Per the TDD strategy on #1606, coverage lives at two levels:
+The canonical image fixture — a 256×256 red PNG plus the "what color?" prompt and
+the tool-channel turn script — lives in `internal/protocol/vision` (the
+`thinking`-package pattern) so every consumer sends the exact same shapes:
+the probe subsystem's `vision` axis, the content-shape harness cases below,
+and future vision health checks.
+
+Per the TDD strategy on #1606, coverage lives at three levels:
+
+- **Probe (user-facing runtime)**: the Probe dialog's `vision` axis
+  (`none`/`user`/`tool` — see `.design/probe.md` § Test axes) sends the
+  fixture through the TB loopback and the real transform pipeline, with cURL
+  export via the shared param builders. `internal/probe/vision_test.go` pins
+  the builder shapes.
 
 - **Unit** (`internal/protocol/request/image_conversions_test.go` — user
   channel; `image_tool_conversions_test.go` — tool channel;
@@ -116,7 +128,8 @@ Per the TDD strategy on #1606, coverage lives at two levels:
   the Anthropic→Google path still extracts text only from `tool_result`.
 - **Remote (http) image URLs → Google** are stubbed as `[Image: <url>]` text
   because Gemini needs fetched bytes or `file_data`.
-- **Vision health probes**: the health monitor currently has no image-bearing
-  probe; #1606's comment showed a probe hitting the same corrupted-part 400.
-  Once a vision probe is added it must send both a user image and a
-  tool-image turn (both shapes in §2).
+- **Vision health probes**: the E2E probe now has the `vision` axis (§4), but
+  the periodic health monitor does not yet send an image-bearing check;
+  #1606's comment showed a health probe hitting the corrupted-part 400. When
+  added, it should reuse the probe param builders with
+  `probeParams{Vision: ...}` for both channels.

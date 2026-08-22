@@ -107,6 +107,7 @@ func (h *Handler) HandleE2EProbe(c *gin.Context) {
 		data.Direct = req.Direct
 		data.Protocol = req.Protocol
 		data.Thinking = req.Thinking
+		data.Vision = req.Vision
 	}
 
 	// LatencyMs is owned by the SDK probe (pure upstream round-trip time) — do

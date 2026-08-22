@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
+	"github.com/tingly-dev/tingly-box/internal/protocol/vision"
 )
 
 // This file is the request-content-shape regression suite, shared by both the
@@ -302,11 +303,11 @@ func contentShapeCases() []contentShapeCase {
 		}
 	}
 
-	// Image fixtures (issue #1606): a tiny data-URL image returned by a tool
-	// (the shape agent frameworks use for screenshots) and, on the Anthropic
-	// side, the equivalent base64 image inside a tool_result block.
-	const imgBase64 = "iVBORw0KGgo="
-	const imgDataURL = "data:image/png;base64," + imgBase64
+	// Image fixtures (issue #1606): the canonical vision fixture from
+	// internal/protocol/vision — the same image the probe subsystem's vision
+	// axis sends, so what this suite proves is exactly what probes emit.
+	const imgBase64 = vision.FixturePNGBase64
+	const imgDataURL = vision.FixtureDataURL
 
 	toolImageBody := func() map[string]any {
 		return map[string]any{
