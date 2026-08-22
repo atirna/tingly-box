@@ -1,6 +1,7 @@
 package request
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 
@@ -153,20 +154,36 @@ func ConvertOpenAIToGoogleRequest(req *openai.ChatCompletionNewParams, defaultMa
 			}
 
 		case msg.OfTool != nil:
-			// Tool result message → function_response in user content
+			// Tool result message → function_response in user content.
+			// Text (string form, or joined array parts) becomes one blob;
+			// image_url parts (issue #1606) become typed inline-data blobs
+			// so they are not silently dropped.
+			parts := msg.OfTool.Content.OfArrayOfContentParts
+			text := msg.OfTool.Content.OfString.Value
+			if text == "" {
+				text = joinTextContentPartsFromUnion(parts)
+			}
+			responseParts := []*genai.FunctionResponsePart{}
+			if text != "" || len(parts) == 0 {
+				responseParts = append(responseParts, &genai.FunctionResponsePart{
+					InlineData: &genai.FunctionResponseBlob{Data: []byte(text)},
+				})
+			}
+			for _, part := range parts {
+				if part.OfImageURL == nil {
+					continue
+				}
+				if blob := imageURLToGoogleBlob(part.OfImageURL.ImageURL.URL); blob != nil {
+					responseParts = append(responseParts, &genai.FunctionResponsePart{InlineData: blob})
+				}
+			}
 			toolContent := &genai.Content{
 				Role: "user",
 				Parts: []*genai.Part{
 					{
 						FunctionResponse: &genai.FunctionResponse{
-							Name: msg.OfTool.ToolCallID,
-							Parts: []*genai.FunctionResponsePart{
-								{
-									InlineData: &genai.FunctionResponseBlob{
-										Data: []byte(msg.OfTool.Content.OfString.Value),
-									},
-								},
-							},
+							Name:  msg.OfTool.ToolCallID,
+							Parts: responseParts,
 						},
 					},
 				},
@@ -302,4 +319,22 @@ func ConvertAnthropicBetaToGoogleTools(tools []anthropic.BetaToolUnionParam) []*
 
 func ConvertAnthropicBetaToGoogleToolChoice(tc *anthropic.BetaToolChoiceUnionParam) *genai.ToolConfig {
 	return convertAnthropicToolChoiceViewToGoogle(viewAnthropicBetaToolChoice(tc))
+}
+
+// imageURLToGoogleBlob decodes an OpenAI image_url string (data: URL) into a
+// typed inline-data function-response blob. Returns nil for remote URLs and
+// undecodable payloads — Gemini inline data needs raw bytes, not a reference.
+func imageURLToGoogleBlob(url string) *genai.FunctionResponseBlob {
+	mediaType, data, _ := ParseImageURLToAnthropicSource(url)
+	if mediaType == "" || data == "" {
+		return nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return nil
+	}
+	return &genai.FunctionResponseBlob{
+		MIMEType: mediaType,
+		Data:     raw,
+	}
 }

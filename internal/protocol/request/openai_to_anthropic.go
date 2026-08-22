@@ -107,18 +107,41 @@ func ConvertOpenAIToAnthropicRequest(req *openai.ChatCompletionNewParams, defaul
 
 		case msg.OfTool != nil:
 			// Tool result message → tool_result block (must be USER role).
-			// Content may be a plain string or an array of text blocks.
-			content := msg.OfTool.Content.OfString.Value
+			// Content may be a plain string or an array of content parts;
+			// image_url parts (tool screenshots — issue #1606) become image
+			// blocks inside the tool_result content.
+			var block anthropic.BetaContentBlockParamUnion
 			hasCacheControl := false
-			if content == "" {
-				content = joinTextContentPartsFromUnion(msg.OfTool.Content.OfArrayOfContentParts)
+			if content := msg.OfTool.Content.OfString.Value; content != "" {
+				block = anthropic.NewBetaToolResultBlock(msg.OfTool.ToolCallID, content, false)
+			} else {
+				var resultBlocks []anthropic.BetaToolResultBlockParamContentUnion
 				for _, part := range msg.OfTool.Content.OfArrayOfContentParts {
-					if part.OfText != nil {
+					switch {
+					case part.OfText != nil:
+						if part.OfText.Text == "" {
+							continue
+						}
+						resultBlocks = append(resultBlocks, anthropic.BetaToolResultBlockParamContentUnion{
+							OfText: &anthropic.BetaTextBlockParam{Text: part.OfText.Text},
+						})
 						hasCacheControl = hasCacheControl || hasOpenAITextCacheBreakpoint(*part.OfText)
+					case part.OfImageURL != nil:
+						imageBlock, ok := openAIImageURLToAnthropicBetaBlock(part.OfImageURL.ImageURL.URL)
+						if !ok {
+							continue
+						}
+						resultBlocks = append(resultBlocks, anthropic.BetaToolResultBlockParamContentUnion{
+							OfImage: imageBlock.OfImage,
+						})
+						hasCacheControl = hasCacheControl || !openaiparam.IsOmitted(part.OfImageURL.PromptCacheBreakpoint)
 					}
 				}
+				block = anthropic.BetaContentBlockParamUnion{OfToolResult: &anthropic.BetaToolResultBlockParam{
+					ToolUseID: msg.OfTool.ToolCallID,
+					Content:   resultBlocks,
+				}}
 			}
-			block := anthropic.NewBetaToolResultBlock(msg.OfTool.ToolCallID, content, false)
 			if hasCacheControl {
 				block.OfToolResult.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
 			}

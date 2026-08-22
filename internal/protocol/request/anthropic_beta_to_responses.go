@@ -126,28 +126,19 @@ func convertBetaUserMessageToResponsesInput(msg anthropic.BetaMessageParam) []re
 		// When there are tool_result blocks, we need to create separate items
 		for _, block := range msg.Content {
 			if block.OfToolResult != nil {
-				// Convert tool_result to Responses API function call output
-				output := responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}
-				content := convertBetaToolResultContent(block.OfToolResult.Content)
-				if !param.IsOmitted(block.OfToolResult.CacheControl) {
-					text := &responses.ResponseInputTextContentParam{
-						Text:                  content,
-						PromptCacheBreakpoint: responses.NewResponseInputTextContentPromptCacheBreakpointParam(),
-					}
-					output.OfResponseFunctionCallOutputItemArray = responses.ResponseFunctionCallOutputItemListParam{
-						{OfInputText: text},
-					}
-				} else {
-					output.OfString = ParamOpt(content)
+				// Bridge to the v1 view and share the tool_result →
+				// function_call_output conversion with the v1 converter
+				// (image entries included — issue #1606).
+				items = append(items, responsesFunctionCallOutputFromToolResult(viewAnthropicBetaBlock(block).OfToolResult))
+			} else if block.OfImage != nil {
+				// Image content alongside tool results (issue #1606): forward
+				// as a user message with an input_image part instead of
+				// dropping it.
+				if url := betaImageBlockToOpenAIURL(block.OfImage); url != "" {
+					items = append(items, responseMessageWithContent("user", responses.ResponseInputMessageContentListParam{
+						{OfInputImage: &responses.ResponseInputImageParam{ImageURL: ParamOpt(url)}},
+					}))
 				}
-				outputItem := responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: block.OfToolResult.ToolUseID,
-					Output: output,
-					Status: "completed",
-				}
-				items = append(items, responses.ResponseInputItemUnionParam{
-					OfFunctionCallOutput: &outputItem,
-				})
 			} else if block.OfText != nil && block.OfText.Text != "" {
 				// Text content alongside tool results
 				content := responses.EasyInputMessageContentUnionParam{OfString: ParamOpt(block.OfText.Text)}
