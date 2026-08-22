@@ -34,6 +34,7 @@ import {
     type ProbeAxes,
     resolveInitialAxes,
     protocolAvailability,
+    visionAvailable,
     scopeAvailable,
 } from './probeConfig';
 import { ProbeControls } from './ProbeControls';
@@ -472,8 +473,12 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
     // a result-echoed protocol that this target can't speak falls back to the
     // concrete default.
     const protoAvail = useMemo(() => protocolAvailability(providerInfo), [providerInfo]);
+    const visionOk = visionAvailable(providerInfo);
     useEffect(() => {
         setAxes((prev) => {
+            if (!visionOk && prev.vision !== 'none') {
+                return { ...prev, vision: 'none' };
+            }
             if (protoAvail.locked && prev.protocol !== protoAvail.default) {
                 return { ...prev, protocol: protoAvail.default };
             }
@@ -486,7 +491,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
             }
             return prev;
         });
-    }, [protoAvail]);
+    }, [protoAvail, visionOk]);
 
     // Protocol axis per target type: providers reduce to what they can speak;
     // rule targets are locked to their scenario's protocol.
@@ -509,6 +514,10 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
 
     const scopeDisabled = !scopeAvailable(targetType);
     const scopeHint = scopeDisabled ? t('probe.scopeRuleLocked') : t('probe.scopeHint');
+    const visionControl = useMemo(
+        () => ({ disabled: !visionOk, hint: t('probe.visionGoogle') }),
+        [visionOk, t],
+    );
 
     // buildBody is the single request constructor shared by Run Test and the
     // cURL section — the two can never disagree about what would be sent.
@@ -527,6 +536,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
             stream: axes.stream,
             tool: axes.tool,
             thinking: axes.thinking,
+            ...(axes.vision !== 'none' ? { vision: axes.vision } : {}),
             ...(message ? { message } : {}),
         }),
         [targetType, scenario, targetId, model, axes, message],
@@ -674,6 +684,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                         protocol={protocolControl}
                         scopeDisabled={scopeDisabled}
                         scopeHint={scopeHint}
+                        vision={visionControl}
                     />
                 </Box>
 

@@ -13,6 +13,13 @@ export type ProbeProtocol = 'openai_chat' | 'openai_responses' | 'anthropic_v1';
 // combinations. '' (absent) == 'none' == no thinking param sent.
 export type ProbeThinking = 'none' | 'low' | 'medium' | 'high';
 
+// Vision channel: attach the canonical probe image (backend
+// internal/protocol/vision — a 1×1 red PNG + "what color?" prompt) in the
+// user message or as a synthetic tool-result turn. A vision-capable route
+// answers "red"; anything else reveals a drop or corruption along the path.
+// 'none' (default) sends no image. Not supported for Google targets.
+export type ProbeVision = 'none' | 'user' | 'tool';
+
 export interface ProbeRequest {
     target_type: ProbeTargetType;
 
@@ -44,6 +51,10 @@ export interface ProbeRequest {
     // param; 'low'/'medium'/'high' map to the provider's native thinking knob.
     // Orthogonal to stream/tool.
     thinking?: ProbeThinking;
+
+    // Vision: attach the canonical probe image in the user message ('user')
+    // or a synthetic tool-result turn ('tool'). Omitted/'none' sends no image.
+    vision?: ProbeVision;
 }
 
 export interface ProbeToolCall {
@@ -73,6 +84,7 @@ export interface ProbeResultData {
     direct?: boolean;
     protocol?: ProbeProtocol;
     thinking?: ProbeThinking;
+    vision?: ProbeVision;
     // Canonical token usage (same shape as protocol.TokenUsage on the backend):
     // input_tokens / output_tokens / cache_read_tokens / cache_write_tokens /
     // reasoning_tokens. Present for OpenAI Chat/Responses and Anthropic probes

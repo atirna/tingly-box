@@ -1,4 +1,4 @@
-import type { ProbeThinking, ProbeProtocol, ProbeResult, ProbeTargetType } from '@/types/probe';
+import type { ProbeThinking, ProbeProtocol, ProbeResult, ProbeTargetType, ProbeVision } from '@/types/probe';
 import type { Provider } from '@/types/provider';
 
 // ProbeAxes is the panel's orthogonal control state. Every axis is one knob:
@@ -12,6 +12,7 @@ export interface ProbeAxes {
     stream: boolean;
     tool: boolean;
     thinking: ProbeThinking;
+    vision: ProbeVision;
     // '' means "no protocol override" — the backend resolves the target's
     // primary protocol (provider APIStyle, Codex OAuth → Responses).
     protocol: ProbeProtocol | '';
@@ -22,6 +23,7 @@ export const DEFAULT_AXES: ProbeAxes = {
     stream: true, // Stream default — closest to production traffic
     tool: false,
     thinking: 'none',
+    vision: 'none',
     protocol: '',
     direct: false,
 };
@@ -49,6 +51,7 @@ export function resolveInitialAxes(opts: {
         if (typeof data.direct === 'boolean') axes.direct = data.direct;
         if (data.protocol) axes.protocol = data.protocol;
         if (data.thinking) axes.thinking = data.thinking;
+        if (data.vision) axes.vision = data.vision;
     }
 
     // Priority 1: explicit prop (kept for callers that know better).
@@ -66,8 +69,18 @@ export function resolveInitialAxes(opts: {
     if (!scopeAvailable(opts.targetType)) {
         axes.direct = false;
     }
+    if (!visionAvailable(opts.provider ?? null)) {
+        axes.vision = 'none';
+    }
 
     return axes;
+}
+
+// visionAvailable: the vision axis needs a probe image mapping, which the
+// Google SDK path does not have (mirrors the backend dispatch rejection).
+// Unknown/still-loading providers stay enabled; the dialog clamps late.
+export function visionAvailable(provider: Provider | null): boolean {
+    return provider?.api_style !== 'google';
 }
 
 // scopeAvailable: only provider targets can bypass TB. Rule probes must

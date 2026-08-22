@@ -30,6 +30,12 @@ interface ProbeControlsProps {
     };
     scopeDisabled: boolean;
     scopeHint: string;
+    // Vision axis rendering: disabled (with hint) for targets without a probe
+    // image mapping (Google's own SDK).
+    vision: {
+        disabled: boolean;
+        hint: string;
+    };
 }
 
 // Rail-short label + full name (hover tooltip) per protocol — one map so the
@@ -122,6 +128,7 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
     protocol,
     scopeDisabled,
     scopeHint,
+    vision,
 }) => {
     const { t } = useTranslation();
     const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -183,6 +190,22 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
                                     { value: 'off', label: t('probe.toolOff') },
                                     { value: 'on', label: t('probe.toolOn') },
                                 ]}
+                            />
+                        </Axis>
+
+                        {/* Vision: does this route actually deliver images? 'User' puts the
+                            probe image in the user message; 'Tool' returns it from a synthetic
+                            tool round — the two channels that fail independently (issue #1606). */}
+                        <Axis label={t('probe.vision')} hint={vision.disabled ? vision.hint : t('probe.visionHint')}>
+                            <ExclusiveToggle
+                                value={axes.vision}
+                                onChange={(v) => set({ vision: v })}
+                                options={[
+                                    { value: 'none', label: t('probe.visionNone') },
+                                    { value: 'user', label: t('probe.visionUser') },
+                                    { value: 'tool', label: t('probe.visionTool') },
+                                ]}
+                                disabled={vision.disabled}
                             />
                         </Axis>
 
