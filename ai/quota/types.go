@@ -120,7 +120,7 @@ type UsageWindow struct {
 	// Quota data
 	Used        float64  `json:"used"`                // used amount
 	Limit       float64  `json:"limit"`               // quota limit (0 means unlimited)
-	Available   *float64 `json:"available,omitempty"` // amount currently available when upstream does not report the original limit
+	Available   *float64 `json:"available,omitempty"` // amount currently available or remaining, independent of whether a usage percentage is known
 	UsedPercent float64  `json:"used_percent"`        // usage percentage (0-100)
 
 	// Time window

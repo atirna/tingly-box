@@ -358,8 +358,10 @@ func addKimiCodeWallet(usage *quota.ProviderUsage, wallet *kimiCodeBoosterWallet
 
 	total := wallet.Balance.Amount.Value / kimiCodeFixedPointCent / 100
 	remaining := 0.0
+	var available *float64
 	if wallet.Balance.AmountLeft.Valid {
 		remaining = wallet.Balance.AmountLeft.Value / kimiCodeFixedPointCent / 100
+		available = &remaining
 	}
 	used := total - remaining
 	if used < 0 {
@@ -377,13 +379,15 @@ func addKimiCodeWallet(usage *quota.ProviderUsage, wallet *kimiCodeBoosterWallet
 	// A wallet balance is topped up, not reset, so waiting brings none of it
 	// back. Both halves are known, so the proportion spent is still real.
 	usage.AddWindow("booster", &quota.UsageWindow{
-		Type:        quota.WindowTypeBalance,
-		Kind:        quota.WindowKindResource,
-		Used:        used,
-		Limit:       total,
-		Unit:        quota.UsageUnitCurrency,
-		Label:       "Booster balance",
-		Description: fmt.Sprintf("%.2f %s remaining", remaining, currency),
+		Type:         quota.WindowTypeBalance,
+		Kind:         quota.WindowKindResource,
+		Used:         used,
+		Limit:        total,
+		Available:    available,
+		Unit:         quota.UsageUnitCurrency,
+		CurrencyCode: currency,
+		Label:        "Booster balance",
+		Description:  fmt.Sprintf("%.2f %s remaining", remaining, currency),
 	})
 
 	if wallet.MonthlyUsed.PriceInCents.Valid || wallet.MonthlyChargeLimit.PriceInCents.Valid {

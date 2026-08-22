@@ -111,6 +111,12 @@ func TestKimiCodeFetcherFetch(t *testing.T) {
 	if booster.Used != 100 || booster.Limit != 200 || booster.Unit != quota.UsageUnitCurrency {
 		t.Errorf("booster values = used %v, limit %v, unit %q", booster.Used, booster.Limit, booster.Unit)
 	}
+	if booster.Available == nil || *booster.Available != 100 {
+		t.Errorf("booster Available = %v, want 100", booster.Available)
+	}
+	if booster.CurrencyCode != "USD" {
+		t.Errorf("booster CurrencyCode = %q, want USD", booster.CurrencyCode)
+	}
 
 	if usage.Cost == nil {
 		t.Fatal("Cost is nil")

@@ -179,6 +179,12 @@ func TestCodexFetcher_Fetch(t *testing.T) {
 	if !credits.Unknown {
 		t.Error("credits balance has no percentage; it must be marked unknown")
 	}
+	if credits.Available == nil || *credits.Available != 150 {
+		t.Errorf("credits Available = %v, want 150", credits.Available)
+	}
+	if credits.CurrencyCode != "USD" {
+		t.Errorf("credits CurrencyCode = %q, want USD", credits.CurrencyCode)
+	}
 	if credits.Description != "$150.00 remaining" {
 		t.Errorf("credits Description = %q, want '$150.00 remaining'", credits.Description)
 	}
