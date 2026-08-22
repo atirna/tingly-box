@@ -363,6 +363,8 @@ func inferProviderType(provider *typ.Provider) ProviderType {
 	switch {
 	case hostIs(host, "anthropic.com"):
 		return ProviderTypeAnthropic
+	case hostIs(host, "api.deepseek.com"):
+		return ProviderTypeDeepSeek
 	//case hostIs(host, "openai.com", "openai.azure.com"):
 	//	return ProviderTypeOpenAI
 	case hostIs(host, "googleapis.com"), strings.Contains(host, "gemini"):

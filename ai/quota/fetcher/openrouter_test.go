@@ -213,6 +213,12 @@ func TestOpenRouterKeyLimitIsAResource(t *testing.T) {
 	if keyLimit.Kind != quota.WindowKindResource {
 		t.Errorf("key_limit Kind = %q, want resource", keyLimit.Kind)
 	}
+	if keyLimit.Available == nil || *keyLimit.Available != 11.9 {
+		t.Errorf("key_limit Available = %v, want 11.9", keyLimit.Available)
+	}
+	if keyLimit.CurrencyCode != "USD" {
+		t.Errorf("key_limit CurrencyCode = %q, want USD", keyLimit.CurrencyCode)
+	}
 	if pct, ok := usage.Pct(); !ok || pct < 40.4 || pct > 40.6 {
 		t.Fatalf("Pct() = %v, %v; want ~40.5, true", pct, ok)
 	}

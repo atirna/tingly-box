@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"math"
 	"testing"
 
 	"github.com/tingly-dev/tingly-box/ai/quota"
@@ -81,6 +82,13 @@ func checkWindow(t *testing.T, where string, w *quota.UsageWindow) {
 	}
 	if !w.Countable() && w.UsedPercent != 0 {
 		t.Errorf("%s: uncountable window still reports UsedPercent=%v", where, w.UsedPercent)
+	}
+
+	if w.Available != nil && (math.IsNaN(*w.Available) || math.IsInf(*w.Available, 0) || *w.Available < 0) {
+		t.Errorf("%s: Available = %v; want a finite non-negative amount", where, *w.Available)
+	}
+	if w.CurrencyCode != "" && w.Unit != quota.UsageUnitCurrency {
+		t.Errorf("%s: CurrencyCode = %q on unit %q", where, w.CurrencyCode, w.Unit)
 	}
 
 	if p := w.Percent(); p < 0 || p > 100 {

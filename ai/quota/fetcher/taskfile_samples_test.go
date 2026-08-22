@@ -61,12 +61,27 @@ func oauthProvider(name string) *ai.Provider {
 // a null utilization, a free plan whose "primary" window is a week long, a plan
 // that mixes a coding model with speech and image quotas.
 func TestTaskfileSamples(t *testing.T) {
+	// ── deepseek (build/Taskfile.quota.yml) ──
+	s := serve(t, `{"is_available":true,"balance_infos":[
+		{"currency":"CNY","total_balance":"81.41","granted_balance":"0.00","topped_up_balance":"81.41"}]}`)
+	u, err := (&DeepSeekFetcher{baseURL: s.URL}).Fetch(context.Background(),
+		&ai.Provider{UUID: "u", Name: "DeepSeek", Token: "k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// DeepSeek only reports what remains. Without the original balance there is
+	// no honest percentage, and topping up — not waiting — restores the resource.
+	check(t, "deepseek", u, want{ok: false, windows: 1})
+	if available := findWindow(t, u, "cny").Available; available == nil || *available != 81.41 {
+		t.Errorf("deepseek: CNY available = %v; want 81.41", available)
+	}
+
 	// ── anthropic (build/Taskfile.quota.yml) ──
-	s := serve(t, `{"five_hour":{"utilization":7.0,"resets_at":"2026-04-08T05:00:00.096458+00:00"},
+	s = serve(t, `{"five_hour":{"utilization":7.0,"resets_at":"2026-04-08T05:00:00.096458+00:00"},
 	"seven_day":{"utilization":1.0,"resets_at":"2026-04-14T15:00:01.096478+00:00"},
 	"seven_day_sonnet":{"utilization":1.0,"resets_at":"2026-04-14T15:00:01.096485+00:00"},
 	"extra_usage":{"is_enabled":true,"monthly_limit":7500,"used_credits":0.0,"utilization":null}}`)
-	u, err := (&AnthropicFetcher{baseURL: s.URL}).Fetch(context.Background(), oauthProvider("Claude"))
+	u, err = (&AnthropicFetcher{baseURL: s.URL}).Fetch(context.Background(), oauthProvider("Claude"))
 	if err != nil {
 		t.Fatal(err)
 	}

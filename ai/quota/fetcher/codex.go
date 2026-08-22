@@ -304,12 +304,14 @@ func (f *CodexFetcher) Fetch(ctx context.Context, provider *ai.Provider) (*quota
 	if apiResp.Credits != nil && apiResp.Credits.HasCredits && !apiResp.Credits.Unlimited && apiResp.Credits.Balance != nil {
 		balance := float64(*apiResp.Credits.Balance)
 		usage.AddWindow("credits", &quota.UsageWindow{
-			Type:        quota.WindowTypeBalance,
-			Kind:        quota.WindowKindResource,
-			Unknown:     true,
-			Unit:        quota.UsageUnitCurrency,
-			Label:       "Credits Balance",
-			Description: fmt.Sprintf("$%.2f remaining", balance),
+			Type:         quota.WindowTypeBalance,
+			Kind:         quota.WindowKindResource,
+			Available:    &balance,
+			Unknown:      true,
+			Unit:         quota.UsageUnitCurrency,
+			CurrencyCode: "USD",
+			Label:        "Credits Balance",
+			Description:  fmt.Sprintf("$%.2f remaining", balance),
 		})
 	}
 

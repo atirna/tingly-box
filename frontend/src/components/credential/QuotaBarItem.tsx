@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Stack, Tooltip, Typography, tooltipClasses } from '@mui/material';
 import type { QuotaWindow } from '@/types/quota';
-import { formatQuotaPercent, formatQuotaUsage, isCountable } from '@/types/quota';
+import { formatQuotaAvailable, formatQuotaPercent, formatQuotaUsage, isCountable } from '@/types/quota';
 import { QUOTA_COLORS, formatNumber } from '../dashboard/chartStyles';
 
 interface QuotaBarItemProps {
@@ -67,6 +67,9 @@ export function QuotaBarItem({ window, showDetails = false, percentLabel, barCol
 
   const resetTime = formatResetTime();
   const detailedInfo = formatQuotaUsage(window, { formatNumber: formatNumber });
+  const availableInfo = countable
+    ? formatQuotaAvailable(window, formatNumber)
+    : undefined;
 
   const tooltipContent = (
     <Box
@@ -85,6 +88,11 @@ export function QuotaBarItem({ window, showDetails = false, percentLabel, barCol
       <Typography variant="body2" sx={{ display: 'block', mb: 0.5 }}>
         {detailedInfo}
       </Typography>
+      {availableInfo && (
+        <Typography variant="caption" sx={{ color: "text.secondary", display: 'block' }}>
+          Available: {availableInfo}
+        </Typography>
+      )}
       {resetTime && (
         <Typography variant="caption" sx={{
           color: "text.secondary"

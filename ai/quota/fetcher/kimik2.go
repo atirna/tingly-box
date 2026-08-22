@@ -119,6 +119,7 @@ func (f *KimiK2Fetcher) Fetch(ctx context.Context, provider *ai.Provider) (*quot
 		Kind:        quota.WindowKindResource,
 		Used:        consumed,
 		Limit:       total,
+		Available:   &remaining,
 		Unit:        quota.UsageUnitCredits,
 		Label:       "Credits",
 		Description: fmt.Sprintf("%.0f consumed, %.0f remaining", consumed, remaining),

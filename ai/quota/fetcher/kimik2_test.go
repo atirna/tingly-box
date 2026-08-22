@@ -87,6 +87,9 @@ func TestKimiK2CreditsAreAResource(t *testing.T) {
 	if credits.Kind != quota.WindowKindResource {
 		t.Errorf("credits Kind = %q, want resource", credits.Kind)
 	}
+	if credits.Available == nil || *credits.Available != 700 {
+		t.Errorf("credits Available = %v, want 700", credits.Available)
+	}
 	if pct, ok := usage.Pct(); !ok || pct != 30 {
 		t.Fatalf("Pct() = %v, %v; want 30, true", pct, ok)
 	}
