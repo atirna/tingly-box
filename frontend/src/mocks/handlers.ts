@@ -1885,7 +1885,18 @@ export const handlers = [
         const headersOut = throughTB
             ? headers
             : Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, v.replace('$TB_API_KEY', '$UPSTREAM_API_KEY')]))
-        const mockBody = JSON.stringify({ model: body?.model || 'mock-model', stream: isStream, messages: [{ role: 'user', content: body?.message || 'Hello, this is a test message.' }] })
+        const visionDataURL = 'data:image/png;base64,' + 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'.repeat(12)
+        const messages =
+            body?.vision === 'user'
+                ? [{ role: 'user', content: [{ type: 'text', text: 'What color is this image? Answer with one word.' }, { type: 'image_url', image_url: { url: visionDataURL } }] }]
+                : body?.vision === 'tool'
+                  ? [
+                        { role: 'user', content: 'Analyze the image using the capture tool.' },
+                        { role: 'assistant', content: '', tool_calls: [{ id: 'call_vision_1', type: 'function', function: { name: 'vision_capture', arguments: '{}' } }] },
+                        { role: 'tool', tool_call_id: 'call_vision_1', content: [{ type: 'text', text: 'Image captured.' }, { type: 'image_url', image_url: { url: visionDataURL } }] },
+                    ]
+                  : [{ role: 'user', content: body?.message || 'Hello, this is a test message.' }]
+        const mockBody = JSON.stringify({ model: body?.model || 'mock-model', stream: isStream, messages }, null, 2)
         const headerArgs = Object.entries(headersOut).map(([k, v]) => `  -H '${k}: ${v}'`).join(' \\\n')
         const command = `curl${isStream ? ' -N' : ''} \\\n${headerArgs} \\\n  -d '${mockBody}' \\\n  ${url}`
         return HttpResponse.json({

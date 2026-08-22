@@ -217,7 +217,7 @@ const CollapsibleSection = memo(({ title, defaultExpanded = false, children }: C
 
 // CopyBlock: a monospace content panel with its own copy affordance — every
 // artifact section (cURL, Response, Raw JSON) hands over the exact text.
-const CopyBlock = memo(({ text, maxHeight, fontSize = '0.78rem' }: { text: string; maxHeight?: number; fontSize?: string }) => {
+const CopyBlock = memo(({ text, maxHeight, fontSize = '0.78rem' }: { text: string; maxHeight?: number | string; fontSize?: string }) => {
     const { t } = useTranslation();
     const { copied, copy } = useCopyFeedback();
     return (
@@ -654,10 +654,25 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                     </Button>
                 </Box>
             </DialogTitle>
-            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <DialogContent
+                sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                    overflowY: 'auto',
+                    // Never squeeze sections to make content "fit": flex would
+                    // otherwise crush the last section (the cURL block) to a
+                    // sliver instead of letting the panel scroll.
+                    '& > *': { flexShrink: 0 },
+                }}
+            >
                 {/* Control rail + results — controls are what you send, results are
-                 *  what you asked; the split keeps the results as the anchor. */}
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch', minHeight: 0, flex: 1 }}>
+                 *  what you asked; the split keeps the results as the anchor.
+                 *  DialogContent is the ONE vertical scroll container: content
+                 *  flows to its natural height and the whole panel scrolls, so
+                 *  a long section (vision-probe cURL bodies, raw stream JSON)
+                 *  can never be clipped out of reach by nested fixed heights. */}
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flex: 1 }}>
                 {/* Control rail: the instrument panel — what will be sent. */}
                 <Box
                     sx={{
@@ -667,7 +682,11 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                         borderColor: 'divider',
                         borderRadius: 1.5,
                         p: 1.5,
-                        alignSelf: 'stretch',
+                        // Stay in view while long results scroll past; scroll
+                        // internally only when the window is shorter than the rail.
+                        position: 'sticky',
+                        top: 0,
+                        maxHeight: '75vh',
                         overflowY: 'auto',
                     }}
                 >
@@ -689,13 +708,14 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                 </Box>
 
                 {/* Results column: the subject — what came back and how it went. */}
-                <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ flex: 1, minWidth: 0, alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
                     {isLoading && <LinearProgress sx={{ height: 6, borderRadius: 3, mt: 1.5 }} />}
 
                     {!isLoading && !result && (
                         <Box
                             sx={{
                                 flex: 1,
+                                minHeight: 260,
                                 display: 'flex',
                                 flexDirection: 'column',
                                 justifyContent: 'center',
@@ -734,13 +754,13 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
 
                         {result.success && (
                             <CollapsibleSection title={t('probe.response')} defaultExpanded={false}>
-                                <CopyBlock text={extracted || t('probe.noText')} maxHeight={180} />
+                                <CopyBlock text={extracted || t('probe.noText')} maxHeight="40vh" />
                             </CollapsibleSection>
                         )}
 
                         {result.success && result.data?.content && (
                             <CollapsibleSection title={t('probe.rawJson')} defaultExpanded={false}>
-                                <CopyBlock text={result.data.content} maxHeight={240} fontSize="0.72rem" />
+                                <CopyBlock text={result.data.content} maxHeight="45vh" fontSize="0.72rem" />
                             </CollapsibleSection>
                         )}
                     </Box>
@@ -754,7 +774,7 @@ export const ProbeDialog: React.FC<ProbeDialogProps> = ({
                     {curlLoading && <LinearProgress sx={{ height: 4, borderRadius: 2 }} />}
                     {!curlLoading && curl?.data?.command && (
                         <Box>
-                            <CopyBlock text={curl.data.command} maxHeight={240} fontSize="0.72rem" />
+                            <CopyBlock text={curl.data.command} maxHeight="45vh" fontSize="0.72rem" />
                             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
                                 {t('probe.curlKeyHint', { key: curl.data.key_env_var })}
                             </Typography>
