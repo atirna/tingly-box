@@ -428,7 +428,7 @@ export default {
     "visionNone": "Off",
     "visionUser": "User",
     "visionTool": "Tool",
-    "visionHint": "Attach a tiny red test image — in the user message, or returned from a synthetic tool round (the shape agent tools use for screenshots). A vision-capable route answers \"red\"; anything else means the image was dropped or corrupted along the path.",
+    "visionHint": "Attach a red test image — in the user message, or returned from a synthetic tool round (the shape agent tools use for screenshots). A vision-capable route answers \"red\"; anything else means the image was dropped or corrupted along the path.",
     "visionGoogle": "Google providers use their own SDK — no vision probe.",
     "message": "Message",
     "messageHint": "Custom message override; empty uses the default per tool setting.",

@@ -31,15 +31,18 @@ func (c Channel) Enabled() bool {
 	return c == ChannelUser || c == ChannelTool
 }
 
-// Canonical probe image: a 1×1 solid-red PNG. Small enough for any provider,
-// unambiguous enough that a vision-capable model answers Prompt with "red" —
-// so a human reading the probe result can tell working vision ("red") from a
-// silent image drop ("I don't see any image").
+// Canonical probe image: a 256×256 solid-red PNG (the same dimensions as the
+// issue #1606 reproduction). Large enough to pass providers' minimum-size
+// validation — degenerate 1×1 images are rejected by several vision
+// endpoints — while compressing to a few hundred bytes, and unambiguous
+// enough that a vision-capable model answers Prompt with "red" — so a human
+// reading the probe result can tell working vision ("red") from a silent
+// image drop ("I don't see any image").
 const (
 	// FixtureMediaType is the MIME type of the fixture image.
 	FixtureMediaType = "image/png"
-	// FixturePNGBase64 is the base64 payload of the 1×1 red PNG.
-	FixturePNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	// FixturePNGBase64 is the base64 payload of the 256×256 red PNG.
+	FixturePNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB+0lEQVR42u3TQQkAAAjAwPUvrX8reHAJBmsK3pIAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgAJMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAyAASTAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADADHAllMDvLkz2XNAAAAAElFTkSuQmCC"
 	// FixtureDataURL is the same image as an OpenAI-style data URL.
 	FixtureDataURL = "data:" + FixtureMediaType + ";base64," + FixturePNGBase64
 

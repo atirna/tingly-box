@@ -14,7 +14,7 @@ export type ProbeProtocol = 'openai_chat' | 'openai_responses' | 'anthropic_v1';
 export type ProbeThinking = 'none' | 'low' | 'medium' | 'high';
 
 // Vision channel: attach the canonical probe image (backend
-// internal/protocol/vision — a 1×1 red PNG + "what color?" prompt) in the
+// internal/protocol/vision — a 256×256 red PNG + "what color?" prompt) in the
 // user message or as a synthetic tool-result turn. A vision-capable route
 // answers "red"; anything else reveals a drop or corruption along the path.
 // 'none' (default) sends no image. Not supported for Google targets.

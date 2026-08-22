@@ -90,7 +90,7 @@ this extension — `chatcompletion_toolmessage_patch_test.go` (in the fork) lock
 
 ## 4. Harness coverage (vmodel-driven)
 
-The canonical image fixture — a 1×1 red PNG plus the "what color?" prompt and
+The canonical image fixture — a 256×256 red PNG plus the "what color?" prompt and
 the tool-channel turn script — lives in `internal/protocol/vision` (the
 `thinking`-package pattern) so every consumer sends the exact same shapes:
 the probe subsystem's `vision` axis, the content-shape harness cases below,
@@ -133,6 +133,3 @@ Per the TDD strategy on #1606, coverage lives at three levels:
   #1606's comment showed a health probe hitting the corrupted-part 400. When
   added, it should reuse the probe param builders with
   `probeParams{Vision: ...}` for both channels.
-- **Probe panel**: the frontend Probe dialog does not expose the `vision`
-  axis yet (backend + cURL only); needs `task codegen` and a control in the
-  Advanced rail, disabled for Google-style targets.

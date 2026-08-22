@@ -430,7 +430,7 @@ export default {
     "visionNone": "关",
     "visionUser": "用户消息",
     "visionTool": "工具返回",
-    "visionHint": "附带一张红色测试小图——放在用户消息里，或由合成的工具回合返回（agent 工具回传截图的形状）。视觉链路正常时模型会回答\"red\"；否则说明图片在链路上被丢弃或损坏。",
+    "visionHint": "附带一张红色测试图——放在用户消息里，或由合成的工具回合返回（agent 工具回传截图的形状）。视觉链路正常时模型会回答\"red\"；否则说明图片在链路上被丢弃或损坏。",
     "visionGoogle": "Google provider 使用自有 SDK，暂不支持视觉探测。",
     "message": "消息",
     "messageHint": "自定义消息；留空则按工具设置使用默认消息。",
