@@ -118,18 +118,26 @@ export function formatQuotaPercent(window: QuotaUsageValues): string {
     return `${window.used_percent.toFixed(0)}%`;
 }
 
+export function formatQuotaAvailable(
+    window: Pick<QuotaWindow, 'available' | 'currency_code' | 'unit'>,
+    formatNumber: (value: number) => string = String
+): string | undefined {
+    if (window.available === undefined) return undefined;
+
+    const unit = window.currency_code || window.unit;
+    const value = window.unit === 'currency'
+        ? window.available.toLocaleString('en-US', { maximumFractionDigits: 2 })
+        : formatNumber(window.available);
+    return `${value}${unit ? ` ${unit}` : ''}`;
+}
+
 export function formatQuotaUsage(
     window: QuotaUsageValues,
     { includePercent = false, formatNumber = String }: FormatQuotaUsageOptions = {}
 ): string {
-    if (window.available !== undefined) {
-        const unit = window.currency_code || window.unit;
-        const value = window.unit === 'currency'
-            ? window.available.toLocaleString('en-US', { maximumFractionDigits: 2 })
-            : formatNumber(window.available);
-        return `${value}${unit ? ` ${unit}` : ''}`;
-    }
     if (!isCountable(window)) {
+        const available = formatQuotaAvailable(window, formatNumber);
+        if (available !== undefined) return available;
         // No figure to show, so show none — "0 / 0 (0%)" would read as unused.
         return window.unknown ? 'not reported' : 'no limit';
     }
