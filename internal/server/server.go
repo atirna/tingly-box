@@ -498,7 +498,6 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 		AffinityStore:           server.affinityStore,
 		GetOrCreateScenarioSink: server.GetOrCreateScenarioSink,
 		GuardrailsState:         server.guardrailsState,
-		GetScenarioRecordMode:   server.GetScenarioRecordMode,
 	})
 
 	// Setup middleware
