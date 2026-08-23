@@ -124,15 +124,20 @@ Phase 1 已删除:`record_roundtripper.go` 整个文件、各 client 的
 vmodel no-op 实现)、pool 的 sink 字段与 builder、advisor_call.go 中
 两处对 `SetRecordSink` 的死调用。
 
-**P4 — advisor 防递归 header 缺失(真 bug,仍未修)。**
-`X-Tingly-Advisor-Depth: 1` 的唯一设置点原本在 `RecordRoundTripper.
+**P4 — advisor 防递归 header 缺失(真 bug)。✅ 已修复(Phase 1.5)。**
+原状:`X-Tingly-Advisor-Depth: 1` 的唯一设置点在 `RecordRoundTripper.
 RoundTrip` 的 early-return **之后**——即从未真正发出;服务端却靠这个
 header 跳过 MCP tool 注入 / 标记 loopback(`protocol_transform.go`、
-`transform_mcp_tool_injection.go`)。Phase 1 删除死代码后行为不变
-(该 header 之前就发不出去),**修复留待后续单独小步**:方案是 advisor
-调用侧标记 ctx + 通用链上一个只读小 transport 盖 header;advisor/MCP
-侧(`WithAdvisorRecordSink` ctx 机制、`HookDeps.GetScenarioSink` 注入)
-本次刻意未动,与该修复同批处理。
+`transform_mcp_tool_injection.go`)。
+修复方式:advisor 调用侧(`mcp/runtime/advisor_call.go`)在 SDK 调用前
+`client.WithAdvisorLoopback(ctx)` 标记 ctx;通用 pass-through 链挂载只读
+的 `advisorLoopbackTransport`(`internal/client/advisor_loopback.go`,
+挂载点:`NewOpenAIClient` 与 `anthropicTransport`)按标记盖 header。
+vendor 链不挂——它们固定指向真实 vendor 端点,不可能 loopback。
+同批清理了从未生效的 advisor sink 注入:`WithAdvisorRecordSink` /
+`GetAdvisorRecordSink`(tool/context.go)、`HookDeps.GetScenarioSink`
+及其注入点(servertool/hook.go)与实现(mcp_tool_error.go)全部删除;
+advisor 调用的录制将来随统一录制路径(Phase 3)回归。
 
 **P5 — 录制覆盖不对称。** OpenAI 入站 handler 不接 recorder(§2.2 A)。
 
@@ -224,7 +229,7 @@ chain 级 StagePost 录的则是 SDK 参数形态(拿不到 wire header)。
 |------|------|------|------|
 | **Phase 0 ✅** | 本梳理文档 | `.design/recording.md` | 无 |
 | **Phase 1 清障 ✅(收窄范围)** | 已做:删 `RecordRoundTripper` 死代码与全部 `SetRecordSink` 机制;`ScenarioContextKey` 迁出(P7);删 `ClientPool.recordSink` / `server.recordSink` / `server.recordMode` / `WithRecordMode` / `WithRecording`;去除 CLI `--record-mode` / `--record-dir`(目录固定默认)。**刻意未动**:advisor/MCP 侧接线(`WithAdvisorRecordSink`、`HookDeps.GetScenarioSink`)与 P4 header 修复——单独小步处理 | `internal/client`、`internal/server`、`internal/command`、`gui/wails3`、`vmodel` | 低(删死代码,行为不变) |
-| **Phase 1.5 advisor 小步** | 修 P4(advisor ctx 标记 + 通用链只读 header transport);清 `WithAdvisorRecordSink` / `GetScenarioSink` 死数据注入 | `internal/client`、`mcp/runtime`、`servertool` | 低 |
+| **Phase 1.5 advisor 小步 ✅** | 修 P4(advisor ctx 标记 + 通用链只读 header transport,附单测);清 `WithAdvisorRecordSink` / `GetScenarioSink` 死数据注入 | `internal/client`、`mcp/runtime`、`servertool` | 低 |
 | **Phase 2 flag 融入** | `RuleFlags.Recording` 进 registry(Shared/override);`resolveRuleFlagsWithScenario` 继承;handler 用解析结果替代 `getScenarioRecordMode`;OpenAI 两个 handler 接 recorder(修 P5);前端类型 + codegen | `typ`、`server`、`protocolserver`、frontend 类型 | 中 |
 | **Phase 3 wire 录制** | 新 `recordTransport` 挂 wire transport(含 vendor 链);recorder 经 request ctx 传播;record 模型加 wire 请求字段(修 P6) | `internal/client`、`obs` | 中 |
 | **Phase 4 obs 汇合** | 与 `internal/obs/PLANNING.md` Phase 2 合流(RecordCtx / EventTap / ModeFilterExporter);scenario 前端控件 registry 化 | `obs`、`transform`、frontend | 按其自身计划 |

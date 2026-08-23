@@ -75,6 +75,7 @@ func NewOpenAIClient(provider *typ.Provider, model string, sessionID typ.Session
 	// proxy is explicitly configured for the provider.
 	base := GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID)
 	transport = wrapWithRuleFlags(base, provider, true)
+	transport = wrapWithAdvisorLoopback(transport)
 	transport = wrapWithLogging(transport, provider)
 
 	httpClient := &http.Client{

@@ -128,11 +128,12 @@ func NewAnthropicClient(provider *typ.Provider, model string, sessionID typ.Sess
 
 // anthropicTransport builds the transport chain generic Anthropic providers
 // use: pooled session-bound base (provider proxy_url honored, env proxy not
-// inherited), rule-flag layer, logging. Shared with the Vertex path, which must
-// rebuild this chain under its OAuth transport (see vertexAnthropicOptions).
+// inherited), rule-flag layer, advisor loopback stamp, logging. Shared with the
+// Vertex path, which must rebuild this chain under its OAuth transport (see
+// vertexAnthropicOptions).
 func anthropicTransport(provider *typ.Provider, model string, sessionID typ.SessionID) http.RoundTripper {
 	base := GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID)
-	return wrapWithLogging(wrapWithRuleFlags(base, provider, true), provider)
+	return wrapWithLogging(wrapWithAdvisorLoopback(wrapWithRuleFlags(base, provider, true)), provider)
 }
 
 // ProviderType returns the provider type

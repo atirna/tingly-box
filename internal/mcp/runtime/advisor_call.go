@@ -25,6 +25,10 @@ func callOpenAI(ctx context.Context, cfg typ.AdvisorConfig, provider *typ.Provid
 	if wrapper == nil {
 		return "", fmt.Errorf("advisor: failed to create OpenAI client")
 	}
+	// Mark the outbound context so the generic transport chain stamps the
+	// advisor depth header: if this provider loops back into tingly-box, the
+	// inbound side must skip MCP tool injection (recursion guard).
+	ctx = client.WithAdvisorLoopback(ctx)
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(advisorSystemPrompt),
 	}
@@ -99,6 +103,9 @@ func callAnthropic(ctx context.Context, cfg typ.AdvisorConfig, provider *typ.Pro
 	if wrapper == nil {
 		return "", fmt.Errorf("advisor: failed to create Anthropic client")
 	}
+	// Same recursion guard as callOpenAI: stamp the advisor depth header on
+	// loopback requests via the generic transport chain.
+	ctx = client.WithAdvisorLoopback(ctx)
 
 	var messages []anthropic.MessageParam
 	var systemParts []string
