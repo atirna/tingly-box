@@ -46,6 +46,8 @@ interface PositionMeta {
     label: string;
     description: string;
     category: string;
+    /** Value-field placeholder; falls back to the value-type default. */
+    placeholder?: string;
 }
 
 const POSITION_OPTIONS: PositionMeta[] = [
@@ -55,8 +57,9 @@ const POSITION_OPTIONS: PositionMeta[] = [
     { value: 'time', label: 'Time range', description: 'Route requests during or outside a daily time range in the selected timezone.', category: 'time' },
     { value: 'thinking', label: 'Thinking', description: 'Thinking mode enabled / disable', category: 'request' },
     { value: 'token', label: 'Token Count', description: 'Token count', category: 'request' },
-    { value: 'service_ttft', label: 'Service TTFT', description: 'Time to first token across services (ms)', category: 'service' },
-    { value: 'service_capacity', label: 'Service Capacity', description: 'Seat utilization across services (%)', category: 'service' },
+    { value: 'service_ttft', label: 'Service TTFT', description: 'Time to first token across services (ms)', category: 'service', placeholder: 'ms' },
+    { value: 'service_capacity', label: 'Service Capacity', description: 'Seat utilization across services (%)', category: 'service', placeholder: '0–100' },
+    { value: 'service_quota', label: 'Service Quota', description: 'Tightest upstream quota usage across services (%)', category: 'service', placeholder: '0–100' },
 ];
 
 const VALUE_OPTIONS: Record<string, Array<{ value: string; label: string }> | undefined> = {
@@ -103,6 +106,12 @@ const OPERATION_OPTIONS: Record<string, Array<{ value: string; label: string; de
         { value: 'util_ge', label: 'Util ≥', description: 'Avg seat utilization across services >= value (%)', valueType: 'int' },
         { value: 'util_lt', label: 'Util <', description: 'Avg seat utilization across services < value (%)', valueType: 'int' },
         { value: 'util_gt', label: 'Util >', description: 'Avg seat utilization across services > value (%)', valueType: 'int' },
+    ],
+    service_quota: [
+        { value: 'pct_le', label: 'Quota ≤', description: 'Tightest quota usage across services <= value (%)', valueType: 'int' },
+        { value: 'pct_ge', label: 'Quota ≥', description: 'Tightest quota usage across services >= value (%)', valueType: 'int' },
+        { value: 'pct_lt', label: 'Quota <', description: 'Tightest quota usage across services < value (%)', valueType: 'int' },
+        { value: 'pct_gt', label: 'Quota >', description: 'Tightest quota usage across services > value (%)', valueType: 'int' },
     ],
     'agent.claude_code': [
         { value: 'equals', label: 'Equals', description: 'Claude Code request kind equals the value', valueType: 'string' },
@@ -598,13 +607,10 @@ export const SmartRuleCatalogDialog: React.FC<SmartRuleCatalogDialogProps> = ({
                                                                                 handleValueChange(op.uuid, e.target.value)
                                                                             }
                                                                             placeholder={
-                                                                                pos.value === 'service_capacity'
-                                                                                    ? '0–100'
-                                                                                    : pos.value === 'service_ttft'
-                                                                                    ? 'ms'
-                                                                                    : op.meta?.type === 'int'
+                                                                                pos.placeholder ??
+                                                                                (op.meta?.type === 'int'
                                                                                     ? '1,234'
-                                                                                    : 'enter value'
+                                                                                    : 'enter value')
                                                                             }
                                                                             sx={{ minWidth: 160 }}
                                                                         />

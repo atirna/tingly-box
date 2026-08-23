@@ -66,11 +66,14 @@ func (r *Router) EvaluateRequestWithIndex(ctx *RequestContext) ([]*loadbalance.S
 func (r *Router) evaluateRule(ctx *RequestContext, rule *SmartRouting, idx int) RuleEvalResult {
 	origStats := ctx.ServiceStats
 	origCap := ctx.ServiceCapacity
+	origQuota := ctx.ServiceQuota
 	ctx.ServiceStats = collectRuleStats(rule.Services)
 	ctx.ServiceCapacity = filterCapacityForRule(ctx.ServiceCapacity, rule.Services)
+	ctx.ServiceQuota = filterQuotaForRule(ctx.ServiceQuota, rule.Services)
 	defer func() {
 		ctx.ServiceStats = origStats
 		ctx.ServiceCapacity = origCap
+		ctx.ServiceQuota = origQuota
 	}()
 
 	res := RuleEvalResult{
@@ -113,6 +116,8 @@ func (r *Router) evaluateOp(ctx *RequestContext, op *SmartOp) OpEvalResult {
 		return r.evaluateServiceTTFTOp(ctx, op)
 	case PositionServiceCapacity:
 		return r.evaluateServiceCapacityOp(ctx, op)
+	case PositionServiceQuota:
+		return r.evaluateServiceQuotaOp(ctx, op)
 	case PositionAgentClaudeCode:
 		return r.evaluateAgentClaudeCodeOp(ctx, op)
 	case PositionTime:
@@ -509,24 +514,72 @@ func (r *Router) evaluateServiceCapacityOp(ctx *RequestContext, op *SmartOp) OpE
 		return res
 	}
 	avg := avgFloat(utilValues)
-	thresholdF := float64(threshold)
 	res.Actual = fmt.Sprintf("%.1f%%", avg)
-	switch op.Operation {
-	case OpServiceCapacityUtilLe:
-		res.Matched = avg <= thresholdF
-		res.Reason = fmt.Sprintf("avg util %.1f%% <= %d%%", avg, threshold)
-	case OpServiceCapacityUtilGe:
-		res.Matched = avg >= thresholdF
-		res.Reason = fmt.Sprintf("avg util %.1f%% >= %d%%", avg, threshold)
-	case OpServiceCapacityUtilLt:
-		res.Matched = avg < thresholdF
-		res.Reason = fmt.Sprintf("avg util %.1f%% < %d%%", avg, threshold)
-	case OpServiceCapacityUtilGt:
-		res.Matched = avg > thresholdF
-		res.Reason = fmt.Sprintf("avg util %.1f%% > %d%%", avg, threshold)
-	default:
+	matched, reason, ok := comparePctThreshold(op.Operation, "avg util", avg, threshold)
+	if !ok {
 		res.Reason = fmt.Sprintf("unsupported service_capacity op %q", op.Operation)
+		return res
 	}
+	res.Matched, res.Reason = matched, reason
+	return res
+}
+
+// comparePctThreshold evaluates a *_le/*_ge/*_lt/*_gt operation comparing a
+// percentage against an integer threshold, returning the match plus a
+// "<label> <actual> <cmp> <threshold>%" reason. ok is false for an
+// unrecognized operation suffix — the caller reports its own
+// position-specific error.
+func comparePctThreshold(operation SmartOpOperation, label string, actual float64, threshold int) (matched bool, reason string, ok bool) {
+	var cmp string
+	switch {
+	case strings.HasSuffix(string(operation), "_le"):
+		matched, cmp = actual <= float64(threshold), "<="
+	case strings.HasSuffix(string(operation), "_ge"):
+		matched, cmp = actual >= float64(threshold), ">="
+	case strings.HasSuffix(string(operation), "_lt"):
+		matched, cmp = actual < float64(threshold), "<"
+	case strings.HasSuffix(string(operation), "_gt"):
+		matched, cmp = actual > float64(threshold), ">"
+	default:
+		return false, "", false
+	}
+	return matched, fmt.Sprintf("%s %.1f%% %s %d%%", label, actual, cmp, threshold), true
+}
+
+// evaluateServiceQuotaOp compares the tightest (max, not average — one hot
+// service makes the whole pool look hot) *standard* quota usage across the
+// rule's services' providers (ctx.ServiceQuota, pre-filtered per-rule by
+// evaluateRule) against the threshold. Services with unknown quota are
+// absent from ctx.ServiceQuota rather than counted as 0%; with no data at
+// all the op passes, so quota-blind rules and cold data never block
+// routing. Aggregation and Kind=limit scoping rationale:
+// .design/quota-semantics.md §8.1.
+func (r *Router) evaluateServiceQuotaOp(ctx *RequestContext, op *SmartOp) OpEvalResult {
+	res := newOpResult(op)
+	if len(ctx.ServiceQuota) == 0 {
+		res.Matched = true
+		res.Reason = "no quota info; pass"
+		return res
+	}
+	threshold, err := op.Int()
+	if err != nil {
+		log.Printf("[smart_routing] invalid service_quota value '%s': %v", op.Value, err)
+		res.Reason = fmt.Sprintf("invalid int: %v", err)
+		return res
+	}
+	tightest := ctx.ServiceQuota[0].Pct
+	for _, q := range ctx.ServiceQuota[1:] {
+		if q.Pct > tightest {
+			tightest = q.Pct
+		}
+	}
+	res.Actual = fmt.Sprintf("%.1f%%", tightest)
+	matched, reason, ok := comparePctThreshold(op.Operation, "tightest quota", tightest, threshold)
+	if !ok {
+		res.Reason = fmt.Sprintf("unsupported service_quota op %q", op.Operation)
+		return res
+	}
+	res.Matched, res.Reason = matched, reason
 	return res
 }
 
@@ -600,8 +653,10 @@ func collectRuleStats(services []*loadbalance.Service) []loadbalance.ServiceStat
 	return result
 }
 
-// filterCapacityForRule filters all capacity info down to services belonging to this rule.
-func filterCapacityForRule(all []ServiceCapacityInfo, services []*loadbalance.Service) []ServiceCapacityInfo {
+// filterForRule filters per-service info entries down to services belonging
+// to this rule, matching each entry's serviceID (via id) against the rule's
+// services.
+func filterForRule[T any](all []T, services []*loadbalance.Service, id func(T) string) []T {
 	if len(all) == 0 {
 		return nil
 	}
@@ -609,13 +664,23 @@ func filterCapacityForRule(all []ServiceCapacityInfo, services []*loadbalance.Se
 	for _, svc := range services {
 		ids[svc.ServiceID()] = struct{}{}
 	}
-	var result []ServiceCapacityInfo
-	for _, c := range all {
-		if _, ok := ids[c.ServiceID]; ok {
-			result = append(result, c)
+	var result []T
+	for _, e := range all {
+		if _, ok := ids[id(e)]; ok {
+			result = append(result, e)
 		}
 	}
 	return result
+}
+
+// filterCapacityForRule filters all capacity info down to services belonging to this rule.
+func filterCapacityForRule(all []ServiceCapacityInfo, services []*loadbalance.Service) []ServiceCapacityInfo {
+	return filterForRule(all, services, func(c ServiceCapacityInfo) string { return c.ServiceID })
+}
+
+// filterQuotaForRule filters all quota info down to services belonging to this rule.
+func filterQuotaForRule(all []ServiceQuotaInfo, services []*loadbalance.Service) []ServiceQuotaInfo {
+	return filterForRule(all, services, func(q ServiceQuotaInfo) string { return q.ServiceID })
 }
 
 func minFloat(vals []float64) float64 {
@@ -627,6 +692,7 @@ func minFloat(vals []float64) float64 {
 	}
 	return m
 }
+
 
 func avgFloat(vals []float64) float64 {
 	var sum float64
