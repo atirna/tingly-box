@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 )
 

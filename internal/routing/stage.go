@@ -1,6 +1,8 @@
 package routing
 
-import "github.com/tingly-dev/tingly-box/internal/loadbalance"
+import (
+	"github.com/tingly-dev/tingly-box/internal/loadbalance"
+)
 
 // SelectionStage is one step in the service-selection pipeline. Stages are
 // pure with respect to the pipeline's control flow: each receives the

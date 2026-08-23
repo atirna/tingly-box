@@ -34,7 +34,7 @@ per request (internal/server/vision_proxy.go → applyVisionProxy)
 `Service.Apply` is called directly from the request handlers
 (`openai_chat.go`, `openai_responses.go`, `anthropic_message.go`) before
 service selection — it is not a smart-routing op. An earlier version
-registered `VisionProxyProcessor` into `internal/smart_routing`'s processor
+registered `VisionProxyProcessor` into `internal/routing/smart_routing`'s processor
 registry so a matching rule could bypass routing with `{Position:
 proxy_vision, Operation: enabled}`; that path was removed in favor of the
 rule/scenario flags above, which are simpler to configure and don't require

@@ -491,7 +491,7 @@ independent surfaces:
   (`duo-svc-a` … `duo-svc-f`), each answering with its own marker, so which
   service a request landed on is read directly from the response body;
 - **explanation level** — tb2's `/api/v1/requests/:id` timeline joins the
-  `smart_routing` evaluation trace by the harness-supplied `X-Request-Id`;
+  `smartrouting` evaluation trace by the harness-supplied `X-Request-Id`;
   the engine asserts `outcome`, the matched partition description, and the
   final `routed_model` — the same surface a user debugging their routing
   config reads.

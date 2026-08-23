@@ -173,10 +173,10 @@ Selection is stateless; all memory lives in three stores fed by dispatch outcome
 | Tactic engine + health degrade | `internal/server/load_balance.go` |
 | Tactics + IsAffinityEligible | `internal/typ/tactics.go` |
 | Breaker + store (+ stale reclaim) | `internal/loadbalance/breaker.go` |
-| Health monitor / filter | `internal/loadbalance/health_monitor.go`, `../internal/routing/health_filter.go` |
+| Health monitor / filter | `internal/loadbalance/health_monitor.go`, `internal/routing/health_filter.go` |
 | Service stats | `internal/loadbalance/load_balancing.go` |
 | Affinity store | `internal/server/affinity/affinity.go` |
 | Failover loop + gate | `internal/server/failover_dispatch.go` |
-| Smart-routing evaluator | `internal/smart_routing/` (README there) |
+| Smart-routing evaluator | `internal/routing/smart_routing/` (README there) |
 | Admin REST | `internal/server/load_balance_handler.go` |
 | Simulator / scenario harness | `internal/server/load_balance_simulator.go`, `lb_scenario_test.go`, `cli/harness lb` |

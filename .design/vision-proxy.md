@@ -332,9 +332,9 @@ rule 内其他 op AND 组合形成"带条件的 vision proxy",但实际业务里
 ### 已删除的位置
 
 后端:
-- `internal/smart_routing/op.go` —— `PositionProxyVision` / `OpProxyVisionEnabled` 常量,Operations 列表项
-- `internal/smart_routing/type.go` —— `IsValid` 里的 `PositionProxyVision` case
-- `internal/smart_routing/routing.go` —— `evaluateProxyVisionOp` 及其 switch case
+- `internal/routing/smart_routing/op.go` —— `PositionProxyVision` / `OpProxyVisionEnabled` 常量,Operations 列表项
+- `internal/routing/smart_routing/type.go` —— `IsValid` 里的 `PositionProxyVision` case
+- `internal/routing/smart_routing/routing.go` —— `evaluateProxyVisionOp` 及其 switch case
 - `internal/server/processor/processor.go` —— `RegisterAll` 不再 `smartrouting.RegisterProcessor(...)`(processor 仍然构造并返回给 vision_proxy.go 用)
 
 前端:
@@ -362,7 +362,7 @@ rule 内其他 op AND 组合形成"带条件的 vision proxy",但实际业务里
 | 功能 | 文件 |
 |------|------|
 | 处理器实现(图描述、改写) | `internal/server/processor/vision_proxy.go` |
-| 处理器接口 / `ProcessorContext` | `internal/smart_routing/processor.go` |
+| 处理器接口 / `ProcessorContext` | `internal/routing/smart_routing/processor.go` |
 | **统一入口 helper**(`applyVisionProxy` + `resolveVisionService`) | `internal/server/vision_proxy.go` |
 | `RuleFlags` + `VisionProxyService` | `internal/typ/type.go` |
 | Flag registry + `FlagTypeServiceRef` 常量 | `internal/typ/flag_registry.go` |

@@ -16,7 +16,7 @@ auto-scroll.
 
 ![Requests list](images/logs-requests.png)
 
-**Expanded timeline** — full pipeline for one request: `smart_routing`
+**Expanded timeline** — full pipeline for one request: `smartrouting`
 (rule evaluation + match) → `model_request` (conversion stages) →
 `upstream` (provider call) → `http` (access log), correlated by `request_id`:
 

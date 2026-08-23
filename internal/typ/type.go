@@ -8,7 +8,7 @@ import (
 	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	"github.com/tingly-dev/tingly-box/internal/protocol/thinking"
-	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
+	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	coretool "github.com/tingly-dev/tingly-box/internal/tool"
 )
 

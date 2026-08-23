@@ -16,8 +16,8 @@ import (
 
 	"github.com/tingly-dev/tingly-box/internal/config"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
+	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/server"
-	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	openaivm "github.com/tingly-dev/tingly-box/vmodel/openai"
 )
