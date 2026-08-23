@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"gorm.io/gorm"
 
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
-	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 

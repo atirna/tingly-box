@@ -119,7 +119,7 @@ When `X-Tingly-Debug-Routing: 1` is present, the routing decision is emitted acr
 | `X-Tingly-Selected-Provider`    | Provider name                                |
 | `X-Tingly-Selected-Provider-UUID` | Provider UUID                              |
 | `X-Tingly-Selected-Model`       | Model name actually used                     |
-| `X-Tingly-Routing-Source`       | `affinity`, `smart_routing`, `load_balancer`, or `probe_pin` |
+| `X-Tingly-Routing-Source`       | `affinity`, `smartrouting`, `load_balancer`, or `probe_pin` |
 | `X-Tingly-Matched-Smart-Rule`   | Index of matched smart rule (omitted if none) |
 
 **Dispatch stage** — `setProbeUpstreamHeaders` in `dispatchChainResult` (protocol_dispatch.go), the single point where the resolved upstream API + matched rule + applied flags are all known, before any response byte is written:

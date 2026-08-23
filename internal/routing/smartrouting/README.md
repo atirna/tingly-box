@@ -11,7 +11,7 @@ Two-pass evaluation, single source of truth:
 
 1. **Extract** request context once via `ExtractContext(req)` — funnels
    OpenAI / Anthropic v1 / Anthropic Beta requests through
-   `internal/protocol/request/` converters into Anthropic Beta and runs one
+   `../../protocol/request` converters into Anthropic Beta and runs one
    canonical extractor against it.
 2. **Evaluate** rules in order via `Router.Evaluate(ctx)` — first rule whose
    ops all match wins. Returns matched services, rule index, matched flag,
@@ -46,7 +46,7 @@ Two-pass evaluation, single source of truth:
 
 Earlier the package carried its own protocol-specific extractors (one per
 wire format), duplicating logic that already lived in
-`internal/protocol/request/`. We picked **Anthropic Beta** as the canonical
+`../../protocol/request`. We picked **Anthropic Beta** as the canonical
 because:
 
 - It has the richest expressivity (system blocks, content blocks, tool_use,

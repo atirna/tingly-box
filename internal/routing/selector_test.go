@@ -7,9 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
+	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/typ"
-
-	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
 )
 
 func TestSelect_NoAffinity_FallsToLoadBalancer(t *testing.T) {

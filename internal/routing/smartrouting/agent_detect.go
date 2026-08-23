@@ -1,6 +1,8 @@
 package smartrouting
 
-import "strings"
+import (
+	"strings"
+)
 
 // Claude Code request kinds. These are the values emitted by
 // DetectClaudeCodeRequestKind and accepted by the agent.claude_code SmartOp.

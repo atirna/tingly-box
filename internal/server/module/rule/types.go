@@ -1,7 +1,7 @@
 package rule
 
 import (
-	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
+	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 

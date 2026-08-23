@@ -1,6 +1,8 @@
 package smartrouting
 
-import "strings"
+import (
+	"strings"
+)
 
 // OpEvalResult captures the outcome of evaluating a single SmartOp against a
 // request context. It is the unified return type of the evaluator: the

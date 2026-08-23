@@ -50,4 +50,3 @@ func NewResult(service *loadbalance.Service, source string) *SelectionResult {
 		MatchedSmartRuleIndex: -1,
 	}
 }
-

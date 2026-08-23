@@ -8,7 +8,7 @@ import (
 
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
-	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
+	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	pkgobs "github.com/tingly-dev/tingly-box/pkg/obs"
 )

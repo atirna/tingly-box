@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
-	smartrouting "github.com/tingly-dev/tingly-box/internal/smart_routing"
+	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
