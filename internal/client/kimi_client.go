@@ -15,7 +15,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/ai/oauth"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -215,12 +214,6 @@ func (c *KimiClient) isContentPartMeaningful(part openai.ChatCompletionAssistant
 	}
 
 	return false
-}
-
-// SetRecordSink sets the record sink for the client.
-// For KimiClient, we delegate to the embedded OpenAIClient.
-func (c *KimiClient) SetRecordSink(sink *obs.Sink) {
-	c.OpenAIClient.SetRecordSink(sink)
 }
 
 // Client returns the underlying OpenAI SDK client.

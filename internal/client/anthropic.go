@@ -14,7 +14,6 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/constant"
 
 	"github.com/tingly-dev/tingly-box/ai"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -39,7 +38,6 @@ type AnthropicClientInterface interface {
 	Close() error
 	GetProvider() *typ.Provider
 	APIStyle() protocol.APIStyle
-	SetRecordSink(sink *obs.Sink)
 	Client() *anthropic.Client
 }
 
@@ -49,7 +47,6 @@ type AnthropicClient struct {
 	provider   *typ.Provider
 	debugMode  bool
 	httpClient *http.Client
-	recordSink *obs.Sink
 }
 
 // NewAnthropicClient creates a new Anthropic client wrapper
@@ -219,22 +216,6 @@ func (c *AnthropicClient) BetaMessagesNew(ctx context.Context, req *anthropic.Be
 func (c *AnthropicClient) BetaMessagesNewStreaming(ctx context.Context, req *anthropic.BetaMessageNewParams) *anthropicstream.Stream[anthropic.BetaRawMessageStreamEventUnion] {
 	req.Betas = withContext1MBeta(ctx, req.Betas)
 	return c.client.Beta.Messages.NewStreaming(ctx, *req)
-}
-
-// SetRecordSink sets the record sink for the client
-func (c *AnthropicClient) SetRecordSink(sink *obs.Sink) {
-	c.recordSink = sink
-	if sink != nil && sink.IsEnabled() {
-		c.applyRecordMode()
-	}
-}
-
-// applyRecordMode wraps the HTTP client with a record round tripper
-func (c *AnthropicClient) applyRecordMode() {
-	if c.recordSink == nil {
-		return
-	}
-	c.httpClient.Transport = NewRecordRoundTripper(c.httpClient.Transport, c.recordSink, c.provider)
 }
 
 // GetProvider returns the provider for this client

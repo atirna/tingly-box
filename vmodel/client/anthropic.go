@@ -10,7 +10,6 @@ import (
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 
 	"github.com/tingly-dev/tingly-box/internal/client"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/token"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -31,7 +30,6 @@ func NewAnthropicClient(reg *anthropicvm.Registry, provider *typ.Provider) *Anth
 
 func (c *AnthropicClient) GetProvider() *typ.Provider  { return c.provider }
 func (c *AnthropicClient) APIStyle() protocol.APIStyle { return protocol.APIStyleAnthropic }
-func (c *AnthropicClient) SetRecordSink(_ *obs.Sink)   {}
 func (c *AnthropicClient) Client() *anthropic.Client   { return nil }
 func (c *AnthropicClient) Close() error                { return nil }
 

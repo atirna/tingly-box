@@ -12,7 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/tingly-dev/tingly-box/internal/client"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	coretool "github.com/tingly-dev/tingly-box/internal/tool"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -25,11 +24,6 @@ func callOpenAI(ctx context.Context, cfg typ.AdvisorConfig, provider *typ.Provid
 	wrapper := cp.GetOpenAIClient(ctx, provider, cfg.Model)
 	if wrapper == nil {
 		return "", fmt.Errorf("advisor: failed to create OpenAI client")
-	}
-	if raw, ok := coretool.GetAdvisorRecordSink(ctx); ok {
-		if sink, ok := raw.(*obs.Sink); ok && sink != nil {
-			wrapper.SetRecordSink(sink)
-		}
 	}
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(advisorSystemPrompt),
@@ -104,11 +98,6 @@ func callAnthropic(ctx context.Context, cfg typ.AdvisorConfig, provider *typ.Pro
 	wrapper := cp.GetAnthropicClient(ctx, provider, cfg.Model)
 	if wrapper == nil {
 		return "", fmt.Errorf("advisor: failed to create Anthropic client")
-	}
-	if raw, ok := coretool.GetAdvisorRecordSink(ctx); ok {
-		if sink, ok := raw.(*obs.Sink); ok && sink != nil {
-			wrapper.SetRecordSink(sink)
-		}
 	}
 
 	var messages []anthropic.MessageParam

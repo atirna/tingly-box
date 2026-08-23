@@ -7,7 +7,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/tingly-dev/tingly-box/ai"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -23,32 +22,8 @@ import (
 //
 // Clients are automatically cleaned up via finalizers when garbage collected.
 type ClientPool struct {
-	recordSink             *obs.Sink
 	virtualOpenAIClient    OpenAIClientInterface
 	virtualAnthropicClient AnthropicClientInterface
-}
-
-// ClientPoolBuilder builds a ClientPool with specified configuration.
-type ClientPoolBuilder struct {
-	recordSink *obs.Sink
-}
-
-// NewClientPoolBuilder creates a new builder with default settings.
-func NewClientPoolBuilder() *ClientPoolBuilder {
-	return &ClientPoolBuilder{}
-}
-
-// WithRecordSink sets the record sink for all clients.
-func (b *ClientPoolBuilder) WithRecordSink(sink *obs.Sink) *ClientPoolBuilder {
-	b.recordSink = sink
-	return b
-}
-
-// Build creates the ClientPool with configured settings.
-func (b *ClientPoolBuilder) Build() *ClientPool {
-	return &ClientPool{
-		recordSink: b.recordSink,
-	}
 }
 
 // NewClientPool creates a new ClientPool with default settings.
@@ -106,13 +81,6 @@ func (p *ClientPool) GetOpenAIClient(ctx context.Context, provider *typ.Provider
 		}
 	}
 
-	// Set record sink if enabled (only for OpenAIClient, not CodexClient or KimiClient)
-	if p.recordSink != nil && p.recordSink.IsEnabled() {
-		if oc, ok := client.(*OpenAIClient); ok {
-			oc.SetRecordSink(p.recordSink)
-		}
-	}
-
 	// Set finalizer for automatic cleanup when GC collects the client.
 	// This ensures idle connections are closed without requiring explicit Close() calls.
 	runtime.SetFinalizer(client, func(c OpenAIClientInterface) {
@@ -157,10 +125,6 @@ func (p *ClientPool) GetAnthropicClient(ctx context.Context, provider *typ.Provi
 		return nil
 	}
 
-	if p.recordSink != nil && p.recordSink.IsEnabled() {
-		client.SetRecordSink(p.recordSink)
-	}
-
 	// Set finalizer for automatic cleanup when GC collects the client.
 	runtime.SetFinalizer(client, func(c AnthropicClientInterface) {
 		if c != nil {
@@ -184,10 +148,6 @@ func (p *ClientPool) GetGoogleClient(ctx context.Context, provider *typ.Provider
 	if err != nil {
 		logrus.WithContext(ctx).Errorf("Failed to create Google client for provider %s: %v", provider.Name, err)
 		return nil
-	}
-
-	if p.recordSink != nil && p.recordSink.IsEnabled() {
-		client.SetRecordSink(p.recordSink)
 	}
 
 	// Set finalizer for automatic cleanup when GC collects the client.
@@ -231,23 +191,6 @@ func (p *ClientPool) SetVirtualClients(openAI OpenAIClientInterface, anthropic A
 	p.virtualAnthropicClient = anthropic
 }
 
-// SetRecordSink sets the record sink for the client pool.
-// Note: This only affects newly created clients, not existing ones.
-func (p *ClientPool) SetRecordSink(sink *obs.Sink) {
-	if sink == nil {
-		return
-	}
-	p.recordSink = sink
-	if sink.IsEnabled() {
-		logrus.Info("Record sink enabled for client pool")
-	}
-}
-
-// GetRecordSink returns the record sink.
-func (p *ClientPool) GetRecordSink() *obs.Sink {
-	return p.recordSink
-}
-
 // InvalidateSession invalidates transports for a specific session.
 // This is useful when a session ends or its OAuth token is revoked.
 //
@@ -279,8 +222,7 @@ func (p *ClientPool) Stats() map[string]interface{} {
 	transportStats := GetGlobalTransportPool().Stats()
 
 	return map[string]interface{}{
-		"mode":                "once",
-		"transport_pool":      transportStats,
-		"record_sink_enabled": p.recordSink != nil && p.recordSink.IsEnabled(),
+		"mode":           "once",
+		"transport_pool": transportStats,
 	}
 }

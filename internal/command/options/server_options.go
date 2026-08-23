@@ -17,22 +17,22 @@ type StartFlags struct {
 	Daemon               bool
 	LogFile              string
 	PromptRestart        bool
-	RecordMode           string
-	RecordDir            string
 }
 
 // StartServerOptions contains resolved options for starting the server
 type StartServerOptions struct {
-	Host                 string
-	Port                 int
-	EnableUI             bool
-	EnableDebug          bool
-	EnableOpenBrowser    bool
-	Daemon               bool
-	LogFile              string
-	PromptRestart        bool
-	RecordMode string
-	RecordDir  string
+	Host              string
+	Port              int
+	EnableUI          bool
+	EnableDebug       bool
+	EnableOpenBrowser bool
+	Daemon            bool
+	LogFile           string
+	PromptRestart     bool
+	// RecordDir is where scenario recording sinks write when the scenario's
+	// recording_v2 flag enables recording. Always the config-dir default —
+	// recording enablement is flag-driven, not a CLI concern.
+	RecordDir string
 }
 
 // AddStartFlags adds all start-related flags to a command
@@ -47,8 +47,6 @@ func AddStartFlags(cmd *cobra.Command, flags *StartFlags) {
 	cmd.Flags().BoolVar(&flags.Daemon, "daemon", false, "Run as daemon in background (default: false)")
 	cmd.Flags().StringVar(&flags.LogFile, "log-file", "", "Log file path for daemon mode (default: ~/.tingly-box/tingly-box.log)")
 	cmd.Flags().BoolVar(&flags.PromptRestart, "prompt-restart", false, "Prompt to restart if server is already running (default: false)")
-	cmd.Flags().StringVar(&flags.RecordMode, "record-mode", "", "Record mode: empty=disabled, 'all'=record request+response, 'scenario'=all but for scenario only, 'response'=response only (default: disabled)")
-	cmd.Flags().StringVar(&flags.RecordDir, "record-dir", "", "Record directory (default: ~/.tingly-box/record/)")
 }
 
 // ResolveStartOptions resolves CLI flags with config file defaults
@@ -67,12 +65,6 @@ func ResolveStartOptions(cmd *cobra.Command, flags StartFlags, appConfig *config
 		appConfig.SetServerPort(flags.Port)
 	}
 
-	// Resolve record directory
-	resolvedRecordDir := flags.RecordDir
-	if resolvedRecordDir == "" {
-		resolvedRecordDir = appConfig.ConfigDir() + "/record"
-	}
-
 	return StartServerOptions{
 		Host:              flags.Host,
 		Port:              resolvedPort,
@@ -82,7 +74,6 @@ func ResolveStartOptions(cmd *cobra.Command, flags StartFlags, appConfig *config
 		Daemon:            flags.Daemon,
 		LogFile:           flags.LogFile,
 		PromptRestart:     flags.PromptRestart,
-		RecordMode:        flags.RecordMode,
-		RecordDir:         resolvedRecordDir,
+		RecordDir:         appConfig.ConfigDir() + "/record",
 	}
 }

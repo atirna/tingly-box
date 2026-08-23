@@ -13,7 +13,6 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/ai"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/assembler"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -563,12 +562,6 @@ func (c *CodexClient) parseResponsesStream(ctx context.Context, stream *ssestrea
 
 	logrus.WithContext(ctx).Debugf("[Codex] Response assembled via assembler, id: %s, status: %s", resp.ID, asm.Status())
 	return resp, nil
-}
-
-// SetRecordSink sets the record sink for the client.
-// For CodexClient, we delegate to the embedded OpenAIClient.
-func (c *CodexClient) SetRecordSink(sink *obs.Sink) {
-	c.OpenAIClient.SetRecordSink(sink)
 }
 
 // Client returns the underlying OpenAI SDK client.

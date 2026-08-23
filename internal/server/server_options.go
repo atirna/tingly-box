@@ -50,14 +50,6 @@ func WithOpenBrowser(enabled bool) ServerOption {
 	}
 }
 
-// WithRecordMode sets the record mode for request/response recording
-// mode: empty string = disabled, "all" = record all, "response" = response only, "scenario" = record scenario only
-func WithRecordMode(mode obs.RecordMode) ServerOption {
-	return func(s *Server) {
-		s.recordMode = mode
-	}
-}
-
 // WithRecordDir sets the scenario-level record directory
 func WithRecordDir(dir string) ServerOption {
 	return func(s *Server) {
@@ -72,13 +64,6 @@ func WithRecordDir(dir string) ServerOption {
 func WithRecordingCAS(enabled bool) ServerOption {
 	return func(s *Server) {
 		s.recordCAS = enabled
-	}
-}
-
-// WithRecording enables dual-stage recording for protocol conversion scenarios
-func WithRecording(enabled bool) ServerOption {
-	return func(s *Server) {
-		s.enableRecording = enabled
 	}
 }
 
@@ -211,16 +196,18 @@ func (s *Server) GetOrCreateScenarioSink(scenario typ.RuleScenario) *obs.Sink {
 	return sink
 }
 
+// GetScenarioRecordMode resolves the effective recording mode for a scenario.
+// The scenario-level recording_v2 flag is the only source; there is no global
+// CLI record mode any more (see .design/recording.md — enablement is a flag
+// concern, and a rule-level flag joins in Phase 2).
 func (s *Server) GetScenarioRecordMode(scenario typ.RuleScenario) obs.RecordMode {
 	if s == nil || s.config == nil {
-		return s.recordMode
+		return ""
 	}
-
 	if mode := s.config.GetScenarioRecordingMode(scenario); mode != typ.RecordingModeDisabled {
 		return obs.RecordMode(mode)
 	}
-
-	return s.recordMode
+	return ""
 }
 
 // EnsureProtocolRecorder delegates to the AI Model API handler, which owns
