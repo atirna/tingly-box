@@ -46,8 +46,11 @@ const PROTOCOL_META: Partial<Record<ProbeProtocol | '', { short: string; full: s
     anthropic_v1: { short: 'A', full: 'Anthropic Messages' },
 };
 
-// THINKING_LADDER orders the effort steps for the slider control bar.
-const THINKING_LADDER: ProbeThinking[] = ['none', 'low', 'medium', 'high'];
+// THINKING_LADDER orders the effort steps for the slider control bar. Mirrors
+// the rule flag's thinking_effort options (.design/rule-flags.md) minus the
+// "By Client"/"Off" states, which don't apply to a probe that always builds
+// its own request.
+const THINKING_LADDER: ProbeThinking[] = ['none', 'low', 'medium', 'high', 'max'];
 
 // Full-width group with equal-width options — the alignment primitive of the
 // rail. Minimal deltas over the shared theme style (width + flex); all
@@ -134,6 +137,12 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
     const [advancedOpen, setAdvancedOpen] = useState(false);
 
     const set = (patch: Partial<ProbeAxes>) => onAxesChange({ ...axes, ...patch });
+
+    // Protocol options as actually rendered (falls back to a single-item list
+    // while the target is still resolving). Short labels exist to fit three
+    // buttons in the rail; with only one button there's no room pressure, so
+    // show the full protocol name instead of an abbreviation nobody needs.
+    const protocolOptions = protocol.options.length ? protocol.options : [protocol.value];
 
     return (
         <Stack spacing={1.5}>
@@ -244,9 +253,9 @@ export const ProbeControls: React.FC<ProbeControlsProps> = ({
                             <ExclusiveToggle
                                 value={protocol.value}
                                 onChange={(v) => set({ protocol: v as ProbeProtocol })}
-                                options={(protocol.options.length ? protocol.options : [protocol.value]).map((p) => ({
+                                options={protocolOptions.map((p) => ({
                                     value: p,
-                                    label: PROTOCOL_META[p]?.short || p,
+                                    label: (protocolOptions.length === 1 ? PROTOCOL_META[p]?.full : PROTOCOL_META[p]?.short) || p,
                                 }))}
                                 disabled={protocol.locked || protocol.disabled}
                             />
