@@ -5,12 +5,12 @@ import (
 	"strconv"
 
 	"github.com/sirupsen/logrus"
+	pkgobs "github.com/tingly-dev/tingly-box/internal/obs"
 
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/typ"
-	pkgobs "github.com/tingly-dev/tingly-box/pkg/obs"
 )
 
 // SmartRoutingStage evaluates smart routing rules and returns matched services.
