@@ -39,7 +39,6 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/server/module/tokenrefresh"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/pkg/auth"
-	pkgobs "github.com/tingly-dev/tingly-box/pkg/obs"
 	pkgotel "github.com/tingly-dev/tingly-box/pkg/otel"
 	"github.com/tingly-dev/tingly-box/pkg/otel/tracker"
 	"github.com/tingly-dev/tingly-box/remote/channel"
@@ -58,7 +57,7 @@ type Server struct {
 	watcher    *config.Watcher
 
 	// multi-mode logger for text + JSON + memory output
-	multiLogger *pkgobs.MultiLogger
+	multiLogger *obs.MultiLogger
 
 	// middleware
 	authMW          *middleware.AuthMiddleware
