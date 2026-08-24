@@ -57,8 +57,8 @@ type ShortcutCmdKong struct {
 	NoMenu    bool   `kong:"flag,name='no-menu',help='Do not create a Start Menu / application menu entry'"`
 }
 
-func (s *ShortcutCmdKong) Run(source LaunchSource) error {
-	spec, err := resolveShortcutSpec(source)
+func (s *ShortcutCmdKong) Run(appManager *AppManager) error {
+	spec, err := resolveShortcutSpec(appManager.LaunchSource())
 	if err != nil {
 		return err
 	}

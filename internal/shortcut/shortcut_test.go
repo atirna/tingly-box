@@ -7,6 +7,18 @@ import (
 	"testing"
 )
 
+// setTestHomeDir isolates os.UserHomeDir() to dir for the test. HOME is what
+// os.UserHomeDir reads on Unix and macOS; on Windows it reads USERPROFILE
+// instead (HOME is ignored there), so both must be set or a Windows test run
+// falls through to the real user profile — reading/writing outside the
+// sandboxed dir the test thinks it's using.
+func setTestHomeDir(t *testing.T, dir string) string {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	return dir
+}
+
 func TestLaunchArgs(t *testing.T) {
 	args := LaunchArgs()
 	if got := strings.Join(args, " "); got != "restart --daemon" {
@@ -60,8 +72,7 @@ func TestLauncherScriptContent(t *testing.T) {
 }
 
 func TestCreateLinuxShortcutsAlwaysWritesLauncherScript(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := setTestHomeDir(t, t.TempDir())
 	t.Setenv("XDG_DATA_HOME", "")
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
 
@@ -97,8 +108,7 @@ func TestCreateLinuxShortcutsAlwaysWritesLauncherScript(t *testing.T) {
 }
 
 func TestCreateLinuxShortcutsRespectsAllOff(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHomeDir(t, t.TempDir())
 	t.Setenv("XDG_DATA_HOME", "")
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
 
@@ -172,8 +182,7 @@ func TestResolveLaunchWithExtraArgs(t *testing.T) {
 }
 
 func TestAnyExists(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHomeDir(t, t.TempDir())
 	t.Setenv("XDG_DATA_HOME", "")
 
 	if AnyExists("Tingly Box") {
@@ -246,8 +255,7 @@ func TestWindowsShortcutScriptRespectsNoDesktopNoMenu(t *testing.T) {
 }
 
 func TestCreateMacShortcuts(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := setTestHomeDir(t, t.TempDir())
 	if err := os.MkdirAll(filepath.Join(home, "Desktop"), 0o755); err != nil {
 		t.Fatal(err)
 	}

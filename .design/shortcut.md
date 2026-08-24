@@ -133,8 +133,18 @@ way the shortcut should launch again.
 `--source` stays a **global** Kong flag (not per-subcommand) purely so the
 npx wrapper can prepend it once to every invocation without special-casing
 which subcommand is being run. It is bound into `ctx.Run()` as a typed
-`command.LaunchSource` value and read directly by `ShortcutCmdKong.Run`,
-`StartCmdKong.Run`, and `RestartCmdKong.Run` — never written to disk.
+`command.LaunchSource` value, but **read from `AppManager`, not passed as a
+`Run()` parameter**: `main` calls `appManager.SetLaunchSource(...)` once,
+and every command (`ShortcutCmdKong`, `StartCmdKong`, `RestartCmdKong`,
+`OpenCmdKong`, the TUI's `StartServerAt`) reads it back via
+`appManager.LaunchSource()`. Threading it as a `Run(appManager, source)`
+parameter instead was tried and dropped: Kong only injects parameters a
+command's `Run` method declares, so `OpenCmdKong.Run(appManager)` (no
+`source` param) and the TUI's in-process start path silently got an empty
+source — one-click update looked permanently unavailable for a server that
+really was launched via npx. Storing it on `AppManager`, which every start
+path already has a handle to, makes that omission structurally impossible
+instead of a per-call-site discipline. Still never written to disk.
 
 ---
 
@@ -420,22 +430,42 @@ exactly the interaction the shortcut exists to remove.
 ```
 UI button → POST /api/v1/info/update
   guard: launchSource ∈ {npx, npx-bundle}      (else 400 with guidance)
-  guard: latest > running                       (else 400 "up to date")
-  spawn detached: sh -lc 'npx -y tingly-box@<latest> restart --daemon [--shortcut]'
+  guard: latest (for THIS source's npm package) > running  (else 400 "up to date")
+  spawn detached: sh -lc 'npx -y <pkg>@<latest> restart --daemon --browser=false [--host <h>] [--shortcut]'
   → respond {target_version, command}; UI polls /info/version, reloads on change
 ```
 
 - The relaunch command is built by `shortcut.ResolveLaunchWith` — the
   *same* command a shortcut runs, pinned to the target version instead of
   the running one. No new launch machinery.
-- The spawned child is fully detached (`pkg/daemon.DetachAttrs`) because it
-  will stop and replace the very server that spawned it (`restart`).
+- `<pkg>` is resolved by `shortcut.NpxPackage(launchSource)` — the same
+  mapping the shortcut relaunch uses (`tingly-box` vs `tingly-box-bundle`).
+  The version check itself queries that package's own npm registry entry
+  (`info.NewFor(shortcut.NpxPackage(...))`, cached once per `Handler` so the
+  Checker's TTL cache actually works instead of hitting npm on every
+  request): the bundle package can lag the main one, and pinning a version
+  it doesn't have would make the relaunch fail silently.
+- `--browser=false` because the page that clicked "update" is the one that
+  reloads itself; `--host <h>` is forwarded when the server was bound to an
+  explicit host, since a bare `restart` only preserves the port (via the
+  runtime port file) and would otherwise reset a deliberately-restricted
+  bind (e.g. `127.0.0.1`) back to the default, silently widening network
+  exposure of a service that holds provider credentials.
+- The spawned child is fully detached (`pkg/daemon.DetachAttrs`), which also
+  scrubs `_TINGLY_BOX_DAEMON` from its environment: it will stop and replace
+  the very server that spawned it (`restart`), and if that inherited marker
+  survived, the new process's own `--daemon` would see itself as "already
+  the daemon child" and skip `Daemonize`'s re-exec — running for its whole
+  lifetime as a foreground child of the npx/node process tree instead of a
+  properly detached daemon.
 - `launchSource` reaches the server in memory only (§6's sketch, realized):
-  global `--source` flag → `options.StartFlags` → `server.WithLaunchSource`
-  → `info.Handler`. No detection, no persistence — same rule as §3. The
-  daemon re-exec preserves original args, so the daemonized child still
-  knows its source. `/info/version/check` returns `launch_source` +
-  `can_one_click` so the UI shows the button only where it applies.
+  the global `--source` flag is recorded once on `AppManager` and read by
+  every start path (see "How the source is known" above) —
+  `server.WithLaunchSource` → `info.Handler`. No detection, no persistence —
+  same rule as §3. The daemon re-exec preserves original args, so the
+  daemonized child still knows its source. `/info/version/check` returns
+  `launch_source` + `can_one_click` so the UI shows the button only where it
+  applies.
 
 ### Shortcut repin
 

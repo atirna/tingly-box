@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/tingly-dev/tingly-box/internal/config"
+	"github.com/tingly-dev/tingly-box/internal/server"
 	serverconfig "github.com/tingly-dev/tingly-box/internal/server/config"
 	"github.com/tingly-dev/tingly-box/pkg/lock"
 )
@@ -12,7 +13,20 @@ import (
 // lifecycle. Domain behavior belongs in internal/usecase rather than here.
 type AppManager struct {
 	appConfig *config.AppConfig
+
+	// launchSource is how this process was invoked (global --source flag;
+	// "", "npx" or "npx-bundle"). Set once in main, read wherever the launch
+	// method matters (shortcut generation, self-update) — in memory only,
+	// never persisted (see .design/shortcut.md §3).
+	launchSource LaunchSource
 }
+
+// SetLaunchSource records how this process was invoked. Called once from
+// main before any command runs.
+func (am *AppManager) SetLaunchSource(source LaunchSource) { am.launchSource = source }
+
+// LaunchSource returns how this process was invoked.
+func (am *AppManager) LaunchSource() LaunchSource { return am.launchSource }
 
 // NewAppManager creates a new AppManager with the given config directory.
 func NewAppManager(configDir string) (*AppManager, error) {
@@ -49,7 +63,8 @@ func (am *AppManager) GetGlobalConfig() *serverconfig.Config {
 
 // StartServerAt initializes and starts the in-process server used by the TUI.
 func (am *AppManager) StartServerAt(port int) error {
-	serverManager := NewServerManager(am.appConfig)
+	serverManager := NewServerManager(am.appConfig,
+		server.WithLaunchSource(string(am.launchSource)))
 	if err := serverManager.Setup(port); err != nil {
 		return err
 	}

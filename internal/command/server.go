@@ -41,9 +41,9 @@ type StartCmdKong struct {
 	EnableShortcut       bool   `kong:"flag,name='shortcut',help='Also create/refresh a desktop shortcut for next time'"`
 }
 
-func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
+func (s *StartCmdKong) Run(appManager *AppManager) error {
 	if s.EnableShortcut {
-		refreshShortcut(source)
+		refreshShortcut(appManager.LaunchSource())
 	}
 
 	flags := options.StartFlags{
@@ -56,7 +56,6 @@ func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 		Daemon:               s.Daemon,
 		LogFile:              s.LogFile,
 		PromptRestart:        s.PromptRestart,
-		LaunchSource:         string(source),
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts)
@@ -81,9 +80,9 @@ type RestartCmdKong struct {
 	StartCmdKong
 }
 
-func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
+func (r *RestartCmdKong) Run(appManager *AppManager) error {
 	if r.EnableShortcut {
-		refreshShortcut(source)
+		refreshShortcut(appManager.LaunchSource())
 	}
 
 	appConfig := appManager.AppConfig()
@@ -129,7 +128,6 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 		Daemon:               r.Daemon,
 		LogFile:              r.LogFile,
 		PromptRestart:        r.PromptRestart,
-		LaunchSource:         string(source),
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(r.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts)
@@ -566,7 +564,7 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 		server.WithHost(opts.Host),
 		server.WithRecordDir(opts.RecordDir),
 		server.WithMultiLogger(multiLogger),
-		server.WithLaunchSource(opts.LaunchSource),
+		server.WithLaunchSource(string(appManager.LaunchSource())),
 	)
 
 	for _, hook := range hooks {

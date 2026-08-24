@@ -68,7 +68,7 @@ func (s *Server) UseWebAPIEndpoints(manager *swagger.RouteManager) {
 	apiV1.Router.Use(s.getUserAuthMiddleware())
 
 	// Info endpoints: health (unauthenticated) + config/version (authenticated)
-	infoHandler := info.NewHandler(s.version, s.config.ConfigFile, s.config.ConfigDir, s.launchSource)
+	infoHandler := info.NewHandler(s.version, s.config.ConfigFile, s.config.ConfigDir, s.launchSource, s.host)
 	info.RegisterRoutes(apiAuth, apiV1, infoHandler)
 
 	apiV1.GET("/auth/token", s.GetUserToken,

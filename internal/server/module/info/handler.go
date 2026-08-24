@@ -8,6 +8,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/tingly-dev/tingly-box/internal/shortcut"
 )
 
 // Handler carries the minimal server state needed to serve /info/* endpoints.
@@ -16,17 +18,25 @@ type Handler struct {
 	configFile   string
 	configDir    string
 	launchSource string
+	host         string
+	checker      *Checker
 }
 
 // NewHandler creates a Handler. launchSource is how this server process was
 // invoked (see internal/shortcut source constants; empty means plain binary)
-// — it decides whether the one-click update path is available.
-func NewHandler(version, configFile, configDir, launchSource string) *Handler {
+// — it decides whether the one-click update path is available and which npm
+// package version checks query. host is the server's --host value, passed
+// through to an update relaunch so updating never widens network exposure.
+func NewHandler(version, configFile, configDir, launchSource, host string) *Handler {
 	return &Handler{
 		version:      version,
 		configFile:   configFile,
 		configDir:    configDir,
 		launchSource: launchSource,
+		host:         host,
+		// One Checker for the Handler's lifetime so its TTL cache actually
+		// serves repeat checks instead of hitting npm on every request.
+		checker: NewFor(shortcut.NpxPackage(launchSource)),
 	}
 }
 
@@ -63,8 +73,7 @@ func (h *Handler) GetInfoVersion(c *gin.Context) {
 // GetLatestVersion checks the npm registry for the latest published version
 // and compares it with the running version.
 func (h *Handler) GetLatestVersion(c *gin.Context) {
-	checker := New()
-	latestVersion, releaseURL, err := checker.CheckLatestVersion()
+	latestVersion, releaseURL, err := h.checker.CheckLatestVersion()
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, LatestVersionResponse{
 			Success: false,
@@ -103,7 +112,7 @@ func (h *Handler) PostUpdate(c *gin.Context) {
 		return
 	}
 
-	latestVersion, _, err := New().CheckLatestVersion()
+	latestVersion, _, err := h.checker.CheckLatestVersion()
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, UpdateApplyResponse{
 			Error: fmt.Sprintf("failed to resolve the latest version: %v", err),
@@ -117,7 +126,7 @@ func (h *Handler) PostUpdate(c *gin.Context) {
 		return
 	}
 
-	spec := updateLaunchSpec(h.launchSource, latestVersion, "Tingly Box")
+	spec := updateLaunchSpec(h.launchSource, latestVersion, h.host, "Tingly Box")
 	command, err := spawnDetached(spec)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, UpdateApplyResponse{
@@ -128,7 +137,7 @@ func (h *Handler) PostUpdate(c *gin.Context) {
 
 	c.JSON(http.StatusOK, UpdateApplyResponse{
 		Success: true,
-		Data: UpdateApplyInfo{
+		Data: &UpdateApplyInfo{
 			TargetVersion: latestVersion,
 			Command:       command,
 		},

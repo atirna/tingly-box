@@ -152,11 +152,13 @@ func main() {
 	}
 
 	appManager := command.NewAppManagerWithConfig(appConfig)
+	// Record how this process was invoked (binary/npx/npx-bundle, from the
+	// global --source flag) once, on the process host. Every consumer —
+	// `shortcut`, `start`/`restart`, the TUI's in-process server, and the
+	// self-update endpoint — reads it from here; nothing persists it.
+	appManager.SetLaunchSource(command.LaunchSource(cli.Source))
 
-	// Run the selected command. command.LaunchSource carries how this process
-	// was invoked (binary/npx/npx-bundle, from --source) so `shortcut`, `start`,
-	// and `restart` can generate/refresh a launcher matching the install method.
-	if err := ctx.Run(appManager, command.LaunchSource(cli.Source)); err != nil {
+	if err := ctx.Run(appManager); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

@@ -37,14 +37,25 @@ type cache struct {
 	ttl           time.Duration
 }
 
-// Checker handles version-related operations.
+// Checker handles version-related operations for one npm package.
 type Checker struct {
 	httpClient *http.Client
 	cache      *cache
+	npmPackage string
 }
 
-// New creates a new Checker with default settings (10 s HTTP timeout, 2 h cache TTL).
+// New creates a Checker for the main tingly-box package with default
+// settings (10 s HTTP timeout, 2 h cache TTL).
 func New() *Checker {
+	return NewFor(tinglyBoxNPM)
+}
+
+// NewFor creates a Checker that queries the given npm package. The package
+// must match the one an update would relaunch (shortcut.NpxPackage): for
+// npx-bundle installs the bundle package can lag the main one, and pinning a
+// version the bundle registry entry doesn't have would make the relaunch
+// fail silently.
+func NewFor(npmPackage string) *Checker {
 	return &Checker{
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -52,6 +63,7 @@ func New() *Checker {
 		cache: &cache{
 			ttl: 2 * time.Hour,
 		},
+		npmPackage: npmPackage,
 	}
 }
 
@@ -87,11 +99,11 @@ func (c *Checker) updateCache(version, releaseURL string) {
 }
 
 func (c *Checker) checkFromNpm() (version, releaseURL string, err error) {
-	return c.fetchFromRegistry(fmt.Sprintf(npmRegistryAPI, tinglyBoxNPM), "npm")
+	return c.fetchFromRegistry(fmt.Sprintf(npmRegistryAPI, c.npmPackage), "npm")
 }
 
 func (c *Checker) checkFromNpmMirror() (version, releaseURL string, err error) {
-	return c.fetchFromRegistry(fmt.Sprintf(npmmirrorAPI, tinglyBoxNPM), "npmmirror")
+	return c.fetchFromRegistry(fmt.Sprintf(npmmirrorAPI, c.npmPackage), "npmmirror")
 }
 
 func (c *Checker) fetchFromRegistry(url, registryName string) (version, releaseURL string, err error) {

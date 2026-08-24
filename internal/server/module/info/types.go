@@ -53,11 +53,13 @@ type UpdateApplyInfo struct {
 	Command       string `json:"command" example:"sh -lc npx -y tingly-box@0.260130.1200 restart --daemon"`
 }
 
-// UpdateApplyResponse is the JSON envelope for POST /info/update.
+// UpdateApplyResponse is the JSON envelope for POST /info/update. Data is a
+// pointer because omitempty is a no-op on a struct value — error responses
+// must not carry a populated-looking empty data object.
 type UpdateApplyResponse struct {
-	Success bool            `json:"success"`
-	Error   string          `json:"error,omitempty"`
-	Data    UpdateApplyInfo `json:"data,omitempty"`
+	Success bool             `json:"success"`
+	Error   string           `json:"error,omitempty"`
+	Data    *UpdateApplyInfo `json:"data,omitempty"`
 }
 
 // LatestVersionResponse is the JSON envelope for GET /info/version/check.

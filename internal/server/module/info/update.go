@@ -24,11 +24,21 @@ func CanOneClickUpdate(launchSource string) bool {
 
 // updateLaunchSpec builds the relaunch command for a one-click update:
 // the same command a shortcut would run, pinned to targetVersion instead of
-// the running version. --shortcut is appended iff the user already has
-// shortcut artifacts, so the update repins them to the new version without
-// ever creating shortcuts for a user who never asked for any.
-func updateLaunchSpec(launchSource, targetVersion, shortcutName string) shortcut.LaunchSpec {
-	args := shortcut.LaunchArgs()
+// the running version, plus:
+//   - --browser=false: the page that clicked "update" reloads itself, so the
+//     relaunch opening another tab would just duplicate it;
+//   - --host <host> when the server was bound to an explicit host, so an
+//     update never silently widens network exposure (a bare restart would
+//     reset --host to the default). The port needs no passthrough — restart
+//     preserves the running port via the runtime port file;
+//   - --shortcut iff the user already has shortcut artifacts, so the update
+//     repins them to the new version without ever creating shortcuts for a
+//     user who never asked for any.
+func updateLaunchSpec(launchSource, targetVersion, host, shortcutName string) shortcut.LaunchSpec {
+	args := append(shortcut.LaunchArgs(), "--browser=false")
+	if host != "" {
+		args = append(args, "--host", host)
+	}
 	if shortcut.AnyExists(shortcutName) {
 		args = append(args, "--shortcut")
 	}

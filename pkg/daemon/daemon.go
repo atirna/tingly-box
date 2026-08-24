@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -46,12 +47,26 @@ func IsDaemonProcess() bool {
 
 // DetachAttrs configures cmd so the child process is fully detached from this
 // one (new session / detached console, no inherited stdio) and survives the
-// parent exiting. Used by Daemonize and by callers that spawn a command which
-// will outlive — or even replace — the current process (e.g. self-update).
+// parent exiting. Used by callers that spawn a command which will outlive —
+// or even replace — the current process (e.g. self-update).
+//
+// The daemon marker is scrubbed from the child's environment: when the
+// current process is itself a daemonized child, an inherited
+// _TINGLY_BOX_DAEMON=1 would make the spawned command's own `--daemon` skip
+// Daemonize's re-exec and keep the "daemon" attached to the intermediate
+// process tree (sh/npx/node) for its whole lifetime.
 func DetachAttrs(cmd *exec.Cmd) {
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "_TINGLY_BOX_DAEMON=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = env
 	cmd.SysProcAttr = daemonSysProcAttr()
 }
 

@@ -44,6 +44,19 @@ const (
 	SourceNpxBundle = "npx-bundle"
 )
 
+// NpxPackage returns the npm package name a given launch source installs
+// from ("tingly-box", or "tingly-box-bundle" for the bundle wrapper; any
+// other source gets the main package). It is the single mapping used both to
+// build relaunch commands and to decide which registry entry a version check
+// should query — the two must never diverge, or an update could pin a
+// version the source's own package doesn't have.
+func NpxPackage(source string) string {
+	if source == SourceNpxBundle {
+		return "tingly-box-bundle"
+	}
+	return "tingly-box"
+}
+
 // npxPackageForSource returns the npm package + version spec an npx-based
 // launch should run. It pins to the currently-running version so the
 // shortcut relaunches the exact build the user is already on — not whatever
@@ -52,10 +65,7 @@ const (
 // "dev"/"unknown" placeholders used by unversioned builds) falls back to
 // "@latest".
 func npxPackageForSource(source, version string) string {
-	pkg := "tingly-box"
-	if source == SourceNpxBundle {
-		pkg = "tingly-box-bundle"
-	}
+	pkg := NpxPackage(source)
 	if version == "" || version == "dev" || version == "unknown" {
 		return pkg + "@latest"
 	}

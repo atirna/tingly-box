@@ -121,7 +121,16 @@ export const VersionProvider: React.FC<VersionProviderProps> = ({ children }) =>
         const poll = async () => {
             try {
                 const v = await api.getVersion();
-                if (v && v !== 'Unknown' && (v === target || v !== currentVersion)) {
+                // Reload only when the served version demonstrably changed:
+                // match the apply response's target when we have it; without
+                // it, require a real known->different transition — comparing
+                // against an unresolved 'Unknown' currentVersion would match
+                // the still-running old server on the first poll.
+                const known = !!v && v !== 'Unknown';
+                const reached = known && (target
+                    ? v === target
+                    : currentVersion !== 'Unknown' && v !== currentVersion);
+                if (reached) {
                     window.location.reload();
                     return;
                 }
