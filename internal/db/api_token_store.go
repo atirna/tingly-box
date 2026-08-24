@@ -222,6 +222,9 @@ func (s *APITokenStore) ValidateToken(tokenID string) (*APITokenRecord, error) {
 	if !ok || !record.Enabled {
 		return nil, fmt.Errorf("token not found or disabled")
 	}
+	if record.ExpiresAt != nil && record.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("token expired")
+	}
 	if s.teamStore == nil {
 		return nil, errors.New("team store is not initialized")
 	}
