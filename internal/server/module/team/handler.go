@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tingly-dev/tingly-box/internal/db"
+	"github.com/tingly-dev/tingly-box/internal/server/module/apierr"
 )
 
 type Handler struct {
@@ -15,10 +16,6 @@ type Handler struct {
 
 func NewHandler(store *db.TeamStore) *Handler {
 	return &Handler{store: store}
-}
-
-func sendError(c *gin.Context, status int, err error, errType string) {
-	c.JSON(status, gin.H{"error": gin.H{"message": err.Error(), "type": errType}})
 }
 
 // sendStoreError maps a TeamStore error to an HTTP response. All four
@@ -33,7 +30,7 @@ func sendStoreError(c *gin.Context, err error, defaultStatus int, errType string
 	case strings.Contains(msg, "unique") || strings.Contains(msg, "already exists"):
 		status = http.StatusConflict
 	}
-	sendError(c, status, err, errType)
+	apierr.Send(c, status, err, errType)
 }
 
 func recordToInfo(record *db.TeamRecord) TeamInfo {
@@ -56,7 +53,7 @@ func (h *Handler) List(c *gin.Context) {
 func (h *Handler) Create(c *gin.Context) {
 	var req CreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		sendError(c, http.StatusBadRequest, err, "invalid_request_error")
+		apierr.Send(c, http.StatusBadRequest, err, "invalid_request_error")
 		return
 	}
 	record, err := h.store.Create(req.Name)
@@ -70,12 +67,12 @@ func (h *Handler) Create(c *gin.Context) {
 func (h *Handler) Update(c *gin.Context) {
 	id := c.Param("team_id")
 	if id == "" {
-		sendError(c, http.StatusBadRequest, errors.New("team_id is required"), "invalid_request_error")
+		apierr.Send(c, http.StatusBadRequest, errors.New("team_id is required"), "invalid_request_error")
 		return
 	}
 	var req UpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		sendError(c, http.StatusBadRequest, err, "invalid_request_error")
+		apierr.Send(c, http.StatusBadRequest, err, "invalid_request_error")
 		return
 	}
 	record, err := h.store.Update(id, req.Name)
