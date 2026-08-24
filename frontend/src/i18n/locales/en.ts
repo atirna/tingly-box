@@ -59,6 +59,7 @@ export default {
     },
     "sidebar": {
       "newProfile": "New Profile",
+      "newTeam": "New Team",
       "profileName": "Profile name",
       "mode": "Mode",
       "modeUnified": "Unified: Single model for all",
@@ -66,6 +67,7 @@ export default {
       "separate": "Separate",
       "unified": "Unified",
       "createProfileTooltip": "Create a new Claude Code profile with custom settings",
+      "createTeamTooltip": "Create an isolated Team workspace",
       "sloganTooltip": "For all Solo Builders, Dev Teams and Agents.",
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar"
@@ -133,6 +135,7 @@ export default {
     "userRequest": "User Request",
     "skills": "Skills",
     "addProfile": "Add Profile",
+    "addTeam": "Add Team",
     "default": "default",
     "onboarding": "Quick Add Provider",
     "onboardingHint": "Browse or paste config",
@@ -1526,6 +1529,7 @@ export default {
   },
   "sharingKeys": {
     "title": "Sharing Keys",
+    "titleForTeam": "Sharing Keys · {{team}}",
     "createToken": "Create Token",
     "createDialogTitle": "Create Sharing Key",
     "displayName": "Display Name",
@@ -1541,7 +1545,34 @@ export default {
     "copiedToClipboard": "Token copied to clipboard",
     "disabled": "Token disabled",
     "enabled": "Token enabled",
-    "updateFailed": "Failed to update token"
+    "updateFailed": "Failed to update token",
+    "moveToken": "Move Key",
+    "destinationTeam": "Destination team",
+    "noDestinationTeam": "No other active team",
+    "moveHelper": "Move {{name}} without rotating its key.",
+    "moveSuccess": "Key moved to the new team",
+    "moveFailed": "Failed to move key"
+  },
+  "teams": {
+    "accessTitle": "Team Access",
+    "keyScopeSummary": "Sharing keys for {{team}} ({{slug}}) work only with /tingly/team and /tingly/team/v1. They cannot access other Teams, scenario endpoints, or management APIs.",
+    "keyScopeInfoLabel": "Sharing key access scope",
+    "editTeam": "Team settings",
+    "name": "Team name",
+    "inactive": "Inactive",
+    "disabledHint": "This team is disabled. Its sharing keys cannot access model endpoints until the team is enabled.",
+    "enableTeam": "Enable team",
+    "disableTeam": "Disable team",
+    "deleteTeam": "Delete team",
+    "deleteConfirm": "Delete {{team}}? Move or delete all of its sharing keys first.",
+    "loadFailed": "Failed to load teams",
+    "saveFailed": "Failed to save team",
+    "createSuccess": "Team created",
+    "updateSuccess": "Team updated",
+    "deleteSuccess": "Team deleted",
+    "deleteFailed": "Team cannot be deleted while it owns sharing keys",
+    "enabled": "Team enabled",
+    "disabled": "Team disabled"
   },
   "context1M": {
     "enabledTitle": "1M Context Window Enabled",

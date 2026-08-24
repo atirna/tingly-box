@@ -61,6 +61,7 @@ export default {
     },
     "sidebar": {
       "newProfile": "新建配置文件",
+      "newTeam": "新建 Team",
       "profileName": "配置文件名称",
       "mode": "模式",
       "modeUnified": "统一：所有模型使用相同配置",
@@ -68,6 +69,7 @@ export default {
       "separate": "分离",
       "unified": "统一",
       "createProfileTooltip": "创建一个新的 Claude Code 配置文件，自定义设置",
+      "createTeamTooltip": "创建一个独立鉴权的 Team 工作区",
       "sloganTooltip": "致，所有独立开发者、开发团队和智能应用。",
       "collapse": "收起侧边栏",
       "expand": "展开侧边栏"
@@ -135,6 +137,7 @@ export default {
     "userRequest": "用户请求",
     "skills": "技能",
     "addProfile": "添加配置文件",
+    "addTeam": "添加 Team",
     "default": "默认",
     "onboarding": "快速添加提供商",
     "onboardingHint": "浏览或粘贴配置",
@@ -1523,6 +1526,7 @@ export default {
   },
   "sharingKeys": {
     "title": "共享密钥",
+    "titleForTeam": "共享密钥 · {{team}}",
     "createToken": "创建令牌",
     "createDialogTitle": "创建共享密钥",
     "displayName": "显示名称",
@@ -1538,7 +1542,34 @@ export default {
     "copiedToClipboard": "令牌已复制到剪贴板",
     "disabled": "令牌已停用",
     "enabled": "令牌已启用",
-    "updateFailed": "更新令牌失败"
+    "updateFailed": "更新令牌失败",
+    "moveToken": "移动密钥",
+    "destinationTeam": "目标 Team",
+    "noDestinationTeam": "没有其他已启用的 Team",
+    "moveHelper": "移动 {{name}}，原密钥不会轮换。",
+    "moveSuccess": "密钥已移动到新的 Team",
+    "moveFailed": "移动密钥失败"
+  },
+  "teams": {
+    "accessTitle": "Team 访问",
+    "keyScopeSummary": "{{team}}（{{slug}}）的共享密钥仅可访问 /tingly/team 与 /tingly/team/v1，不能访问其他 Team、场景端点或管理 API。",
+    "keyScopeInfoLabel": "共享密钥访问范围",
+    "editTeam": "Team 设置",
+    "name": "Team 名称",
+    "inactive": "已停用",
+    "disabledHint": "此 Team 已停用；重新启用前，其共享密钥无法访问模型接口。",
+    "enableTeam": "启用 Team",
+    "disableTeam": "停用 Team",
+    "deleteTeam": "删除 Team",
+    "deleteConfirm": "删除 {{team}}？请先移动或删除它的全部共享密钥。",
+    "loadFailed": "加载 Team 失败",
+    "saveFailed": "保存 Team 失败",
+    "createSuccess": "Team 已创建",
+    "updateSuccess": "Team 已更新",
+    "deleteSuccess": "Team 已删除",
+    "deleteFailed": "Team 仍有共享密钥，无法删除",
+    "enabled": "Team 已启用",
+    "disabled": "Team 已停用"
   },
   "context1M": {
     "enabledTitle": "已启用 1M 上下文窗口",

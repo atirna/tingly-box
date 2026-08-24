@@ -6,22 +6,27 @@ import {
     DialogActions,
     DialogContent,
     DialogTitle,
+    MenuItem,
     Stack,
     TextField,
     Typography,
 } from '@mui/material';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/services/api';
 import { useNotify } from '@/hooks/useNotify';
 import SharingKeysTable, { type SharingKey } from '@/components/SharingKeysTable';
+import type { Team } from '@/types/team';
+import TeamKeyScopeAlert from './TeamKeyScopeAlert';
 
 interface SharingKeysDialogProps {
     open: boolean;
     onClose: () => void;
+    team: Team;
+    teams: Team[];
 }
 
-const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) => {
+const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose, team, teams }) => {
     const { t } = useTranslation();
     const notify = useNotify();
 
@@ -34,10 +39,23 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) 
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [tokenToDelete, setTokenToDelete] = useState<SharingKey | null>(null);
     const [deletingToken, setDeletingToken] = useState(false);
+    const [tokenToMove, setTokenToMove] = useState<SharingKey | null>(null);
+    const [moveTargetTeamID, setMoveTargetTeamID] = useState('');
+    const [movingToken, setMovingToken] = useState(false);
+
+    // Guards against a stale response for a previously selected team
+    // overwriting the keys of the team the user has since switched to.
+    const requestedTeamIdRef = useRef<string | null>(null);
 
     const loadSharingKeys = async () => {
+        const requestedTeamId = team.id;
+        requestedTeamIdRef.current = requestedTeamId;
         setKeysLoading(true);
-        const result = await api.listAPITokens();
+        const result = await api.listAPITokens({team_id: requestedTeamId});
+        if (requestedTeamIdRef.current !== requestedTeamId) {
+            // A newer request for a different team has since been issued; discard this response.
+            return;
+        }
         if (result.success && result.data) {
             setSharingKeys(result.data.tokens || []);
         }
@@ -48,7 +66,7 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) 
         if (open) {
             loadSharingKeys();
         }
-    }, [open]);
+    }, [open, team.id]);
 
     const handleCreateToken = async () => {
         if (!newTokenName.trim()) {
@@ -56,7 +74,7 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) 
             return;
         }
         setCreatingToken(true);
-        const result = await api.createAPIToken({ display_name: newTokenName.trim() });
+        const result = await api.createAPIToken({display_name: newTokenName.trim(), team_id: team.id});
         setCreatingToken(false);
         if (result.success) {
             notify.success(t('sharingKeys.createSuccess'));
@@ -65,6 +83,21 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) 
             loadSharingKeys();
         } else {
             notify.error(result.error?.message || t('sharingKeys.createFailed'));
+        }
+    };
+
+    const handleMoveToken = async () => {
+        if (!tokenToMove || !moveTargetTeamID) return;
+        setMovingToken(true);
+        const result = await api.moveAPITokenToTeam(tokenToMove.token_id, moveTargetTeamID);
+        setMovingToken(false);
+        if (result.success) {
+            notify.success(t('sharingKeys.moveSuccess'));
+            setTokenToMove(null);
+            setMoveTargetTeamID('');
+            loadSharingKeys();
+        } else {
+            notify.error(result.error?.message || t('sharingKeys.moveFailed'));
         }
     };
 
@@ -83,6 +116,18 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) 
         }
     };
 
+    const handleToggleEnabled = async (key: SharingKey) => {
+        const result = await api.setAPITokenEnabled(key.token_id, !key.enabled);
+        if (result.success) {
+            notify.success(key.enabled ? t('sharingKeys.disabled') : t('sharingKeys.enabled'));
+            loadSharingKeys();
+        } else {
+            notify.error(result.error?.message || t('sharingKeys.updateFailed'));
+        }
+    };
+
+    const eligibleMoveTargets = teams.filter((candidate) => candidate.id !== team.id && candidate.enabled);
+
     return (
         <>
             <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
@@ -91,7 +136,7 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) 
                         alignItems: "center"
                     }}>
                         <IconKey />
-                        <span>{t('sharingKeys.title')}</span>
+                        <span>{t('sharingKeys.titleForTeam', {team: team.name})}</span>
                     </Stack>
                     <Button
                         variant="contained"
@@ -102,38 +147,66 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose }) 
                     </Button>
                 </DialogTitle>
                 <DialogContent>
-                    <SharingKeysTable
-                        tokens={sharingKeys}
-                        loading={keysLoading}
-                        visibleTokens={visibleTokens}
-                        onToggleVisibility={(tokenId) => setVisibleTokens(prev => ({ ...prev, [tokenId]: !prev[tokenId] }))}
-                        onCopy={(tokenId) => {
-                            navigator.clipboard.writeText(tokenId);
-                            notify.success(t('sharingKeys.copiedToClipboard'));
-                        }}
-                        onToggleEnabled={async (key) => {
-                            const result = await api.setAPITokenEnabled(key.token_id, !key.enabled);
-                            if (result.success) {
-                                notify.success(key.enabled ? t('sharingKeys.disabled') : t('sharingKeys.enabled'));
-                                loadSharingKeys();
-                            } else {
-                                notify.error(result.error?.message || t('sharingKeys.updateFailed'));
-                            }
-                        }}
-                        onDelete={(key) => {
-                            setTokenToDelete(key);
-                            setDeleteDialogOpen(true);
-                        }}
-                        showUserColumn={true}
-                        showLastUsedColumn={false}
-                    />
+                    <Stack spacing={2}>
+                        <TeamKeyScopeAlert team={team} />
+                        <SharingKeysTable
+                            tokens={sharingKeys}
+                            loading={keysLoading}
+                            visibleTokens={visibleTokens}
+                            onToggleVisibility={(tokenId) => setVisibleTokens(prev => ({ ...prev, [tokenId]: !prev[tokenId] }))}
+                            onCopy={(tokenId) => {
+                                navigator.clipboard.writeText(tokenId);
+                                notify.success(t('sharingKeys.copiedToClipboard'));
+                            }}
+                            onToggleEnabled={handleToggleEnabled}
+                            onDelete={(key) => {
+                                setTokenToDelete(key);
+                                setDeleteDialogOpen(true);
+                            }}
+                            onMove={(key) => {
+                                setTokenToMove(key);
+                                setMoveTargetTeamID('');
+                            }}
+                            showUserColumn={true}
+                            showLastUsedColumn={false}
+                        />
+                    </Stack>
                 </DialogContent>
+            </Dialog>
+            {/* Move Token Dialog */}
+            <Dialog open={Boolean(tokenToMove)} onClose={() => setTokenToMove(null)} maxWidth="sm" fullWidth>
+                <DialogTitle>{t('sharingKeys.moveToken')}</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        select
+                        fullWidth
+                        sx={{mt: 1}}
+                        label={t('sharingKeys.destinationTeam')}
+                        value={moveTargetTeamID}
+                        onChange={(event) => setMoveTargetTeamID(event.target.value)}
+                        helperText={t('sharingKeys.moveHelper', {name: tokenToMove?.display_name})}
+                    >
+                        {eligibleMoveTargets.length === 0 && (
+                            <MenuItem disabled value="">{t('sharingKeys.noDestinationTeam')}</MenuItem>
+                        )}
+                        {eligibleMoveTargets.map((candidate) => (
+                            <MenuItem key={candidate.id} value={candidate.id}>{candidate.name}</MenuItem>
+                        ))}
+                    </TextField>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setTokenToMove(null)} disabled={movingToken}>{t('common.cancel')}</Button>
+                    <Button variant="contained" onClick={handleMoveToken} disabled={movingToken || !moveTargetTeamID}>
+                        {t('sharingKeys.moveToken')}
+                    </Button>
+                </DialogActions>
             </Dialog>
             {/* Create Token Dialog */}
             <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
                 <DialogTitle>{t('sharingKeys.createDialogTitle')}</DialogTitle>
                 <DialogContent>
-                    <Stack spacing={3} sx={{ mt: 1 }}>
+                    <Stack spacing={2} sx={{ mt: 1 }}>
+                        <TeamKeyScopeAlert team={team} />
                         <TextField
                             label={t('sharingKeys.displayName')}
                             fullWidth

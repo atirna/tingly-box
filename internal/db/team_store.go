@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
 const (
@@ -17,8 +19,10 @@ const (
 	// backfilled deterministically before user-created teams exist.
 	DefaultTeamID   = "00000000-0000-0000-0000-000000000001"
 	DefaultTeamSlug = "default"
-	DefaultTeamName = "Default Team"
+	DefaultTeamName = "Default"
 )
+
+var legacyDefaultTeamNames = []string{"Default Team", "default"}
 
 // TeamRecord is an authorization and routing boundary for sharing keys.
 // Human-readable names and slugs may change; ID is the durable identity stored
@@ -64,6 +68,14 @@ func newTeamStore(conn storeConn) (*TeamStore, error) {
 	if err := conn.db.Where("id = ?", DefaultTeamID).FirstOrCreate(&defaultTeam).Error; err != nil {
 		return nil, fmt.Errorf("failed to ensure default team: %w", err)
 	}
+	// Existing databases created before the canonical name became "Default"
+	// keep their row during FirstOrCreate. Migrate only the legacy generated
+	// name so an administrator's intentional rename is never overwritten.
+	if err := conn.db.Model(&TeamRecord{}).
+		Where("id = ? AND name IN ?", DefaultTeamID, legacyDefaultTeamNames).
+		Update("name", DefaultTeamName).Error; err != nil {
+		return nil, fmt.Errorf("failed to normalize default team name: %w", err)
+	}
 
 	store := &TeamStore{storeConn: conn, cache: make(map[string]*TeamRecord)}
 	if err := store.loadCache(); err != nil {
@@ -85,19 +97,12 @@ func (s *TeamStore) loadCache() error {
 	return nil
 }
 
-func validateTeamFields(name, slug string) error {
+func validateTeamName(name string) error {
 	if strings.TrimSpace(name) == "" {
 		return errors.New("team name cannot be empty")
 	}
-	if slug == "" || len(slug) > 64 {
-		return errors.New("team slug must be between 1 and 64 characters")
-	}
-	for i := 0; i < len(slug); i++ {
-		ch := slug[i]
-		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
-			continue
-		}
-		return errors.New("team slug may contain only lowercase letters, digits, '-' and '_'")
+	if len(name) > 128 {
+		return errors.New("team name cannot exceed 128 characters")
 	}
 	return nil
 }
@@ -110,15 +115,22 @@ func cloneTeam(record *TeamRecord) *TeamRecord {
 	return &clone
 }
 
-func (s *TeamStore) Create(name, slug string) (*TeamRecord, error) {
+func (s *TeamStore) Create(name string) (*TeamRecord, error) {
 	name = strings.TrimSpace(name)
-	slug = strings.TrimSpace(slug)
-	if err := validateTeamFields(name, slug); err != nil {
+	if err := validateTeamName(name); err != nil {
 		return nil, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	existingSlugs := make([]string, 0, len(s.cache))
+	for _, existing := range s.cache {
+		if existing.Name == name {
+			return nil, fmt.Errorf("team name '%s' already exists", name)
+		}
+		existingSlugs = append(existingSlugs, existing.Slug)
+	}
+	slug := typ.NextFreeNumberedID("t", existingSlugs)
 	record := &TeamRecord{ID: uuid.NewString(), Name: name, Slug: slug, Enabled: true}
 	if err := s.db.Create(record).Error; err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
@@ -153,10 +165,9 @@ func (s *TeamStore) List() []TeamRecord {
 	return records
 }
 
-func (s *TeamStore) Update(id, name, slug string) (*TeamRecord, error) {
+func (s *TeamStore) Update(id, name string) (*TeamRecord, error) {
 	name = strings.TrimSpace(name)
-	slug = strings.TrimSpace(slug)
-	if err := validateTeamFields(name, slug); err != nil {
+	if err := validateTeamName(name); err != nil {
 		return nil, err
 	}
 
@@ -166,14 +177,17 @@ func (s *TeamStore) Update(id, name, slug string) (*TeamRecord, error) {
 	if !ok {
 		return nil, fmt.Errorf("team '%s' not found", id)
 	}
+	for otherID, existing := range s.cache {
+		if otherID != id && existing.Name == name {
+			return nil, fmt.Errorf("team name '%s' already exists", name)
+		}
+	}
 	if err := s.db.Model(&TeamRecord{}).Where("id = ?", id).Updates(map[string]any{
 		"name": name,
-		"slug": slug,
 	}).Error; err != nil {
 		return nil, fmt.Errorf("failed to update team: %w", err)
 	}
 	record.Name = name
-	record.Slug = slug
 	record.UpdatedAt = time.Now()
 	return cloneTeam(record), nil
 }
