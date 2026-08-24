@@ -40,6 +40,24 @@ type LatestVersionInfo struct {
 	HasUpdate      bool   `json:"has_update" example:"true"`
 	ReleaseURL     string `json:"release_url" example:"https://github.com/tingly-dev/tingly-box/releases"`
 	ShouldNotify   bool   `json:"should_notify" example:"true"`
+	// LaunchSource is how this server process was started ("", "npx",
+	// "npx-bundle"); CanOneClick tells the UI whether POST /info/update is
+	// available for this install shape.
+	LaunchSource string `json:"launch_source" example:"npx"`
+	CanOneClick  bool   `json:"can_one_click" example:"true"`
+}
+
+// UpdateApplyInfo describes the update relaunch that was started.
+type UpdateApplyInfo struct {
+	TargetVersion string `json:"target_version" example:"0.260130.1200"`
+	Command       string `json:"command" example:"sh -lc npx -y tingly-box@0.260130.1200 restart --daemon"`
+}
+
+// UpdateApplyResponse is the JSON envelope for POST /info/update.
+type UpdateApplyResponse struct {
+	Success bool            `json:"success"`
+	Error   string          `json:"error,omitempty"`
+	Data    UpdateApplyInfo `json:"data,omitempty"`
 }
 
 // LatestVersionResponse is the JSON envelope for GET /info/version/check.

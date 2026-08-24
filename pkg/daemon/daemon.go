@@ -44,6 +44,17 @@ func IsDaemonProcess() bool {
 	return os.Getenv("_TINGLY_BOX_DAEMON") == "1"
 }
 
+// DetachAttrs configures cmd so the child process is fully detached from this
+// one (new session / detached console, no inherited stdio) and survives the
+// parent exiting. Used by Daemonize and by callers that spawn a command which
+// will outlive — or even replace — the current process (e.g. self-update).
+func DetachAttrs(cmd *exec.Cmd) {
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.SysProcAttr = daemonSysProcAttr()
+}
+
 // Daemonize detaches the process from the terminal and runs it in the
 // background by re-executing the current command as a detached child
 // (session leader on Unix, detached process on Windows) and exiting the

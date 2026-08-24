@@ -23,7 +23,7 @@ interface UpdatePanelDialogProps {
 export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onClose }) => {
     const { t } = useTranslation();
     const theme = useTheme();
-    const { currentVersion, latestVersion, checking, releaseURL, checkForUpdates, hasUpdate } = useVersion();
+    const { currentVersion, latestVersion, checking, releaseURL, checkForUpdates, hasUpdate, canOneClick, updating, updateError, applyUpdate } = useVersion();
 
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
     const [copiedVersion, setCopiedVersion] = useState(false);
@@ -200,6 +200,43 @@ export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onCl
                             {checking ? t('update.checking') : t('update.check')}
                         </Button>
                     </Box>
+
+                    {/* One-Click Update Section — npx installs only: the server
+                        relaunches itself through npx pinned to the new version
+                        and repins existing shortcuts. */}
+                    {hasVersionUpdate && canOneClick && (
+                        <Box sx={{ p: 2.5 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5, color: 'text.primary' }}>
+                                {t('update.oneClick.title')}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1.5 }}>
+                                {t('update.oneClick.hint', { version: displayLatestVersion })}
+                            </Typography>
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={applyUpdate}
+                                disabled={updating}
+                                startIcon={updating ? <Refresh sx={{ fontSize: 18, animation: 'spin 1s linear infinite' }} /> : <NPM />}
+                                fullWidth
+                                sx={{ height: 48 }}
+                            >
+                                {updating ? t('update.oneClick.updating') : t('update.oneClick.button', { version: displayLatestVersion })}
+                            </Button>
+                            {updating && (
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
+                                    {t('update.oneClick.inProgress', { version: displayLatestVersion })}
+                                </Typography>
+                            )}
+                            {updateError && (
+                                <Typography variant="caption" sx={{ color: 'error.main', display: 'block', mt: 1 }}>
+                                    {updateError === 'timeout'
+                                        ? t('update.oneClick.timeout')
+                                        : t('update.oneClick.failed', { error: updateError })}
+                                </Typography>
+                            )}
+                        </Box>
+                    )}
 
                     {/* Update Methods Section */}
                     <Box sx={{ p: 2.5 }}>

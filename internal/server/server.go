@@ -175,6 +175,12 @@ type Server struct {
 
 	version string
 
+	// launchSource is how this server process was invoked ("", "npx",
+	// "npx-bundle") — set at boot from the global --source flag and kept in
+	// memory only (see .design/shortcut.md: no detection, no persistence).
+	// It gates the one-click self-update path (/info/update).
+	launchSource string
+
 	// webHandler is the WebUI Management API's aggregate handler
 	// (internal/server.webHandler). Constructed as the LAST step of
 	// NewServer, after every field it depends on (memoryLogMW, multiLogger,

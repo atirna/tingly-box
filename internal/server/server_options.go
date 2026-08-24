@@ -30,6 +30,15 @@ func WithVersion(version string) ServerOption {
 	}
 }
 
+// WithLaunchSource records how this server process was invoked ("", "npx",
+// "npx-bundle"). It gates the one-click self-update path — see
+// internal/server/module/info.
+func WithLaunchSource(source string) ServerOption {
+	return func(s *Server) {
+		s.launchSource = source
+	}
+}
+
 // WithUI enables or disables the UI for the server
 func WithUI(enabled bool) ServerOption {
 	return func(s *Server) {

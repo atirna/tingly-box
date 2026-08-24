@@ -56,6 +56,7 @@ func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 		Daemon:               s.Daemon,
 		LogFile:              s.LogFile,
 		PromptRestart:        s.PromptRestart,
+		LaunchSource:         string(source),
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts)
@@ -128,6 +129,7 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 		Daemon:               r.Daemon,
 		LogFile:              r.LogFile,
 		PromptRestart:        r.PromptRestart,
+		LaunchSource:         string(source),
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(r.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts)
@@ -564,6 +566,7 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 		server.WithHost(opts.Host),
 		server.WithRecordDir(opts.RecordDir),
 		server.WithMultiLogger(multiLogger),
+		server.WithLaunchSource(opts.LaunchSource),
 	)
 
 	for _, hook := range hooks {

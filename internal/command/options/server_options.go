@@ -17,6 +17,10 @@ type StartFlags struct {
 	Daemon               bool
 	LogFile              string
 	PromptRestart        bool
+	// LaunchSource is how this invocation was launched ("", "npx",
+	// "npx-bundle") — from the global --source flag, not a cobra flag (the
+	// npx wrappers inject it; see .design/shortcut.md).
+	LaunchSource string
 }
 
 // StartServerOptions contains resolved options for starting the server
@@ -29,6 +33,7 @@ type StartServerOptions struct {
 	Daemon            bool
 	LogFile           string
 	PromptRestart     bool
+	LaunchSource      string
 	// RecordDir is where scenario recording sinks write when the scenario's
 	// recording_v2 flag enables recording. Always the config-dir default —
 	// recording enablement is flag-driven, not a CLI concern.
@@ -74,6 +79,7 @@ func ResolveStartOptions(cmd *cobra.Command, flags StartFlags, appConfig *config
 		Daemon:            flags.Daemon,
 		LogFile:           flags.LogFile,
 		PromptRestart:     flags.PromptRestart,
+		LaunchSource:      flags.LaunchSource,
 		RecordDir:         appConfig.ConfigDir() + "/record",
 	}
 }

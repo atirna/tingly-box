@@ -4,6 +4,7 @@
 package info
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,17 +12,21 @@ import (
 
 // Handler carries the minimal server state needed to serve /info/* endpoints.
 type Handler struct {
-	version    string
-	configFile string
-	configDir  string
+	version      string
+	configFile   string
+	configDir    string
+	launchSource string
 }
 
-// NewHandler creates a Handler.
-func NewHandler(version, configFile, configDir string) *Handler {
+// NewHandler creates a Handler. launchSource is how this server process was
+// invoked (see internal/shortcut source constants; empty means plain binary)
+// — it decides whether the one-click update path is available.
+func NewHandler(version, configFile, configDir, launchSource string) *Handler {
 	return &Handler{
-		version:    version,
-		configFile: configFile,
-		configDir:  configDir,
+		version:      version,
+		configFile:   configFile,
+		configDir:    configDir,
+		launchSource: launchSource,
 	}
 }
 
@@ -79,6 +84,53 @@ func (h *Handler) GetLatestVersion(c *gin.Context) {
 			HasUpdate:      hasUpdate,
 			ReleaseURL:     releaseURL,
 			ShouldNotify:   hasUpdate,
+			LaunchSource:   h.launchSource,
+			CanOneClick:    CanOneClickUpdate(h.launchSource),
+		},
+	})
+}
+
+// PostUpdate applies a one-click update: it relaunches Tingly Box through npx
+// pinned to the latest version, fully detached. The relaunch runs `restart
+// --daemon`, so the new version stops this server and takes over; the caller
+// should poll /info/version until it reports the new version. Only available
+// for npx-based installs (see CanOneClickUpdate).
+func (h *Handler) PostUpdate(c *gin.Context) {
+	if !CanOneClickUpdate(h.launchSource) {
+		c.JSON(http.StatusBadRequest, UpdateApplyResponse{
+			Error: "one-click update is only available for npx-based installs; update Tingly Box the way it was installed",
+		})
+		return
+	}
+
+	latestVersion, _, err := New().CheckLatestVersion()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, UpdateApplyResponse{
+			Error: fmt.Sprintf("failed to resolve the latest version: %v", err),
+		})
+		return
+	}
+	if CompareVersions(latestVersion, h.version) <= 0 {
+		c.JSON(http.StatusBadRequest, UpdateApplyResponse{
+			Error: fmt.Sprintf("already up to date (running %s, latest %s)", h.version, latestVersion),
+		})
+		return
+	}
+
+	spec := updateLaunchSpec(h.launchSource, latestVersion, "Tingly Box")
+	command, err := spawnDetached(spec)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, UpdateApplyResponse{
+			Error: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, UpdateApplyResponse{
+		Success: true,
+		Data: UpdateApplyInfo{
+			TargetVersion: latestVersion,
+			Command:       command,
 		},
 	})
 }

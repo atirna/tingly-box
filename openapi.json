@@ -3508,6 +3508,28 @@
         }
       }
     },
+    "/api/v1/info/update": {
+      "post": {
+        "tags": [
+          "info"
+        ],
+        "summary": "Apply a one-click update: relaunch through npx pinned to the latest version and restart the daemon (npx-based installs only)",
+        "description": "Apply a one-click update: relaunch through npx pinned to the latest version and restart the daemon (npx-based installs only)",
+        "operationId": "apiV1InfoUpdatePost",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/info/version": {
       "get": {
         "tags": [
@@ -5568,6 +5590,200 @@
         }
       }
     },
+    "/api/v1/teams": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "List teams",
+        "description": "List teams",
+        "operationId": "apiV1TeamsGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Create a team",
+        "description": "Create a team",
+        "operationId": "apiV1TeamsPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teams/{team_id}": {
+      "put": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Update a team",
+        "description": "Update a team",
+        "operationId": "apiV1TeamsTeam_idPut",
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "path",
+            "description": "Resource ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamInfo"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Delete an empty, non-default team",
+        "description": "Delete an empty, non-default team",
+        "operationId": "apiV1TeamsTeam_idDelete",
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "path",
+            "description": "Resource ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teams/{team_id}/disable": {
+      "put": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Disable a team and all of its sharing keys",
+        "description": "Disable a team and all of its sharing keys",
+        "operationId": "apiV1TeamsTeam_idDisablePut",
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "path",
+            "description": "Resource ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teams/{team_id}/enable": {
+      "put": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Enable a team and its sharing keys",
+        "description": "Enable a team and its sharing keys",
+        "operationId": "apiV1TeamsTeam_idEnablePut",
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "path",
+            "description": "Resource ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/token": {
       "get": {
         "tags": [
@@ -5634,6 +5850,15 @@
             "name": "user_id",
             "in": "query",
             "description": "Query parameter user_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "team_id",
+            "in": "query",
+            "description": "Query parameter team_id",
             "required": false,
             "schema": {
               "type": "string"
@@ -5870,6 +6095,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TokenCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tokens/{token_id}/team": {
+      "put": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Move a shared API token to another team",
+        "description": "Move a shared API token to another team",
+        "operationId": "apiV1TokensToken_idTeamPut",
+        "parameters": [
+          {
+            "name": "token_id",
+            "in": "path",
+            "description": "Resource ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenMoveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APITokenInfo"
                 }
               }
             }
@@ -7299,6 +7568,10 @@
             "format": "date-time",
             "description": "Field last_used_at"
           },
+          "team_id": {
+            "type": "string",
+            "description": "Field team_id"
+          },
           "token_id": {
             "type": "string",
             "description": "Field token_id"
@@ -7311,6 +7584,7 @@
         "required": [
           "token_id",
           "user_id",
+          "team_id",
           "display_name",
           "enabled",
           "created_at"
@@ -8700,85 +8974,13 @@
       "CreateRequest": {
         "type": "object",
         "properties": {
-          "auth": {
-            "type": "object",
-            "description": "Field auth",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "auth_type": {
-            "type": "string",
-            "description": "Field auth_type"
-          },
-          "bash_allowlist": {
-            "type": "array",
-            "description": "Field bash_allowlist",
-            "items": {
-              "type": "string"
-            }
-          },
-          "capabilities": {
-            "type": "object",
-            "description": "Field capabilities",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/CapabilityUpdateRequest"
-            }
-          },
-          "chat_id_lock": {
-            "type": "string",
-            "description": "Field chat_id_lock"
-          },
-          "default_agent": {
-            "type": "string",
-            "description": "Field default_agent"
-          },
-          "default_cwd": {
-            "type": "string",
-            "description": "Field default_cwd"
-          },
-          "enabled": {
-            "type": "boolean",
-            "description": "Field enabled"
-          },
           "name": {
             "type": "string",
             "description": "Field name"
-          },
-          "platform": {
-            "type": "string",
-            "description": "Field platform"
-          },
-          "proxy_url": {
-            "type": "string",
-            "description": "Field proxy_url"
-          },
-          "require_pairing": {
-            "type": "boolean",
-            "description": "Field require_pairing"
-          },
-          "smartguide_model": {
-            "type": "string",
-            "description": "Field smartguide_model"
-          },
-          "smartguide_provider": {
-            "type": "string",
-            "description": "Field smartguide_provider"
-          },
-          "token": {
-            "type": "string",
-            "description": "Field token"
-          },
-          "uuid": {
-            "type": "string",
-            "description": "Field uuid"
           }
         },
         "required": [
-          "platform",
-          "auth_type",
-          "auth",
-          "enabled"
+          "name"
         ]
       },
       "CreateRuleRequest": {
@@ -10391,6 +10593,11 @@
       "LatestVersionInfo": {
         "type": "object",
         "properties": {
+          "can_one_click": {
+            "type": "boolean",
+            "description": "Field can_one_click",
+            "example": true
+          },
           "current_version": {
             "type": "string",
             "description": "Field current_version",
@@ -10405,6 +10612,11 @@
             "type": "string",
             "description": "Field latest_version",
             "example": "0.260130.1200"
+          },
+          "launch_source": {
+            "type": "string",
+            "description": "Field launch_source",
+            "example": "npx"
           },
           "release_url": {
             "type": "string",
@@ -10422,7 +10634,9 @@
           "latest_version",
           "has_update",
           "release_url",
-          "should_notify"
+          "should_notify",
+          "launch_source",
+          "can_one_click"
         ]
       },
       "LatestVersionResponse": {
@@ -10620,21 +10834,16 @@
       "ListResponse": {
         "type": "object",
         "properties": {
-          "settings": {
+          "teams": {
             "type": "array",
-            "description": "Field settings",
+            "description": "Field teams",
             "items": {
-              "$ref": "#/components/schemas/Settings"
+              "$ref": "#/components/schemas/TeamInfo"
             }
-          },
-          "success": {
-            "type": "boolean",
-            "description": "Field success"
           }
         },
         "required": [
-          "success",
-          "settings"
+          "teams"
         ]
       },
       "LogEntry": {
@@ -14420,6 +14629,50 @@
           "id"
         ]
       },
+      "TeamInfo": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Field created_at"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Field enabled"
+          },
+          "id": {
+            "type": "string",
+            "description": "Field id"
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "Field is_default"
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Field slug"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Field updated_at"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "enabled",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ]
+      },
       "TemplateResponse": {
         "type": "object",
         "properties": {
@@ -14646,6 +14899,10 @@
           "display_name": {
             "type": "string",
             "description": "Field display_name"
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Field team_id"
           }
         },
         "required": [
@@ -14664,6 +14921,10 @@
             "type": "string",
             "description": "Field display_name"
           },
+          "team_id": {
+            "type": "string",
+            "description": "Field team_id"
+          },
           "token": {
             "type": "string",
             "description": "Field token"
@@ -14681,6 +14942,7 @@
           "token",
           "token_id",
           "user_id",
+          "team_id",
           "display_name",
           "created_at"
         ]
@@ -14726,6 +14988,10 @@
             "format": "int64",
             "description": "Field offset"
           },
+          "team_id": {
+            "type": "string",
+            "description": "Field team_id"
+          },
           "user_id": {
             "type": "string",
             "description": "Field user_id"
@@ -14751,6 +15017,18 @@
         "required": [
           "tokens",
           "total"
+        ]
+      },
+      "TokenMoveRequest": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Field team_id"
+          }
+        },
+        "required": [
+          "team_id"
         ]
       },
       "TokenResponse": {
@@ -14857,6 +15135,44 @@
         "required": [
           "trace_id",
           "spans"
+        ]
+      },
+      "UpdateApplyInfo": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Field command",
+            "example": "sh -lc npx -y tingly-box@0.260130.1200 restart --daemon"
+          },
+          "target_version": {
+            "type": "string",
+            "description": "Field target_version",
+            "example": "0.260130.1200"
+          }
+        },
+        "required": [
+          "target_version",
+          "command"
+        ]
+      },
+      "UpdateApplyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UpdateApplyInfo"
+          },
+          "error": {
+            "type": "string",
+            "description": "Field error"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Field success"
+          }
+        },
+        "required": [
+          "success"
         ]
       },
       "UpdateClientRequest": {
@@ -15007,69 +15323,14 @@
       "UpdateRequest": {
         "type": "object",
         "properties": {
-          "auth": {
-            "type": "object",
-            "description": "Field auth",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "auth_type": {
-            "type": "string",
-            "description": "Field auth_type"
-          },
-          "bash_allowlist": {
-            "type": "array",
-            "description": "Field bash_allowlist",
-            "items": {
-              "type": "string"
-            }
-          },
-          "chat_id_lock": {
-            "type": "string",
-            "description": "Field chat_id_lock"
-          },
-          "default_agent": {
-            "type": "string",
-            "description": "Field default_agent"
-          },
-          "default_cwd": {
-            "type": "string",
-            "description": "Field default_cwd"
-          },
-          "enabled": {
-            "type": "boolean",
-            "description": "Field enabled"
-          },
           "name": {
             "type": "string",
             "description": "Field name"
-          },
-          "platform": {
-            "type": "string",
-            "description": "Field platform"
-          },
-          "proxy_url": {
-            "type": "string",
-            "description": "Field proxy_url"
-          },
-          "require_pairing": {
-            "type": "boolean",
-            "description": "Field require_pairing"
-          },
-          "smartguide_model": {
-            "type": "string",
-            "description": "Field smartguide_model"
-          },
-          "smartguide_provider": {
-            "type": "string",
-            "description": "Field smartguide_provider"
-          },
-          "token": {
-            "type": "string",
-            "description": "Field token"
           }
-        }
+        },
+        "required": [
+          "name"
+        ]
       },
       "UpdateRuleRequest": {
         "type": "object",
@@ -16650,6 +16911,10 @@
     {
       "name": "system-logs",
       "description": "Operations related to system-logs"
+    },
+    {
+      "name": "teams",
+      "description": "Operations related to teams"
     },
     {
       "name": "testing",

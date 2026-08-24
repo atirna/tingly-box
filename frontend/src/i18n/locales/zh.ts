@@ -172,6 +172,15 @@ export default {
     "copy": "复制",
     "copied": "已复制！",
     "error": "检查更新失败",
+    "oneClick": {
+      "title": "一键更新",
+      "hint": "通过 npx 以 {{version}} 重新启动 Tingly Box 并重启服务，已有的桌面快捷方式也会同步更新。",
+      "button": "更新到 {{version}} 并重启",
+      "updating": "正在更新...",
+      "inProgress": "正在下载 {{version}} 并重启——新版本就绪后本页面会自动刷新。",
+      "timeout": "更新仍在后台进行。如果页面长时间没有自动刷新，请手动刷新。",
+      "failed": "更新失败：{{error}}"
+    },
     "methods": {
       "npx": {
         "title": "快速更新（npx）",

@@ -28,4 +28,10 @@ func RegisterRoutes(apiAuth, apiV1 *swagger.RouteGroup, h *Handler) {
 		swagger.WithDescription("Check if a newer version is available on GitHub"),
 		swagger.WithResponseModel(LatestVersionResponse{}),
 	)
+
+	apiV1.POST("/info/update", h.PostUpdate,
+		swagger.WithTags("info"),
+		swagger.WithDescription("Apply a one-click update: relaunch through npx pinned to the latest version and restart the daemon (npx-based installs only)"),
+		swagger.WithResponseModel(UpdateApplyResponse{}),
+	)
 }

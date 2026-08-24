@@ -170,6 +170,15 @@ export default {
     "copy": "Copy",
     "copied": "Copied!",
     "error": "Failed to check for updates",
+    "oneClick": {
+      "title": "One-Click Update",
+      "hint": "Relaunches Tingly Box via npx pinned to {{version}} and restarts the service. Existing desktop shortcuts are updated too.",
+      "button": "Update to {{version}} & Restart",
+      "updating": "Updating...",
+      "inProgress": "Downloading {{version}} and restarting — this page will reload automatically when the new version is up.",
+      "timeout": "Still updating in the background. If this page doesn't reload for a while, refresh it manually.",
+      "failed": "Update failed: {{error}}"
+    },
     "methods": {
       "npx": {
         "title": "Quick Update (npx)",

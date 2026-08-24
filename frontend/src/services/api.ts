@@ -836,6 +836,19 @@ export const api = {
         }
     },
 
+    // One-click update: relaunches Tingly Box via npx pinned to the latest
+    // version (npx installs only — check can_one_click from getLatestVersion).
+    applyUpdate: async (): Promise<any> => {
+        try {
+            const client = await getClient();
+            const headers = await getAuthHeaders();
+            const response = await client.POST('/api/v1/info/update', {headers});
+            return unwrap(response);
+        } catch (error: any) {
+            return {success: false, error: error.message};
+        }
+    },
+
     healthCheck: async (): Promise<boolean> => {
         try {
             const client = await getClient();

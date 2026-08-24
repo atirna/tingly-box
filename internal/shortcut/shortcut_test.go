@@ -159,6 +159,36 @@ func TestResolveLaunchNpxUnknownVersionFallsBackToLatest(t *testing.T) {
 	}
 }
 
+func TestResolveLaunchWithExtraArgs(t *testing.T) {
+	spec := ResolveLaunchWith("/usr/local/bin/tingly-box", "npx", "1.4.2", append(LaunchArgs(), "--shortcut"))
+
+	wantArgv := []string{"sh", "-lc", "npx -y tingly-box@1.4.2 restart --daemon --shortcut"}
+	if strings.Join(spec.Argv, "\x00") != strings.Join(wantArgv, "\x00") {
+		t.Fatalf("unexpected argv: %#v", spec.Argv)
+	}
+	if spec.WinArgs != "/c npx -y tingly-box@1.4.2 restart --daemon --shortcut" {
+		t.Errorf("unexpected winArgs: %q", spec.WinArgs)
+	}
+}
+
+func TestAnyExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+
+	if AnyExists("Tingly Box") {
+		t.Fatal("empty home should have no shortcut artifacts")
+	}
+
+	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
+	if _, err := createLinuxShortcuts(Options{Name: "Tingly Box"}, spec); err != nil {
+		t.Fatal(err)
+	}
+	if !AnyExists("Tingly Box") {
+		t.Fatal("artifacts were just created, AnyExists should report them")
+	}
+}
+
 func TestSlugName(t *testing.T) {
 	if got := slugName("Tingly Box"); got != "tingly-box" {
 		t.Fatalf("unexpected slug: %q", got)

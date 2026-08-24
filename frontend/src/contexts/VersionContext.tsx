@@ -13,6 +13,13 @@ interface VersionContextType {
     showUpdateDialog: () => void;
     openUpdateDialog: boolean;
     closeUpdateDialog: () => void;
+    /** Whether this install shape (npx) supports one-click update. */
+    canOneClick: boolean;
+    /** One-click update in flight (spawn + waiting for the new version). */
+    updating: boolean;
+    /** 'timeout' sentinel or a backend error message; null when fine. */
+    updateError: string | null;
+    applyUpdate: () => Promise<void>;
 }
 
 const VersionContext = createContext<VersionContextType | undefined>(undefined);
@@ -38,6 +45,9 @@ export const VersionProvider: React.FC<VersionProviderProps> = ({ children }) =>
     const [checking, setChecking] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [openUpdateDialog, setOpenUpdateDialog] = useState(false);
+    const [canOneClick, setCanOneClick] = useState(false);
+    const [updating, setUpdating] = useState(false);
+    const [updateError, setUpdateError] = useState<string | null>(null);
 
     const checkForUpdates = useCallback(async (manual = false) => {
         setChecking(true);
@@ -51,6 +61,7 @@ export const VersionProvider: React.FC<VersionProviderProps> = ({ children }) =>
                 setHasUpdate(result.data.has_update);
                 setShouldNotify(result.data.should_notify);
                 setReleaseURL(result.data.release_url);
+                setCanOneClick(!!result.data.can_one_click);
             }
         } catch (err) {
             console.error('Failed to check for updates:', err);
@@ -89,6 +100,45 @@ export const VersionProvider: React.FC<VersionProviderProps> = ({ children }) =>
         return () => clearInterval(interval);
     }, [checkForUpdates]);
 
+    const applyUpdate = useCallback(async () => {
+        if (updating) return;
+        setUpdating(true);
+        setUpdateError(null);
+
+        const result = await api.applyUpdate();
+        if (!result || !result.success) {
+            setUpdating(false);
+            setUpdateError(result?.error || 'unknown error');
+            return;
+        }
+
+        // The backend spawned `npx -y tingly-box@<target> restart --daemon`,
+        // which downloads the new version and replaces this server. Poll the
+        // version endpoint until the new version answers, then reload the
+        // page so the UI matches the server it talks to.
+        const target: string = result.data?.target_version || '';
+        const deadline = Date.now() + 5 * 60 * 1000;
+        const poll = async () => {
+            try {
+                const v = await api.getVersion();
+                if (v && v !== 'Unknown' && (v === target || v !== currentVersion)) {
+                    window.location.reload();
+                    return;
+                }
+            } catch {
+                // Server restarting — keep polling.
+            }
+            if (Date.now() < deadline) {
+                setTimeout(poll, 3000);
+            } else {
+                setUpdating(false);
+                setUpdateError('timeout');
+            }
+        };
+        // npm needs a moment before anything changes; don't hammer instantly.
+        setTimeout(poll, 5000);
+    }, [updating, currentVersion]);
+
     const showUpdateDialog = useCallback(() => {
         setOpenUpdateDialog(true);
     }, []);
@@ -111,6 +161,10 @@ export const VersionProvider: React.FC<VersionProviderProps> = ({ children }) =>
                 showUpdateDialog,
                 openUpdateDialog,
                 closeUpdateDialog,
+                canOneClick,
+                updating,
+                updateError,
+                applyUpdate,
             }}
         >
             {children}

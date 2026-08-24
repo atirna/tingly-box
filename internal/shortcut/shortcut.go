@@ -92,8 +92,13 @@ type Options struct {
 // there is no detection or persistence to do here. version pins an npx-based
 // shortcut to the currently-running release (see npxPackageForSource).
 func ResolveLaunch(exePath, source, version string) LaunchSpec {
-	args := LaunchArgs()
+	return ResolveLaunchWith(exePath, source, version, LaunchArgs())
+}
 
+// ResolveLaunchWith is ResolveLaunch with the CLI args made explicit, for
+// callers that need extra flags on the relaunch (e.g. self-update passing
+// --shortcut so the new version repins the launcher artifacts).
+func ResolveLaunchWith(exePath, source, version string, args []string) LaunchSpec {
 	if source == SourceNpx || source == SourceNpxBundle {
 		// e.g. "npx -y tingly-box@1.4.2 restart --daemon"
 		npxArgv := append([]string{"npx", "-y", npxPackageForSource(source, version)}, args...)
@@ -120,6 +125,49 @@ func ResolveLaunch(exePath, source, version string) LaunchSpec {
 		WinArgs:   strings.Join(args, " "),
 		WorkDir:   filepath.Dir(exePath),
 	}
+}
+
+// AnyExists reports whether any shortcut artifact for the given display name
+// already exists at this platform's known locations. Callers use it to decide
+// whether a refresh would touch anything (e.g. self-update only repins
+// shortcuts the user actually has — it never creates new ones for users who
+// never asked). Best-effort: Windows folder redirection (OneDrive) isn't
+// resolved here, so a redirected Desktop can be missed — the cost is a
+// skipped repin, never a wrongly-created file.
+func AnyExists(name string) bool {
+	slug := slugName(name)
+	var candidates []string
+
+	switch runtime.GOOS {
+	case "windows":
+		if home, err := os.UserHomeDir(); err == nil {
+			candidates = append(candidates, filepath.Join(home, "Desktop", slug+".lnk"))
+		}
+		if appData := os.Getenv("APPDATA"); appData != "" {
+			candidates = append(candidates, filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", slug+".lnk"))
+		}
+	case "darwin":
+		if dir, err := userSubdir("Desktop"); err == nil {
+			candidates = append(candidates, filepath.Join(dir, slug+".command"))
+		}
+	default:
+		if dir, err := userDataSubdir("applications"); err == nil {
+			candidates = append(candidates, filepath.Join(dir, slug+".desktop"))
+		}
+		if dir, err := userSubdir("Desktop"); err == nil {
+			candidates = append(candidates, filepath.Join(dir, slug+".desktop"))
+		}
+		if dir, err := userSubdir(filepath.Join(".local", "bin")); err == nil {
+			candidates = append(candidates, filepath.Join(dir, slug+".sh"))
+		}
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Create dispatches to the platform-specific implementation and returns the
