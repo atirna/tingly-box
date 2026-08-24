@@ -5,7 +5,9 @@ package constant
 // writer/reader contract without import cycles or duplicated string literals.
 const (
 	// Authentication metadata.
+	CtxKeyAuthKind                  = "auth_kind"                   // string (see AuthKind* constants)
 	CtxKeyUserID                    = "user_id"                     // string
+	CtxKeyTeamID                    = "team_id"                     // string (authorized team identity)
 	CtxKeyEnterpriseUserID          = "enterprise_user_id"          // string
 	CtxKeyEnterpriseDepartmentID    = "enterprise_department_id"    // string
 	CtxKeyEnterpriseKeyPrefix       = "enterprise_key_prefix"       // string
@@ -43,4 +45,12 @@ const (
 
 	// Guardrail runtime metadata.
 	CtxKeyCredentialMaskState = "guardrails_credential_mask_state" // *guardrails/core.CredentialMaskState
+)
+
+// Authentication principal kinds recorded in CtxKeyAuthKind. Keep these
+// separate from user_id: user_id identifies who generated usage, while the
+// principal kind determines which model surfaces that identity may access.
+const (
+	AuthKindGlobalModelToken = "global_model_token"
+	AuthKindSharingKey       = "sharing_key"
 )
