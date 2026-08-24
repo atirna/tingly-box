@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
 const (
@@ -122,23 +123,14 @@ func (s *TeamStore) Create(name string) (*TeamRecord, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	seenNumbers := make(map[int]bool)
+	existingSlugs := make([]string, 0, len(s.cache))
 	for _, existing := range s.cache {
 		if existing.Name == name {
 			return nil, fmt.Errorf("team name '%s' already exists", name)
 		}
-		if strings.HasPrefix(existing.Slug, "t") {
-			numberText := strings.TrimPrefix(existing.Slug, "t")
-			if number, err := strconv.Atoi(numberText); err == nil && number > 0 && existing.Slug == fmt.Sprintf("t%d", number) {
-				seenNumbers[number] = true
-			}
-		}
+		existingSlugs = append(existingSlugs, existing.Slug)
 	}
-	nextNumber := 1
-	for seenNumbers[nextNumber] {
-		nextNumber++
-	}
-	slug := fmt.Sprintf("t%d", nextNumber)
+	slug := typ.NextFreeNumberedID("t", existingSlugs)
 	record := &TeamRecord{ID: uuid.NewString(), Name: name, Slug: slug, Enabled: true}
 	if err := s.db.Create(record).Error; err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
