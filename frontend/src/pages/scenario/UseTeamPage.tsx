@@ -49,15 +49,31 @@ const UseTeamPageContent: React.FC = () => {
         setEditorOpen(true);
     };
 
+    // saveTeam/toggleTeam/deleteTeam share the same shape: flip a busy flag,
+    // call the API, surface an error and bail, or fall through on success.
+    const runTeamAction = async (
+        setBusy: (busy: boolean) => void,
+        apiCall: () => Promise<{success: boolean; error?: {message?: string}}>,
+        failMessage: string,
+    ): Promise<boolean> => {
+        setBusy(true);
+        const result = await apiCall();
+        setBusy(false);
+        if (!result.success) {
+            notify.error(result.error?.message || failMessage);
+            return false;
+        }
+        return true;
+    };
+
     const saveTeam = async () => {
         if (!currentTeam || !teamName.trim()) return;
-        setSaving(true);
-        const result = await api.updateTeam(currentTeam.id, {name: teamName.trim()});
-        setSaving(false);
-        if (!result.success) {
-            notify.error(result.error?.message || t('teams.saveFailed'));
-            return;
-        }
+        const ok = await runTeamAction(
+            setSaving,
+            () => api.updateTeam(currentTeam.id, {name: teamName.trim()}),
+            t('teams.saveFailed'),
+        );
+        if (!ok) return;
         setEditorOpen(false);
         await refresh();
         notify.success(t('teams.updateSuccess'));
@@ -65,26 +81,25 @@ const UseTeamPageContent: React.FC = () => {
 
     const toggleTeam = async () => {
         if (!currentTeam) return;
-        setToggling(true);
-        const result = await api.setTeamEnabled(currentTeam.id, !currentTeam.enabled);
-        setToggling(false);
-        if (!result.success) {
-            notify.error(result.error?.message || t('teams.saveFailed'));
-            return;
-        }
+        const wasEnabled = currentTeam.enabled;
+        const ok = await runTeamAction(
+            setToggling,
+            () => api.setTeamEnabled(currentTeam.id, !wasEnabled),
+            t('teams.saveFailed'),
+        );
+        if (!ok) return;
         await refresh();
-        notify.success(currentTeam.enabled ? t('teams.disabled') : t('teams.enabled'));
+        notify.success(wasEnabled ? t('teams.disabled') : t('teams.enabled'));
     };
 
     const deleteTeam = async () => {
         if (!currentTeam) return;
-        setSaving(true);
-        const result = await api.deleteTeam(currentTeam.id);
-        setSaving(false);
-        if (!result.success) {
-            notify.error(result.error?.message || t('teams.deleteFailed'));
-            return;
-        }
+        const ok = await runTeamAction(
+            setSaving,
+            () => api.deleteTeam(currentTeam.id),
+            t('teams.deleteFailed'),
+        );
+        if (!ok) return;
         setDeleteOpen(false);
         setEditorOpen(false);
         await refresh();
