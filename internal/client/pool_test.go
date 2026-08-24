@@ -10,16 +10,14 @@ import (
 	"time"
 
 	"github.com/tingly-dev/tingly-box/ai"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
 // TestClientPool_ClientConstruction exercises the GetXxxClient constructors
-// across providers, OAuth and non-OAuth, with and without a record sink. These
-// are pure smoke tests: each case just builds clients via the public API and
-// asserts they're non-nil. Behavior that's not just "constructor returns
-// non-nil" (no client-level caching, mode reporting, record sink wiring) is
-// verified once on the baseline OpenAI provider.
+// across providers, OAuth and non-OAuth. These are pure smoke tests: each case
+// just builds clients via the public API and asserts they're non-nil. Behavior
+// that's not just "constructor returns non-nil" (no client-level caching, mode
+// reporting) is verified once on the baseline OpenAI provider.
 func TestClientPool_ClientConstruction(t *testing.T) {
 	openaiProvider := &typ.Provider{
 		UUID:    "openai-uuid",
@@ -126,16 +124,6 @@ func TestClientPool_ClientConstruction(t *testing.T) {
 		}
 	})
 
-	t.Run("with-record-sink", func(t *testing.T) {
-		sink := &obs.Sink{}
-		pool := NewClientPoolBuilder().WithRecordSink(sink).Build()
-		if client := pool.GetOpenAIClient(context.Background(), openaiProvider, "gpt-4"); client == nil {
-			t.Fatal("Expected non-nil client")
-		}
-		if pool.GetRecordSink() == nil {
-			t.Error("Record sink not set correctly")
-		}
-	})
 }
 
 // TestClientPool_WithSessionID tests session ID propagation through context

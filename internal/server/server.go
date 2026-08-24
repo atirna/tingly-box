@@ -120,9 +120,6 @@ type Server struct {
 	guardrailsState    *protocolserver.GuardrailsState
 	guardrailsConfigMu sync.Mutex
 
-	// recording sinks
-	recordSink *obs.Sink
-
 	// scenario-specific recording sinks (created on-demand when recording flag is enabled)
 	scenarioRecordSinks   map[typ.RuleScenario]*obs.Sink
 	scenarioRecordSinksMu sync.RWMutex
@@ -158,13 +155,10 @@ type Server struct {
 	// fields fall back to those defaults — see WithHTTPTimeouts.
 	httpTimeouts HTTPTimeouts
 
-	// record options
-	recordMode obs.RecordMode
-	recordDir  string
-	recordCAS  bool // additionally write content-addressed slim records + blobs
-
-	// recording flag - enables dual-stage request recording
-	enableRecording bool
+	// record options (recording enablement is flag-driven per scenario —
+	// see GetScenarioRecordMode; these only configure where/how sinks write)
+	recordDir string
+	recordCAS bool // additionally write content-addressed slim records + blobs
 
 	// remote control lifecycle management
 	remoteCoderCtx    context.Context
@@ -280,11 +274,6 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	// Auto-load guardrails if enabled and not injected explicitly.
 	server.initGuardrailsRuntime()
 	server.refreshGuardrailsCredentialCacheOrWarn("server init")
-
-	// Log recording flag if enabled
-	if server.enableRecording {
-		logrus.Debugf("Dual-stage recording enabled")
-	}
 
 	// Initialize multi-mode memory log middleware for HTTP request logging
 	// Logs are written to both multi-mode logger (persistence) and memory (quick access)

@@ -38,8 +38,6 @@ type StartCmdKong struct {
 	Daemon               bool   `kong:"flag,name='daemon',help='Run as daemon'"`
 	LogFile              string `kong:"flag,name='log-file',help='Log file path'"`
 	PromptRestart        bool   `kong:"flag,name='prompt-restart',help='Prompt to restart if running'"`
-	RecordMode           string `kong:"flag,name='record-mode',help='Record mode'"`
-	RecordDir            string `kong:"flag,name='record-dir',help='Record directory'"`
 	EnableShortcut       bool   `kong:"flag,name='shortcut',help='Also create/refresh a desktop shortcut for next time'"`
 }
 
@@ -58,8 +56,6 @@ func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 		Daemon:               s.Daemon,
 		LogFile:              s.LogFile,
 		PromptRestart:        s.PromptRestart,
-		RecordMode:           s.RecordMode,
-		RecordDir:            s.RecordDir,
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts)
@@ -132,8 +128,6 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 		Daemon:               r.Daemon,
 		LogFile:              r.LogFile,
 		PromptRestart:        r.PromptRestart,
-		RecordMode:           r.RecordMode,
-		RecordDir:            r.RecordDir,
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(r.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts)
@@ -295,11 +289,6 @@ func resolveStartCmdKongOptions(start *StartCmdKong, appConfig *config.AppConfig
 		appConfig.SetServerPort(start.Port)
 	}
 
-	resolvedRecordDir := start.RecordDir
-	if resolvedRecordDir == "" {
-		resolvedRecordDir = appConfig.ConfigDir() + "/record"
-	}
-
 	return options.StartServerOptions{
 		Host:              start.Host,
 		Port:              resolvedPort,
@@ -309,8 +298,7 @@ func resolveStartCmdKongOptions(start *StartCmdKong, appConfig *config.AppConfig
 		Daemon:            start.Daemon,
 		LogFile:           start.LogFile,
 		PromptRestart:     start.PromptRestart,
-		RecordMode:        start.RecordMode,
-		RecordDir:         resolvedRecordDir,
+		RecordDir:         appConfig.ConfigDir() + "/record",
 	}
 }
 
@@ -574,7 +562,6 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 		server.WithUI(opts.EnableUI),
 		server.WithOpenBrowser(opts.EnableOpenBrowser),
 		server.WithHost(opts.Host),
-		server.WithRecordMode(obs.RecordMode(opts.RecordMode)),
 		server.WithRecordDir(opts.RecordDir),
 		server.WithMultiLogger(multiLogger),
 	)

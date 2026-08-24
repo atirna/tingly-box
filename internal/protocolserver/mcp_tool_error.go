@@ -3,7 +3,6 @@ package protocolserver
 import (
 	"context"
 
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocolserver/servertool"
 	coretool "github.com/tingly-dev/tingly-box/internal/tool"
 )
@@ -18,21 +17,6 @@ func (d *handlerHookDeps) GetAdvisorMaxUses() int {
 		return 0
 	}
 	return d.handler.deps.MCPRuntime.GetAdvisorMaxUses()
-}
-
-func (d *handlerHookDeps) GetScenarioSink(ctx context.Context) *obs.Sink {
-	if d.handler == nil || d.handler.deps.GetOrCreateScenarioSink == nil {
-		return nil
-	}
-	scenario, ok := servertool.ScenarioFromContext(ctx)
-	if !ok {
-		return nil
-	}
-	sink := d.handler.deps.GetOrCreateScenarioSink(scenario)
-	if sink == nil || !sink.IsEnabled() {
-		return nil
-	}
-	return sink
 }
 
 // newServerExecutor creates a DefaultExecutor backed by this ProtocolHandler.

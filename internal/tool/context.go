@@ -4,7 +4,6 @@ import "context"
 
 type advisorContextKey struct{}
 type advisorDepthKey struct{}
-type advisorRecordSinkKey struct{}
 
 // AdvisorContext holds conversation state for the advisor tool.
 type AdvisorContext struct {
@@ -32,15 +31,4 @@ func WithAdvisorDepth(ctx context.Context, depth int) context.Context {
 func GetAdvisorDepth(ctx context.Context) int {
 	v, _ := ctx.Value(advisorDepthKey{}).(int)
 	return v
-}
-
-// WithAdvisorRecordSink attaches a record sink to the context for advisor call recording.
-func WithAdvisorRecordSink(ctx context.Context, sink any) context.Context {
-	return context.WithValue(ctx, advisorRecordSinkKey{}, sink)
-}
-
-// GetAdvisorRecordSink retrieves the record sink from the context.
-func GetAdvisorRecordSink(ctx context.Context) (any, bool) {
-	sink := ctx.Value(advisorRecordSinkKey{})
-	return sink, sink != nil
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/tingly-dev/tingly-box/ai"
 	"github.com/tingly-dev/tingly-box/internal/constant"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/internal/vision/imagegen"
@@ -37,7 +36,6 @@ type OpenAIClientInterface interface {
 	Close() error
 	GetProvider() *typ.Provider
 	APIStyle() protocol.APIStyle
-	SetRecordSink(sink *obs.Sink)
 
 	// Client returns the underlying OpenAI SDK client (for advanced usage)
 	Client() *openai.Client
@@ -49,7 +47,6 @@ type OpenAIClient struct {
 	provider   *typ.Provider
 	debugMode  bool
 	HttpClient *http.Client
-	recordSink *obs.Sink
 }
 
 // NewOpenAIClient creates a new OpenAI client wrapper
@@ -78,6 +75,7 @@ func NewOpenAIClient(provider *typ.Provider, model string, sessionID typ.Session
 	// proxy is explicitly configured for the provider.
 	base := GetGlobalTransportPool().GetTransport(provider.UUID, model, provider.ProxyURL, ai.Issuer(""), sessionID)
 	transport = wrapWithRuleFlags(base, provider, true)
+	transport = wrapWithAdvisorLoopback(transport)
 	transport = wrapWithLogging(transport, provider)
 
 	httpClient := &http.Client{
@@ -170,22 +168,6 @@ func (c *OpenAIClient) ResponsesNew(ctx context.Context, req responses.ResponseN
 // ResponsesNewStreaming creates a new streaming Responses API request
 func (c *OpenAIClient) ResponsesNewStreaming(ctx context.Context, req responses.ResponseNewParams) *ssestream.Stream[responses.ResponseStreamEventUnion] {
 	return c.client.Responses.NewStreaming(ctx, req)
-}
-
-// SetRecordSink sets the record sink for the client
-func (c *OpenAIClient) SetRecordSink(sink *obs.Sink) {
-	c.recordSink = sink
-	if sink != nil && sink.IsEnabled() {
-		c.applyRecordMode()
-	}
-}
-
-// applyRecordMode wraps the HTTP client with a record round tripper
-func (c *OpenAIClient) applyRecordMode() {
-	if c.recordSink == nil {
-		return
-	}
-	c.HttpClient.Transport = NewRecordRoundTripper(c.HttpClient.Transport, c.recordSink, c.provider)
 }
 
 // GetProvider returns the provider for this client

@@ -107,8 +107,9 @@ type ProtocolHandlerDeps struct {
 	GetOrCreateScenarioSink func(scenario typ.RuleScenario) *obs.Sink
 
 	// GetScenarioRecordMode resolves the effective recording mode for a
-	// scenario. Backed by root's s.recordMode/s.scenarioRecordSinks, which
-	// have not moved to aimodel (recording lifecycle stays root-owned).
+	// scenario (the scenario-level recording_v2 flag). Backed by root's
+	// s.scenarioRecordSinks, which have not moved to aimodel (recording
+	// lifecycle stays root-owned).
 	GetScenarioRecordMode func(scenario typ.RuleScenario) obs.RecordMode
 }
 

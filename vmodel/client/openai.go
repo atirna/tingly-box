@@ -15,7 +15,6 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/tingly-dev/tingly-box/internal/client"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/token"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -36,7 +35,6 @@ func NewOpenAIClient(reg *openaivm.Registry, provider *typ.Provider) *OpenAIClie
 
 func (c *OpenAIClient) GetProvider() *typ.Provider  { return c.provider }
 func (c *OpenAIClient) APIStyle() protocol.APIStyle { return protocol.APIStyleOpenAI }
-func (c *OpenAIClient) SetRecordSink(_ *obs.Sink)   {}
 func (c *OpenAIClient) Client() *openai.Client      { return nil }
 func (c *OpenAIClient) Close() error                { return nil }
 

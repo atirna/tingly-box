@@ -11,7 +11,6 @@ import (
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/constant"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/ops"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -308,11 +307,6 @@ func (c *ClaudeClient) GetProvider() *typ.Provider {
 // APIStyle returns the API style.
 func (c *ClaudeClient) APIStyle() protocol.APIStyle {
 	return c.AnthropicClient.APIStyle()
-}
-
-// SetRecordSink sets the record sink for the client.
-func (c *ClaudeClient) SetRecordSink(sink *obs.Sink) {
-	c.AnthropicClient.SetRecordSink(sink)
 }
 
 // Client returns the underlying Anthropic SDK client.

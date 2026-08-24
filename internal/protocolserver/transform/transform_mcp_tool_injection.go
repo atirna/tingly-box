@@ -27,9 +27,11 @@ func (t *MCPToolInjectionTransform) Apply(ctx *protocoltransform.TransformContex
 		return nil
 	}
 
-	// Skip injection for advisor loopback requests (X-Tingly-Advisor-Depth header present).
-	// advisor_call.go sets this header on all outgoing advisor HTTP requests, so any request
-	// that looped back through tingly-box will have IsAdvisorRequest=true here.
+	// Skip injection for advisor loopback requests (X-Tingly-Advisor-Depth header
+	// present). advisor_call.go marks its outbound context via
+	// client.WithAdvisorLoopback, and the generic transport chains stamp the
+	// header (client/advisor_loopback.go) — so any advisor call that looped back
+	// through tingly-box has IsAdvisorRequest=true here.
 	if ctx.IsAdvisorRequest {
 		return nil
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/tingly-dev/tingly-box/gui/wails3/services"
 	"github.com/tingly-dev/tingly-box/internal/command"
 	"github.com/tingly-dev/tingly-box/internal/command/options"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/server"
 	"github.com/tingly-dev/tingly-box/pkg/network"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -232,12 +231,6 @@ func (l *appLauncher) StartGUI(appManager *command.AppManager, opts options.Star
 	// Only CLI mode defaults to opening the browser
 	opts.EnableOpenBrowser = false
 
-	// Convert RecordMode string to obs.RecordMode
-	var recordMode obs.RecordMode
-	if opts.RecordMode != "" {
-		recordMode = obs.RecordMode(opts.RecordMode)
-	}
-
 	// Create ServerManager with options
 	serverManager := command.NewServerManager(
 		appManager.AppConfig(),
@@ -245,7 +238,6 @@ func (l *appLauncher) StartGUI(appManager *command.AppManager, opts options.Star
 		server.WithDebug(opts.EnableDebug),
 		server.WithOpenBrowser(opts.EnableOpenBrowser),
 		server.WithHost(opts.Host),
-		server.WithRecordMode(recordMode),
 		server.WithRecordDir(opts.RecordDir),
 	)
 
@@ -279,12 +271,6 @@ func (l *appLauncher) StartTray(appManager *command.AppManager, opts options.Sta
 	// Only CLI mode defaults to opening the browser
 	opts.EnableOpenBrowser = false
 
-	// Convert RecordMode string to obs.RecordMode
-	var recordMode obs.RecordMode
-	if opts.RecordMode != "" {
-		recordMode = obs.RecordMode(opts.RecordMode)
-	}
-
 	// Create ServerManager with options
 	serverManager := command.NewServerManager(
 		appManager.AppConfig(),
@@ -292,7 +278,6 @@ func (l *appLauncher) StartTray(appManager *command.AppManager, opts options.Sta
 		server.WithDebug(opts.EnableDebug),
 		server.WithOpenBrowser(opts.EnableOpenBrowser),
 		server.WithHost(opts.Host),
-		server.WithRecordMode(recordMode),
 		server.WithRecordDir(opts.RecordDir),
 	)
 
@@ -327,12 +312,6 @@ func (l *appLauncher) StartSlim(appManager *command.AppManager, opts options.Sta
 	// Only CLI mode defaults to opening the browser
 	opts.EnableOpenBrowser = false
 
-	// Convert RecordMode string to obs.RecordMode
-	var recordMode obs.RecordMode
-	if opts.RecordMode != "" {
-		recordMode = obs.RecordMode(opts.RecordMode)
-	}
-
 	// Create ServerManager with options
 	serverManager := command.NewServerManager(
 		appManager.AppConfig(),
@@ -340,7 +319,6 @@ func (l *appLauncher) StartSlim(appManager *command.AppManager, opts options.Sta
 		server.WithDebug(opts.EnableDebug),
 		server.WithOpenBrowser(opts.EnableOpenBrowser),
 		server.WithHost(opts.Host),
-		server.WithRecordMode(recordMode),
 		server.WithRecordDir(opts.RecordDir),
 	)
 

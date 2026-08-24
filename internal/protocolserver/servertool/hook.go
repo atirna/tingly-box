@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/tingly-dev/tingly-box/internal/client"
-	"github.com/tingly-dev/tingly-box/internal/obs"
 	coretool "github.com/tingly-dev/tingly-box/internal/tool"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -20,8 +19,6 @@ type Hook interface {
 type HookDeps interface {
 	// GetAdvisorMaxUses returns the configured maximum advisor calls per request.
 	GetAdvisorMaxUses() int
-	// GetScenarioSink returns an enabled recording sink for the given scenario, or nil.
-	GetScenarioSink(ctx context.Context) *obs.Sink
 }
 
 // AdvisorHook injects AdvisorContext before an advisor tool call.
@@ -62,18 +59,13 @@ func applyHooks(ctx context.Context, toolName string, messages []map[string]any,
 			depth := coretool.GetAdvisorDepth(ctx)
 			ctx = coretool.WithAdvisorDepth(ctx, depth+1)
 			ctx = hook.PrepareContext(deps, ctx, messages)
-
-			// Inject scenario record sink so advisor HTTP calls get recorded.
-			if sink := deps.GetScenarioSink(ctx); sink != nil && sink.IsEnabled() {
-				ctx = coretool.WithAdvisorRecordSink(ctx, sink)
-			}
 		}
 	}
 	return ctx
 }
 
-// ScenarioFromContext reads the scenario stored under client.ScenarioContextKey.
-// Useful for HookDeps.GetScenarioSink implementations.
+// ScenarioFromContext reads the scenario stored under client.ScenarioContextKey
+// (set by the protocol server's routing middleware).
 func ScenarioFromContext(ctx context.Context) (typ.RuleScenario, bool) {
 	v := ctx.Value(client.ScenarioContextKey)
 	if v == nil {
