@@ -258,13 +258,13 @@ func createLinuxShortcuts(opts Options, spec LaunchSpec) ([]string, error) {
 		created = append(created, path)
 	}
 
-	// Headless fallback: a .desktop entry is only launchable from a graphical
-	// session, so when there is none (servers, containers, SSH), also write a
-	// plain executable launcher script — otherwise the command produces
-	// nothing the user can actually run. The .desktop entries above are still
-	// written: over SSH into a machine that does have a desktop they remain
-	// useful, and they are cheap either way.
-	if !linuxGraphicalSession() && !(opts.NoDesktop && opts.NoMenu) {
+	// A .desktop entry is only launchable from a graphical session, so on
+	// Linux always also write a plain executable launcher script — on
+	// headless boxes (servers, containers, SSH) it is the only artifact the
+	// user can actually run, and detecting "headless" from the environment
+	// (DISPLAY etc.) is unreliable enough that conditioning on it would just
+	// make the command's output unpredictable.
+	if !(opts.NoDesktop && opts.NoMenu) {
 		path, err := writeLinuxLauncherScript(opts, spec)
 		if err != nil {
 			return created, err
@@ -274,14 +274,6 @@ func createLinuxShortcuts(opts Options, spec LaunchSpec) ([]string, error) {
 		}
 	}
 	return created, nil
-}
-
-// linuxGraphicalSession reports whether the current session has a graphical
-// display a .desktop entry could be launched from. DISPLAY covers X11,
-// WAYLAND_DISPLAY covers Wayland; headless servers, containers, and plain SSH
-// sessions have neither.
-func linuxGraphicalSession() bool {
-	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
 }
 
 // writeLinuxLauncherScript writes the executable launcher script to

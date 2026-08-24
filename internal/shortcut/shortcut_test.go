@@ -59,12 +59,10 @@ func TestLauncherScriptContent(t *testing.T) {
 	}
 }
 
-func TestCreateLinuxShortcutsHeadlessWritesLauncherScript(t *testing.T) {
+func TestCreateLinuxShortcutsAlwaysWritesLauncherScript(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "")
-	t.Setenv("DISPLAY", "")
-	t.Setenv("WAYLAND_DISPLAY", "")
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
 
 	created, err := createLinuxShortcuts(Options{Name: "Tingly Box"}, spec)
@@ -72,9 +70,10 @@ func TestCreateLinuxShortcutsHeadlessWritesLauncherScript(t *testing.T) {
 		t.Fatalf("createLinuxShortcuts: %v", err)
 	}
 
-	// No ~/Desktop and no graphical session: the menu .desktop entry is still
-	// written (useful over SSH into a machine that does have a desktop), and
-	// the launcher script is the artifact a headless user can actually run.
+	// No ~/Desktop here, so: the menu .desktop entry plus the launcher script
+	// — the latter written unconditionally, since it is the only artifact a
+	// headless user can actually run and environment sniffing (DISPLAY etc.)
+	// is too unreliable to condition on.
 	wantEntry := filepath.Join(home, ".local", "share", "applications", "tingly-box.desktop")
 	wantScript := filepath.Join(home, ".local", "bin", "tingly-box.sh")
 	if len(created) != 2 || created[0] != wantEntry || created[1] != wantScript {
@@ -97,34 +96,10 @@ func TestCreateLinuxShortcutsHeadlessWritesLauncherScript(t *testing.T) {
 	}
 }
 
-func TestCreateLinuxShortcutsGraphicalSkipsLauncherScript(t *testing.T) {
+func TestCreateLinuxShortcutsRespectsAllOff(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "")
-	t.Setenv("DISPLAY", ":0")
-	t.Setenv("WAYLAND_DISPLAY", "")
-	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
-
-	created, err := createLinuxShortcuts(Options{Name: "Tingly Box"}, spec)
-	if err != nil {
-		t.Fatalf("createLinuxShortcuts: %v", err)
-	}
-	for _, p := range created {
-		if strings.HasSuffix(p, ".sh") {
-			t.Errorf("graphical session should not get a launcher script, got %v", created)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(home, ".local", "bin")); err == nil {
-		t.Errorf("~/.local/bin should not be created in a graphical session")
-	}
-}
-
-func TestCreateLinuxShortcutsHeadlessRespectsAllOff(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_DATA_HOME", "")
-	t.Setenv("DISPLAY", "")
-	t.Setenv("WAYLAND_DISPLAY", "")
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
 
 	created, err := createLinuxShortcuts(Options{Name: "Tingly Box", NoDesktop: true, NoMenu: true}, spec)

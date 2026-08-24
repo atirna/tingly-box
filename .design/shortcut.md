@@ -167,7 +167,7 @@ just a one-command shortcut *to* the shortcut command.
 | Windows  | `.lnk`        | Desktop, Start Menu Programs                             | WScript.Shell COM        |
 | macOS    | `.command`    | `~/Desktop` only                                         | Terminal.app (double-click) |
 | Linux    | `.desktop`    | `~/Desktop` (if present), `~/.local/share/applications`  | freedesktop launcher     |
-| Linux, headless | + `.sh` launcher script | `~/.local/bin`                            | user's shell             |
+| Linux    | + `.sh` launcher script | `~/.local/bin`                                  | user's shell             |
 
 Every platform's file uses the same space-free base name — `tingly-box.lnk`
 / `tingly-box.command` / `tingly-box.desktop` — regardless of the
@@ -263,7 +263,7 @@ component. That keeps paths with spaces (e.g. `/opt/tingly box/tingly-box`)
 intact across desktop environments. `Terminal=false` because the daemon
 detaches itself; no need to flash a terminal window.
 
-### Linux headless: executable launcher script fallback
+### Linux: executable launcher script, always
 
 A `.desktop` entry is only launchable from a graphical session. Run
 `tingly-box shortcut` on a headless box (server, container, plain SSH) and
@@ -272,10 +272,8 @@ the original implementation still "succeeded" — it wrote
 the user could actually run. That fails "surface the artifact for the next
 action": the whole point of the command is a runnable thing.
 
-So when no graphical session is detected (`DISPLAY` and `WAYLAND_DISPLAY`
-both empty — X11 and Wayland respectively), `createLinuxShortcuts`
-**additionally** writes an executable launcher script, rendered from
-`templates/linux_launcher.sh.tmpl`:
+So on Linux, `createLinuxShortcuts` **additionally** writes an executable
+launcher script, rendered from `templates/linux_launcher.sh.tmpl`:
 
 ```sh
 #!/bin/sh
