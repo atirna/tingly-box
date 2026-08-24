@@ -130,6 +130,9 @@ func TestResolveLaunchBinary(t *testing.T) {
 	if spec.WinArgs != "restart --daemon" {
 		t.Errorf("unexpected winArgs: %q", spec.WinArgs)
 	}
+	if want := []string{"restart", "--daemon"}; strings.Join(spec.WinArgv, "\x00") != strings.Join(want, "\x00") {
+		t.Errorf("unexpected winArgv: %#v", spec.WinArgv)
+	}
 }
 
 func TestResolveLaunchEmptySourceDefaultsToBinary(t *testing.T) {
@@ -149,6 +152,13 @@ func TestResolveLaunchNpxPinsVersion(t *testing.T) {
 	}
 	if spec.WinArgs != "/c npx -y tingly-box@1.4.2 restart --daemon" {
 		t.Errorf("unexpected winArgs: %q", spec.WinArgs)
+	}
+	// WinArgv is what spawnDetached actually execs on Windows (WinArgs is
+	// only for the .lnk template) — it must carry the same real argument
+	// boundaries as Argv, not a re-split of the joined WinArgs string.
+	wantWinArgv := []string{"/c", "npx", "-y", "tingly-box@1.4.2", "restart", "--daemon"}
+	if strings.Join(spec.WinArgv, "\x00") != strings.Join(wantWinArgv, "\x00") {
+		t.Errorf("unexpected winArgv: %#v", spec.WinArgv)
 	}
 }
 

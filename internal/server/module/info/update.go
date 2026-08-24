@@ -2,9 +2,7 @@ package info
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -19,7 +17,7 @@ import (
 // (Homebrew, manual download) must be updated the way it was installed, which
 // this server can't safely do on the user's behalf yet.
 func CanOneClickUpdate(launchSource string) bool {
-	return launchSource == shortcut.SourceNpx || launchSource == shortcut.SourceNpxBundle
+	return shortcut.IsNpxSource(launchSource)
 }
 
 // updateLaunchSpec builds the relaunch command for a one-click update:
@@ -43,11 +41,12 @@ func updateLaunchSpec(launchSource, targetVersion, host, shortcutName string) sh
 		args = append(args, "--shortcut")
 	}
 	// exePath is irrelevant for npx sources (the spec runs npx, not the
-	// binary), but resolve it anyway so the spec is well-formed.
-	exePath, _ := os.Executable()
-	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
-		exePath = resolved
-	}
+	// binary) — this function is only reachable when CanOneClickUpdate is
+	// true, i.e. always an npx source — but resolve it via the same path
+	// resolveShortcutSpec uses, so the spec stays well-formed even if that
+	// assumption ever changes; a failure here just yields an empty exePath,
+	// which is harmless for the npx path this always takes today.
+	exePath, _ := shortcut.ResolveExePath()
 	return shortcut.ResolveLaunchWith(exePath, launchSource, targetVersion, args)
 }
 
@@ -56,13 +55,13 @@ func updateLaunchSpec(launchSource, targetVersion, host, shortcutName string) sh
 // command line for display.
 func spawnDetached(spec shortcut.LaunchSpec) (string, error) {
 	var cmd *exec.Cmd
+	var display string
 	if runtime.GOOS == "windows" {
-		// spec.WinArgs is "/c npx -y <pkg>@<version> restart --daemon ..." —
-		// every token is space-free (package specs, flags), so Fields is a
-		// faithful split here.
-		cmd = exec.Command(spec.WinTarget, strings.Fields(spec.WinArgs)...)
+		cmd = exec.Command(spec.WinTarget, spec.WinArgv...)
+		display = spec.WinTarget + " " + spec.WinArgs
 	} else {
 		cmd = exec.Command(spec.Argv[0], spec.Argv[1:]...)
+		display = strings.Join(spec.Argv, " ")
 	}
 	cmd.Dir = spec.WorkDir
 	daemon.DetachAttrs(cmd)
@@ -71,9 +70,5 @@ func spawnDetached(spec shortcut.LaunchSpec) (string, error) {
 		return "", fmt.Errorf("failed to start update command: %w", err)
 	}
 	// Not waited on: the child outlives (and replaces) this process.
-	display := strings.Join(spec.Argv, " ")
-	if runtime.GOOS == "windows" {
-		display = spec.WinTarget + " " + spec.WinArgs
-	}
 	return display, nil
 }

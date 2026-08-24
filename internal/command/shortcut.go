@@ -2,8 +2,6 @@ package command
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -13,22 +11,19 @@ import (
 
 // LaunchSource is how the running tingly-box process was invoked (binary,
 // npx, npx-bundle) — see internal/shortcut for the source constants. It comes
-// from the global --source flag and is bound into Kong's Run() calls, so any
-// subcommand that needs it (shortcut, start, restart) can read it directly
-// without persisting it anywhere.
+// from the global --source flag; main records it once via
+// AppManager.SetLaunchSource, and every command that needs it (shortcut,
+// start, restart, open, the TUI's in-process start) reads it back via
+// AppManager.LaunchSource() — never persisted anywhere.
 type LaunchSource string
 
-// resolveShortcutSpec resolves this process's own executable path (following
-// symlinks) and turns it, together with how this invocation was launched,
-// into a LaunchSpec — the one piece shared by refreshShortcut and
-// ShortcutCmdKong.Run.
+// resolveShortcutSpec resolves this process's own executable path and turns
+// it, together with how this invocation was launched, into a LaunchSpec —
+// the one piece shared by refreshShortcut and ShortcutCmdKong.Run.
 func resolveShortcutSpec(source LaunchSource) (shortcut.LaunchSpec, error) {
-	exePath, err := os.Executable()
+	exePath, err := shortcut.ResolveExePath()
 	if err != nil {
 		return shortcut.LaunchSpec{}, fmt.Errorf("failed to resolve executable path: %w", err)
-	}
-	if resolved, rerr := filepath.EvalSymlinks(exePath); rerr == nil {
-		exePath = resolved
 	}
 	return shortcut.ResolveLaunch(exePath, string(source), BuildVersion), nil
 }

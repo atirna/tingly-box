@@ -57,6 +57,37 @@ func NpxPackage(source string) string {
 	return "tingly-box"
 }
 
+// IsNpxSource reports whether source is one of the npx-based launch sources
+// (SourceNpx or SourceNpxBundle) rather than a plain binary. This is the
+// canonical "is this an npx launch" check — ResolveLaunchWith and the
+// self-update package's CanOneClickUpdate both need exactly this predicate,
+// and must never diverge on it (an update deciding "yes" while the launch
+// spec builder decides "no" would relaunch as a plain binary invocation of a
+// package spec, which isn't a valid command).
+func IsNpxSource(source string) bool {
+	return source == SourceNpx || source == SourceNpxBundle
+}
+
+// ResolveExePath returns this process's own executable path, with symlinks
+// resolved. It is the "exePath" ResolveLaunch/ResolveLaunchWith expect for a
+// binary-install LaunchSpec. Callers that need "our own binary path" (the
+// `shortcut` command and self-update) previously each carried their own copy
+// of this os.Executable+EvalSymlinks pair with a different error-handling
+// policy; both now call this instead, so that policy can't drift between
+// them by accident. ResolveLaunch itself still takes exePath as an explicit
+// parameter rather than calling this internally, so it stays trivially
+// testable without a real executable on disk.
+func ResolveExePath() (string, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = resolved
+	}
+	return exePath, nil
+}
+
 // npxPackageForSource returns the npm package + version spec an npx-based
 // launch should run. It pins to the currently-running version so the
 // shortcut relaunches the exact build the user is already on — not whatever
@@ -84,8 +115,17 @@ func LaunchArgs() []string {
 type LaunchSpec struct {
 	Argv      []string
 	WinTarget string
-	WinArgs   string
-	WorkDir   string
+	// WinArgs is WinArgv pre-joined into one string, for embedding into the
+	// .lnk PowerShell template's Arguments field (which wants a single
+	// string, not an argv slice).
+	WinArgs string
+	// WinArgv is the same arguments as WinArgs, as a real argv slice. Use
+	// this — not WinArgs — for anything that spawns the command directly via
+	// exec.Command: re-splitting WinArgs (e.g. strings.Fields) only works by
+	// the accident of every token here being space-free, whereas WinArgv
+	// carries the real boundaries no matter what a future argument contains.
+	WinArgv []string
+	WorkDir string
 }
 
 // Options controls which shortcuts get written.
@@ -109,7 +149,7 @@ func ResolveLaunch(exePath, source, version string) LaunchSpec {
 // callers that need extra flags on the relaunch (e.g. self-update passing
 // --shortcut so the new version repins the launcher artifacts).
 func ResolveLaunchWith(exePath, source, version string, args []string) LaunchSpec {
-	if source == SourceNpx || source == SourceNpxBundle {
+	if IsNpxSource(source) {
 		// e.g. "npx -y tingly-box@1.4.2 restart --daemon"
 		npxArgv := append([]string{"npx", "-y", npxPackageForSource(source, version)}, args...)
 		cmdStr := strings.Join(npxArgv, " ")
@@ -125,6 +165,7 @@ func ResolveLaunchWith(exePath, source, version string, args []string) LaunchSpe
 			Argv:      []string{"sh", "-lc", cmdStr},
 			WinTarget: comspec,
 			WinArgs:   "/c " + cmdStr,
+			WinArgv:   append([]string{"/c"}, npxArgv...),
 			WorkDir:   home,
 		}
 	}
@@ -133,6 +174,7 @@ func ResolveLaunchWith(exePath, source, version string, args []string) LaunchSpe
 		Argv:      append([]string{exePath}, args...),
 		WinTarget: exePath,
 		WinArgs:   strings.Join(args, " "),
+		WinArgv:   args,
 		WorkDir:   filepath.Dir(exePath),
 	}
 }
@@ -145,11 +187,16 @@ func ResolveLaunchWith(exePath, source, version string, args []string) LaunchSpe
 // resolved here, so a redirected Desktop can be missed — the cost is a
 // skipped repin, never a wrongly-created file.
 func AnyExists(name string) bool {
-	slug := slugName(name)
 	var candidates []string
 
 	switch runtime.GOOS {
 	case "windows":
+		// No Go-side path computation to share here: createWindowsShortcuts
+		// resolves Desktop/Programs entirely inside the PowerShell template
+		// via .NET's [Environment]::GetFolderPath (see windowsShortcutScript),
+		// which is also what makes it OneDrive-redirection-aware — this
+		// best-effort guess doesn't replicate that resolution.
+		slug := slugName(name)
 		if home, err := os.UserHomeDir(); err == nil {
 			candidates = append(candidates, filepath.Join(home, "Desktop", slug+".lnk"))
 		}
@@ -157,18 +204,18 @@ func AnyExists(name string) bool {
 			candidates = append(candidates, filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", slug+".lnk"))
 		}
 	case "darwin":
-		if dir, err := userSubdir("Desktop"); err == nil {
-			candidates = append(candidates, filepath.Join(dir, slug+".command"))
+		if path, err := macCommandPath(name); err == nil {
+			candidates = append(candidates, path)
 		}
 	default:
-		if dir, err := userDataSubdir("applications"); err == nil {
-			candidates = append(candidates, filepath.Join(dir, slug+".desktop"))
+		if path, err := linuxDesktopMenuPath(name); err == nil {
+			candidates = append(candidates, path)
 		}
-		if dir, err := userSubdir("Desktop"); err == nil {
-			candidates = append(candidates, filepath.Join(dir, slug+".desktop"))
+		if path, err := linuxDesktopFilePath(name); err == nil {
+			candidates = append(candidates, path)
 		}
-		if dir, err := userSubdir(filepath.Join(".local", "bin")); err == nil {
-			candidates = append(candidates, filepath.Join(dir, slug+".sh"))
+		if path, err := linuxLauncherScriptPath(name); err == nil {
+			candidates = append(candidates, path)
 		}
 	}
 
@@ -262,16 +309,26 @@ func createMacShortcuts(opts Options, spec LaunchSpec) ([]string, error) {
 		return nil, nil
 	}
 
-	content := commandScriptContent(spec.Argv)
-	dir, err := userSubdir("Desktop")
+	path, err := macCommandPath(opts.Name)
 	if err != nil {
 		return nil, nil
 	}
-	path := filepath.Join(dir, slugName(opts.Name)+".command")
+	content := commandScriptContent(spec.Argv)
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to write shortcut %s: %w", path, err)
 	}
 	return []string{path}, nil
+}
+
+// macCommandPath is the ~/Desktop/<slug>.command path createMacShortcuts
+// writes and AnyExists checks for — one function so the two can't drift on
+// the filename.
+func macCommandPath(name string) (string, error) {
+	dir, err := userSubdir("Desktop")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, slugName(name)+".command"), nil
 }
 
 // commandScriptContent renders internal/shortcut/templates/macos_command.sh.tmpl,
@@ -290,20 +347,19 @@ func commandScriptContent(argv []string) string {
 
 func createLinuxShortcuts(opts Options, spec LaunchSpec) ([]string, error) {
 	content := desktopEntryContent(opts.Name, spec.Argv)
-	fileName := slugName(opts.Name) + ".desktop"
 
 	var targets []string
 	if !opts.NoMenu {
-		if dir, err := userDataSubdir("applications"); err == nil {
-			if mkErr := os.MkdirAll(dir, 0o755); mkErr == nil {
-				targets = append(targets, filepath.Join(dir, fileName))
+		if path, err := linuxDesktopMenuPath(opts.Name); err == nil {
+			if mkErr := os.MkdirAll(filepath.Dir(path), 0o755); mkErr == nil {
+				targets = append(targets, path)
 			}
 		}
 	}
 	if !opts.NoDesktop {
-		if dir, err := userSubdir("Desktop"); err == nil {
-			if _, statErr := os.Stat(dir); statErr == nil {
-				targets = append(targets, filepath.Join(dir, fileName))
+		if path, err := linuxDesktopFilePath(opts.Name); err == nil {
+			if _, statErr := os.Stat(filepath.Dir(path)); statErr == nil {
+				targets = append(targets, path)
 			}
 		}
 	}
@@ -339,18 +395,45 @@ func createLinuxShortcuts(opts Options, spec LaunchSpec) ([]string, error) {
 // and user-owned either way). An unresolvable home or an uncreatable
 // directory skips the script rather than failing shortcut creation.
 func writeLinuxLauncherScript(opts Options, spec LaunchSpec) (string, error) {
-	dir, err := userSubdir(filepath.Join(".local", "bin"))
+	path, err := linuxLauncherScriptPath(opts.Name)
 	if err != nil {
 		return "", nil
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", nil
 	}
-	path := filepath.Join(dir, slugName(opts.Name)+".sh")
 	if err := os.WriteFile(path, []byte(launcherScriptContent(spec.Argv)), 0o755); err != nil {
 		return "", fmt.Errorf("failed to write shortcut %s: %w", path, err)
 	}
 	return path, nil
+}
+
+// linuxDesktopMenuPath, linuxDesktopFilePath and linuxLauncherScriptPath are
+// the paths createLinuxShortcuts/writeLinuxLauncherScript write and AnyExists
+// checks for — one function per artifact so the writer and the existence
+// check can't drift on the filename or location.
+func linuxDesktopMenuPath(name string) (string, error) {
+	dir, err := userDataSubdir("applications")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, slugName(name)+".desktop"), nil
+}
+
+func linuxDesktopFilePath(name string) (string, error) {
+	dir, err := userSubdir("Desktop")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, slugName(name)+".desktop"), nil
+}
+
+func linuxLauncherScriptPath(name string) (string, error) {
+	dir, err := userSubdir(filepath.Join(".local", "bin"))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, slugName(name)+".sh"), nil
 }
 
 // desktopEntryContent renders internal/shortcut/templates/linux_desktop.desktop.tmpl,

@@ -93,17 +93,11 @@ func Daemonize(overrideArgs ...string) error {
 	// Get original arguments, pinning any resolved flags for the child
 	args := buildDaemonArgs(os.Args[1:], overrideArgs)
 
-	// Set environment variable to mark the child as daemon
 	cmd := exec.Command(execPath, args...)
-	cmd.Env = append(os.Environ(), "_TINGLY_BOX_DAEMON=1")
-
-	// Redirect stdin, stdout, stderr
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	// Detach from the terminal (platform-specific attributes)
-	cmd.SysProcAttr = daemonSysProcAttr()
+	// Detach stdio/session the same way any other "outlives this process"
+	// spawn does (see DetachAttrs), then layer on the daemon marker itself.
+	DetachAttrs(cmd)
+	cmd.Env = append(cmd.Env, "_TINGLY_BOX_DAEMON=1")
 
 	// Start the daemonized process
 	if err := cmd.Start(); err != nil {

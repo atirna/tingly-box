@@ -45,7 +45,10 @@ type Checker struct {
 }
 
 // New creates a Checker for the main tingly-box package with default
-// settings (10 s HTTP timeout, 2 h cache TTL).
+// settings (10 s HTTP timeout, 2 h cache TTL). Handler always goes through
+// NewFor(shortcut.NpxPackage(...)) instead, since which package to query
+// depends on launchSource; New is the plain default for tests and any future
+// caller that doesn't need that distinction.
 func New() *Checker {
 	return NewFor(tinglyBoxNPM)
 }
