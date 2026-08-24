@@ -13,7 +13,21 @@ const resources = {
     },
 };
 
-// Custom language detector that defaults to English when localStorage is empty
+// Detect a supported language from the browser's configured languages,
+// falling back to English when nothing matches.
+const detectBrowserLanguage = (): 'en' | 'zh' => {
+    const browserLangs = navigator.languages && navigator.languages.length > 0 ? navigator.languages : [navigator.language];
+    for (const lang of browserLangs) {
+        if (!lang) continue;
+        const normalized = lang.toLowerCase();
+        if (normalized.startsWith('zh')) return 'zh';
+        if (normalized.startsWith('en')) return 'en';
+    }
+    return 'en';
+};
+
+// Custom language detector: an explicit user choice (persisted to localStorage
+// by i18n.changeLanguage) always wins; otherwise fall back to the browser's language.
 const languageDetectorOptions = {
     // Order and sources where to look for language
     order: ['localStorage'],
@@ -21,13 +35,13 @@ const languageDetectorOptions = {
     lookupLocalStorage: 'i18nextLng',
     // Cache user language
     caches: ['localStorage'],
-    // Custom detection function - check localStorage first, default to 'en' if empty
+    // Custom detection function - check localStorage first, else detect from the browser
     detection: () => {
         const stored = localStorage.getItem('i18nextLng');
         if (stored && (stored === 'en' || stored === 'zh')) {
             return stored;
         }
-        return 'en'; // Default to English
+        return detectBrowserLanguage();
     },
 };
 
