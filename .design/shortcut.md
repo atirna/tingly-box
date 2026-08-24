@@ -1,7 +1,9 @@
-# Desktop Shortcut: Design and Decisions
+# Shortcut & Self-Update: Design and Decisions
 
 > Audience: contributors touching the `tingly-box shortcut` command, `start`/
-> `restart`, the npx wrappers, or a future HTTP "set up shortcut" handler.
+> `restart`, the npx wrappers, the `/info/version/check` + `/info/update`
+> endpoints, or the UpdatePanelDialog. Shortcuts and self-update share one
+> mechanism (the launch command + `--source`), so they live in one document.
 
 ---
 
@@ -324,6 +326,7 @@ const (
 )
 
 func LaunchArgs() []string   // ["restart", "--daemon"]
+func AnyExists(name string) bool // any artifact already at this platform's known paths?
 
 type LaunchSpec struct {
     Argv      []string   // POSIX command vector — macOS / Linux
@@ -339,6 +342,9 @@ type Options struct {
 }
 
 func ResolveLaunch(exePath, source, version string) LaunchSpec
+// ResolveLaunch with the CLI args made explicit — self-update uses it to
+// append --shortcut to the relaunch:
+func ResolveLaunchWith(exePath, source, version string, args []string) LaunchSpec
 func Create(opts Options, spec LaunchSpec) ([]string, error)
 ```
 
@@ -349,8 +355,11 @@ handler tomorrow) can display them. Nothing in this package writes to
 ### Future HTTP handler sketch
 
 A running server process was itself started via `start`/`restart` with some
-`--source`, and could stash that value in memory (not disk) at boot to
-answer an API request later:
+`--source`, and can stash that value in memory (not disk) at boot to answer
+an API request later. **This pattern is no longer hypothetical** — the
+self-update endpoint (§7) threads `--source` → `options.StartFlags` →
+`server.WithLaunchSource` → `info.Handler` exactly this way; a
+"create shortcut over HTTP" handler would reuse the same wiring:
 
 ```go
 // POST /api/v1/shortcut
@@ -377,7 +386,92 @@ lives only as long as the process that was actually launched that way.
 
 ---
 
-## 7. UX checklist (against `.design/ux-principles.md`)
+## 7. Self-update: one-click for npx installs
+
+npx-based shortcuts are pinned to a version on purpose (§3: no surprise
+auto-upgrade, works offline). The flip side is a loop: the shortcut launches
+the pinned old version → the running process is the old version → nothing
+ever moves the pin. A user who only ever double-clicks never updates, and
+the UI's update panel only offered commands to copy into a terminal —
+exactly the interaction the shortcut exists to remove.
+
+### Decisions
+
+- **The shortcut is not an updater.** Launch stays launch: no
+  check-on-double-click, no second "Update Tingly Box" icon. The update
+  entry point is the web UI — the surface the user already looks at.
+- **Update must traverse the real install path.** Each install shape
+  updates the way it was installed, or not at all through the UI:
+
+  | install shape        | one-click? | why                                          |
+  |----------------------|-----------|-----------------------------------------------|
+  | `npx` / `npx-bundle` | yes       | "update" is just relaunching with a newer pin |
+  | binary (brew, manual)| no (v1)   | must go through brew / manual download; the copyable commands remain |
+
+- **No `tingly-box update` CLI.** Terminal users already have the real
+  command (`npx tingly-box@latest`); a wrapper adds surface without adding
+  capability. (Explicit product decision.)
+- **Never silent.** Tingly Box sits in the request path; versions change
+  only when the user clicks. The check itself is passive (cached npm
+  registry lookup, badge in the UI).
+
+### How the npx one-click path works
+
+```
+UI button → POST /api/v1/info/update
+  guard: launchSource ∈ {npx, npx-bundle}      (else 400 with guidance)
+  guard: latest > running                       (else 400 "up to date")
+  spawn detached: sh -lc 'npx -y tingly-box@<latest> restart --daemon [--shortcut]'
+  → respond {target_version, command}; UI polls /info/version, reloads on change
+```
+
+- The relaunch command is built by `shortcut.ResolveLaunchWith` — the
+  *same* command a shortcut runs, pinned to the target version instead of
+  the running one. No new launch machinery.
+- The spawned child is fully detached (`pkg/daemon.DetachAttrs`) because it
+  will stop and replace the very server that spawned it (`restart`).
+- `launchSource` reaches the server in memory only (§6's sketch, realized):
+  global `--source` flag → `options.StartFlags` → `server.WithLaunchSource`
+  → `info.Handler`. No detection, no persistence — same rule as §3. The
+  daemon re-exec preserves original args, so the daemonized child still
+  knows its source. `/info/version/check` returns `launch_source` +
+  `can_one_click` so the UI shows the button only where it applies.
+
+### Shortcut repin
+
+`--shortcut` is appended to the relaunch **iff** `shortcut.AnyExists`
+finds an existing artifact at the platform's known paths. The new version
+then rewrites the user's shortcuts pinned to itself. Users who never
+created a shortcut never get one out of an update; users who have one get
+it repinned as part of the same explicit action they asked for. Known
+coarseness, accepted for v1: Windows OneDrive-redirected folders aren't
+resolved by `AnyExists` (missed repin, never a wrongly-created file), and a
+repin recreates the full artifact set even if the user had deleted part of
+it.
+
+### UI behavior (UpdatePanelDialog)
+
+When `has_update && can_one_click`: a primary "Update to X & Restart"
+button above the copyable commands. On click the UI POSTs, then polls
+`/info/version` (up to 5 min) and reloads the page when the served version
+changes; on poll timeout it tells the user the update is still running in
+the background rather than claiming failure. The copyable commands stay —
+they are the path for binary installs and the fallback when the one-click
+path errors.
+
+### Self-update UX checklist
+
+| principle                            | how                                                            |
+|--------------------------------------|----------------------------------------------------------------|
+| eliminate mode pickers               | the user never selects an install shape — the server knows its own `launchSource` and the UI shows only the applicable action |
+| show concrete values not aliases     | the button and responses name the real target version; the API returns the exact command it spawned |
+| diagnostics traverse the real path   | update runs the same npx command path the install/shortcut uses |
+| scope side effects to current surface| shortcut repin only touches artifacts that already exist        |
+| smart defaults over toggles          | no auto-update toggle: check is automatic and passive, applying is always an explicit click |
+
+---
+
+## 8. UX checklist (against `.design/ux-principles.md`)
 
 | principle                            | how this feature satisfies it                                                       |
 |--------------------------------------|--------------------------------------------------------------------------------------|
@@ -397,7 +491,7 @@ lives only as long as the process that was actually launched that way.
 
 ---
 
-## 8. Related files
+## 9. Related files
 
 | ref                                          | content                                  |
 |----------------------------------------------|------------------------------------------|
@@ -405,7 +499,13 @@ lives only as long as the process that was actually launched that way.
 | `internal/shortcut/templates/*.tmpl`         | the actual generated script/entry text   |
 | `internal/shortcut/shortcut_test.go`         | tests against public API                 |
 | `internal/command/shortcut.go`               | Kong shell, `LaunchSource`, `refreshShortcut` |
-| `internal/command/server.go`                 | `start`/`restart` call `refreshShortcut` |
+| `internal/command/server.go`                 | `start`/`restart` call `refreshShortcut`; threads `LaunchSource` into the server |
 | `cli/tingly-box/main.go`                     | global `--source` flag, binds `LaunchSource` into `ctx.Run` |
 | `build/npx/tingly-box/bin.js`                | npx wrapper, injects `--source=npx`      |
 | `build/npx/tingly-box-bundle/bin.js`         | bundle wrapper, injects `--source=npx-bundle` |
+| `internal/server/module/info/update.go`      | self-update: source guard, relaunch spec, detached spawn |
+| `internal/server/module/info/handler.go`     | `GET /info/version/check`, `POST /info/update` |
+| `internal/server/server_options.go`          | `WithLaunchSource` (in-memory only)      |
+| `pkg/daemon/daemon.go`                       | `DetachAttrs` — detach a child that outlives/replaces this process |
+| `frontend/src/components/UpdatePanelDialog.tsx` | one-click button + copyable commands  |
+| `frontend/src/contexts/VersionContext.tsx`   | check/apply state, post-update poll & reload |
