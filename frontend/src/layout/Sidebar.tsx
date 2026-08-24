@@ -107,11 +107,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ sidebarItems, activeActivityLa
         setNewTeamName('');
     }, []);
 
+    const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+
     const handleCreateTeam = useCallback(async () => {
         if (!newTeamName.trim()) return;
-        setIsCreating(true);
+        setIsCreatingTeam(true);
         const result = await api.createTeam({name: newTeamName.trim()});
-        setIsCreating(false);
+        setIsCreatingTeam(false);
         if (!result.success) {
             notify.error(result.error?.message || t('teams.saveFailed'));
             return;
@@ -312,13 +314,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ sidebarItems, activeActivityLa
                         value={newTeamName}
                         onChange={(e) => setNewTeamName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && void handleCreateTeam()}
-                        disabled={isCreating}
+                        disabled={isCreatingTeam}
                     />
                 </Stack>
                 <Box sx={{mt: 1.5, display: 'flex', justifyContent: 'flex-end', gap: 1}}>
-                    <Button size="small" onClick={handleAddTeamClose} disabled={isCreating}>{t('common.cancel')}</Button>
+                    <Button size="small" onClick={handleAddTeamClose} disabled={isCreatingTeam}>{t('common.cancel')}</Button>
                     <Button size="small" variant="contained" onClick={handleCreateTeam}
-                            disabled={!newTeamName.trim() || isCreating}>
+                            disabled={!newTeamName.trim() || isCreatingTeam}>
                         {t('common.add')}
                     </Button>
                 </Box>
