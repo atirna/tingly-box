@@ -116,6 +116,18 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose, te
         }
     };
 
+    const handleToggleEnabled = async (key: SharingKey) => {
+        const result = await api.setAPITokenEnabled(key.token_id, !key.enabled);
+        if (result.success) {
+            notify.success(key.enabled ? t('sharingKeys.disabled') : t('sharingKeys.enabled'));
+            loadSharingKeys();
+        } else {
+            notify.error(result.error?.message || t('sharingKeys.updateFailed'));
+        }
+    };
+
+    const eligibleMoveTargets = teams.filter((candidate) => candidate.id !== team.id && candidate.enabled);
+
     return (
         <>
             <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
@@ -146,15 +158,7 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose, te
                                 navigator.clipboard.writeText(tokenId);
                                 notify.success(t('sharingKeys.copiedToClipboard'));
                             }}
-                            onToggleEnabled={async (key) => {
-                                const result = await api.setAPITokenEnabled(key.token_id, !key.enabled);
-                                if (result.success) {
-                                    notify.success(key.enabled ? t('sharingKeys.disabled') : t('sharingKeys.enabled'));
-                                    loadSharingKeys();
-                                } else {
-                                    notify.error(result.error?.message || t('sharingKeys.updateFailed'));
-                                }
-                            }}
+                            onToggleEnabled={handleToggleEnabled}
                             onDelete={(key) => {
                                 setTokenToDelete(key);
                                 setDeleteDialogOpen(true);
@@ -182,10 +186,10 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose, te
                         onChange={(event) => setMoveTargetTeamID(event.target.value)}
                         helperText={t('sharingKeys.moveHelper', {name: tokenToMove?.display_name})}
                     >
-                        {teams.every((candidate) => candidate.id === team.id || !candidate.enabled) && (
+                        {eligibleMoveTargets.length === 0 && (
                             <MenuItem disabled value="">{t('sharingKeys.noDestinationTeam')}</MenuItem>
                         )}
-                        {teams.filter((candidate) => candidate.id !== team.id && candidate.enabled).map((candidate) => (
+                        {eligibleMoveTargets.map((candidate) => (
                             <MenuItem key={candidate.id} value={candidate.id}>{candidate.name}</MenuItem>
                         ))}
                     </TextField>
