@@ -21,6 +21,7 @@ var (
 	windowsShortcutTemplate = template.Must(template.ParseFS(templateFS, "templates/windows_shortcut.ps1.tmpl"))
 	macCommandTemplate      = template.Must(template.ParseFS(templateFS, "templates/macos_command.sh.tmpl"))
 	linuxDesktopTemplate    = template.Must(template.ParseFS(templateFS, "templates/linux_desktop.desktop.tmpl"))
+	linuxLauncherTemplate   = template.Must(template.ParseFS(templateFS, "templates/linux_launcher.sh.tmpl"))
 )
 
 // render executes a parsed template against data and returns the result.
@@ -256,13 +257,62 @@ func createLinuxShortcuts(opts Options, spec LaunchSpec) ([]string, error) {
 		}
 		created = append(created, path)
 	}
+
+	// Headless fallback: a .desktop entry is only launchable from a graphical
+	// session, so when there is none (servers, containers, SSH), also write a
+	// plain executable launcher script — otherwise the command produces
+	// nothing the user can actually run. The .desktop entries above are still
+	// written: over SSH into a machine that does have a desktop they remain
+	// useful, and they are cheap either way.
+	if !linuxGraphicalSession() && !(opts.NoDesktop && opts.NoMenu) {
+		path, err := writeLinuxLauncherScript(opts, spec)
+		if err != nil {
+			return created, err
+		}
+		if path != "" {
+			created = append(created, path)
+		}
+	}
 	return created, nil
+}
+
+// linuxGraphicalSession reports whether the current session has a graphical
+// display a .desktop entry could be launched from. DISPLAY covers X11,
+// WAYLAND_DISPLAY covers Wayland; headless servers, containers, and plain SSH
+// sessions have neither.
+func linuxGraphicalSession() bool {
+	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+}
+
+// writeLinuxLauncherScript writes the executable launcher script to
+// ~/.local/bin (commonly on PATH per the systemd file-hierarchy convention,
+// and user-owned either way). An unresolvable home or an uncreatable
+// directory skips the script rather than failing shortcut creation.
+func writeLinuxLauncherScript(opts Options, spec LaunchSpec) (string, error) {
+	dir, err := userSubdir(filepath.Join(".local", "bin"))
+	if err != nil {
+		return "", nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", nil
+	}
+	path := filepath.Join(dir, slugName(opts.Name)+".sh")
+	if err := os.WriteFile(path, []byte(launcherScriptContent(spec.Argv)), 0o755); err != nil {
+		return "", fmt.Errorf("failed to write shortcut %s: %w", path, err)
+	}
+	return path, nil
 }
 
 // desktopEntryContent renders internal/shortcut/templates/linux_desktop.desktop.tmpl,
 // a freedesktop .desktop entry.
 func desktopEntryContent(name string, argv []string) string {
 	return render(linuxDesktopTemplate, struct{ Name, Exec string }{Name: name, Exec: shJoin(argv)})
+}
+
+// launcherScriptContent renders internal/shortcut/templates/linux_launcher.sh.tmpl,
+// a plain shell script that exec's the launch command.
+func launcherScriptContent(argv []string) string {
+	return render(linuxLauncherTemplate, struct{ Command string }{Command: shJoin(argv)})
 }
 
 // ---------------- shared helpers ----------------

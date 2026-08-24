@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 
@@ -80,6 +81,22 @@ func (s *ShortcutCmdKong) Run(source LaunchSource) error {
 	for _, p := range created {
 		fmt.Printf("  - %s\n", p)
 	}
-	fmt.Println("\nDouble-click it to start Tingly Box and open the web UI.")
+
+	// On headless Linux the list includes an executable launcher script (the
+	// .desktop entries need a graphical session) — point at it by path, since
+	// "double-click" is not an action that exists there.
+	script := ""
+	for _, p := range created {
+		if strings.HasSuffix(p, ".sh") {
+			script = p
+		}
+	}
+	fmt.Println()
+	if script != "" {
+		fmt.Println("No graphical session was detected, so an executable launcher script was also written.")
+		fmt.Printf("Run %s to start Tingly Box and open the web UI.\n", script)
+	} else {
+		fmt.Println("Double-click it to start Tingly Box and open the web UI.")
+	}
 	return nil
 }
