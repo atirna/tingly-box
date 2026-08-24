@@ -11,7 +11,7 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/services/api';
 import { useNotify } from '@/hooks/useNotify';
@@ -43,9 +43,19 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose, te
     const [moveTargetTeamID, setMoveTargetTeamID] = useState('');
     const [movingToken, setMovingToken] = useState(false);
 
+    // Guards against a stale response for a previously selected team
+    // overwriting the keys of the team the user has since switched to.
+    const requestedTeamIdRef = useRef<string | null>(null);
+
     const loadSharingKeys = async () => {
+        const requestedTeamId = team.id;
+        requestedTeamIdRef.current = requestedTeamId;
         setKeysLoading(true);
-        const result = await api.listAPITokens({team_id: team.id});
+        const result = await api.listAPITokens({team_id: requestedTeamId});
+        if (requestedTeamIdRef.current !== requestedTeamId) {
+            // A newer request for a different team has since been issued; discard this response.
+            return;
+        }
         if (result.success && result.data) {
             setSharingKeys(result.data.tokens || []);
         }
