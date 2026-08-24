@@ -21,6 +21,21 @@ func sendError(c *gin.Context, status int, err error, errType string) {
 	c.JSON(status, gin.H{"error": gin.H{"message": err.Error(), "type": errType}})
 }
 
+// sendStoreError maps a TeamStore error to an HTTP response. All four
+// mutating handlers below share the same "not found" / "already exists"
+// substring inference and differ only in their default status/errType.
+func sendStoreError(c *gin.Context, err error, defaultStatus int, errType string) {
+	status := defaultStatus
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "not found"):
+		status = http.StatusNotFound
+	case strings.Contains(msg, "unique") || strings.Contains(msg, "already exists"):
+		status = http.StatusConflict
+	}
+	sendError(c, status, err, errType)
+}
+
 func recordToInfo(record *db.TeamRecord) TeamInfo {
 	return TeamInfo{
 		ID: record.ID, Name: record.Name, Slug: record.Slug,
@@ -46,11 +61,7 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	record, err := h.store.Create(req.Name)
 	if err != nil {
-		status := http.StatusBadRequest
-		if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(err.Error(), "already exists") {
-			status = http.StatusConflict
-		}
-		sendError(c, status, err, "invalid_request_error")
+		sendStoreError(c, err, http.StatusBadRequest, "invalid_request_error")
 		return
 	}
 	c.JSON(http.StatusCreated, recordToInfo(record))
@@ -69,13 +80,7 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 	record, err := h.store.Update(id, req.Name)
 	if err != nil {
-		status := http.StatusBadRequest
-		if strings.Contains(err.Error(), "not found") {
-			status = http.StatusNotFound
-		} else if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(err.Error(), "already exists") {
-			status = http.StatusConflict
-		}
-		sendError(c, status, err, "invalid_request_error")
+		sendStoreError(c, err, http.StatusBadRequest, "invalid_request_error")
 		return
 	}
 	c.JSON(http.StatusOK, recordToInfo(record))
@@ -87,11 +92,7 @@ func (h *Handler) Disable(c *gin.Context) { h.setEnabled(c, false) }
 func (h *Handler) setEnabled(c *gin.Context, enabled bool) {
 	id := c.Param("team_id")
 	if err := h.store.SetEnabled(id, enabled); err != nil {
-		status := http.StatusBadRequest
-		if strings.Contains(err.Error(), "not found") {
-			status = http.StatusNotFound
-		}
-		sendError(c, status, err, "invalid_request_error")
+		sendStoreError(c, err, http.StatusBadRequest, "invalid_request_error")
 		return
 	}
 	record, _ := h.store.Get(id)
@@ -101,11 +102,7 @@ func (h *Handler) setEnabled(c *gin.Context, enabled bool) {
 func (h *Handler) Delete(c *gin.Context) {
 	id := c.Param("team_id")
 	if err := h.store.Delete(id); err != nil {
-		status := http.StatusConflict
-		if strings.Contains(err.Error(), "not found") {
-			status = http.StatusNotFound
-		}
-		sendError(c, status, err, "conflict_error")
+		sendStoreError(c, err, http.StatusConflict, "conflict_error")
 		return
 	}
 	c.Status(http.StatusNoContent)
