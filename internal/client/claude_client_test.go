@@ -160,26 +160,43 @@ func TestRemapBetaToolNames(t *testing.T) {
 		assert.Empty(t, rev)
 	})
 
-	t.Run("unknown tool — passed through unchanged", func(t *testing.T) {
+	t.Run("unknown tool — TitleCased", func(t *testing.T) {
+		// Anthropic's OAuth path rejects requests carrying many snake_case
+		// tool names, so unknown tools are folded too — not just the
+		// well-known Claude Code ones.
 		tools := []anthropic.BetaToolUnionParam{
 			{OfTool: &anthropic.BetaToolParam{Name: "my_custom_tool"}},
 		}
 		rev := remapBetaToolNames(tools)
-		assert.Equal(t, "my_custom_tool", tools[0].OfTool.Name)
-		assert.Empty(t, rev)
+		assert.Equal(t, "MyCustomTool", tools[0].OfTool.Name)
+		assert.Equal(t, map[string]string{"MyCustomTool": "my_custom_tool"}, rev)
 	})
 
-	t.Run("multiple tools — renames known ones only", func(t *testing.T) {
+	t.Run("multiple tools — known names keep official spelling", func(t *testing.T) {
 		tools := []anthropic.BetaToolUnionParam{
 			{OfTool: &anthropic.BetaToolParam{Name: "read"}},
 			{OfTool: &anthropic.BetaToolParam{Name: "my_tool"}},
-			{OfTool: &anthropic.BetaToolParam{Name: "glob"}},
+			{OfTool: &anthropic.BetaToolParam{Name: "ls"}},
 		}
 		rev := remapBetaToolNames(tools)
 		assert.Equal(t, "Read", tools[0].OfTool.Name)
-		assert.Equal(t, "my_tool", tools[1].OfTool.Name)
-		assert.Equal(t, "Glob", tools[2].OfTool.Name)
-		assert.Equal(t, map[string]string{"Read": "read", "Glob": "glob"}, rev)
+		assert.Equal(t, "MyTool", tools[1].OfTool.Name)
+		// "ls" comes from the map as "LS", not the mechanical "Ls".
+		assert.Equal(t, "LS", tools[2].OfTool.Name)
+		assert.Equal(t, map[string]string{"Read": "read", "MyTool": "my_tool", "LS": "ls"}, rev)
+	})
+
+	t.Run("collision — both left alone", func(t *testing.T) {
+		// Renaming would make the reverse map ambiguous, which could
+		// dispatch a tool result to the wrong tool.
+		tools := []anthropic.BetaToolUnionParam{
+			{OfTool: &anthropic.BetaToolParam{Name: "my_tool"}},
+			{OfTool: &anthropic.BetaToolParam{Name: "MyTool"}},
+		}
+		rev := remapBetaToolNames(tools)
+		assert.Equal(t, "my_tool", tools[0].OfTool.Name)
+		assert.Equal(t, "MyTool", tools[1].OfTool.Name)
+		assert.Empty(t, rev)
 	})
 }
 

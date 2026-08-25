@@ -67,13 +67,16 @@ func TestRemapToolNames(t *testing.T) {
 		assert.Empty(t, rev)
 	})
 
-	t.Run("unknown tool — passed through unchanged", func(t *testing.T) {
+	t.Run("unknown tool — TitleCased", func(t *testing.T) {
+		// Anthropic's OAuth path rejects requests carrying many snake_case
+		// tool names, so unknown tools are folded too — not just the
+		// well-known Claude Code ones.
 		tools := []anthropic.ToolUnionParam{
 			{OfTool: &anthropic.ToolParam{Name: "my_custom_tool"}},
 		}
 		rev := remapToolNames(tools)
-		assert.Equal(t, "my_custom_tool", tools[0].OfTool.Name)
-		assert.Empty(t, rev)
+		assert.Equal(t, "MyCustomTool", tools[0].OfTool.Name)
+		assert.Equal(t, map[string]string{"MyCustomTool": "my_custom_tool"}, rev)
 	})
 }
 

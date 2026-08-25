@@ -181,6 +181,11 @@ func (c *ClaudeClient) Guard(ctx context.Context, req *anthropic.MessageNewParam
 		panic("invalid metadata")
 	}
 	options := append(c.AnthropicClient.Client().Options, anthropicOption.WithHeader("X-Claude-Code-Session-Id", meta.SessionID))
+	// Streaming responses bypass restoreToolNamesInMessage, so undo the rename
+	// on the wire instead. No-op for non-streaming responses.
+	if len(reverseMap) > 0 {
+		options = append(options, anthropicOption.WithMiddleware(restoreToolNamesMiddleware(reverseMap)))
+	}
 	logrus.WithContext(ctx).Debugf("session: %s", meta.SessionID)
 	logrus.WithContext(ctx).Debugf("metadata: %s", req.Metadata.UserID)
 
@@ -236,6 +241,11 @@ func (c *ClaudeClient) GuardBeta(ctx context.Context, req *anthropic.BetaMessage
 		panic("invalid metadata")
 	}
 	options := append(c.AnthropicClient.Client().Options, anthropicOption.WithHeader("X-Claude-Code-Session-Id", meta.SessionID))
+	// Streaming responses bypass restoreBetaToolNamesInMessage, so undo the
+	// rename on the wire instead. No-op for non-streaming responses.
+	if len(reverseMap) > 0 {
+		options = append(options, anthropicOption.WithMiddleware(restoreToolNamesMiddleware(reverseMap)))
+	}
 	logrus.WithContext(ctx).Debugf("session: %s", meta.SessionID)
 	logrus.WithContext(ctx).Debugf("metadata: %s", req.Metadata.UserID)
 
@@ -334,16 +344,26 @@ func stripBetaClearThinkingEdit(req *anthropic.BetaMessageNewParams) {
 	req.ContextManagement.Edits = filtered
 }
 
-// remapToolNames renames OfTool tools in-place using oauthToolRenameMap.
-// Returns a reverse map (TitleCase → original) for restoring names in the response.
+// remapToolNames renames OfTool tools in-place to their Claude Code equivalents.
+// Returns a reverse map (outbound → original) for restoring names in the response.
 func remapToolNames(tools []anthropic.ToolUnionParam) map[string]string {
-	reverseMap := make(map[string]string)
+	names := make([]string, 0, len(tools))
+	for i := range tools {
+		if t := tools[i].OfTool; t != nil {
+			names = append(names, t.Name)
+		}
+	}
+	plan := planToolRenames(names)
+	if len(plan) == 0 {
+		return nil
+	}
+	reverseMap := make(map[string]string, len(plan))
 	for i := range tools {
 		t := tools[i].OfTool
 		if t == nil {
 			continue
 		}
-		if newName, ok := oauthToolRenameMap[t.Name]; ok && newName != t.Name {
+		if newName, ok := plan[t.Name]; ok {
 			reverseMap[newName] = t.Name
 			tools[i].OfTool.Name = newName
 		}
@@ -353,13 +373,23 @@ func remapToolNames(tools []anthropic.ToolUnionParam) map[string]string {
 
 // remapBetaToolNames is the BetaToolUnionParam equivalent of remapToolNames.
 func remapBetaToolNames(tools []anthropic.BetaToolUnionParam) map[string]string {
-	reverseMap := make(map[string]string)
+	names := make([]string, 0, len(tools))
+	for i := range tools {
+		if t := tools[i].OfTool; t != nil {
+			names = append(names, t.Name)
+		}
+	}
+	plan := planToolRenames(names)
+	if len(plan) == 0 {
+		return nil
+	}
+	reverseMap := make(map[string]string, len(plan))
 	for i := range tools {
 		t := tools[i].OfTool
 		if t == nil {
 			continue
 		}
-		if newName, ok := oauthToolRenameMap[t.Name]; ok && newName != t.Name {
+		if newName, ok := plan[t.Name]; ok {
 			reverseMap[newName] = t.Name
 			tools[i].OfTool.Name = newName
 		}
