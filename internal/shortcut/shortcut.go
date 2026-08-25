@@ -21,6 +21,7 @@ var (
 	windowsShortcutTemplate = template.Must(template.ParseFS(templateFS, "templates/windows_shortcut.ps1.tmpl"))
 	macCommandTemplate      = template.Must(template.ParseFS(templateFS, "templates/macos_command.sh.tmpl"))
 	linuxDesktopTemplate    = template.Must(template.ParseFS(templateFS, "templates/linux_desktop.desktop.tmpl"))
+	linuxLauncherTemplate   = template.Must(template.ParseFS(templateFS, "templates/linux_launcher.sh.tmpl"))
 )
 
 // render executes a parsed template against data and returns the result.
@@ -256,13 +257,54 @@ func createLinuxShortcuts(opts Options, spec LaunchSpec) ([]string, error) {
 		}
 		created = append(created, path)
 	}
+
+	// A .desktop entry is only launchable from a graphical session, so on
+	// Linux always also write a plain executable launcher script — on
+	// headless boxes (servers, containers, SSH) it is the only artifact the
+	// user can actually run, and detecting "headless" from the environment
+	// (DISPLAY etc.) is unreliable enough that conditioning on it would just
+	// make the command's output unpredictable.
+	if !(opts.NoDesktop && opts.NoMenu) {
+		path, err := writeLinuxLauncherScript(opts, spec)
+		if err != nil {
+			return created, err
+		}
+		if path != "" {
+			created = append(created, path)
+		}
+	}
 	return created, nil
+}
+
+// writeLinuxLauncherScript writes the executable launcher script to
+// ~/.local/bin (commonly on PATH per the systemd file-hierarchy convention,
+// and user-owned either way). An unresolvable home or an uncreatable
+// directory skips the script rather than failing shortcut creation.
+func writeLinuxLauncherScript(opts Options, spec LaunchSpec) (string, error) {
+	dir, err := userSubdir(filepath.Join(".local", "bin"))
+	if err != nil {
+		return "", nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", nil
+	}
+	path := filepath.Join(dir, slugName(opts.Name)+".sh")
+	if err := os.WriteFile(path, []byte(launcherScriptContent(spec.Argv)), 0o755); err != nil {
+		return "", fmt.Errorf("failed to write shortcut %s: %w", path, err)
+	}
+	return path, nil
 }
 
 // desktopEntryContent renders internal/shortcut/templates/linux_desktop.desktop.tmpl,
 // a freedesktop .desktop entry.
 func desktopEntryContent(name string, argv []string) string {
 	return render(linuxDesktopTemplate, struct{ Name, Exec string }{Name: name, Exec: shJoin(argv)})
+}
+
+// launcherScriptContent renders internal/shortcut/templates/linux_launcher.sh.tmpl,
+// a plain shell script that exec's the launch command.
+func launcherScriptContent(argv []string) string {
+	return render(linuxLauncherTemplate, struct{ Command string }{Command: shJoin(argv)})
 }
 
 // ---------------- shared helpers ----------------

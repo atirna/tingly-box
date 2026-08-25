@@ -47,6 +47,67 @@ func TestCommandScriptContent(t *testing.T) {
 	}
 }
 
+func TestLauncherScriptContent(t *testing.T) {
+	argv := []string{"/opt/tingly box/tingly-box", "restart", "--daemon"}
+	content := launcherScriptContent(argv)
+
+	if !strings.HasPrefix(content, "#!/bin/sh\n") {
+		t.Errorf("missing shebang:\n%s", content)
+	}
+	if !strings.Contains(content, "exec '/opt/tingly box/tingly-box' 'restart' '--daemon'") {
+		t.Errorf("exec line not quoted as expected:\n%s", content)
+	}
+}
+
+func TestCreateLinuxShortcutsAlwaysWritesLauncherScript(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
+
+	created, err := createLinuxShortcuts(Options{Name: "Tingly Box"}, spec)
+	if err != nil {
+		t.Fatalf("createLinuxShortcuts: %v", err)
+	}
+
+	// No ~/Desktop here, so: the menu .desktop entry plus the launcher script
+	// — the latter written unconditionally, since it is the only artifact a
+	// headless user can actually run and environment sniffing (DISPLAY etc.)
+	// is too unreliable to condition on.
+	wantEntry := filepath.Join(home, ".local", "share", "applications", "tingly-box.desktop")
+	wantScript := filepath.Join(home, ".local", "bin", "tingly-box.sh")
+	if len(created) != 2 || created[0] != wantEntry || created[1] != wantScript {
+		t.Fatalf("expected [%s %s], got %v", wantEntry, wantScript, created)
+	}
+
+	info, err := os.Stat(wantScript)
+	if err != nil {
+		t.Fatalf("launcher script not written: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Errorf("launcher script is not executable: %v", info.Mode())
+	}
+	content, err := os.ReadFile(wantScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "exec '/usr/local/bin/tingly-box' 'restart' '--daemon'") {
+		t.Errorf("unexpected launcher script content:\n%s", content)
+	}
+}
+
+func TestCreateLinuxShortcutsRespectsAllOff(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
+
+	created, err := createLinuxShortcuts(Options{Name: "Tingly Box", NoDesktop: true, NoMenu: true}, spec)
+	if err != nil || len(created) != 0 {
+		t.Errorf("--no-desktop --no-menu should produce nothing, got %v (err=%v)", created, err)
+	}
+}
+
 func TestResolveLaunchBinary(t *testing.T) {
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
 

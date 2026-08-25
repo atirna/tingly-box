@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 
@@ -80,6 +81,21 @@ func (s *ShortcutCmdKong) Run(source LaunchSource) error {
 	for _, p := range created {
 		fmt.Printf("  - %s\n", p)
 	}
-	fmt.Println("\nDouble-click it to start Tingly Box and open the web UI.")
+
+	// On Linux the list also includes an executable launcher script — the
+	// .desktop entries need a graphical session to be launchable, so point at
+	// the script by path for headless use (servers, containers, SSH).
+	script := ""
+	for _, p := range created {
+		if strings.HasSuffix(p, ".sh") {
+			script = p
+		}
+	}
+	fmt.Println()
+	if script != "" {
+		fmt.Printf("Double-click a shortcut — or run %s on a headless machine — to start Tingly Box and open the web UI.\n", script)
+	} else {
+		fmt.Println("Double-click it to start Tingly Box and open the web UI.")
+	}
 	return nil
 }
