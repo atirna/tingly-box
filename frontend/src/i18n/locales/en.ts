@@ -837,6 +837,7 @@ export default {
       "description": "Select interface display language",
       "en": "English",
       "zh": "中文",
+      "ru": "Русский",
       "current": "Current",
       "saveSuccess": "Language settings updated",
       "saveFailed": "Failed to update language settings"

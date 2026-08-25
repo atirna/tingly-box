@@ -23,6 +23,7 @@ import { useSidebarCollapsed } from './useSidebarCollapsed';
 import type { ActivityItem } from './types';
 import type { ThemeMode } from '@/theme';
 import { getThemeOptions } from '@/theme/options';
+import { SUPPORTED_LANGUAGES, resolveLanguage } from '@/i18n';
 
 interface ActivityBarProps {
     activityItems: ActivityItem[];
@@ -45,6 +46,9 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     const { mode: themeMode, setTheme } = useThemeMode();
     const [languageMenuAnchorEl, setLanguageMenuAnchorEl] = useState<HTMLElement | null>(null);
     const [themeMenuAnchorEl, setThemeMenuAnchorEl] = useState<HTMLElement | null>(null);
+
+    const currentLanguage = resolveLanguage(i18n.language);
+    const currentShortLabel = SUPPORTED_LANGUAGES.find((l) => l.code === currentLanguage)?.shortLabel ?? currentLanguage.toUpperCase();
 
     const themeOptions = useMemo(() => getThemeOptions(t), [t]);
     const currentThemeOption = themeOptions.find((option) => option.value === themeMode);
@@ -180,20 +184,16 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                             },
                         }}
                     >
-                        <MenuItem
-                            selected={i18n.language === 'en'}
-                            onClick={() => handleLanguageChange('en')}
-                            sx={{ gap: 1.5 }}
-                        >
-                            <Typography>{t('system.language.en')}</Typography>
-                        </MenuItem>
-                        <MenuItem
-                            selected={i18n.language === 'zh'}
-                            onClick={() => handleLanguageChange('zh')}
-                            sx={{ gap: 1.5 }}
-                        >
-                            <Typography>{t('system.language.zh')}</Typography>
-                        </MenuItem>
+                        {SUPPORTED_LANGUAGES.map(({ code, labelKey }) => (
+                            <MenuItem
+                                key={code}
+                                selected={currentLanguage === code}
+                                onClick={() => handleLanguageChange(code)}
+                                sx={{ gap: 1.5 }}
+                            >
+                                <Typography>{t(labelKey)}</Typography>
+                            </MenuItem>
+                        ))}
                     </Menu>
 
                     <Menu
@@ -295,7 +295,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                             <IconLanguage sx={{ fontSize: 22 }} />
                         </ListItemIcon>
                         <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.1, fontSize: '0.65rem' }}>
-                            {i18n.language === 'zh' ? '中文' : 'EN'}
+                            {currentShortLabel}
                         </Typography>
                     </ListItemButton>
                 </Tooltip>

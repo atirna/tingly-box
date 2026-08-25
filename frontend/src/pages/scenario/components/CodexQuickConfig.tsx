@@ -11,6 +11,7 @@ import {
 import { InfoOutlined as InfoOutlinedIcon } from '@/components/icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { type AppLanguage, resolveLanguage } from '@/i18n';
 
 // CodexPrefs mirrors the Go struct in internal/server/config (CodexPrefs).
 // Keys are the literal Codex config.toml keys so the object round-trips
@@ -60,11 +61,11 @@ export function mergeSavedCodexPrefs(applied: CodexPrefs = {}): CodexPrefs {
 
 type PrefsKey = keyof CodexPrefs;
 type Kind = 'enum' | 'bool';
-type Lang = 'zh' | 'en';
 
 // ── Field structure (language-agnostic) ────────────────────────────────
 // Keep in sync with codexPrefSpec in internal/server/config/apply_config.go.
-// Adding a key: append here AND add entries in FIELDS_TEXT_ZH / FIELDS_TEXT_EN.
+// Adding a key: append here AND add entries in FIELDS_TEXT_ZH / FIELDS_TEXT_EN /
+// FIELDS_TEXT_RU.
 
 interface FieldStruct {
     key: PrefsKey;
@@ -138,9 +139,32 @@ const FIELDS_TEXT_EN: FieldTextMap = {
     },
 };
 
-const FIELDS_TEXT: Record<Lang, FieldTextMap> = { zh: FIELDS_TEXT_ZH, en: FIELDS_TEXT_EN };
+const FIELDS_TEXT_RU: FieldTextMap = {
+    model_reasoning_effort: {
+        label: 'Глубина рассуждений',
+        purpose: 'Насколько глубоко модель обдумывает ответ',
+        tooltip: 'none/minimal — самые быстрые; high/xhigh рассуждают глубже, но медленнее и дороже. Пусто — значение Codex по умолчанию (medium).',
+    },
+    model_reasoning_summary: {
+        label: 'Сводка рассуждений',
+        purpose: 'Показывать ли ход рассуждений и насколько подробно',
+        tooltip: 'auto оставляет решение за Codex; concise/detailed задают подробность; none скрывает сводку. По умолчанию tb использует auto.',
+    },
+    model_verbosity: {
+        label: 'Подробность ответа',
+        purpose: 'Насколько развёрнуто отвечает модель',
+        tooltip: 'low подходит для лаконичного помощника по коду; high даёт больше пояснений. Пусто — значение Codex по умолчанию (medium).',
+    },
+    model_supports_reasoning_summaries: {
+        label: 'Сводки принудительно',
+        purpose: 'Включить сводки рассуждений для моделей не от OpenAI',
+        tooltip: 'Моделям, проксируемым через tingly-box, эта опция нужна, чтобы возвращать сводки рассуждений. tb включает её по умолчанию.',
+    },
+};
 
-const UI_TEXT: Record<Lang, { panelHeader: string; sectionTitle: string; sectionHint: string; unsetLabel: string }> = {
+const FIELDS_TEXT: Record<AppLanguage, FieldTextMap> = { zh: FIELDS_TEXT_ZH, en: FIELDS_TEXT_EN, ru: FIELDS_TEXT_RU };
+
+const UI_TEXT: Record<AppLanguage, { panelHeader: string; sectionTitle: string; sectionHint: string; unsetLabel: string }> = {
     zh: {
         panelHeader: '这些项写入 ~/.codex/config.toml 的顶层与每个 tingly profile',
         sectionTitle: '模型与推理',
@@ -153,11 +177,17 @@ const UI_TEXT: Record<Lang, { panelHeader: string; sectionTitle: string; section
         sectionHint: 'Empty = use Codex built-in default',
         unsetLabel: '(default)',
     },
+    ru: {
+        panelHeader: 'Эти значения записываются на верхний уровень ~/.codex/config.toml и в каждый профиль tingly',
+        sectionTitle: 'Модель и рассуждения',
+        sectionHint: 'Пусто — встроенное значение Codex по умолчанию',
+        unsetLabel: '(по умолчанию)',
+    },
 };
 
-function useLang(): Lang {
+function useLang(): AppLanguage {
     const { i18n } = useTranslation();
-    return i18n.language === 'zh' ? 'zh' : 'en';
+    return resolveLanguage(i18n.language);
 }
 
 // ── Field row ──────────────────────────────────────────────────────────
@@ -244,7 +274,7 @@ const FieldRow: React.FC<FieldRowProps> = ({ field, text, unsetLabel, prefs, set
 
 // ── Catalog section text ───────────────────────────────────────────────
 
-const CATALOG_TEXT: Record<Lang, { sectionTitle: string; label: string; purpose: string; tooltip: string }> = {
+const CATALOG_TEXT: Record<AppLanguage, { sectionTitle: string; label: string; purpose: string; tooltip: string }> = {
     zh: {
         sectionTitle: '文件',
         label: '写入模型目录',
@@ -256,6 +286,12 @@ const CATALOG_TEXT: Record<Lang, { sectionTitle: string; label: string; purpose:
         label: 'Write model catalog',
         purpose: 'Lets Codex\'s /model picker list tingly-served models',
         tooltip: 'Writes ~/.codex/tingly-model-catalog.json. Codex reads this on startup to populate the /model picker with tingly-served models. When off, model_catalog_json is omitted from config.toml and Codex uses its built-in model list.',
+    },
+    ru: {
+        sectionTitle: 'Файлы',
+        label: 'Каталог моделей',
+        purpose: 'Чтобы в выборе /model в Codex появились модели, обслуживаемые tingly',
+        tooltip: 'Записывает ~/.codex/tingly-model-catalog.json. Codex читает этот файл при запуске и добавляет модели tingly в выбор /model. Если выключено, model_catalog_json не пишется в config.toml, и Codex использует встроенный список моделей.',
     },
 };
 

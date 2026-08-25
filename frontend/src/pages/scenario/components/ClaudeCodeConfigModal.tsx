@@ -5,6 +5,7 @@ import { VisibilityOutlined as VisibilityOutlinedIcon } from '@/components/icons
 import { RestartAlt as RestartAltIcon } from '@/components/icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { resolveLanguage } from '@/i18n';
 import CodeBlock from '@/components/CodeBlock';
 import { isFullEdition } from '@/utils/edition';
 import { useScenarioPageModal } from '@/pages/scenario/context/ScenarioPageContext';
@@ -38,8 +39,8 @@ type MainTab = 'quick' | 'manual';
 type ScriptTab = 'json' | 'windows' | 'unix';
 
 // Modal-local copy that doesn't fit either `claudeCode.*` (English-only
-// today) or QuickConfig's bundled text. Two flat maps picked at render
-// time keeps this file self-contained and easy to tune.
+// today) or QuickConfig's bundled text. One flat map per language, picked at
+// render time, keeps this file self-contained and easy to tune.
 const MODAL_TEXT = {
     zh: {
         tabQuick: '自动配置',
@@ -64,6 +65,18 @@ const MODAL_TEXT = {
         createdLabel: 'Created',
         updatedLabel: 'Updated',
         backupLabel: 'Backup saved to',
+    },
+    ru: {
+        tabQuick: 'Автонастройка',
+        tabManual: 'Вручную',
+        previewButton: 'Предпросмотр создаваемых переменных',
+        resetTooltip: 'Сбросить к рекомендованным значениям tb',
+        previewTitle: 'Предпросмотр — блок env, который будет записан в ~/.claude/settings.json',
+        applySuccess: 'Конфигурация применена',
+        applyFailure: 'Не удалось применить',
+        createdLabel: 'Создано',
+        updatedLabel: 'Обновлено',
+        backupLabel: 'Резервная копия сохранена в',
     },
 } as const;
 
@@ -111,7 +124,7 @@ const ClaudeCodeConfigModal: React.FC<ClaudeCodeConfigModalProps> = ({
 }) => {
     const { token } = useScenarioPageModal();
     const { t, i18n } = useTranslation();
-    const modalText = MODAL_TEXT[i18n.language === 'zh' ? 'zh' : 'en'];
+    const modalText = MODAL_TEXT[resolveLanguage(i18n.language)];
     const [mainTab, setMainTab] = React.useState<MainTab>('quick');
     const [settingsTab, setSettingsTab] = React.useState<ScriptTab>('json');
     const [claudeJsonTab, setClaudeJsonTab] = React.useState<ScriptTab>('json');

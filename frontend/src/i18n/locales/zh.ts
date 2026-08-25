@@ -839,6 +839,7 @@ export default {
       "description": "选择界面显示语言",
       "en": "English",
       "zh": "中文",
+      "ru": "Русский",
       "current": "当前语言",
       "saveSuccess": "语言设置已更新",
       "saveFailed": "语言设置更新失败"

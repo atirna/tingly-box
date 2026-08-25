@@ -1,6 +1,7 @@
 import { Box, Chip, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { SUPPORTED_LANGUAGES, resolveLanguage } from '@/i18n';
 
 /**
  * Compact language switcher for guide dialogs (EntryGuideDialog, TierGuideDialog).
@@ -13,6 +14,7 @@ import { useTranslation } from 'react-i18next';
  */
 export const GuideLanguageToggle: React.FC = () => {
     const { t, i18n } = useTranslation();
+    const current = resolveLanguage(i18n.language);
 
     const changeLanguage = (lng: string) => {
         if (i18n.language === lng) return;
@@ -23,38 +25,28 @@ export const GuideLanguageToggle: React.FC = () => {
     return (
         <Tooltip title={t('system.language.title')}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Chip
-                    label={t('system.language.en')}
-                    onClick={() => changeLanguage('en')}
-                    size="small"
-                    sx={{
-                        bgcolor: i18n.language === 'en' ? 'primary.main' : 'action.hover',
-                        color: i18n.language === 'en' ? 'primary.contrastText' : 'text.primary',
-                        fontWeight: i18n.language === 'en' ? 600 : 400,
-                        border: i18n.language === 'en' ? 'none' : '1px solid',
-                        borderColor: 'divider',
-                        cursor: 'pointer',
-                        '&:hover': {
-                            bgcolor: i18n.language === 'en' ? 'primary.dark' : 'action.selected',
-                        },
-                    }}
-                />
-                <Chip
-                    label={t('system.language.zh')}
-                    onClick={() => changeLanguage('zh')}
-                    size="small"
-                    sx={{
-                        bgcolor: i18n.language === 'zh' ? 'primary.main' : 'action.hover',
-                        color: i18n.language === 'zh' ? 'primary.contrastText' : 'text.primary',
-                        fontWeight: i18n.language === 'zh' ? 600 : 400,
-                        border: i18n.language === 'zh' ? 'none' : '1px solid',
-                        borderColor: 'divider',
-                        cursor: 'pointer',
-                        '&:hover': {
-                            bgcolor: i18n.language === 'zh' ? 'primary.dark' : 'action.selected',
-                        },
-                    }}
-                />
+                {SUPPORTED_LANGUAGES.map(({ code, labelKey }) => {
+                    const selected = current === code;
+                    return (
+                        <Chip
+                            key={code}
+                            label={t(labelKey)}
+                            onClick={() => changeLanguage(code)}
+                            size="small"
+                            sx={{
+                                bgcolor: selected ? 'primary.main' : 'action.hover',
+                                color: selected ? 'primary.contrastText' : 'text.primary',
+                                fontWeight: selected ? 600 : 400,
+                                border: selected ? 'none' : '1px solid',
+                                borderColor: 'divider',
+                                cursor: 'pointer',
+                                '&:hover': {
+                                    bgcolor: selected ? 'primary.dark' : 'action.selected',
+                                },
+                            }}
+                        />
+                    );
+                })}
             </Box>
         </Tooltip>
     );

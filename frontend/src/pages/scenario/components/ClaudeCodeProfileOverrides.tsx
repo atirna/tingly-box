@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { resolveLanguage } from '@/i18n';
 import UnifiedCard from '@/components/UnifiedCard';
 import { Add, Close, InfoOutlined, RestartAlt, Search } from '@/components/icons';
 import { api } from '@/services/api';
@@ -35,7 +36,6 @@ import {
     type ClaudeCodeDefaultMode,
     type ClaudeCodePrefs,
     type FieldStruct,
-    type Lang,
     type PrefsKey,
 } from './ClaudeCodeQuickConfig';
 
@@ -109,6 +109,34 @@ const TEXT = {
         loadFailed: 'Failed to load profile overrides',
         saveFailed: 'Failed to save profile overrides',
     },
+    ru: {
+        title: 'Переопределения профиля',
+        inherited: 'Полностью наследует основную конфигурацию и маршрутизацию моделей',
+        pendingInheritance: 'Переопределения удалены; сохраните профиль, чтобы вернуть наследование',
+        hint: 'Неуказанные параметры продолжают наследоваться; рабочие настройки создаются автоматически при запуске.',
+        add: 'Добавить',
+        closeAdd: 'Закрыть',
+        search: 'Поиск рабочих параметров',
+        noSettings: 'Доступных параметров нет',
+        common: 'Основные',
+        runtime: 'Рабочие параметры',
+        limits: 'Ограничения и инструменты',
+        behavior: 'Поведение и приватность',
+        network: 'Сеть',
+        permissionMode: 'Режим прав по умолчанию',
+        permissionPurpose: 'Режим прав, с которым этот профиль запускает Claude Code',
+        remove: 'Убрать переопределение и вернуть наследование',
+        save: 'Сохранить',
+        saved: 'Переопределения профиля сохранены',
+        restoreAll: 'Вернуть всё наследование',
+        restoreTitle: 'Очистить все переопределения профиля?',
+        restoreBody: 'Будут очищены только переопределения рабочих параметров этого профиля. Основная конфигурация, маршрутизация моделей и сам профиль не изменятся.',
+        restored: 'Наследование основной конфигурации и маршрутизации моделей восстановлено',
+        cancel: 'Отмена',
+        confirmRestore: 'Вернуть наследование',
+        loadFailed: 'Не удалось загрузить переопределения профиля',
+        saveFailed: 'Не удалось сохранить переопределения профиля',
+    },
 } as const;
 
 const COMMON_KEYS: OverrideKey[] = ['CLAUDE_CODE_MAX_OUTPUT_TOKENS', 'defaultMode'];
@@ -150,7 +178,7 @@ const ClaudeCodeProfileOverrides: React.FC<ClaudeCodeProfileOverridesProps> = ({
     onArtifactChange,
 }) => {
     const { i18n } = useTranslation();
-    const lang: Lang = i18n.language === 'zh' ? 'zh' : 'en';
+    const lang = resolveLanguage(i18n.language);
     const text = TEXT[lang];
     const fieldText = CLAUDE_CODE_FIELDS_TEXT[lang];
     const modeText = CLAUDE_CODE_DEFAULT_MODE_TEXT[lang];

@@ -14,6 +14,7 @@ import { useThemeMode } from '@/contexts/ThemeContext.tsx';
 import { useNotify } from '@/hooks/useNotify.ts';
 import { api } from '@/services/api.ts';
 import { getThemeOptions } from '@/theme/options.ts';
+import { SUPPORTED_LANGUAGES, resolveLanguage } from '@/i18n';
 
 // Label column width shared by every settings row — keeps the value column
 // (the actual visual anchor) vertically aligned across cards.
@@ -303,8 +304,15 @@ const System = () => {
                 <UnifiedCard grid={{ xs: 12, md: 12 }} title={t('system.preferences.title')} size="full" maxWidth={CARD_MAX_WIDTH}>
                     <Stack spacing={1.5}>
                         <SettingsRow icon={<IconLanguage sx={{ fontSize: 16 }} />} label={t('system.language.title')}>
-                            <Chip label={t('system.language.en')} onClick={() => changeLanguage('en')} size="small" sx={chipSx(i18n.language === 'en')} />
-                            <Chip label={t('system.language.zh')} onClick={() => changeLanguage('zh')} size="small" sx={chipSx(i18n.language === 'zh')} />
+                            {SUPPORTED_LANGUAGES.map(({ code, labelKey }) => (
+                                <Chip
+                                    key={code}
+                                    label={t(labelKey)}
+                                    onClick={() => changeLanguage(code)}
+                                    size="small"
+                                    sx={chipSx(resolveLanguage(i18n.language) === code)}
+                                />
+                            ))}
                         </SettingsRow>
 
                         <SettingsRow icon={<IconBrush sx={{ fontSize: 16 }} />} label={t('common.theme')}>

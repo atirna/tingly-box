@@ -2,6 +2,14 @@ import { Box, Tooltip, Typography, tooltipClasses } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatNumber } from './chartStyles';
+import { type AppLanguage, resolveLanguage } from '@/i18n';
+
+// BCP-47 tags for date formatting, keyed by the languages the UI ships.
+const HEATMAP_LOCALES: Record<AppLanguage, string> = {
+    en: 'en-US',
+    zh: 'zh-CN',
+    ru: 'ru-RU',
+};
 
 // Green color scale for GitHub-style heatmap (like GitHub's contribution graph).
 // Level 0 (no activity) is rendered with a theme-aware neutral (see emptyCellBg)
@@ -131,7 +139,7 @@ const StatInline = ({ value, label }: { value: string; label: string }) => (
 export const TokenHeatmap = ({ data }: TokenHeatmapProps) => {
     const { t, i18n } = useTranslation();
     // Match the MUI locale injected for TablePagination (see theme/index.ts).
-    const heatmapLocale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+    const heatmapLocale = HEATMAP_LOCALES[resolveLanguage(i18n.language)];
 
     // Build lookup maps (data is already filled by parent)
     const {
