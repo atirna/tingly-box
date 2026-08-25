@@ -1,10 +1,11 @@
-import {Close, ContentCopy, Launch, OpenInNew} from '@/components/icons';
+import {Close, ContentCopy, ExpandLess, ExpandMore, Launch, OpenInNew} from '@/components/icons';
 import {
     Alert,
     Box,
     Button,
     Checkbox,
     CircularProgress,
+    Collapse,
     Dialog,
     DialogContent,
     DialogTitle,
@@ -32,6 +33,11 @@ export interface OAuthProvider {
     enabled?: boolean;
     dev?: boolean;
     deviceCodeFlow?: boolean;
+    // Some upstream OAuth apps (Anthropic's Claude Code CLI client, OpenAI's Codex
+    // CLI client) only accept a redirect to this exact loopback port. Tingly-Box
+    // starts a temporary local listener on it for the callback — see
+    // ai/oauth/registry.go `CallbackPorts`.
+    callbackPort?: number;
 }
 
 // Fallback hardcoded providers for development or when API is unavailable
@@ -44,6 +50,7 @@ export const FALLBACK_OAUTH_PROVIDERS: OAuthProvider[] = [
         icon: <Claude size={32}/>,
         color: '#D97757',
         enabled: true,
+        callbackPort: 54545,
     },
     {
         id: 'gemini',
@@ -81,6 +88,7 @@ export const FALLBACK_OAUTH_PROVIDERS: OAuthProvider[] = [
         icon: <OpenAI size={32}/>,
         color: '#10A37F',
         enabled: true,
+        callbackPort: 1455,
     },
     {
         id: 'kimi_code',
@@ -580,6 +588,9 @@ const OAuthDialog = ({open, onClose, onSuccess, autoStartProviderId, reauthProvi
     // For autoStartProviderId mode: whether user has clicked "Connect & Authorize"
     const [configConfirmed, setConfigConfirmed] = useState(false);
     const [authAttempt, setAuthAttempt] = useState(0);
+    // Collapsed by default: the port-forwarding note for fixed-callback-port
+    // providers (Claude Code, Codex) is only useful for remote deployments.
+    const [showPortForwardHelp, setShowPortForwardHelp] = useState(false);
 
     // Load saved proxy URL and global proxy setting from localStorage/config on mount
     useEffect(() => {
@@ -656,6 +667,7 @@ const OAuthDialog = ({open, onClose, onSuccess, autoStartProviderId, reauthProvi
         setAuthData(null);
         setConfigConfirmed(false);
         setAuthAttempt(0);
+        setShowPortForwardHelp(false);
         onClose();
     };
 
@@ -863,6 +875,53 @@ const OAuthDialog = ({open, onClose, onSuccess, autoStartProviderId, reauthProvi
                                             </Typography>
                                         </Box>
                                     </Stack>
+                                )}
+
+                                {/* Some providers (Claude Code, Codex) redirect the browser to a fixed
+                                    loopback port for the callback. On a remote deployment that port lives
+                                    on the server, not the browser's machine, so it needs forwarding — shown
+                                    on demand rather than guessed at, since there's no reliable way to tell
+                                    local and remote access apart from here. */}
+                                {provider?.callbackPort && (
+                                    <Box>
+                                        <Stack direction="row" spacing={0.5} sx={{alignItems: 'center'}}>
+                                            <Typography variant="caption" sx={{color: 'text.secondary'}}>
+                                                Uses local port {provider.callbackPort} for the sign-in callback.
+                                            </Typography>
+                                            <Button
+                                                size="small"
+                                                onClick={() => setShowPortForwardHelp((v) => !v)}
+                                                endIcon={showPortForwardHelp ? <ExpandLess fontSize="small"/> : <ExpandMore fontSize="small"/>}
+                                                sx={{minWidth: 0, py: 0, fontSize: 'caption.fontSize', textTransform: 'none'}}
+                                            >
+                                                Running this remotely?
+                                            </Button>
+                                        </Stack>
+                                        <Collapse in={showPortForwardHelp} timeout="auto" unmountOnExit>
+                                            <Box sx={{mt: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1}}>
+                                                <Typography variant="body2" sx={{color: 'text.secondary'}}>
+                                                    If Tingly-Box runs on a remote server, this callback still
+                                                    goes to <b>your</b> machine's port {provider.callbackPort} —
+                                                    forward it there before continuing, e.g.:
+                                                </Typography>
+                                                <Box
+                                                    component="code"
+                                                    sx={{
+                                                        display: 'block',
+                                                        mt: 1,
+                                                        p: 1,
+                                                        bgcolor: 'background.paper',
+                                                        borderRadius: 1,
+                                                        fontFamily: 'monospace',
+                                                        fontSize: '0.8rem',
+                                                        overflowX: 'auto',
+                                                    }}
+                                                >
+                                                    ssh -L {provider.callbackPort}:localhost:{provider.callbackPort} user@your-server
+                                                </Box>
+                                            </Box>
+                                        </Collapse>
+                                    </Box>
                                 )}
 
                                 {initError && (
