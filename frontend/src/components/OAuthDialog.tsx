@@ -17,7 +17,7 @@ import {
 import {Claude, Gemini, Google, Kimi, OpenAI, Qwen} from './BrandIcons';
 import {useEffect, useRef, useState} from 'react';
 import api from "@/services/api.ts";
-import {getOAuthRedirectPath} from "@/utils/protocol";
+import {getOAuthRedirectPath, isGuiMode} from "@/utils/protocol";
 
 // Type for timer (browser vs Node.js)
 type TimerId = ReturnType<typeof setTimeout>;
@@ -32,6 +32,21 @@ export interface OAuthProvider {
     enabled?: boolean;
     dev?: boolean;
     deviceCodeFlow?: boolean;
+    // Some upstream OAuth apps (Anthropic's Claude Code CLI client, OpenAI's Codex
+    // CLI client) only accept a redirect to this exact loopback port. Tingly-Box
+    // starts a temporary local listener on it for the callback — see
+    // ai/oauth/registry.go `CallbackPorts`.
+    callbackPort?: number;
+}
+
+// Loopback hostnames the browser and the Tingly-Box server would both resolve to
+// the same machine for — anything else means the callback port below needs to be
+// made reachable from wherever the browser is running (e.g. an SSH tunnel).
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+
+function isLikelyRemoteAccess(): boolean {
+    if (isGuiMode()) return false;
+    return !LOOPBACK_HOSTNAMES.has(window.location.hostname);
 }
 
 // Fallback hardcoded providers for development or when API is unavailable
@@ -44,6 +59,7 @@ export const FALLBACK_OAUTH_PROVIDERS: OAuthProvider[] = [
         icon: <Claude size={32}/>,
         color: '#D97757',
         enabled: true,
+        callbackPort: 54545,
     },
     {
         id: 'gemini',
@@ -81,6 +97,7 @@ export const FALLBACK_OAUTH_PROVIDERS: OAuthProvider[] = [
         icon: <OpenAI size={32}/>,
         color: '#10A37F',
         enabled: true,
+        callbackPort: 1455,
     },
     {
         id: 'kimi_code',
@@ -863,6 +880,43 @@ const OAuthDialog = ({open, onClose, onSuccess, autoStartProviderId, reauthProvi
                                             </Typography>
                                         </Box>
                                     </Stack>
+                                )}
+
+                                {/* Some providers (Claude Code, Codex) redirect the browser to a fixed
+                                    loopback port for the callback. On a remote deployment that port lives
+                                    on the server, not the browser's machine, so it needs to be forwarded. */}
+                                {provider?.callbackPort && (
+                                    isLikelyRemoteAccess() ? (
+                                        <Alert severity="warning">
+                                            <Typography variant="body2" sx={{fontWeight: 600}}>
+                                                Requires local port {provider.callbackPort}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{mt: 0.5}}>
+                                                {name} redirects your browser to http://localhost:{provider.callbackPort} to
+                                                finish sign-in. Since this looks like a remote Tingly-Box, that port needs to
+                                                reach this server from the machine your browser is on — forward it first, e.g.:
+                                            </Typography>
+                                            <Box
+                                                component="code"
+                                                sx={{
+                                                    display: 'block',
+                                                    mt: 1,
+                                                    p: 1,
+                                                    bgcolor: 'action.hover',
+                                                    borderRadius: 1,
+                                                    fontFamily: 'monospace',
+                                                    fontSize: '0.8rem',
+                                                    overflowX: 'auto',
+                                                }}
+                                            >
+                                                ssh -L {provider.callbackPort}:localhost:{provider.callbackPort} user@your-server
+                                            </Box>
+                                        </Alert>
+                                    ) : (
+                                        <Typography variant="caption" sx={{color: 'text.secondary'}}>
+                                            Uses local port {provider.callbackPort} for the sign-in callback.
+                                        </Typography>
+                                    )
                                 )}
 
                                 {initError && (
