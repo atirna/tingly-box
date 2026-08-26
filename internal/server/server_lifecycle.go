@@ -89,6 +89,7 @@ func (s *Server) Start(port int) error {
 		fmt.Printf("Anthropic v1 Message API endpoint: %s://%s:%d/anthropic/v1/messages\n", scheme, resolvedHost, port)
 		fmt.Printf("Embeddings API endpoint: %s://%s:%d/tingly/embed/v1/embeddings\n", scheme, resolvedHost, port)
 		fmt.Printf("Image Generation API endpoint: %s://%s:%d/tingly/imagegen/v1/images/generations\n", scheme, resolvedHost, port)
+		fmt.Printf("Image Edit API endpoint: %s://%s:%d/tingly/imagegen/v1/images/edits\n", scheme, resolvedHost, port)
 		fmt.Printf("Image Generation (Responses API): %s://%s:%d/tingly/imagegen/v1/responses\n", scheme, resolvedHost, port)
 		fmt.Printf("Virtual Model API (OpenAI): %s://%s:%d/virtual/openai/v1/chat/completions\n", scheme, resolvedHost, port)
 		fmt.Printf("Virtual Model API (Anthropic): %s://%s:%d/virtual/anthropic/v1/messages\n", scheme, resolvedHost, port)

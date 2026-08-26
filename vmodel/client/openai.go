@@ -159,6 +159,10 @@ func (c *OpenAIClient) ImagesGenerate(_ context.Context, _ openai.ImageGenerateP
 	return nil, fmt.Errorf("images not supported by vmodel")
 }
 
+func (c *OpenAIClient) ImagesEdit(_ context.Context, _ openai.ImageEditParams) (*openai.ImagesResponse, error) {
+	return nil, fmt.Errorf("images not supported by vmodel")
+}
+
 func (c *OpenAIClient) ResponsesNew(_ context.Context, _ responses.ResponseNewParams) (*responses.Response, error) {
 	return nil, fmt.Errorf("responses API not supported by vmodel")
 }

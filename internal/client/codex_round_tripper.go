@@ -40,19 +40,26 @@ func (t *codexRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		req.URL.Path = newPath
 	}
 
-	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	//req.Header.Set("originator", "tingly-box")
-
 	if accountID := req.Header.Get("X-ChatGPT-Account-ID"); accountID != "" {
 		req.Header.Set("ChatGPT-Account-ID", accountID)
 		req.Header.Del("X-ChatGPT-Account-ID")
+	}
+
+	// The dedicated Codex images endpoints (images/generations, images/edits)
+	// speak plain JSON request/response — no Responses-API body rules, no SSE.
+	// Only headers and path rewriting apply to them.
+	imagesEndpoint := isCodexImagesPath(req.URL.Path)
+
+	if !imagesEndpoint {
+		req.Header.Set("OpenAI-Beta", "responses=experimental")
+		//req.Header.Set("originator", "tingly-box")
 	}
 
 	// Filter out unsupported parameters for ChatGPT backend API
 	// ChatGPT backend API does NOT support: max_tokens, max_completion_tokens, temperature, top_p, max_output_tokens
 
 	var filtered []byte
-	if req.Body != nil && req.Method == "POST" {
+	if req.Body != nil && req.Method == "POST" && !imagesEndpoint {
 		body, err := io.ReadAll(req.Body)
 		_ = req.Body.Close()
 		if err != nil {
@@ -83,6 +90,10 @@ func (t *codexRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		errorBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		return nil, fmt.Errorf("request failed with status %s: %s", resp.Status, string(errorBody))
+	}
+
+	if imagesEndpoint {
+		return resp, nil
 	}
 
 	if err := validateCodexStreamResponse(resp); err != nil {
@@ -352,9 +363,20 @@ func rewriteCodexAPIPath(path string) string {
 		return "/backend-api/codex/responses"
 	case path == "/backend-api/responses":
 		return "/backend-api/codex/responses"
+	case strings.HasPrefix(path, "/backend-api/images/"):
+		// SDK-relative "images/edits" / "images/generations" land here; the
+		// Codex backend serves them under /backend-api/codex/images/.
+		return strings.Replace(path, "/backend-api/images/", "/backend-api/codex/images/", 1)
 	case strings.HasPrefix(path, "/backend-api/v1/"):
 		return strings.Replace(path, "/backend-api/v1/", "/backend-api/codex/", 1)
 	default:
 		return path
 	}
+}
+
+// isCodexImagesPath reports whether the (already rewritten) request path
+// targets the Codex-native images endpoints, which exchange plain JSON rather
+// than the SSE-only Responses protocol.
+func isCodexImagesPath(path string) bool {
+	return strings.Contains(path, "/codex/images/")
 }

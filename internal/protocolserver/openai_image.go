@@ -192,6 +192,43 @@ func (ph *ProtocolHandler) HandleOpenAIImageGeneration(c *gin.Context) {
 // process working directory. It now belongs to the server layer so persistence
 // is uniform across providers and rooted at the application config directory.
 func (ph *ProtocolHandler) persistImageGeneration(req *openai.ImageGenerateParams, resp *openai.ImagesResponse) {
+	var meta string
+	if req != nil {
+		meta = fmt.Sprintf("Prompt: %s\n\nModel: %s\nSize: %s\nQuality: %s\nFormat: %s\nTimestamp: %s\n",
+			req.Prompt,
+			req.Model,
+			req.Size,
+			req.Quality,
+			req.ResponseFormat,
+			time.Now().Format(time.RFC3339),
+		)
+		if req.Style != "" {
+			meta += fmt.Sprintf("Style: %s\n", req.Style)
+		}
+	}
+	ph.persistImages(resp, meta)
+}
+
+// persistImageEdit is the edit-surface counterpart of persistImageGeneration:
+// same directory layout and best-effort semantics, with edit-shaped metadata.
+func (ph *ProtocolHandler) persistImageEdit(req *openai.ImageEditParams, resp *openai.ImagesResponse) {
+	var meta string
+	if req != nil {
+		meta = fmt.Sprintf("Prompt: %s\n\nOperation: edit\nModel: %s\nSize: %s\nQuality: %s\nTimestamp: %s\n",
+			req.Prompt,
+			req.Model,
+			req.Size,
+			req.Quality,
+			time.Now().Format(time.RFC3339),
+		)
+	}
+	ph.persistImages(resp, meta)
+}
+
+// persistImages writes each base64 image in resp (plus an optional metadata
+// sidecar) under configDir/image/YYYYMMDD/. Shared by the generation and edit
+// surfaces.
+func (ph *ProtocolHandler) persistImages(resp *openai.ImagesResponse, promptMeta string) {
 	if resp == nil || len(resp.Data) == 0 {
 		return
 	}
@@ -252,24 +289,12 @@ func (ph *ProtocolHandler) persistImageGeneration(req *openai.ImageGenerateParam
 
 		logrus.Infof("[ImageGen] Saved image to: %s", imagePath)
 
-		if req == nil {
+		if promptMeta == "" {
 			continue
 		}
 
 		promptPath := filepath.Join(dateDir, strings.Replace(filename, ".png", ".txt", 1))
-		promptContent := fmt.Sprintf("Prompt: %s\n\nModel: %s\nSize: %s\nQuality: %s\nFormat: %s\nTimestamp: %s\n",
-			req.Prompt,
-			req.Model,
-			req.Size,
-			req.Quality,
-			req.ResponseFormat,
-			now.Format(time.RFC3339),
-		)
-		if req.Style != "" {
-			promptContent += fmt.Sprintf("Style: %s\n", req.Style)
-		}
-
-		if err := os.WriteFile(promptPath, []byte(promptContent), 0600); err != nil {
+		if err := os.WriteFile(promptPath, []byte(promptMeta), 0600); err != nil {
 			logrus.Errorf("[ImageGen] Failed to write prompt file: %v", err)
 			continue
 		}

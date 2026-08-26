@@ -28,8 +28,10 @@ var _ OpenAIClientInterface = (*CodexClient)(nil)
 // Codex (ChatGPT OAuth) limitations:
 // - Does NOT support standard Chat Completions API
 // - Does NOT support /models endpoint
-// - Does NOT support /images/generations endpoint
-// - ONLY supports Responses API with special parameters
+// - Does NOT support the public /images/generations or /images/edits contracts;
+//   generation rides the Responses API (image_generation tool) and editing uses
+//   the Codex-native JSON images endpoint (see codex_images.go)
+// - Chat surfaces ONLY work through the Responses API with special parameters
 type CodexClient struct {
 	*OpenAIClient
 }

@@ -252,6 +252,14 @@ func (c *KimiClient) ImagesGenerate(ctx context.Context, req openai.ImageGenerat
 	}
 }
 
+// ImagesEdit is not supported by Kimi Code OAuth providers.
+func (c *KimiClient) ImagesEdit(ctx context.Context, req openai.ImageEditParams) (*openai.ImagesResponse, error) {
+	return nil, &ErrKimiNotSupported{
+		Operation: "Image Edit",
+		Reason:    "Kimi Code API does not support /images/edits endpoint",
+	}
+}
+
 // ResponsesNew is not supported by Kimi Code OAuth providers.
 func (c *KimiClient) ResponsesNew(ctx context.Context, req responses.ResponseNewParams) (*responses.Response, error) {
 	return nil, &ErrKimiNotSupported{

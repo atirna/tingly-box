@@ -27,6 +27,7 @@ type OpenAIClientInterface interface {
 	ChatCompletionsNew(ctx context.Context, req openai.ChatCompletionNewParams) (*openai.ChatCompletion, error)
 	ChatCompletionsNewStreaming(ctx context.Context, req openai.ChatCompletionNewParams) *ssestream.Stream[openai.ChatCompletionChunk]
 	ImagesGenerate(ctx context.Context, req openai.ImageGenerateParams) (*openai.ImagesResponse, error)
+	ImagesEdit(ctx context.Context, req openai.ImageEditParams) (*openai.ImagesResponse, error)
 	ResponsesNew(ctx context.Context, req responses.ResponseNewParams) (*responses.Response, error)
 	ResponsesNewStreaming(ctx context.Context, req responses.ResponseNewParams) *ssestream.Stream[responses.ResponseStreamEventUnion]
 	EmbeddingsNew(ctx context.Context, req openai.EmbeddingNewParams) (*openai.CreateEmbeddingResponse, error)
@@ -157,6 +158,20 @@ func (c *OpenAIClient) ImagesGenerate(ctx context.Context, req openai.ImageGener
 		return resp.ToOpenAI(), nil
 	default:
 		return c.client.Images.Generate(ctx, req)
+	}
+}
+
+// ImagesEdit forwards an OpenAI /images/edits request. Only OpenAI-compatible
+// providers speak this contract (the SDK serializes it as multipart form
+// upload); the bespoke DashScope / MiniMax adapters have no edit surface, so
+// those vendors are rejected here with a clear error instead of leaking a
+// confusing upstream 404.
+func (c *OpenAIClient) ImagesEdit(ctx context.Context, req openai.ImageEditParams) (*openai.ImagesResponse, error) {
+	switch imagegen.DetectVendor(c.provider) {
+	case imagegen.VendorDashScope, imagegen.VendorMinimax:
+		return nil, fmt.Errorf("provider %s does not support image editing (/images/edits)", c.provider.Name)
+	default:
+		return c.client.Images.Edit(ctx, req)
 	}
 }
 
