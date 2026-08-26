@@ -281,7 +281,7 @@ upstreams. It runs the real `ServiceSelector.Select → dispatchWithPriorityFail
 deterministic breaker clock, so recovery is exercised without sleeping.
 
 ```bash
-./harness lb --example cascade        # cascade | flat | grid | single | regression | ratelimit | authflip | crossmodel | halfopen | degrade | inactive | withintier | multiaffinity
+./harness lb --example cascade        # cascade | flat | grid | single | regression | ratelimit | authflip | crossmodel | halfopen | degrade | inactive | noeviction | withintier | multiaffinity
 ./harness lb --file scenario.yaml     # your own shape
 ./harness lb --example grid --table   # compact table instead of the default graph
 ./harness lb --example grid --json    # machine-readable trace
