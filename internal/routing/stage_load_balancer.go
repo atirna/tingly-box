@@ -30,18 +30,11 @@ func (s *LoadBalancerStage) Name() string {
 // stage: a failure here is a real error (there is no next stage to fall
 // through to), so it is reported via err rather than a silent pass-through.
 func (s *LoadBalancerStage) Evaluate(ctx *SelectionContext, candidates []*loadbalance.Service) ([]*loadbalance.Service, *SelectionResult, error) {
-	// Degrade, don't disappear: an upstream stage must never leave the
-	// terminal stage with nothing to pick while the rule itself still has
-	// active services configured. Whatever emptied the set (health filtering,
-	// smart-routing narrowing, a future stage), fall back to the rule's own
-	// active pool so the request reaches an upstream and the client sees the
-	// real upstream error instead of a "no service available" routing error.
-	if len(candidates) == 0 {
-		if fallback := activeBaseFallback(ctx, ctx.Rule, "routing_lb_candidates_degrade"); fallback != nil {
-			candidates = fallback
-		}
-	}
-
+	// An empty candidate set here means the rule genuinely has no active
+	// services: the pipeline driver (ServiceSelector.Select) restores the
+	// active base pool between stages whenever a narrowing comes back empty,
+	// so the terminal stage never has to compensate — it just reports the
+	// config problem via SelectService's error.
 	tempRule := *ctx.Rule
 	tempRule.Services = candidates
 	logOpenBreakerSkips(ctx, &tempRule)

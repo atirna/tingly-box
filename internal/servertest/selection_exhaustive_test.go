@@ -3,13 +3,11 @@ package servertest
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/tingly-dev/tingly-box/internal/config"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
-	server "github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"github.com/tingly-dev/tingly-box/internal/routing"
 	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -48,20 +46,22 @@ func allSvcStates() []svcState {
 // TestExhaustive_SelectionDegradeInvariant enumerates every combination of
 // service runtime state across the selection pipeline's dimensions and asserts
 // the degrade invariant on the REAL stack (ServiceSelector + LoadBalancer +
-// HealthFilter + breaker store):
+// HealthFilter + breaker store + affinity store):
 //
 //	If the scope a request resolves to (base pool for non-matching requests,
 //	base ∪ partition for partition-matching requests) contains at least one
-//	ACTIVE service, selection must return an active service from the rule —
-//	no combination of health-monitor or breaker state may fail the rule.
-//	Only a scope with zero active services may error (a genuine config
-//	problem).
+//	ACTIVE service, selection must return an active service from that scope —
+//	no combination of health-monitor, breaker, or affinity-pin state may fail
+//	the rule or leak a selection outside the scope. Only a scope with zero
+//	active services may error (a genuine config problem).
 //
 // Dimensions:
 //   - 1 or 2 base services × each service in 8 states (Active × unhealthy ×
 //     breaker-tripped)
 //   - no smart partition | 1 partition service in 8 states
 //   - request: does not match any partition | matches the partition
+//   - session affinity: no pin | a live pin on each of the case's services
+//     (including pins to inactive or out-of-scope services)
 //   - tactic: random | tier
 func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 	// The breaker store is process-global; this test trips thousands of
@@ -69,19 +69,11 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 	loadbalance.DefaultBreakerStore().Reset()
 	t.Cleanup(loadbalance.DefaultBreakerStore().Reset)
 
-	appConfig, err := config.NewAppConfig(config.WithConfigDir(t.TempDir()))
-	require.NoError(t, err)
-	cfg := appConfig.GetGlobalConfig()
-
+	cfg := newTestGlobalConfig(t)
 	providers := map[string]string{
-		"base1": uuid.New().String(),
-		"base2": uuid.New().String(),
-		"part":  uuid.New().String(),
-	}
-	for name, id := range providers {
-		require.NoError(t, cfg.AddProvider(&typ.Provider{
-			UUID: id, Name: name, APIBase: "https://example.invalid", Token: "sk", Enabled: true,
-		}))
+		"base1": addTestProvider(t, cfg, "base1"),
+		"base2": addTestProvider(t, cfg, "base2"),
+		"part":  addTestProvider(t, cfg, "part"),
 	}
 
 	// An op that matches every request (token count >= 0).
@@ -101,6 +93,17 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 		"tier":   {Type: loadbalance.TacticTier, Params: typ.DefaultTierParams()},
 	}
 
+	// All 1- and 2-service base pools.
+	baseCombos := make([][]svcState, 0, len(states)*(len(states)+1))
+	for _, b1 := range states {
+		baseCombos = append(baseCombos, []svcState{b1})
+	}
+	for _, b1 := range states {
+		for _, b2 := range states {
+			baseCombos = append(baseCombos, []svcState{b1, b2})
+		}
+	}
+
 	// partitionStates[0] == nil means "no partition".
 	partitionStates := make([]*svcState, 0, len(states)+1)
 	partitionStates = append(partitionStates, nil)
@@ -109,19 +112,15 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 	}
 
 	caseCount := 0
-	runCase := func(t *testing.T, tacticName string, tactic typ.Tactic, baseStates []svcState, partState *svcState, requestMatches bool) {
+	// pinIdx: -1 = no pin; 0..len(base)-1 = pin to that base service;
+	// len(base) = pin to the partition service.
+	runCase := func(t *testing.T, tactic typ.Tactic, baseStates []svcState, partState *svcState, requestMatches bool, pinIdx int) {
 		caseCount++
 		ruleUUID := fmt.Sprintf("ex-%d", caseCount)
 
-		newSvc := func(provider, model string, st svcState) *loadbalance.Service {
-			return &loadbalance.Service{
-				Provider: providers[provider], Model: model,
-				Weight: 1, Active: st.active, TimeWindow: 300,
-			}
-		}
 		baseSvcs := make([]*loadbalance.Service, len(baseStates))
 		for i, st := range baseStates {
-			baseSvcs[i] = newSvc(fmt.Sprintf("base%d", i+1), fmt.Sprintf("base-model-%d", i+1), st)
+			baseSvcs[i] = routing.ServiceForTest(providers[fmt.Sprintf("base%d", i+1)], fmt.Sprintf("base-model-%d", i+1), st.active)
 		}
 		rule := &typ.Rule{
 			Scenario:     typ.ScenarioClaudeCode,
@@ -133,7 +132,7 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 		}
 		var partSvc *loadbalance.Service
 		if partState != nil {
-			partSvc = newSvc("part", "part-model", *partState)
+			partSvc = routing.ServiceForTest(providers["part"], "part-model", partState.active)
 			rule.SmartEnabled = true
 			rule.SmartRouting = []smartrouting.SmartRouting{{
 				Description: "always matches",
@@ -142,9 +141,7 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 			}}
 		}
 
-		healthMonitor := loadbalance.NewHealthMonitor(loadbalance.DefaultHealthMonitorConfig())
-		selector := routing.NewServiceSelector(cfg, server.NewAffinityStore(0),
-			server.NewLoadBalancer(cfg, routing.NewHealthFilter(healthMonitor)))
+		healthMonitor, affinity, selector := newSelectorStack(cfg)
 
 		applyState := func(svc *loadbalance.Service, st svcState) {
 			if st.unhealthy {
@@ -168,6 +165,27 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 			ctx.Request = matchingReq
 		}
 
+		if pinIdx >= 0 {
+			pinSvc := partSvc
+			if pinIdx < len(baseSvcs) {
+				pinSvc = baseSvcs[pinIdx]
+			}
+			rule.Flags.SessionAffinity = 1800
+			ctx.SessionID = typ.SessionID{Source: typ.SessionSourceHeader, Value: "sess"}
+			// Seed the pin under both the bare session key and the partition
+			// scope so matching and non-matching requests both see it.
+			for _, key := range []string{
+				ctx.SessionID.String(),
+				routing.AffinitySessionKey(ctx.SessionID.String(), 0),
+			} {
+				affinity.Set(ruleUUID, key, &routing.AffinityEntry{
+					Service:   pinSvc,
+					LockedAt:  time.Now(),
+					ExpiresAt: time.Now().Add(time.Hour),
+				})
+			}
+		}
+
 		// The scope this request resolves to. Non-matching requests must be
 		// served from the base pool; matching requests may be served from the
 		// partition or degrade back to the base pool.
@@ -175,12 +193,7 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 		if requestMatches && partState != nil {
 			scope = append(append([]*loadbalance.Service{}, baseSvcs...), partSvc)
 		}
-		activeInScope := 0
-		for _, svc := range scope {
-			if svc.Active {
-				activeInScope++
-			}
-		}
+		activeInScope := len(routing.FilterActiveServices(scope))
 
 		res, err := selector.Select(ctx)
 		if activeInScope == 0 {
@@ -191,43 +204,24 @@ func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
 			"selection must not fail while %d active services are in scope", activeInScope)
 		require.NotNil(t, res)
 		require.True(t, res.Service.Active, "an inactive service must never be selected")
-		found := false
-		for _, svc := range scope {
-			if svc.ServiceID() == res.Service.ServiceID() {
-				found = true
-			}
-		}
-		require.Truef(t, found, "selected %s outside the request's scope", res.Service.ServiceID())
+		require.Truef(t, routing.ContainsService(scope, res.Service),
+			"selected %s outside the request's scope", res.Service.ServiceID())
 	}
 
 	for tacticName, tactic := range tactics {
-		// One base service.
-		for _, b1 := range states {
+		for _, combo := range baseCombos {
 			for _, part := range partitionStates {
 				matchModes := []bool{false}
+				pinCount := len(combo)
 				if part != nil {
 					matchModes = []bool{false, true}
+					pinCount++
 				}
 				for _, matches := range matchModes {
-					name := fmt.Sprintf("%s/base=%s/part=%v/match=%v", tacticName, b1, part, matches)
-					t.Run(name, func(t *testing.T) {
-						runCase(t, tacticName, tactic, []svcState{b1}, part, matches)
-					})
-				}
-			}
-		}
-		// Two base services.
-		for _, b1 := range states {
-			for _, b2 := range states {
-				for _, part := range partitionStates {
-					matchModes := []bool{false}
-					if part != nil {
-						matchModes = []bool{false, true}
-					}
-					for _, matches := range matchModes {
-						name := fmt.Sprintf("%s/base=%s,%s/part=%v/match=%v", tacticName, b1, b2, part, matches)
+					for pinIdx := -1; pinIdx < pinCount; pinIdx++ {
+						name := fmt.Sprintf("%s/base=%v/part=%v/match=%v/pin=%d", tacticName, combo, part, matches, pinIdx)
 						t.Run(name, func(t *testing.T) {
-							runCase(t, tacticName, tactic, []svcState{b1, b2}, part, matches)
+							runCase(t, tactic, combo, part, matches, pinIdx)
 						})
 					}
 				}

@@ -3,11 +3,8 @@ package servertest
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/tingly-dev/tingly-box/internal/config"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
-	server "github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"github.com/tingly-dev/tingly-box/internal/routing"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -28,39 +25,12 @@ func TestRepro_SingleActiveServiceWithInactiveSibling(t *testing.T) {
 	loadbalance.DefaultBreakerStore().Reset()
 	defer loadbalance.DefaultBreakerStore().Reset()
 
-	appConfig, err := config.NewAppConfig(config.WithConfigDir(t.TempDir()))
-	require.NoError(t, err)
-	cfg := appConfig.GetGlobalConfig()
+	cfg := newTestGlobalConfig(t)
+	providerUUID := addTestProvider(t, cfg, "the-provider")
+	healthMonitor, _, selector := newSelectorStack(cfg)
 
-	providerUUID := uuid.New().String()
-	require.NoError(t, cfg.AddProvider(&typ.Provider{
-		UUID:    providerUUID,
-		Name:    "the-provider",
-		APIBase: "https://example.invalid",
-		Token:   "sk-test",
-		Enabled: true,
-	}))
-
-	healthMonitor := loadbalance.NewHealthMonitor(loadbalance.DefaultHealthMonitorConfig())
-	healthFilter := routing.NewHealthFilter(healthMonitor)
-	lb := server.NewLoadBalancer(cfg, healthFilter)
-	affinityStore := server.NewAffinityStore(0)
-	selector := routing.NewServiceSelector(cfg, affinityStore, lb)
-
-	activeSvc := &loadbalance.Service{
-		Provider:   providerUUID,
-		Model:      "main-model",
-		Weight:     1,
-		Active:     true,
-		TimeWindow: 300,
-	}
-	inactiveSvc := &loadbalance.Service{
-		Provider:   providerUUID,
-		Model:      "old-model",
-		Weight:     1,
-		Active:     false, // disabled by the user; must never be selected
-		TimeWindow: 300,
-	}
+	activeSvc := routing.ServiceForTest(providerUUID, "main-model", true)
+	inactiveSvc := routing.ServiceForTest(providerUUID, "old-model", false) // disabled by the user; must never be selected
 	rule := &typ.Rule{
 		Scenario:     typ.ScenarioClaudeCode,
 		RequestModel: "main-model",

@@ -79,7 +79,13 @@ func (s *AffinityStage) Evaluate(ctx *SelectionContext, candidates []*loadbalanc
 	logrus.Infof("[affinity] using locked service for session %s: %s",
 		ctx.SessionID.String(), entry.Service.Model)
 
-	if len(candidates) > 0 && !ContainsService(candidates, entry.Service) {
+	// The candidate set is the scope this request may select from — the
+	// pipeline driver keeps it non-empty whenever the rule has active
+	// services, so an empty set means nothing is selectable here and the pin
+	// must be declined (not trusted blindly), or a pin could leak an
+	// out-of-scope service (e.g. a partition-only service into a
+	// non-matching request whose base pool has no active services).
+	if !ContainsService(candidates, entry.Service) {
 		logrus.Debugf("[affinity] locked service %s not in candidate set, skipping",
 			entry.Service.ServiceID())
 		return candidates, nil, nil
@@ -95,7 +101,7 @@ func (s *AffinityStage) Evaluate(ctx *SelectionContext, candidates []*loadbalanc
 	//   - one service: always honored (nothing else to pick).
 	// On decline the pipeline falls through to the strategy, which re-selects a
 	// currently-valid service, and postProcess re-pins the session there.
-	if len(candidates) > 0 && !typ.IsAffinityEligible(rule.UUID, candidates, entry.Service) {
+	if !typ.IsAffinityEligible(rule.UUID, candidates, entry.Service) {
 		logrus.Infof("[affinity] locked service %s is not currently selectable for session %s; dropping pin so strategy re-selects",
 			entry.Service.ServiceID(), ctx.SessionID.String())
 		return candidates, nil, nil

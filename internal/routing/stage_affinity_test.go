@@ -30,7 +30,7 @@ func TestAffinity_LockedSession(t *testing.T) {
 	svc := testService("provider-a", "gpt-4", true)
 	store.Set("rule-1", testSessionKey("session-1"), testAffinityEntry(svc))
 
-	rule := testRule("rule-1", "gpt-4", nil)
+	rule := testRule("rule-1", "gpt-4", []*loadbalance.Service{svc})
 	rule.SmartEnabled = true
 	rule.Flags.SessionAffinity = 3600
 
@@ -83,7 +83,7 @@ func TestAffinity_SmartDisabled(t *testing.T) {
 	svc := testService("provider-a", "gpt-4", true)
 	store.Set("rule-1", testSessionKey("session-1"), testAffinityEntry(svc))
 
-	rule := testRule("rule-1", "gpt-4", nil)
+	rule := testRule("rule-1", "gpt-4", []*loadbalance.Service{svc})
 	rule.SmartEnabled = false
 	rule.Flags.SessionAffinity = 3600
 
@@ -121,7 +121,7 @@ func TestAffinity_PartitionScoping(t *testing.T) {
 	topSvc := testService("provider-top", "gpt-4", true)
 	subSvc := testService("provider-sub", "gpt-4", true)
 
-	rule := testRule("rule-1", "gpt-4", nil)
+	rule := testRule("rule-1", "gpt-4", []*loadbalance.Service{topSvc, subSvc})
 	rule.SmartEnabled = true
 	rule.Flags.SessionAffinity = 3600
 
@@ -282,7 +282,7 @@ func TestAffinity_MatchedSmartRuleIndex_Propagated(t *testing.T) {
 	store := newMockAffinityStore()
 	svc := testService("provider-a", "gpt-4", true)
 
-	rule := testRule("rule-1", "gpt-4", nil)
+	rule := testRule("rule-1", "gpt-4", []*loadbalance.Service{svc})
 	rule.SmartEnabled = true
 	rule.Flags.SessionAffinity = 3600
 
@@ -324,7 +324,7 @@ func TestAffinity_MultipleSessions(t *testing.T) {
 	store.Set("rule-1", testSessionKey("session-a"), testAffinityEntry(svcA))
 	store.Set("rule-1", testSessionKey("session-b"), testAffinityEntry(svcB))
 
-	rule := testRule("rule-1", "gpt-4", nil)
+	rule := testRule("rule-1", "gpt-4", []*loadbalance.Service{svcA, svcB})
 	rule.SmartEnabled = true
 	rule.Flags.SessionAffinity = 3600
 
@@ -386,7 +386,7 @@ func TestAffinity_StrictTTL_NotExpired(t *testing.T) {
 	}
 	store.Set("rule-ttl", testSessionKey("s1"), entry)
 
-	rule := testRule("rule-ttl", "gpt-4", nil)
+	rule := testRule("rule-ttl", "gpt-4", []*loadbalance.Service{svc})
 	rule.Flags.SessionAffinity = 3600
 
 	stage := NewAffinityStage(store)

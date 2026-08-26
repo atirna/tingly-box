@@ -7,12 +7,13 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
-// activeBaseFallback is the shared "degrade, don't disappear" fallback for
-// stages whose narrowing came up empty: it returns the rule's active base
-// services so the terminal stage still picks an upstream and the client sees
-// the real upstream error instead of a "no service available" routing error.
-// Returns nil when the rule has no active services at all — that is a genuine
-// config problem the terminal stage should report. stage tags the warn log.
+// activeBaseFallback is the "degrade, don't disappear" fallback the pipeline
+// driver (ServiceSelector.Select) applies whenever a stage's narrowing comes
+// back empty: it returns the rule's active base services so the terminal
+// stage still picks an upstream and the client sees the real upstream error
+// instead of a "no service available" routing error. Returns nil when the
+// rule has no active services at all — that is a genuine config problem the
+// terminal stage should report. stage tags the warn log.
 func activeBaseFallback(ctx *SelectionContext, rule *typ.Rule, stage string) []*loadbalance.Service {
 	fallback := FilterActiveServices(rule.Services)
 	if len(fallback) == 0 {

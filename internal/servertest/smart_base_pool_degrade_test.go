@@ -3,11 +3,8 @@ package servertest
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/tingly-dev/tingly-box/internal/config"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
-	server "github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"github.com/tingly-dev/tingly-box/internal/routing"
 	"github.com/tingly-dev/tingly-box/internal/routing/smartrouting"
 	"github.com/tingly-dev/tingly-box/internal/typ"
@@ -27,52 +24,20 @@ import (
 // though the rule's one service is configured correctly and may already have
 // recovered.
 //
-// Post-fix, the base-pool narrowing degrades to the rule's active services
-// instead of an empty set, so the request reaches the upstream and surfaces
-// the real upstream error.
+// Post-fix, the pipeline driver restores the rule's active services whenever
+// a narrowing comes back empty, so the request reaches the upstream and
+// surfaces the real upstream error.
 func TestRepro_BasePoolEliminatedBySmartUnionHealth(t *testing.T) {
 	loadbalance.DefaultBreakerStore().Reset()
 	defer loadbalance.DefaultBreakerStore().Reset()
 
-	appConfig, err := config.NewAppConfig(config.WithConfigDir(t.TempDir()))
-	require.NoError(t, err)
-	cfg := appConfig.GetGlobalConfig()
+	cfg := newTestGlobalConfig(t)
+	baseProvider := addTestProvider(t, cfg, "base-provider")
+	partitionProvider := addTestProvider(t, cfg, "partition-provider")
+	healthMonitor, _, selector := newSelectorStack(cfg)
 
-	baseProvider := uuid.New().String()
-	partitionProvider := uuid.New().String()
-	for _, p := range []struct{ uuid, name string }{
-		{baseProvider, "base-provider"},
-		{partitionProvider, "partition-provider"},
-	} {
-		require.NoError(t, cfg.AddProvider(&typ.Provider{
-			UUID:    p.uuid,
-			Name:    p.name,
-			APIBase: "https://example.invalid",
-			Token:   "sk-test",
-			Enabled: true,
-		}))
-	}
-
-	healthMonitor := loadbalance.NewHealthMonitor(loadbalance.DefaultHealthMonitorConfig())
-	healthFilter := routing.NewHealthFilter(healthMonitor)
-	lb := server.NewLoadBalancer(cfg, healthFilter)
-	affinityStore := server.NewAffinityStore(0)
-	selector := routing.NewServiceSelector(cfg, affinityStore, lb)
-
-	baseSvc := &loadbalance.Service{
-		Provider:   baseProvider,
-		Model:      "main-model",
-		Weight:     1,
-		Active:     true,
-		TimeWindow: 300,
-	}
-	partitionSvc := &loadbalance.Service{
-		Provider:   partitionProvider,
-		Model:      "background-model",
-		Weight:     1,
-		Active:     true,
-		TimeWindow: 300,
-	}
+	baseSvc := routing.ServiceForTest(baseProvider, "main-model", true)
+	partitionSvc := routing.ServiceForTest(partitionProvider, "background-model", true)
 	rule := &typ.Rule{
 		Scenario:     typ.ScenarioClaudeCode,
 		RequestModel: "main-model",

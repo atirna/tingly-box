@@ -210,6 +210,15 @@ func (s *ServiceSelector) Select(ctx *SelectionContext) (*SelectionResult, error
 		if err != nil {
 			return nil, fmt.Errorf("stage %s: %w", stageName, err)
 		}
+		// Degrade, don't disappear — enforced once here, between stages, so no
+		// stage ever observes an empty candidate set while the rule still has
+		// active services (see activeBaseFallback). A rule with zero active
+		// services keeps the empty set and the terminal stage reports it.
+		if len(narrowed) == 0 {
+			if fallback := activeBaseFallback(ctx, ctx.Rule, "routing_pipeline_degrade"); fallback != nil {
+				narrowed = fallback
+			}
+		}
 		candidates = narrowed
 
 		if result != nil {
