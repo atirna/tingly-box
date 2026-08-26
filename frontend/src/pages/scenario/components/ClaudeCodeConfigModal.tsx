@@ -766,7 +766,7 @@ node -e '${nodeCode.replace(/'/g, "'\\''")}'`;
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setPreviewOpen(false)}>Close</Button>
+                    <Button onClick={() => setPreviewOpen(false)}>{t('common.close')}</Button>
                 </DialogActions>
             </Dialog>
         </>
