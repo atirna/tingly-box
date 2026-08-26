@@ -37,12 +37,7 @@ func (s *LoadBalancerStage) Evaluate(ctx *SelectionContext, candidates []*loadba
 	// active pool so the request reaches an upstream and the client sees the
 	// real upstream error instead of a "no service available" routing error.
 	if len(candidates) == 0 {
-		if fallback := FilterActiveServices(ctx.Rule.Services); len(fallback) > 0 {
-			logrus.WithContext(selectionLogContext(ctx)).WithFields(logrus.Fields{
-				"stage":     "routing_lb_candidates_degrade",
-				"rule_uuid": selectionRuleUUID(ctx),
-				"services":  len(fallback),
-			}).Warnf("[load_balancer] candidate set is empty; falling back to the rule's %d active services", len(fallback))
+		if fallback := activeBaseFallback(ctx, ctx.Rule, "routing_lb_candidates_degrade"); fallback != nil {
 			candidates = fallback
 		}
 	}

@@ -64,6 +64,11 @@ func allSvcStates() []svcState {
 //   - request: does not match any partition | matches the partition
 //   - tactic: random | tier
 func TestExhaustive_SelectionDegradeInvariant(t *testing.T) {
+	// The breaker store is process-global; this test trips thousands of
+	// (rule, service) breakers, so start clean and leave clean.
+	loadbalance.DefaultBreakerStore().Reset()
+	t.Cleanup(loadbalance.DefaultBreakerStore().Reset)
+
 	appConfig, err := config.NewAppConfig(config.WithConfigDir(t.TempDir()))
 	require.NoError(t, err)
 	cfg := appConfig.GetGlobalConfig()

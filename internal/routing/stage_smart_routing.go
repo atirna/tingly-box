@@ -176,12 +176,7 @@ func (s *SmartRoutingStage) Evaluate(ctx *SelectionContext, candidates []*loadba
 	basePool := func() []*loadbalance.Service {
 		pool := IntersectServices(candidates, rule.Services)
 		if len(pool) == 0 {
-			if fallback := FilterActiveServices(rule.Services); len(fallback) > 0 {
-				logrus.WithFields(logrus.Fields{
-					"stage":     "smart_routing_base_pool_degrade",
-					"rule_uuid": rule.UUID,
-					"services":  len(fallback),
-				}).Warnf("[smart_routing] base pool emptied by upstream filtering; falling back to %d active base services", len(fallback))
+			if fallback := activeBaseFallback(ctx, rule, "smart_routing_base_pool_degrade"); fallback != nil {
 				return fallback
 			}
 		}
