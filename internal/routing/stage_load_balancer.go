@@ -30,6 +30,23 @@ func (s *LoadBalancerStage) Name() string {
 // stage: a failure here is a real error (there is no next stage to fall
 // through to), so it is reported via err rather than a silent pass-through.
 func (s *LoadBalancerStage) Evaluate(ctx *SelectionContext, candidates []*loadbalance.Service) ([]*loadbalance.Service, *SelectionResult, error) {
+	// Degrade, don't disappear: an upstream stage must never leave the
+	// terminal stage with nothing to pick while the rule itself still has
+	// active services configured. Whatever emptied the set (health filtering,
+	// smart-routing narrowing, a future stage), fall back to the rule's own
+	// active pool so the request reaches an upstream and the client sees the
+	// real upstream error instead of a "no service available" routing error.
+	if len(candidates) == 0 {
+		if fallback := FilterActiveServices(ctx.Rule.Services); len(fallback) > 0 {
+			logrus.WithContext(selectionLogContext(ctx)).WithFields(logrus.Fields{
+				"stage":     "routing_lb_candidates_degrade",
+				"rule_uuid": selectionRuleUUID(ctx),
+				"services":  len(fallback),
+			}).Warnf("[load_balancer] candidate set is empty; falling back to the rule's %d active services", len(fallback))
+			candidates = fallback
+		}
+	}
+
 	tempRule := *ctx.Rule
 	tempRule.Services = candidates
 	logOpenBreakerSkips(ctx, &tempRule)

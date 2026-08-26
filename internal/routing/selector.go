@@ -79,7 +79,13 @@ func initialCandidateServices(rule *typ.Rule) []*loadbalance.Service {
 	indexByID := make(map[string]int)
 
 	add := func(svc *loadbalance.Service) {
-		if svc == nil {
+		// Inactive services are never selectable (every downstream stage and
+		// the final validation reject them), so they must not enter the
+		// candidate set at all: a "healthy" inactive entry would keep
+		// HealthStage's all-unhealthy degrade guard from firing and let health
+		// filtering eliminate every selectable service, failing the rule with
+		// "no active services" instead of surfacing the real upstream error.
+		if svc == nil || !svc.Active {
 			return
 		}
 		id := svc.GetServiceID().String()

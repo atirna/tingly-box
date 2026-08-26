@@ -127,7 +127,10 @@ func TestSmartRouting_InactiveServiceFiltered(t *testing.T) {
 	narrowed, final, err := stage.Evaluate(ctx, initialCandidateServices(ctx.Rule))
 	require.NoError(t, err)
 	require.Nil(t, final, "should pass when matched service is inactive")
-	require.Equal(t, services, narrowed, "an all-inactive subset falls back to the base pool")
+	// Inactive services never enter the candidate set (they are not
+	// selectable), so a rule whose only service is inactive narrows to an
+	// empty pool and the terminal stage reports the config problem.
+	require.Empty(t, narrowed, "an inactive service must not survive narrowing")
 }
 
 func TestSmartRouting_MultipleServices_Narrowed(t *testing.T) {

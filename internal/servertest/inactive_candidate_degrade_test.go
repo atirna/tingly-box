@@ -1,0 +1,96 @@
+package servertest
+
+import (
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"github.com/tingly-dev/tingly-box/internal/config"
+	"github.com/tingly-dev/tingly-box/internal/loadbalance"
+	server "github.com/tingly-dev/tingly-box/internal/protocolserver"
+	"github.com/tingly-dev/tingly-box/internal/routing"
+	"github.com/tingly-dev/tingly-box/internal/typ"
+)
+
+// TestRepro_SingleActiveServiceWithInactiveSibling reproduces "no active
+// services for rule ..." on a plain rule with NO smart routing: one active
+// service plus one inactive (disabled) service row.
+//
+// initialCandidateServices seeded inactive services into the pipeline's
+// candidate set, and HealthFilter.Filter ignores Active. So when the only
+// active service was marked unhealthy (repeated 429/auth failures), the
+// inactive sibling still counted as a "healthy" candidate, HealthStage's
+// all-unhealthy degrade guard did not fire, and the active service was
+// eliminated. The terminal LoadBalancer stage then saw only the inactive
+// service and failed the whole rule — instead of falling back to the
+// configured active service and surfacing the real upstream error.
+func TestRepro_SingleActiveServiceWithInactiveSibling(t *testing.T) {
+	loadbalance.DefaultBreakerStore().Reset()
+	defer loadbalance.DefaultBreakerStore().Reset()
+
+	appConfig, err := config.NewAppConfig(config.WithConfigDir(t.TempDir()))
+	require.NoError(t, err)
+	cfg := appConfig.GetGlobalConfig()
+
+	providerUUID := uuid.New().String()
+	require.NoError(t, cfg.AddProvider(&typ.Provider{
+		UUID:    providerUUID,
+		Name:    "the-provider",
+		APIBase: "https://example.invalid",
+		Token:   "sk-test",
+		Enabled: true,
+	}))
+
+	healthMonitor := loadbalance.NewHealthMonitor(loadbalance.DefaultHealthMonitorConfig())
+	healthFilter := routing.NewHealthFilter(healthMonitor)
+	lb := server.NewLoadBalancer(cfg, healthFilter)
+	affinityStore := server.NewAffinityStore(0)
+	selector := routing.NewServiceSelector(cfg, affinityStore, lb)
+
+	activeSvc := &loadbalance.Service{
+		Provider:   providerUUID,
+		Model:      "main-model",
+		Weight:     1,
+		Active:     true,
+		TimeWindow: 300,
+	}
+	inactiveSvc := &loadbalance.Service{
+		Provider:   providerUUID,
+		Model:      "old-model",
+		Weight:     1,
+		Active:     false, // disabled by the user; must never be selected
+		TimeWindow: 300,
+	}
+	rule := &typ.Rule{
+		Scenario:     typ.ScenarioClaudeCode,
+		RequestModel: "main-model",
+		UUID:         "one-active-one-inactive",
+		LBTactic: typ.Tactic{
+			Type:   loadbalance.TacticRandom,
+			Params: typ.NewRandomParams(),
+		},
+		Services: []*loadbalance.Service{activeSvc, inactiveSvc},
+		Active:   true,
+	}
+
+	ctx := &routing.SelectionContext{Rule: rule, MatchedSmartRuleIndex: -1}
+
+	// Sanity: while healthy, the active service is selected.
+	res, err := selector.Select(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "main-model", res.Service.Model)
+
+	// The active service fails repeatedly -> marked unhealthy.
+	for i := 0; i < 5; i++ {
+		healthMonitor.ReportRateLimit(activeSvc.ServiceID())
+	}
+	require.False(t, healthMonitor.IsHealthy(activeSvc.ServiceID()))
+
+	ctx = &routing.SelectionContext{Rule: rule, MatchedSmartRuleIndex: -1}
+	res, err = selector.Select(ctx)
+	require.NoError(t, err,
+		"the rule must degrade to its active service, not error out")
+	require.NotNil(t, res)
+	require.Equal(t, "main-model", res.Service.Model,
+		"the inactive service must never be selected")
+}
