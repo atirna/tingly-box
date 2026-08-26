@@ -15,6 +15,7 @@ const (
 	TransportAnthropic ScenarioTransport = "anthropic"
 	TransportEmbed     ScenarioTransport = "embed"
 	TransportImageGen  ScenarioTransport = "imagegen"
+	TransportVideoGen  ScenarioTransport = "videogen"
 )
 
 type ScenarioDescriptor struct {
@@ -54,7 +55,7 @@ func builtinScenarioDescriptorFor(scenario RuleScenario) ScenarioDescriptor {
 	case ScenarioOpenAI:
 		return ScenarioDescriptor{
 			ID:                 scenario,
-			SupportedTransport: []ScenarioTransport{TransportOpenAI, TransportEmbed, TransportImageGen},
+			SupportedTransport: []ScenarioTransport{TransportOpenAI, TransportEmbed, TransportImageGen, TransportVideoGen},
 			AllowRuleBinding:   true,
 			AllowDirectPathUse: true,
 		}
@@ -72,6 +73,16 @@ func builtinScenarioDescriptorFor(scenario RuleScenario) ScenarioDescriptor {
 			// (image_generation tool), TransportImageGen for /images/generations.
 			// The caller chooses; tingly-box does not probe the upstream.
 			SupportedTransport: []ScenarioTransport{TransportOpenAI, TransportImageGen},
+			AllowRuleBinding:   true,
+			AllowDirectPathUse: true,
+		}
+	case ScenarioVideoGen:
+		return ScenarioDescriptor{
+			ID: scenario,
+			// Video generation is job-based on every vendor, so the only
+			// surface is the /videos job lifecycle — there is no chat-style
+			// parallel like imagegen's Responses-API path.
+			SupportedTransport: []ScenarioTransport{TransportVideoGen},
 			AllowRuleBinding:   true,
 			AllowDirectPathUse: true,
 		}

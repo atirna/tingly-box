@@ -29,6 +29,10 @@
 //	Native sync custom schema:
 //	  minimaxi-com, minimax-io (MiniMax image-01, POST /v1/image_generation).
 //	  -> handled by minimaxClient.
+//
+// Video generation lives in the sibling videogen package: it shares this
+// package's layering (leaf adapters behind client.OpenAIClient) but exposes an
+// async job surface instead of a blocking call. See .design/videogen.md.
 package imagegen
 
 import (

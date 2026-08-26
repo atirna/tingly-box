@@ -147,3 +147,16 @@ func (s *SimpleSelector) SelectServiceForImageGeneration(
 ) (*typ.Provider, *loadbalance.Service, error) {
 	return s.SelectService(c, scenario, rule, nil)
 }
+
+// SelectServiceForVideoGeneration is a variant of SelectService for video
+// generation job submission. Video requests don't carry chat-style context, so
+// content-based smart routing is skipped (load balancing, affinity, and health
+// filters still apply). Only job creation routes here: poll/download requests
+// carry the serving provider inside the job id and bypass selection entirely.
+func (s *SimpleSelector) SelectServiceForVideoGeneration(
+	c *gin.Context,
+	scenario typ.RuleScenario,
+	rule *typ.Rule,
+) (*typ.Provider, *loadbalance.Service, error) {
+	return s.SelectService(c, scenario, rule, nil)
+}

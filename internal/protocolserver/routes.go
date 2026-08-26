@@ -76,6 +76,14 @@ func (ph *ProtocolHandler) SetupMixinEndpoints(group *gin.RouterGroup, modelAuth
 	// endpoint, everyone else gets the SDK's multipart /images/edits).
 	group.POST("/images/edits", modelAuth, ph.teamScopeMiddleware, DeclareOperation("image_edit"), ph.HandleOpenAIImageEdit)
 
+	// Video generation endpoints (OpenAI Videos job surface).
+	// POST submits a job through routing; the returned job id embeds the
+	// serving provider, so GET (poll) and GET .../content (asset) are routed
+	// back to the same upstream without any server-side job store.
+	group.POST("/videos", modelAuth, ph.teamScopeMiddleware, DeclareOperation("video_generation"), ph.HandleOpenAIVideoCreate)
+	group.GET("/videos/:video_id", modelAuth, ph.teamScopeMiddleware, ph.HandleOpenAIVideoGet)
+	group.GET("/videos/:video_id/content", modelAuth, ph.teamScopeMiddleware, ph.HandleOpenAIVideoContent)
+
 	// Models endpoint (routed by scenario: openai -> OpenAIListModels, anthropic/claude_code -> AnthropicListModels)
 	group.GET("/models", modelAuth, ph.teamScopeMiddleware, ph.ListModelsByScenario)
 }

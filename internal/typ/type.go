@@ -73,6 +73,7 @@ const (
 	ScenarioGlobal        RuleScenario = "_global"  // Global flags that apply to all scenarios
 	ScenarioEmbed         RuleScenario = "embed"    // Embedding application scenario; only serves /embeddings
 	ScenarioImageGen      RuleScenario = "imagegen" // Image generation scenario; only serves /images/generations
+	ScenarioVideoGen      RuleScenario = "videogen" // Video generation scenario; only serves the /videos job surface
 )
 
 func BuiltinScenarios() []RuleScenario {
@@ -93,6 +94,7 @@ func BuiltinScenarios() []RuleScenario {
 		ScenarioGlobal,
 		ScenarioEmbed,
 		ScenarioImageGen,
+		ScenarioVideoGen,
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/client"
+	"github.com/tingly-dev/tingly-box/internal/vision/videogen"
 )
 
 // ForwardOpenAIChat sends a non-streaming OpenAI chat completion request.
@@ -90,6 +91,28 @@ func ForwardOpenAIImageEdit(fc *ForwardContext, wrapper client.OpenAIClientInter
 	fc.Complete(ctx, resp, err)
 
 	return resp, cancel, err
+}
+
+// ForwardOpenAIVideoCreate submits a video generation job. The wrapper's
+// VideoCreate handles vendor fragmentation internally — OpenAI providers go
+// through the SDK's Videos service, DashScope / MiniMax are dispatched to
+// their native videogen adapters — so this forwarder stays a thin, uniform
+// entry point. Job creation has no streaming and skips the chat transform
+// chain; polling and download run outside the routing pipeline (the job id
+// carries the provider) and call the wrapper directly.
+func ForwardOpenAIVideoCreate(fc *ForwardContext, vg client.VideoGenerator, req *openai.VideoNewParams) (*videogen.Job, context.CancelFunc, error) {
+	if vg == nil {
+		return nil, nil, fmt.Errorf("failed to get video-capable client for provider: %s", fc.Provider.Name)
+	}
+
+	ctx, cancel := fc.PrepareContext(req)
+
+	logrus.Infof("provider: %s, model: %s (video generation)", fc.Provider.Name, req.Model)
+
+	job, err := vg.VideoCreate(ctx, *req)
+	fc.Complete(ctx, job, err)
+
+	return job, cancel, err
 }
 
 // ForwardOpenAIChatStream sends a streaming OpenAI chat completion request.

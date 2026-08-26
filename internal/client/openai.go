@@ -18,6 +18,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/internal/vision/imagegen"
+	"github.com/tingly-dev/tingly-box/internal/vision/videogen"
 )
 
 // OpenAIClientInterface defines the contract for OpenAI-compatible clients.
@@ -172,6 +173,83 @@ func (c *OpenAIClient) ImagesEdit(ctx context.Context, req openai.ImageEditParam
 		return nil, fmt.Errorf("provider %s does not support image editing (/images/edits)", c.provider.Name)
 	default:
 		return c.client.Images.Edit(ctx, req)
+	}
+}
+
+// VideoGenerator is the OpenAI Videos (job-based video generation) surface.
+// It is deliberately a separate, narrow interface rather than part of
+// OpenAIClientInterface: only the generic OpenAI client wrapper serves it
+// today, and the video handlers type-assert for it, so the specialized
+// wrappers (Codex, Kimi, vmodel) stay untouched until a vendor path exists.
+type VideoGenerator interface {
+	// VideoCreate submits a video generation job (never blocks to completion).
+	VideoCreate(ctx context.Context, req openai.VideoNewParams) (*videogen.Job, error)
+	// VideoGet fetches the current state of a job by its upstream-native id.
+	VideoGet(ctx context.Context, jobID string) (*videogen.Job, error)
+	// VideoDownload resolves the playable asset of a completed job.
+	VideoDownload(ctx context.Context, jobID string) (*videogen.Content, error)
+}
+
+// VideoCreate submits a video generation job. OpenAI providers are served
+// directly by the SDK's Videos service; vendors with a bespoke async video API
+// (DashScope, MiniMax, Ark/Seedance) are dispatched through the videogen adapters, which
+// translate to and from the OpenAI job shape so callers see one uniform
+// surface regardless of the upstream.
+func (c *OpenAIClient) VideoCreate(ctx context.Context, req openai.VideoNewParams) (*videogen.Job, error) {
+	switch videogen.DetectVendor(c.provider) {
+	case videogen.VendorDashScope, videogen.VendorMinimax, videogen.VendorArk:
+		adapter, err := videogen.New(c.provider, string(req.Model))
+		if err != nil {
+			return nil, err
+		}
+		defer adapter.Close()
+		return adapter.Create(ctx, videogen.RequestFromOpenAI(&req))
+	default:
+		v, err := c.client.Videos.New(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return videogen.JobFromOpenAI(v), nil
+	}
+}
+
+// VideoGet fetches the current state of a video generation job.
+func (c *OpenAIClient) VideoGet(ctx context.Context, jobID string) (*videogen.Job, error) {
+	switch videogen.DetectVendor(c.provider) {
+	case videogen.VendorDashScope, videogen.VendorMinimax, videogen.VendorArk:
+		adapter, err := videogen.New(c.provider, "")
+		if err != nil {
+			return nil, err
+		}
+		defer adapter.Close()
+		return adapter.Get(ctx, jobID)
+	default:
+		v, err := c.client.Videos.Get(ctx, jobID)
+		if err != nil {
+			return nil, err
+		}
+		return videogen.JobFromOpenAI(v), nil
+	}
+}
+
+// VideoDownload resolves the playable asset of a completed video job. Native
+// vendors host results on a CDN and return a URL; OpenAI streams the bytes, so
+// the returned Content carries a Body the caller must close.
+func (c *OpenAIClient) VideoDownload(ctx context.Context, jobID string) (*videogen.Content, error) {
+	switch videogen.DetectVendor(c.provider) {
+	case videogen.VendorDashScope, videogen.VendorMinimax, videogen.VendorArk:
+		adapter, err := videogen.New(c.provider, "")
+		if err != nil {
+			return nil, err
+		}
+		defer adapter.Close()
+		return adapter.Download(ctx, jobID)
+	default:
+		resp, err := c.client.Videos.DownloadContent(ctx, jobID, openai.VideoDownloadContentParams{})
+		if err != nil {
+			return nil, err
+		}
+		return &videogen.Content{Body: resp.Body, ContentType: resp.Header.Get("Content-Type")}, nil
 	}
 }
 

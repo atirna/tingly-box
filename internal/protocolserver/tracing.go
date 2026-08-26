@@ -207,6 +207,13 @@ func (ph *ProtocolHandler) selectServiceForImageGeneration(c *gin.Context, scena
 	return provider, service, err
 }
 
+func (ph *ProtocolHandler) selectServiceForVideoGeneration(c *gin.Context, scenario typ.RuleScenario, rule *typ.Rule) (*typ.Provider, *loadbalance.Service, error) {
+	end := ph.startRoutingSpan(c)
+	provider, service, err := ph.deps.RoutingSelector.SelectServiceForVideoGeneration(c, scenario, rule)
+	end(err)
+	return provider, service, err
+}
+
 // startRoutingSpan opens a child span covering service selection (the
 // health → smart → affinity → strategy pipeline) and returns the function
 // that closes it. The selection outcome is read back from the tracking
