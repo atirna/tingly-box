@@ -17,6 +17,7 @@ import { InfoOutlined as InfoOutlinedIcon } from '@/components/icons';
 import { ExpandMore as ExpandMoreIcon } from '@/components/icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { type AppLanguage, resolveLanguage } from '@/i18n';
 import { has1M, with1M } from '@/components/rule-card/modelNameUtils';
 
 // ClaudeCodePrefs mirrors the Go struct in internal/agent/prefs.go.
@@ -57,11 +58,10 @@ export type PrefsKey = keyof ClaudeCodePrefs;
 export type ClaudeCodeDefaultMode = 'acceptEdits' | 'bypassPermissions' | 'default' | 'delegate' | 'dontAsk' | 'manual' | 'plan' | 'auto';
 export type Group = 'behavior' | 'model' | 'limits' | 'switches' | 'network';
 export type Kind = 'model' | 'int' | 'text' | 'bool';
-export type Lang = 'zh' | 'en';
 
 // ── Field structure (language-agnostic) ────────────────────────────────
 // Adding a new env: append a row here AND add entries in FIELDS_TEXT_ZH /
-// FIELDS_TEXT_EN below (TS will flag the missing keys).
+// FIELDS_TEXT_EN / FIELDS_TEXT_RU below (TS will flag the missing keys).
 
 export interface FieldStruct {
     envName: PrefsKey;
@@ -128,8 +128,8 @@ export const CLAUDE_CODE_FIELD_STRUCT: FieldStruct[] = [
 
 // ── Localized text bundles ─────────────────────────────────────────────
 // Kept inline rather than in i18n/locales/* — the strings are dense, dev-
-// facing, and likely to churn as we tune the wording. Two parallel maps
-// avoids the i18n locale file becoming a junk drawer.
+// facing, and likely to churn as we tune the wording. Parallel per-language
+// maps avoid the i18n locale file becoming a junk drawer.
 
 export interface FieldText {
     label: string;
@@ -412,6 +412,142 @@ const FIELDS_TEXT_EN: FieldTextMap = {
     },
 };
 
+const FIELDS_TEXT_RU: FieldTextMap = {
+    ANTHROPIC_MODEL: {
+        label: 'Модель по умолчанию',
+        purpose: 'Запасная модель, когда ни один специальный слот не подходит',
+        tooltip: 'К ней Claude Code обращается, если специализированная маршрутизация не сработала. В tb это обычно tingly/cc или tingly/cc-default.',
+        placeholder: 'tingly/cc',
+    },
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: {
+        label: 'Слот Haiku',
+        purpose: 'Лёгкие задачи: сообщения коммитов, краткие сводки',
+        tooltip: 'Claude Code направляет дешёвые вспомогательные вызовы в слот haiku. tb указывает на tingly/cc-haiku.',
+        placeholder: 'tingly/cc-haiku',
+    },
+    ANTHROPIC_DEFAULT_SONNET_MODEL: {
+        label: 'Слот Sonnet',
+        purpose: 'Основной слот — сюда идёт большая часть диалога и генерации кода',
+        tooltip: 'Значение Claude Code по умолчанию. Если явно не выбрана другая модель, обычные сессии используют слот sonnet.',
+        placeholder: 'tingly/cc-sonnet',
+    },
+    ANTHROPIC_DEFAULT_OPUS_MODEL: {
+        label: 'Слот Opus',
+        purpose: 'Сложные рассуждения (режим планирования, глубокий анализ)',
+        tooltip: 'Более дорогая, но более сильная модель. Claude Code использует её, когда opus запрошен явно.',
+        placeholder: 'tingly/cc-opus',
+    },
+    CLAUDE_CODE_SUBAGENT_MODEL: {
+        label: 'Модель субагента',
+        purpose: 'Модель для субагентов, запускаемых инструментом Task',
+        tooltip: 'Субагенты ведут параллельные исследования и независимые подзадачи. Им можно назначить более дешёвую или более сильную модель.',
+        placeholder: 'tingly/cc-subagent',
+    },
+    API_TIMEOUT_MS: {
+        label: 'Таймаут API-запроса',
+        purpose: 'Максимальное время ожидания одного ответа API',
+        tooltip: 'Значение Anthropic по умолчанию — 120000 (2 мин). Для長их проксируемых задач в tb обычно поднимают до 3000000 (50 мин).',
+        placeholder: '3000000',
+    },
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS: {
+        label: 'Макс. токенов вывода',
+        purpose: 'Верхняя граница числа токенов в одном ответе',
+        tooltip: 'Слишком мало — ответ обрежется; слишком много — расходуется квота. tb рекомендует 32000.',
+        placeholder: '32000',
+    },
+    MAX_THINKING_TOKENS: {
+        label: 'Бюджет рассуждений',
+        purpose: 'Бюджет токенов для расширенных рассуждений',
+        tooltip: 'Оставьте пустым, чтобы использовать значение модели по умолчанию. Имеет смысл только для моделей с поддержкой рассуждений.',
+        placeholder: '(пусто = значение модели)',
+    },
+    BASH_DEFAULT_TIMEOUT_MS: {
+        label: 'Таймаут Bash',
+        purpose: 'Таймаут по умолчанию для одного вызова инструмента Bash',
+        tooltip: 'Значение Anthropic по умолчанию — 120000. Поднимите, если длинные скрипты (например, npm install) не успевают завершиться.',
+        placeholder: '120000',
+    },
+    BASH_MAX_TIMEOUT_MS: {
+        label: 'Макс. таймаут Bash',
+        purpose: 'Потолок для любого таймаута Bash, который запрашивает Claude',
+        tooltip: 'Верхний предел, когда Claude сам задаёт таймаут для вызова Bash.',
+        placeholder: '600000',
+    },
+    MCP_TIMEOUT: {
+        label: 'Таймаут MCP',
+        purpose: 'Таймаут запуска и ответов сервера MCP',
+        tooltip: 'Значение Anthropic по умолчанию — 30000. Поднимите для медленно стартующих серверов MCP.',
+        placeholder: '30000',
+    },
+    MCP_TOOL_TIMEOUT: {
+        label: 'Таймаут инстр. MCP',
+        purpose: 'Таймаут одного вызова инструмента MCP',
+        tooltip: 'Значение Anthropic по умолчанию — 10000.',
+        placeholder: '10000',
+    },
+    MAX_MCP_OUTPUT_TOKENS: {
+        label: 'Лимит вывода MCP',
+        purpose: 'Максимум токенов, возвращаемых одним вызовом инструмента MCP',
+        tooltip: 'Значение Anthropic по умолчанию — 8192. Всё сверх этого обрезается.',
+        placeholder: '8192',
+    },
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: {
+        label: 'Окно автосжатия',
+        purpose: 'Целевой размер окна при автоматическом сжатии контекста',
+        tooltip: 'Значение tb по умолчанию — 200000 (для моделей на 1M автоматически повышается до 1000000). При срабатывании автосжатия сохраняются последние N токенов. Больше значение — больше сохранённого контекста, но и больше расход квоты.',
+        placeholder: '200000',
+    },
+    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: {
+        label: 'Порог автосжатия',
+        purpose: 'Процент заполнения контекста, при котором срабатывает автосжатие',
+        tooltip: 'Значение tb по умолчанию — 80. Автосжатие срабатывает, когда заполнение контекста достигает этого процента. Меньше — сжатие раньше, больше — позже. 0 отключает автосжатие.',
+        placeholder: '80',
+    },
+    DISABLE_TELEMETRY: {
+        label: 'Отключить телеметрию',
+        purpose: 'Выключить отправку телеметрии в Anthropic',
+        tooltip: 'tb включает это по умолчанию, чтобы внутренние и приватные развёртывания не отправляли лишнего.',
+    },
+    DISABLE_ERROR_REPORTING: {
+        label: 'Отключить отчёты',
+        purpose: 'Выключить автоматическую отправку отчётов о сбоях в Anthropic',
+        tooltip: 'tb включает это по умолчанию.',
+    },
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: {
+        label: 'Убрать лишний трафик',
+        purpose: 'Подавить проверки обновлений, опросы и прочие фоновые запросы',
+        tooltip: 'Самый «чистый» режим — наружу уходят только вызовы моделей. tb включает это по умолчанию.',
+    },
+    DISABLE_AUTOUPDATER: {
+        label: 'Без автообновления',
+        purpose: 'Запретить Claude Code проверять наличие новых версий',
+        tooltip: 'Обычный выбор для развёртываний с зафиксированной версией.',
+    },
+    USE_BUILTIN_RIPGREP: {
+        label: 'Встроенный ripgrep',
+        purpose: 'Предпочитать ripgrep из поставки Claude Code, а не из системного PATH',
+        tooltip: 'Включено по умолчанию. Отключайте, только если нужен собственный системный ripgrep.',
+    },
+    HTTP_PROXY: {
+        label: 'HTTP-прокси',
+        purpose: 'Прокси для исходящих HTTP-запросов Claude Code',
+        tooltip: 'Формат: http://host:port. Оставьте пустым, чтобы унаследовать системные настройки прокси. Учтите: системные прокси не исключают localhost автоматически, из-за чего запросы к локальному шлюзу tb могут возвращать 502.',
+        placeholder: 'http://proxy.example.com:8080',
+    },
+    HTTPS_PROXY: {
+        label: 'HTTPS-прокси',
+        purpose: 'Прокси для исходящих HTTPS-запросов Claude Code',
+        tooltip: 'Формат: http://host:port или https://host:port. Оставьте пустым, чтобы унаследовать системные настройки прокси.',
+        placeholder: 'http://proxy.example.com:8080',
+    },
+    NO_PROXY: {
+        label: 'Исключения прокси',
+        purpose: 'Хосты через запятую, которые идут в обход прокси',
+        tooltip: 'Например, «localhost,127.0.0.1,::1». tb сам добавляет localhost/127.0.0.1/::1 при запуске, даже если поле пустое. Лучше оставить пустым (tb управляет этим сам) и заполнять, только если нужно исключить дополнительные внутренние хосты.',
+        placeholder: 'localhost,127.0.0.1,::1',
+    },
+};
+
 interface SectionText { title: string; hint: string }
 type SectionTextMap = Record<Group, SectionText>;
 
@@ -447,12 +583,24 @@ const DEFAULT_MODE_TEXT_EN: Record<ClaudeCodeDefaultMode, DefaultModeOptionText>
     bypassPermissions: { label: 'Bypass permissions', description: 'Skip permission checks; use only in fully trusted environments.' },
 };
 
-export const CLAUDE_CODE_DEFAULT_MODE_TEXT: Record<Lang, Record<ClaudeCodeDefaultMode, DefaultModeOptionText>> = {
-    zh: DEFAULT_MODE_TEXT_ZH,
-    en: DEFAULT_MODE_TEXT_EN,
+const DEFAULT_MODE_TEXT_RU: Record<ClaudeCodeDefaultMode, DefaultModeOptionText> = {
+    acceptEdits: { label: 'Принимать правки (рекомендуется)', description: 'Правки файлов принимаются автоматически, более рискованные действия остаются на усмотрение правил Claude Code.' },
+    default: { label: 'По умолчанию', description: 'Встроенное поведение прав доступа Claude Code.' },
+    manual: { label: 'Ручное подтверждение', description: 'Каждый запрос прав на инструмент требует интерактивного подтверждения.' },
+    plan: { label: 'Режим планирования', description: 'Начинать в режиме планирования, до реализации.' },
+    auto: { label: 'Автоправила', description: 'Классификатор правил Claude Code сам разрешает, мягко или жёстко отклоняет вызовы инструментов.' },
+    delegate: { label: 'Делегирование', description: 'Передать решения о правах внешнему процессу, поддерживаемому Claude Code.' },
+    dontAsk: { label: 'Не спрашивать', description: 'Избегать интерактивных запросов; удобно для работы без присмотра.' },
+    bypassPermissions: { label: 'Обходить проверку прав', description: 'Пропускать проверки прав; только в полностью доверенном окружении.' },
 };
 
-const DEFAULT_MODE_SECTION_TEXT: Record<Lang, SectionText> = {
+export const CLAUDE_CODE_DEFAULT_MODE_TEXT: Record<AppLanguage, Record<ClaudeCodeDefaultMode, DefaultModeOptionText>> = {
+    zh: DEFAULT_MODE_TEXT_ZH,
+    en: DEFAULT_MODE_TEXT_EN,
+    ru: DEFAULT_MODE_TEXT_RU,
+};
+
+const DEFAULT_MODE_SECTION_TEXT: Record<AppLanguage, SectionText> = {
     zh: {
         title: '默认权限模式',
         hint: '写入 settings.json 的 defaultMode；tb 推荐 acceptEdits。',
@@ -460,6 +608,10 @@ const DEFAULT_MODE_SECTION_TEXT: Record<Lang, SectionText> = {
     en: {
         title: 'Default permission mode',
         hint: 'Writes defaultMode in settings.json; tb recommends acceptEdits.',
+    },
+    ru: {
+        title: 'Режим прав по умолчанию',
+        hint: 'Записывает defaultMode в settings.json; tb рекомендует acceptEdits.',
     },
 };
 
@@ -470,7 +622,7 @@ interface ToggleSettingText {
     tooltip: string;
 }
 
-const SHOW_THINKING_SUMMARIES_TEXT: Record<Lang, ToggleSettingText> = {
+const SHOW_THINKING_SUMMARIES_TEXT: Record<AppLanguage, ToggleSettingText> = {
     zh: {
         title: '思考摘要',
         hint: '写入 settings.json 的顶层 showThinkingSummaries；不是 env 变量。',
@@ -482,6 +634,12 @@ const SHOW_THINKING_SUMMARIES_TEXT: Record<Lang, ToggleSettingText> = {
         hint: 'Writes the top-level showThinkingSummaries in settings.json; not an env var.',
         label: 'Show thinking summaries',
         tooltip: "When on, Claude Code displays the model's reasoning summary before its reply. Turning it off only hides the summary — it doesn't affect whether the model thinks.",
+    },
+    ru: {
+        title: 'Сводки рассуждений',
+        hint: 'Записывает showThinkingSummaries на верхнем уровне settings.json; это не переменная окружения.',
+        label: 'Показывать сводки',
+        tooltip: 'Когда включено, Claude Code показывает сводку рассуждений модели перед ответом. Выключение лишь скрывает сводку — на то, рассуждает ли модель, это не влияет.',
     },
 };
 
@@ -525,6 +683,26 @@ const SECTION_TEXT_EN: SectionTextMap = {
     },
 };
 
+const SECTION_TEXT_RU: SectionTextMap = {
+    behavior: DEFAULT_MODE_SECTION_TEXT.ru,
+    model: {
+        title: 'Маршрутизация моделей',
+        hint: 'Каждый слот соответствует одному внутреннему назначению в Claude Code. Чтобы использовать одну модель, укажите одно и то же значение во всех 5 слотах.',
+    },
+    limits: {
+        title: 'Производительность и ограничения',
+        hint: 'Пусто — переменная не записывается, и Claude Code использует своё значение по умолчанию.',
+    },
+    switches: {
+        title: 'Приватность и поведение',
+        hint: 'Вкл — записывается «1»; выкл — не записывается.',
+    },
+    network: {
+        title: 'Сетевой прокси',
+        hint: 'Пусто — не записывается. tb всегда сам добавляет localhost/127.0.0.1/::1 в NO_PROXY, вручную указывать не нужно.',
+    },
+};
+
 interface UIText {
     oneMTooltip: string;
 }
@@ -537,13 +715,17 @@ const UI_TEXT_EN: UIText = {
     oneMTooltip: 'Enable the 1M context window (appends [1m] to the model ID; the routed target model must support it).',
 };
 
-export const CLAUDE_CODE_FIELDS_TEXT: Record<Lang, FieldTextMap> = { zh: FIELDS_TEXT_ZH, en: FIELDS_TEXT_EN };
-const SECTION_TEXT: Record<Lang, SectionTextMap> = { zh: SECTION_TEXT_ZH, en: SECTION_TEXT_EN };
-const UI_TEXT: Record<Lang, UIText> = { zh: UI_TEXT_ZH, en: UI_TEXT_EN };
+const UI_TEXT_RU: UIText = {
+    oneMTooltip: 'Включить контекстное окно 1M (к ID модели добавляется [1m]; целевая модель маршрута должна это поддерживать).',
+};
 
-const useLang = (): Lang => {
+export const CLAUDE_CODE_FIELDS_TEXT: Record<AppLanguage, FieldTextMap> = { zh: FIELDS_TEXT_ZH, en: FIELDS_TEXT_EN, ru: FIELDS_TEXT_RU };
+const SECTION_TEXT: Record<AppLanguage, SectionTextMap> = { zh: SECTION_TEXT_ZH, en: SECTION_TEXT_EN, ru: SECTION_TEXT_RU };
+const UI_TEXT: Record<AppLanguage, UIText> = { zh: UI_TEXT_ZH, en: UI_TEXT_EN, ru: UI_TEXT_RU };
+
+const useLang = (): AppLanguage => {
     const { i18n } = useTranslation();
-    return i18n.language === 'zh' ? 'zh' : 'en';
+    return resolveLanguage(i18n.language);
 };
 
 // ── Default prefs derivation ───────────────────────────────────────────
@@ -760,7 +942,7 @@ const FieldRow: React.FC<FieldRowProps> = ({ field, text, oneMTooltip, prefs, se
 
 interface SectionProps {
     group: Group;
-    lang: Lang;
+    lang: AppLanguage;
     prefs: ClaudeCodePrefs;
     setPrefs: (p: ClaudeCodePrefs) => void;
 }
@@ -879,10 +1061,14 @@ const SettingsRowSection: React.FC<{
 );
 
 const DefaultModeSection: React.FC<{
-    lang: Lang;
+    lang: AppLanguage;
     defaultMode: ClaudeCodeDefaultMode;
     setDefaultMode: (mode: ClaudeCodeDefaultMode) => void;
 }> = ({ lang, defaultMode, setDefaultMode }) => {
+    // The row's own label comes from the locale files rather than the inline
+    // bundles above: it names a Claude Code concept the rest of claudeCode.*
+    // already covers, not one of this panel's dev-facing env descriptions.
+    const { t } = useTranslation();
     const meta = DEFAULT_MODE_SECTION_TEXT[lang];
     const text = CLAUDE_CODE_DEFAULT_MODE_TEXT[lang];
     const selectedText = text[defaultMode];
@@ -891,7 +1077,7 @@ const DefaultModeSection: React.FC<{
         <SettingsRowSection
             title={meta.title}
             hint={meta.hint}
-            label="Default Mode"
+            label={t('claudeCode.defaultModeLabel')}
             tooltip={`${selectedText.label}: ${selectedText.description}`}
             settingsKey="defaultMode"
             control={
@@ -949,7 +1135,7 @@ const DefaultModeSection: React.FC<{
 };
 
 const ShowThinkingSummariesSection: React.FC<{
-    lang: Lang;
+    lang: AppLanguage;
     checked: boolean;
     onChange: (checked: boolean) => void;
 }> = ({ lang, checked, onChange }) => {

@@ -1,6 +1,7 @@
 import { createTheme } from '@mui/material/styles';
-import { enUS, zhCN } from '@mui/material/locale';
+import { enUS, ruRU, zhCN } from '@mui/material/locale';
 import type { ResolvedThemeMode } from './types';
+import { DEFAULT_LANGUAGE, type AppLanguage } from '@/i18n';
 import { baseTypography, baseShape, baseComponents } from './base';
 import { lightPalette } from './palettes/light';
 import { darkPalette } from './palettes/dark';
@@ -18,7 +19,9 @@ const THEME_REGISTRY = {
   claude: { palette: claudePalette, components: claudeComponents },
 } as const;
 
-const createAppTheme = (mode: ResolvedThemeMode, language: 'en' | 'zh' = 'en') => {
+const MUI_LOCALES = { en: enUS, zh: zhCN, ru: ruRU } as const;
+
+const createAppTheme = (mode: ResolvedThemeMode, language: AppLanguage = DEFAULT_LANGUAGE) => {
   const { palette, components } = THEME_REGISTRY[mode];
   const textColors = palette.text as { primary: string; secondary: string; disabled: string };
 
@@ -34,7 +37,7 @@ const createAppTheme = (mode: ResolvedThemeMode, language: 'en' | 'zh' = 'en') =
     },
     // MUI locale — localizes built-in text like TablePagination labels,
     // while our own UI strings go through i18next (see DashboardPage).
-    language === 'zh' ? zhCN : enUS,
+    MUI_LOCALES[language] ?? enUS,
   );
 };
 

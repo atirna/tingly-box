@@ -10,6 +10,7 @@ import {
 import { InfoOutlined as InfoOutlinedIcon } from '@/components/icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { type AppLanguage, resolveLanguage } from '@/i18n';
 
 // DshPrefs mirrors the Go struct in internal/server/config (DshPrefs). Keys
 // are the literal settings.yaml provider-stanza keys so the object
@@ -54,7 +55,6 @@ export function mergeSavedDshPrefs(applied: DshPrefs = {}): DshPrefs {
     return merged;
 }
 
-type Lang = 'zh' | 'en';
 
 const UNSET = '';
 const DEFAULT_INPUT_VALUES = ['text', 'text_image'];
@@ -65,7 +65,7 @@ interface FieldText {
     tooltip: string;
 }
 
-const FIELD_TEXT: Record<Lang, FieldText> = {
+const FIELD_TEXT: Record<AppLanguage, FieldText> = {
     zh: {
         label: '支持的输入模态',
         purpose: '控制该 provider 下的模型默认能否接收图片',
@@ -76,14 +76,20 @@ const FIELD_TEXT: Record<Lang, FieldText> = {
         purpose: 'Whether models under this provider accept image input by default',
         tooltip: 'text is text-only; text_image also accepts images. Empty = omit defaultInput, dsh treats models as text-only.',
     },
+    ru: {
+        label: 'Поддерживаемые модальности ввода',
+        purpose: 'Принимают ли модели этого провайдера изображения по умолчанию',
+        tooltip: 'text — только текст; text_image допускает и изображения. Пусто — defaultInput не записывается, и dsh считает модели текстовыми.',
+    },
 };
 
-const VALUE_LABEL: Record<Lang, Record<string, string>> = {
+const VALUE_LABEL: Record<AppLanguage, Record<string, string>> = {
     zh: { text: 'text（仅文本）', text_image: 'text_image（文本 + 图片）' },
     en: { text: 'text (text-only)', text_image: 'text_image (text + image)' },
+    ru: { text: 'text (только текст)', text_image: 'text_image (текст + изображения)' },
 };
 
-const UI_TEXT: Record<Lang, { panelHeader: string; sectionTitle: string; sectionHint: string; unsetLabel: string }> = {
+const UI_TEXT: Record<AppLanguage, { panelHeader: string; sectionTitle: string; sectionHint: string; unsetLabel: string }> = {
     zh: {
         panelHeader: '这些项写入 $DSH_HOME/settings.yaml 的 tingly-box provider 条目',
         sectionTitle: '模型能力',
@@ -96,12 +102,18 @@ const UI_TEXT: Record<Lang, { panelHeader: string; sectionTitle: string; section
         sectionHint: 'Empty = dsh default (text-only)',
         unsetLabel: '(default, text-only)',
     },
+    ru: {
+        panelHeader: 'Эти значения записываются в запись провайдера tingly-box в $DSH_HOME/settings.yaml',
+        sectionTitle: 'Возможности моделей',
+        sectionHint: 'Пусто — значение dsh по умолчанию (только текст)',
+        unsetLabel: '(по умолчанию, только текст)',
+    },
 };
 
 // Protocol has no meaningful "unset" state — dsh always requires an `api`
 // value, so unlike defaultInput's UNSET sentinel, every option here writes a
 // concrete value and one is always pre-selected (see defaultDshPrefs).
-const PROTOCOL_TEXT: Record<Lang, { sectionTitle: string; label: string; purpose: string; tooltip: string }> = {
+const PROTOCOL_TEXT: Record<AppLanguage, { sectionTitle: string; label: string; purpose: string; tooltip: string }> = {
     zh: {
         sectionTitle: '连接',
         label: '主协议',
@@ -114,9 +126,15 @@ const PROTOCOL_TEXT: Record<Lang, { sectionTitle: string; label: string; purpose
         purpose: 'Which wire format tingly-box speaks to dsh with',
         tooltip: 'OpenAI Chat is the most widely compatible format; OpenAI Responses is for models that use the Responses API; Anthropic Messages is for models that speak the Claude message format. Picking the wrong one breaks models under this provider.',
     },
+    ru: {
+        sectionTitle: 'Подключение',
+        label: 'Основной протокол',
+        purpose: 'В каком формате tingly-box передаёт запросы в dsh',
+        tooltip: 'OpenAI Chat — самый совместимый формат; OpenAI Responses — для моделей, работающих через Responses API; Anthropic Messages — для моделей, использующих формат сообщений Claude. Неверный выбор сломает модели этого провайдера.',
+    },
 };
 
-const PROTOCOL_VALUE_LABEL: Record<Lang, Record<string, string>> = {
+const PROTOCOL_VALUE_LABEL: Record<AppLanguage, Record<string, string>> = {
     zh: {
         'openai-completions': 'OpenAI Chat（Completions）',
         'openai-responses': 'OpenAI Responses',
@@ -127,11 +145,16 @@ const PROTOCOL_VALUE_LABEL: Record<Lang, Record<string, string>> = {
         'openai-responses': 'OpenAI Responses',
         'anthropic-messages': 'Anthropic Messages',
     },
+    ru: {
+        'openai-completions': 'OpenAI Chat (Completions)',
+        'openai-responses': 'OpenAI Responses',
+        'anthropic-messages': 'Anthropic Messages',
+    },
 };
 
-function useLang(): Lang {
+function useLang(): AppLanguage {
     const { i18n } = useTranslation();
-    return i18n.language === 'zh' ? 'zh' : 'en';
+    return resolveLanguage(i18n.language);
 }
 
 interface DshQuickConfigProps {

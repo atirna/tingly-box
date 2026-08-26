@@ -5,6 +5,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { resolveLanguage } from '@/i18n';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import ExperimentalFeatureGate from './components/ExperimentalFeatureGate';
@@ -323,7 +324,7 @@ function AppContent() {
 function AppWithTheme() {
     const { effectiveMode } = useThemeMode();
     const { i18n } = useTranslation();
-    const language = i18n.language?.startsWith('zh') ? 'zh' : 'en';
+    const language = resolveLanguage(i18n.language);
     const theme = useMemo(() => createAppTheme(effectiveMode, language), [effectiveMode, language]);
 
     return (

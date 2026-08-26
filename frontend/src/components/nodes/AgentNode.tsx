@@ -2,6 +2,7 @@ import { Box, Chip, Divider, Typography } from '@mui/material';
 import { NODE_LAYER_STYLES, StyledBotGraphNode } from './styles';
 import NodeTooltip from './NodeTooltip';
 import { useTranslation } from 'react-i18next';
+import { type AppLanguage, resolveLanguage } from '@/i18n';
 
 type AgentType = 'claude-code' | 'smart-guide' | 'custom' | 'mock';
 
@@ -11,18 +12,16 @@ interface AgentInfo {
     config: string;
 }
 
-type Lang = 'en' | 'zh';
-
 // Bilingual content is intentionally co-located here rather than in the
 // i18n locale files (zh.ts / en.ts). These strings are graph-node popover
 // copy that is tightly coupled to the AgentNode component; externalising
 // them would scatter context-specific copy across the global translation
 // namespace without benefit. Do NOT migrate these strings to the locale
-// files — use the Record<Lang, AgentInfo> pattern below to add translations.
+// files — use the Record<AppLanguage, AgentInfo> pattern below to add translations.
 const AGENT_TYPE_CONFIG: Record<AgentType, {
     label: string;
     color: 'info' | 'success' | 'default' | 'warning';
-    info: Record<Lang, AgentInfo>;
+    info: Record<AppLanguage, AgentInfo>;
 }> = {
     'claude-code': {
         label: 'Claude Code',
@@ -45,6 +44,15 @@ const AGENT_TYPE_CONFIG: Record<AgentType, {
                     'Git 操作：提交、推送、变基',
                 ],
                 config: '点击右侧 Profile 节点，为 @cc 选择 Claude Code Profile。',
+            },
+            ru: {
+                description: 'Полноценный агент разработки (Claude Code CLI) — реализация, рефакторинг, тесты, сборки и операции с Git в вашем локальном окружении.',
+                features: [
+                    'Реализация и рефакторинг по нескольким файлам',
+                    'Запуск тестов, сборок и отладка',
+                    'Операции с Git: коммит, push, rebase',
+                ],
+                config: 'Нажмите на узел Profile справа, чтобы направить @cc через профиль Claude Code.',
             },
         },
     },
@@ -70,6 +78,15 @@ const AGENT_TYPE_CONFIG: Record<AgentType, {
                 ],
                 config: '点击右侧 Model 节点选择服务商和模型。',
             },
+            ru: {
+                description: 'Помощник по навигации и координации (@tb) — изучает проект, отвечает на вопросы и вносит небольшие правки, а тяжёлую реализацию передаёт @cc.',
+                features: [
+                    'Изучение файлов и объяснение архитектуры',
+                    'Точечные небольшие правки: конфиги, переменные окружения',
+                    'Постоянная память (MEMORY.md)',
+                ],
+                config: 'Нажмите на узел Model, чтобы выбрать провайдера и модель.',
+            },
         },
     },
     'custom': {
@@ -86,6 +103,11 @@ const AGENT_TYPE_CONFIG: Record<AgentType, {
                 features: ['自定义请求/响应处理', '自定义工具集成'],
                 config: '通过代理设置面板进行配置。',
             },
+            ru: {
+                description: 'Собственная реализация агента с заданным вами поведением и эндпоинтами.',
+                features: ['Своя обработка запросов и ответов', 'Свои интеграции инструментов'],
+                config: 'Настраивается на панели настроек агента.',
+            },
         },
     },
     'mock': {
@@ -101,6 +123,11 @@ const AGENT_TYPE_CONFIG: Record<AgentType, {
                 description: '用于测试和开发的 Mock 代理，返回预设响应，不发起外部 API 调用。',
                 features: ['预设测试响应', '无外部 API 调用', '适合 UI 测试'],
                 config: '无需任何配置。',
+            },
+            ru: {
+                description: 'Мок-агент для тестирования и разработки. Возвращает заранее заданные ответы без обращений к внешним API.',
+                features: ['Заранее заданные тестовые ответы', 'Без обращений к внешним API', 'Удобен для тестирования интерфейса'],
+                config: 'Настройка не требуется.',
             },
         },
     },
@@ -120,7 +147,7 @@ const AgentNode: React.FC<AgentNodeProps> = ({
     onClick,
 }) => {
     const { i18n } = useTranslation();
-    const lang: Lang = i18n.language.startsWith('zh') ? 'zh' : 'en';
+    const lang = resolveLanguage(i18n.language);
     const config = AGENT_TYPE_CONFIG[agentType] ?? AGENT_TYPE_CONFIG['mock'];
     const info = config.info[lang];
     const displayLabel = label || config.label;
