@@ -3,11 +3,8 @@ package servertest
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/tingly-dev/tingly-box/internal/config"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
-	server "github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"github.com/tingly-dev/tingly-box/internal/routing"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -27,35 +24,12 @@ import (
 // error. After the fix (fall back to the active set) selection still returns
 // the service.
 func TestRepro_NoServiceAvailable_SingleServiceRateLimited(t *testing.T) {
-	appConfig, err := config.NewAppConfig(config.WithConfigDir(t.TempDir()))
-	require.NoError(t, err)
-	cfg := appConfig.GetGlobalConfig()
-
-	// A correctly configured, enabled provider.
-	providerUUID := uuid.New().String()
-	require.NoError(t, cfg.AddProvider(&typ.Provider{
-		UUID:    providerUUID,
-		Name:    "cc-default-provider",
-		APIBase: "https://example.invalid",
-		Token:   "sk-test",
-		Enabled: true,
-	}))
-
-	// Build the real selection stack exactly as server.go wires it.
-	healthMonitor := loadbalance.NewHealthMonitor(loadbalance.DefaultHealthMonitorConfig())
-	healthFilter := routing.NewHealthFilter(healthMonitor)
-	lb := server.NewLoadBalancer(cfg, healthFilter)
-	affinityStore := server.NewAffinityStore(0)
-	selector := routing.NewServiceSelector(cfg, affinityStore, lb)
+	cfg := newTestGlobalConfig(t)
+	providerUUID := addTestProvider(t, cfg, "cc-default-provider")
+	healthMonitor, _, selector := newSelectorStack(cfg)
 
 	// A single-service rule, no smart routing / affinity -> no-affinity pipeline.
-	svc := &loadbalance.Service{
-		Provider:   providerUUID,
-		Model:      "tingly/cc-default",
-		Weight:     1,
-		Active:     true,
-		TimeWindow: 300,
-	}
+	svc := routing.ServiceForTest(providerUUID, "tingly/cc-default", true)
 	rule := &typ.Rule{
 		Scenario:     typ.ScenarioClaudeCode,
 		RequestModel: "tingly/cc-default",

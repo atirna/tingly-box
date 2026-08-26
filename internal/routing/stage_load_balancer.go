@@ -30,6 +30,11 @@ func (s *LoadBalancerStage) Name() string {
 // stage: a failure here is a real error (there is no next stage to fall
 // through to), so it is reported via err rather than a silent pass-through.
 func (s *LoadBalancerStage) Evaluate(ctx *SelectionContext, candidates []*loadbalance.Service) ([]*loadbalance.Service, *SelectionResult, error) {
+	// An empty candidate set here means the rule genuinely has no active
+	// services: the pipeline driver (ServiceSelector.Select) restores the
+	// active base pool between stages whenever a narrowing comes back empty,
+	// so the terminal stage never has to compensate — it just reports the
+	// config problem via SelectService's error.
 	tempRule := *ctx.Rule
 	tempRule.Services = candidates
 	logOpenBreakerSkips(ctx, &tempRule)

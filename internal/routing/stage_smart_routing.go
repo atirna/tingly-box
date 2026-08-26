@@ -164,6 +164,11 @@ func (s *SmartRoutingStage) Evaluate(ctx *SelectionContext, candidates []*loadba
 	// the terminal pick. basePool is computed lazily (only the branches that
 	// actually take the non-matched exit pay for the intersection + its map
 	// allocation) since the common case — a partition matches — never needs it.
+	// The intersection can come back empty when health filtering removed
+	// every base service from the union while a partition-only service stayed
+	// healthy (HealthStage's all-unhealthy guard runs on the union, so it
+	// does not fire then). The pipeline driver restores the active base set
+	// in that case — see the degrade enforcement in ServiceSelector.Select.
 	basePool := func() []*loadbalance.Service { return IntersectServices(candidates, rule.Services) }
 
 	// Skip if smart routing not enabled. When SmartRouting is empty,

@@ -1,0 +1,27 @@
+# noeviction — a repeatedly failing sole ACTIVE service must never be evicted
+# from routing. The rule also carries an inactive sibling row; persistent 429s
+# mark the active service unhealthy, but selection must keep degrading to it
+# (surfacing the real 429) instead of failing the rule with "no service
+# available". Regression for the candidate-set poisoning where the "healthy"
+# inactive sibling kept HealthStage's all-unhealthy degrade guard from firing
+# and every request after the first 429 died in selection.
+rule_uuid: noeviction
+tactic: random
+affinity_secs: 0
+services:
+  - { provider: openai, model: gpt-5.4, tier: 0 }
+  - { provider: openai, model: old-model, tier: 0, inactive: true }
+faults:
+  openai/gpt-5.4: [429]
+expect:
+  final_status: 429                    # the real upstream error, not a routing error
+  attempts: [openai/gpt-5.4]
+  attempts_exclude: [openai/old-model] # the inactive row never appears
+  health:
+    openai/gpt-5.4: unhealthy
+program:
+  - { request: "" }   # 429 → marked unhealthy
+  - { request: "" }   # pre-fix: selection failed ("no active services for rule")
+  - { request: "" }
+  - { request: "" }
+  - { request: "" }

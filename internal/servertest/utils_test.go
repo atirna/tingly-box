@@ -8,14 +8,54 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 	server2 "github.com/tingly-dev/tingly-box/internal/server"
 
 	"github.com/tingly-dev/tingly-box/internal/config"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
+	"github.com/tingly-dev/tingly-box/internal/protocolserver"
+	"github.com/tingly-dev/tingly-box/internal/routing"
+	serverconfig "github.com/tingly-dev/tingly-box/internal/server/config"
 	typ "github.com/tingly-dev/tingly-box/internal/typ"
 )
 
 const defaultMockProviderTimeoutSeconds = int64(2)
+
+// newTestGlobalConfig creates a throwaway global config for tests that drive
+// the selection stack directly (no HTTP server).
+func newTestGlobalConfig(t *testing.T) *serverconfig.Config {
+	t.Helper()
+	appConfig, err := config.NewAppConfig(config.WithConfigDir(t.TempDir()))
+	require.NoError(t, err)
+	return appConfig.GetGlobalConfig()
+}
+
+// addTestProvider registers an enabled provider under a fresh UUID and
+// returns that UUID.
+func addTestProvider(t *testing.T, cfg *serverconfig.Config, name string) string {
+	t.Helper()
+	id := uuid.New().String()
+	require.NoError(t, cfg.AddProvider(&typ.Provider{
+		UUID:    id,
+		Name:    name,
+		APIBase: "https://example.invalid",
+		Token:   "sk-test",
+		Enabled: true,
+	}))
+	return id
+}
+
+// newSelectorStack wires the real selection stack (health monitor + load
+// balancer + affinity store + ServiceSelector) over cfg. Shared by the
+// routing repro/invariant tests in this package so the wiring lives in one
+// place.
+func newSelectorStack(cfg *serverconfig.Config) (*loadbalance.HealthMonitor, *protocolserver.AffinityStore, *routing.ServiceSelector) {
+	healthMonitor := loadbalance.NewHealthMonitor(loadbalance.DefaultHealthMonitorConfig())
+	lb := protocolserver.NewLoadBalancer(cfg, routing.NewHealthFilter(healthMonitor))
+	affinity := protocolserver.NewAffinityStore(0)
+	return healthMonitor, affinity, routing.NewServiceSelector(cfg, affinity, lb)
+}
 
 // TestServer represents a test server wrapper
 type TestServer struct {
