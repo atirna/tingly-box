@@ -164,7 +164,29 @@ func (s *SmartRoutingStage) Evaluate(ctx *SelectionContext, candidates []*loadba
 	// the terminal pick. basePool is computed lazily (only the branches that
 	// actually take the non-matched exit pay for the intersection + its map
 	// allocation) since the common case — a partition matches — never needs it.
-	basePool := func() []*loadbalance.Service { return IntersectServices(candidates, rule.Services) }
+	// Degrade, don't disappear: HealthStage's all-unhealthy guard is evaluated
+	// on the union, so a healthy partition-only service keeps the guard from
+	// firing while every base service is filtered out as unhealthy. Narrowing
+	// a non-matching request to the raw intersection would then hand the
+	// terminal LoadBalancer an empty pool and fail the whole rule ("no
+	// services configured") even though the base services are configured
+	// correctly and may already have recovered. Fall back to the full active
+	// base set instead — trying an unhealthy upstream surfaces the real
+	// upstream error, mirroring HealthStage and LoadBalancer.selectService.
+	basePool := func() []*loadbalance.Service {
+		pool := IntersectServices(candidates, rule.Services)
+		if len(pool) == 0 {
+			if fallback := FilterActiveServices(rule.Services); len(fallback) > 0 {
+				logrus.WithFields(logrus.Fields{
+					"stage":     "smart_routing_base_pool_degrade",
+					"rule_uuid": rule.UUID,
+					"services":  len(fallback),
+				}).Warnf("[smart_routing] base pool emptied by upstream filtering; falling back to %d active base services", len(fallback))
+				return fallback
+			}
+		}
+		return pool
+	}
 
 	// Skip if smart routing not enabled. When SmartRouting is empty,
 	// initialCandidateServices never added anything beyond rule.Services, so
