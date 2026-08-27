@@ -56,7 +56,7 @@ export default {
       "useXcode": "Xcode",
       "useVSCode": "VS Code",
       "useEmbed": "Embedding",
-      "useImageGen": "Image Gen",
+      "useImageGen": "Image",
       "useTeam": "Team",
       "useCustom": "Custom",
       "apiKeys": "API 密钥",
@@ -1536,9 +1536,9 @@ export default {
     }
   },
   "imageGenQuickStart": {
-    "title": "图像生成快速开始",
+    "title": "图像 API 快速开始",
     "closeAriaLabel": "关闭快速开始",
-    "description": "调用图像生成接口，然后将 base64 响应解码为图像文件。模型令牌可通过 GET /api/v1/token 获取。"
+    "description": "调用图像生成或编辑接口，然后将 base64 响应解码为图像文件。模型令牌可通过 GET /api/v1/token 获取。"
   },
   "templatePage": {
     "noProviders": {
@@ -1610,12 +1610,28 @@ export default {
     "model": "模型",
     "prompt": "提示词",
     "promptPlaceholder": "描述你想生成的图像…",
+    "editPromptPlaceholder": "描述你想做的修改…",
     "size": "尺寸",
     "quality": "质量",
     "count": "数量",
     "generate": "生成",
     "generateAnother": "再生成一批 · {{count}} 个进行中",
     "generatingNew": "正在生成新图像…",
+    "modeGenerate": "生成",
+    "modeEdit": "编辑",
+    "editBadge": "已编辑",
+    "edit": "编辑图像",
+    "editAnother": "再编辑一批 · {{count}} 个进行中",
+    "editingNew": "正在编辑图像…",
+    "referenceImages": "参考图像",
+    "referenceHint": "最多 {{max}} 张 · 支持 PNG、JPEG 或 WebP",
+    "addReferenceImage": "添加图像",
+    "dropReferenceImage": "拖拽图像到此处，或点击浏览",
+    "removeReferenceImage": "移除第 {{number}} 张参考图像",
+    "noReferenceImages": "请至少添加一张图像再进行编辑",
+    "useAsReference": "编辑这张图像",
+    "referenceLoadFailed": "无法将该图像用作参考图",
+    "referenceThumbAlt": "第 {{number}} 张参考图像",
     "previewEmpty": "生成的图像会显示在这里",
     "previewHint": "本次会话中的每次生成都会保留。",
     "sessionOutputs": "本次会话输出",
@@ -1697,7 +1713,7 @@ export default {
     "sharingKeys": "共享密钥",
     "modelRules": "模型规则",
     "embedModelRules": "向量模型规则",
-    "imageGenModelRules": "图像生成模型规则",
+    "imageGenModelRules": "图像模型规则",
     "tooltip": {
       "claude_code": "命令行 AI 开发助手，可用于编码实现、测试与 git 操作",
       "claude_desktop": "为 Claude Desktop 桌面应用提供 API 代理",
@@ -1707,7 +1723,7 @@ export default {
       "vscode": "自带密钥：通过 Tingly Box 代理，在 VS Code Copilot 中使用你自己的 API Key",
       "pi": "通过 Tingly Box 代理使用 pi 编码 Agent",
       "dsh": "通过 Tingly Box 代理使用 DeepSeek Harness (dsh) 智能体框架",
-      "imagegen": "通过 Tingly Box 代理进行 AI 图像生成，支持多种模型",
+      "imagegen": "通过 Tingly Box 代理进行 AI 图像生成与编辑，支持多种模型",
     },
     "vscode": {
       "installDescription": "从 VS Code 或应用市场安装 Tingly Box 扩展。",

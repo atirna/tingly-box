@@ -55,7 +55,7 @@ export default {
       "useXcode": "Xcode",
       "useVSCode": "VS Code",
       "useEmbed": "Embedding",
-      "useImageGen": "Image Gen",
+      "useImageGen": "Image",
       "useTeam": "Team",
       "useCustom": "Custom",
       "apiKeys": "API Keys",
@@ -1540,9 +1540,9 @@ export default {
     "success": "Provider added successfully! You can now create scenarios."
   },
   "imageGenQuickStart": {
-    "title": "Image Generation Quick Start",
+    "title": "Image API Quick Start",
     "closeAriaLabel": "Close quick start",
-    "description": "Call the image generation endpoint, then decode the base64 response into an image file. The model token is available from GET /api/v1/token."
+    "description": "Call the image generation or edit endpoint, then decode the base64 response into an image file. The model token is available from GET /api/v1/token."
   },
   "templatePage": {
     "noProviders": {
@@ -1614,12 +1614,28 @@ export default {
     "model": "Model",
     "prompt": "Prompt",
     "promptPlaceholder": "Describe the image you want to generate…",
+    "editPromptPlaceholder": "Describe the change you want to make…",
     "size": "Size",
     "quality": "Quality",
     "count": "N",
     "generate": "Generate",
     "generateAnother": "Generate another · {{count}} running",
     "generatingNew": "Generating new images…",
+    "modeGenerate": "Generate",
+    "modeEdit": "Edit",
+    "editBadge": "Edited",
+    "edit": "Edit Image",
+    "editAnother": "Edit another · {{count}} running",
+    "editingNew": "Editing images…",
+    "referenceImages": "Reference images",
+    "referenceHint": "Up to {{max}} images · PNG, JPEG, or WebP",
+    "addReferenceImage": "Add image",
+    "dropReferenceImage": "Drop images here or click to browse",
+    "removeReferenceImage": "Remove reference image {{number}}",
+    "noReferenceImages": "Add at least one image to edit",
+    "useAsReference": "Edit this image",
+    "referenceLoadFailed": "Could not use this image as a reference",
+    "referenceThumbAlt": "Reference image {{number}}",
     "previewEmpty": "Your generated images will appear here",
     "previewHint": "Each generation will be kept for this session.",
     "sessionOutputs": "Session outputs",
@@ -1701,7 +1717,7 @@ export default {
     "sharingKeys": "Sharing Keys",
     "modelRules": "Model Rules",
     "embedModelRules": "Embedding Model Rules",
-    "imageGenModelRules": "Image Generation Model Rules",
+    "imageGenModelRules": "Image Model Rules",
     "tooltip": {
       "claude_code": "AI-powered CLI development agent for implementation, testing, and git operations",
       "claude_desktop": "Route Claude Desktop's third-party inference through your configured providers",
@@ -1711,7 +1727,7 @@ export default {
       "vscode": "Bring Your Own Key: Use your own API keys with VS Code Copilot through Tingly Box proxy",
       "pi": "Pi coding agent through Tingly Box proxy",
       "dsh": "DeepSeek Harness (dsh) agent harness through Tingly Box proxy",
-      "imagegen": "AI-powered image generation through Tingly Box proxy with multiple model support"
+      "imagegen": "AI-powered image generation and editing through Tingly Box proxy with multiple model support"
     },
     "vscode": {
       "installDescription": "Install the Tingly Box extension from VS Code or the Marketplace.",
@@ -1770,7 +1786,7 @@ export default {
       "openai": "Drop-in OpenAI-compatible SDK endpoint.",
       "anthropic": "Drop-in Anthropic-compatible SDK endpoint.",
       "embed": "Route embedding requests to your provider.",
-      "imagegen": "Route image generation through Tingly Box.",
+      "imagegen": "Route image generation and editing through Tingly Box.",
       "custom": "Bring your own request model name — a generic catch-all scenario. Hidden by default.",
       "team": "Shared central model deployment for your whole team. Hidden by default."
     }

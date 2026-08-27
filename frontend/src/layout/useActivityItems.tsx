@@ -135,7 +135,7 @@ export function useActivityItems(): ActivityItem[] {
             { id: 'openai', nav: { path: '/agent/openai', label: t('layout.nav.useOpenAI', { defaultValue: 'OpenAI' }), icon: <OpenAI size={20} /> } },
             { id: 'anthropic', nav: { path: '/agent/anthropic', label: t('layout.nav.useAnthropic', { defaultValue: 'Anthropic' }), icon: <Anthropic size={20} /> } },
             { id: 'embed', nav: { path: '/agent/embed', label: t('layout.nav.useEmbed', { defaultValue: 'Embedding' }), icon: <IconVector sx={{ fontSize: 20 }} /> } },
-            { id: 'imagegen', nav: { path: '/agent/imagegen', label: t('layout.nav.useImageGen', { defaultValue: 'Image Gen' }), icon: <IconPhoto sx={{ fontSize: 20 }} /> } },
+            { id: 'imagegen', nav: { path: '/agent/image', label: t('layout.nav.useImageGen', { defaultValue: 'Image' }), icon: <IconPhoto sx={{ fontSize: 20 }} /> } },
         ]);
 
         const scenarioChildren: NavItem[] = [];

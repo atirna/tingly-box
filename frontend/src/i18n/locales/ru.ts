@@ -55,7 +55,7 @@ export default {
       "useXcode": "Xcode",
       "useVSCode": "VS Code",
       "useEmbed": "Эмбеддинги",
-      "useImageGen": "Генерация изображений",
+      "useImageGen": "Изображения",
       "useTeam": "Команда",
       "useCustom": "Свой сценарий",
       "apiKeys": "API-ключи",
@@ -1550,9 +1550,9 @@ export default {
     }
   },
   "imageGenQuickStart": {
-    "title": "Быстрый старт: генерация изображений",
+    "title": "Быстрый старт: Image API",
     "closeAriaLabel": "Закрыть быстрый старт",
-    "description": "Вызовите эндпоинт генерации изображений, затем декодируйте ответ из base64 в файл изображения. Токен модели можно получить через GET /api/v1/token."
+    "description": "Вызовите эндпоинт генерации или редактирования изображений, затем декодируйте ответ из base64 в файл изображения. Токен модели можно получить через GET /api/v1/token."
   },
   "templatePage": {
     "noProviders": {
@@ -1624,12 +1624,28 @@ export default {
     "model": "Модель",
     "prompt": "Промпт",
     "promptPlaceholder": "Опишите изображение, которое хотите получить…",
+    "editPromptPlaceholder": "Опишите, что нужно изменить…",
     "size": "Размер",
     "quality": "Качество",
     "count": "N",
     "generate": "Сгенерировать",
     "generateAnother": "Сгенерировать ещё · выполняется: {{count}}",
     "generatingNew": "Генерируем новые изображения…",
+    "modeGenerate": "Генерация",
+    "modeEdit": "Редактирование",
+    "editBadge": "Отредактировано",
+    "edit": "Редактировать изображение",
+    "editAnother": "Отредактировать ещё · выполняется: {{count}}",
+    "editingNew": "Редактируем изображения…",
+    "referenceImages": "Исходные изображения",
+    "referenceHint": "До {{max}} изображений · PNG, JPEG или WebP",
+    "addReferenceImage": "Добавить изображение",
+    "dropReferenceImage": "Перетащите изображения сюда или нажмите, чтобы выбрать",
+    "removeReferenceImage": "Удалить исходное изображение {{number}}",
+    "noReferenceImages": "Добавьте хотя бы одно изображение для редактирования",
+    "useAsReference": "Редактировать это изображение",
+    "referenceLoadFailed": "Не удалось использовать это изображение как исходное",
+    "referenceThumbAlt": "Исходное изображение {{number}}",
     "previewEmpty": "Здесь появятся сгенерированные изображения",
     "previewHint": "Каждая генерация сохраняется на время этой сессии.",
     "sessionOutputs": "Результаты сессии",
@@ -1711,7 +1727,7 @@ export default {
     "sharingKeys": "Ключи доступа",
     "modelRules": "Правила моделей",
     "embedModelRules": "Правила моделей эмбеддингов",
-    "imageGenModelRules": "Правила моделей генерации изображений",
+    "imageGenModelRules": "Правила моделей изображений",
     "tooltip": {
       "claude_code": "CLI-агент разработки на базе ИИ: реализация, тесты и операции с Git",
       "claude_desktop": "Направьте стороннюю инференцию Claude Desktop через ваших провайдеров",
@@ -1721,7 +1737,7 @@ export default {
       "vscode": "Свои ключи: используйте собственные API-ключи в VS Code Copilot через прокси Tingly Box",
       "pi": "Агент программирования Pi через прокси Tingly Box",
       "dsh": "Агентная оболочка DeepSeek Harness (dsh) через прокси Tingly Box",
-      "imagegen": "Генерация изображений через прокси Tingly Box с поддержкой нескольких моделей"
+      "imagegen": "Генерация и редактирование изображений через прокси Tingly Box с поддержкой нескольких моделей"
     },
     "vscode": {
       "installDescription": "Установите расширение Tingly Box из VS Code или Marketplace.",
@@ -1780,7 +1796,7 @@ export default {
       "openai": "Готовый эндпоинт, совместимый с OpenAI SDK.",
       "anthropic": "Готовый эндпоинт, совместимый с Anthropic SDK.",
       "embed": "Направьте запросы эмбеддингов вашему провайдеру.",
-      "imagegen": "Генерация изображений через Tingly Box.",
+      "imagegen": "Генерация и редактирование изображений через Tingly Box.",
       "custom": "Своё название модели в запросе — универсальный сценарий на все случаи. По умолчанию скрыт.",
       "team": "Общее централизованное развёртывание моделей для всей команды. По умолчанию скрыт."
     }

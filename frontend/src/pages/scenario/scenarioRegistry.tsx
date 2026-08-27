@@ -134,7 +134,7 @@ export const SCENARIOS: ScenarioDescriptor[] = [
         id: 'imagegen',
         labelKey: 'layout.nav.useImageGen',
         descKey: 'scenarioOverview.descriptions.imagegen',
-        path: '/agent/imagegen',
+        path: '/agent/image',
         icon: (size) => <IconPhoto sx={{ fontSize: size }} />,
         hideable: true,
     },

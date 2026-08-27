@@ -2415,6 +2415,41 @@ export const handlers = [
         })
     }),
 
+    // Mirrors the generations mock above but reads the standard OpenAI
+    // multipart /images/edits wire format (the openai SDK's images.edit()
+    // always multipart-encodes, regardless of upstream vendor).
+    http.post('*/tingly/imagegen/v1/images/edits', async ({ request }) => {
+        const form = await request.formData()
+        const n = Math.max(1, Math.min(10, Number(form.get('n')) || 1))
+        const sizeValue = form.get('size')
+        const size = typeof sizeValue === 'string' && sizeValue ? sizeValue : '1024x1024'
+        const [w, h] = size.split('x').map(Number)
+        const palette = ['#7c3aed', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6']
+        const promptText = String(form.get('prompt') ?? '').slice(0, 80).replace(/[<>&"]/g, '')
+        const model = form.get('model') ?? ''
+        const quality = form.get('quality') || 'auto'
+
+        const makeSvgDataUrl = (idx: number): string => {
+            const bg = palette[(idx + 2) % palette.length]
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+                + `<rect width="100%" height="100%" fill="${bg}"/>`
+                + `<text x="50%" y="45%" font-family="sans-serif" font-size="${Math.round(w / 18)}" fill="white" text-anchor="middle" font-weight="700">EDITED #${idx + 1}</text>`
+                + `<text x="50%" y="56%" font-family="sans-serif" font-size="${Math.round(w / 36)}" fill="white" fill-opacity="0.85" text-anchor="middle">${promptText}</text>`
+                + `<text x="50%" y="95%" font-family="monospace" font-size="${Math.round(w / 50)}" fill="white" fill-opacity="0.7" text-anchor="middle">${model} · ${size} · q=${quality}</text>`
+                + `</svg>`
+            const b64 = btoa(unescape(encodeURIComponent(svg)))
+            return `data:image/svg+xml;base64,${b64}`
+        }
+
+        // Simulate a small latency so the loading state is visible
+        await new Promise((r) => setTimeout(r, 600))
+
+        return HttpResponse.json({
+            created: Math.floor(Date.now() / 1000),
+            data: Array.from({ length: n }, (_, i) => ({ url: makeSvgDataUrl(i) })),
+        })
+    }),
+
     // ============================================
     // Usage Stats API (v1)
     // ============================================
