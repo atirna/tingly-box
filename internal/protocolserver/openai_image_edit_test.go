@@ -22,6 +22,10 @@ import (
 
 var editTestPNG = []byte("\x89PNG\r\n\x1a\nfake-image-data")
 
+// editTestPNGBase64 is the base64 form of editTestPNG, shared by the tests
+// that inline it into JSON request bodies or mock upstream responses.
+var editTestPNGBase64 = base64.StdEncoding.EncodeToString(editTestPNG)
+
 func newEditTestContext(t *testing.T, method, contentType string, body io.Reader) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

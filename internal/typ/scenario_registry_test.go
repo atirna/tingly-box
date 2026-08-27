@@ -145,7 +145,7 @@ func TestTeamScenarioDescriptor(t *testing.T) {
 	if !d.AllowDirectPathUse {
 		t.Error("team should allow direct path use")
 	}
-	for _, transport := range []ScenarioTransport{TransportOpenAI, TransportAnthropic} {
+	for _, transport := range []ScenarioTransport{TransportOpenAI, TransportAnthropic, TransportImageGen} {
 		if !ScenarioSupportsTransport(ScenarioTeam, transport) {
 			t.Errorf("team should support transport %q", transport)
 		}

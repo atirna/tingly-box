@@ -14,16 +14,20 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
+// setTeamIDFromHeader is a test stand-in for model auth: it injects the
+// X-Test-Team-ID header into the auth context the way sharing-key auth does.
+func setTeamIDFromHeader(c *gin.Context) {
+	if teamID := c.GetHeader("X-Test-Team-ID"); teamID != "" {
+		c.Set(constant.CtxKeyTeamID, teamID)
+	}
+}
+
 func TestTeamScopeMiddleware_DerivesRoutingScopeFromAuthContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ph := &ProtocolHandler{}
 	router := gin.New()
 	router.POST("/tingly/:scenario/messages",
-		func(c *gin.Context) {
-			if teamID := c.GetHeader("X-Test-Team-ID"); teamID != "" {
-				c.Set(constant.CtxKeyTeamID, teamID)
-			}
-		},
+		setTeamIDFromHeader,
 		ph.teamScopeMiddleware,
 		func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
@@ -89,7 +93,7 @@ func TestTeamScopeMiddleware_SelectsOnlyAuthorizedTeamRules(t *testing.T) {
 	ph := &ProtocolHandler{deps: ProtocolHandlerDeps{Config: cfg}}
 	router := gin.New()
 	router.POST("/tingly/:scenario/messages",
-		func(c *gin.Context) { c.Set(constant.CtxKeyTeamID, c.GetHeader("X-Test-Team-ID")) },
+		setTeamIDFromHeader,
 		ph.teamScopeMiddleware,
 		func(c *gin.Context) {
 			rule, err := ph.determineRuleWithScenario(c, typ.RuleScenario(c.Param("scenario")), "shared-model")

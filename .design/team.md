@@ -82,6 +82,10 @@ non-default Team   → rule scenario "team:<stable-team-uuid>"
 外部 URL 始终保持 `/tingly/team`；内部 scenario 由认证上下文派生，客户端不能请求
 `/tingly/team:<id>` 来选择或冒充另一个 Team。
 
+`/tingly/team[/v1]` 暴露完整的 mixin 端点集，Team scenario 因此声明
+`openai`、`anthropic`、`imagegen` 三种 transport。其中 `imagegen` 必须显式
+声明：image gen/edit 端点只按 `TransportImageGen` 判定，漏掉即整体不可用。
+
 ## 6. Request authorization flow
 
 ```text
