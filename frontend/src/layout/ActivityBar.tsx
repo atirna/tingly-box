@@ -1,4 +1,4 @@
-import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport, ChevronRight as IconChevronRight } from '@/components/icons';
+import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport, ChevronRight as IconChevronRight, Lightbulb as IconLightbulb } from '@/components/icons';
 import { Box, Divider, IconButton, ListItemButton, ListItemIcon, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
@@ -54,6 +54,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     const currentThemeOption = themeOptions.find((option) => option.value === themeMode);
     const renderCurrentThemeIcon = currentThemeOption?.renderIcon ?? themeOptions[0].renderIcon;
     const isOnboardingActive = location.pathname === '/onboarding';
+    const isHelpActive = location.pathname === '/help';
     const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapsed();
 
     const handleLanguageMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -258,6 +259,36 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                         </ListItemButton>
                     </Tooltip>
 
+            </Box>
+
+            {/* Help button - bottom-left, above feedback icon. A quiet,
+                always-visible entry point for easy-to-miss useful actions
+                (currently: desktop shortcut creation) — deliberately not a
+                notification badge, since there's no reliable "you need this"
+                signal to hang one off; just a discoverable, low-noise link. */}
+            <Box sx={activityBottomClusterSx}>
+                <Tooltip title={t('layout.help', { defaultValue: 'Tips & Help' })} placement="right" arrow>
+                    <ListItemButton
+                        component={RouterLink}
+                        to="/help"
+                        onClick={onStandaloneNavigate}
+                        sx={activityBottomItemSx({
+                            '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
+                            ...(isHelpActive && {
+                                bgcolor: 'primary.main',
+                                color: 'primary.contrastText',
+                                '&:hover': { bgcolor: 'primary.dark', color: 'primary.contrastText' },
+                            }),
+                        })}
+                    >
+                        <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
+                            <IconLightbulb sx={{ fontSize: 22 }} />
+                        </ListItemIcon>
+                        <Typography variant="caption" sx={{ color: 'inherit', textAlign: 'center', lineHeight: 1.2 }}>
+                            {t('layout.helpShort', { defaultValue: 'Help' })}
+                        </Typography>
+                    </ListItemButton>
+                </Tooltip>
             </Box>
 
             {/* Feedback button - bottom-left, above language icon */}

@@ -31,6 +31,7 @@ import { api } from './services/api';
 // is lazy-loaded: each becomes its own chunk that downloads on first visit
 // instead of being bundled into the initial page load.
 const Onboarding = lazy(() => import('./pages/Onboarding'));
+const HelpPage = lazy(() => import('./pages/HelpPage'));
 const SharingKeysPage = lazy(() => import('./pages/SharingKeysPage.tsx'));
 const VirtualModelsPage = lazy(() => import('./pages/VirtualModelsPage'));
 const UseOpenAIPage = lazy(() => import('./pages/scenario/UseOpenAIPage'));
@@ -226,6 +227,7 @@ function AppContent() {
                     <Route index element={<OnboardingGate />} />
                     {/* Onboarding for new installs */}
                     <Route path="/onboarding" element={<Onboarding />} />
+                    <Route path="/help" element={<HelpPage />} />
                     {/* Function panel routes */}
                     <Route path="/agent" element={<AgentOverviewPage />} />
                     <Route path="/agent/openai" element={<UseOpenAIPage />} />

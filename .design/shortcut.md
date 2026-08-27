@@ -54,7 +54,9 @@ internal/server/module/shortcut/  # HTTP handler: GET/POST /api/v1/shortcut
 cli/tingly-box/main.go    # wires the global --source flag, binds LaunchSource
 build/npx/*/bin.js        # injects --source=npx / --source=npx-bundle
 
-frontend/src/pages/system/System.tsx  # "Desktop Shortcut" card (web/npx/binary only)
+frontend/src/components/ShortcutCard.tsx  # the card (web/npx/binary only, not Wails GUI)
+frontend/src/pages/HelpPage.tsx           # hosts ShortcutCard, reached via the lightbulb nav entry
+frontend/src/layout/ActivityBar.tsx       # lightbulb entry point, route /help
 ```
 
 **Rule:** anything platform-specific (PowerShell COM script, `.command`
@@ -374,17 +376,31 @@ Windows OneDrive-redirection caveat as `Create` itself doesn't apply to the
 best-effort `GET`, see its doc comment) — it never writes to disk, only
 `os.Stat`s.
 
-The frontend surfaces this as a card on the System settings page
-(`frontend/src/pages/system/System.tsx`), shown only outside Wails GUI mode
-(`!isGuiMode()`) — a GUI build already has a native window/icon and doesn't
-need a desktop shortcut. The card is deliberately re-entrant, not a
-one-shot "done" action (`.design/ux-principles.md` §10): `POST` is
-idempotent, so the button stays clickable after success to recover a
-deleted shortcut or re-point it after an upgrade or a different launch
-method. On success it shows the real paths written and, on Linux, the
-headless launcher script path with a copy button — matching
-`UpdatePanelDialog`'s "hand over the concrete artifact" pattern (§11) rather
-than a bare "Created!" toast.
+The frontend surfaces this as `ShortcutCard` (`frontend/src/components/ShortcutCard.tsx`),
+shown only outside Wails GUI mode (`!isGuiMode()`) — a GUI build already has a
+native window/icon and doesn't need a desktop shortcut. The card is
+deliberately re-entrant, not a one-shot "done" action
+(`.design/ux-principles.md` §10): `POST` is idempotent, so the button stays
+clickable after success to recover a deleted shortcut or re-point it after an
+upgrade or a different launch method. On success it shows the real paths
+written and, on Linux, the headless launcher script path with a copy button —
+matching `UpdatePanelDialog`'s "hand over the concrete artifact" pattern (§11)
+rather than a bare "Created!" toast.
+
+It first shipped on the System settings page, but that buried it too deep for
+a first-run user (the exact person who most needs it — see §1). It now lives
+on a dedicated `HelpPage` (`frontend/src/pages/HelpPage.tsx`, route `/help`),
+reached via a lightbulb entry in the activity bar
+(`frontend/src/layout/ActivityBar.tsx`) — a small, always-visible, low-noise
+collection of easy-to-miss useful actions, not a linear onboarding tour.
+Deliberately *not* a notification badge on the lightbulb itself: `GET
+/api/v1/shortcut` does give a real per-machine "exists" signal (that's what
+drives the card's own "Recreate"/"Already created" state once you're on the
+page), but reusing that to light up a badge on the nav icon would be a second,
+separate reactive UI surface for one card — not worth it yet for a page that
+currently holds exactly one card. A quiet, always-present link is enough;
+revisit if/when this page grows enough cards that "is there anything new
+here" becomes a real question.
 
 Explicitly out of scope, on purpose (security/UX call, not a gap to fill
 later): the frontend never wires this into `start`/`restart`, and never
@@ -428,5 +444,7 @@ ever a direct, visible user click on the System page, same posture as
 | `build/npx/tingly-box-bundle/bin.js`         | bundle wrapper, injects `--source=npx-bundle` |
 | `internal/server/module/shortcut/`           | HTTP handler for `GET`/`POST /api/v1/shortcut` |
 | `internal/server/server_options.go`          | `WithLaunchSource`                       |
-| `frontend/src/pages/system/System.tsx`       | "Desktop Shortcut" card (web/npx/binary only, not Wails GUI) |
+| `frontend/src/components/ShortcutCard.tsx`   | the card (web/npx/binary only, not Wails GUI) |
+| `frontend/src/pages/HelpPage.tsx`             | hosts `ShortcutCard`, reached via the lightbulb nav entry |
+| `frontend/src/layout/ActivityBar.tsx`         | lightbulb entry point, `/help` route     |
 | `frontend/src/services/api.ts`               | `getShortcutStatus`, `createShortcut`    |

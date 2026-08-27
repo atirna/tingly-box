@@ -1,9 +1,9 @@
 import CardGrid from '@/components/CardGrid.tsx';
 import { PageLayout } from '@/components/PageLayout.tsx';
 import UnifiedCard from '@/components/UnifiedCard.tsx';
-import { Logout, Refresh as RefreshIcon, CheckCircle as IconCircleCheck, Cancel as IconCircleX, Info as IconInfoCircle, Lock as IconLock, License as IconLicense, GitHub as IconBrandGithub, Translate as IconLanguage, Brush as IconBrush, Check as IconCheck, AccessTime as IconClock, ContentCopy as IconContentCopy, Router as IconRouter, Computer as IconComputer } from '@/components/icons';
+import { Logout, Refresh as RefreshIcon, CheckCircle as IconCircleCheck, Cancel as IconCircleX, Info as IconInfoCircle, Lock as IconLock, License as IconLicense, GitHub as IconBrandGithub, Translate as IconLanguage, Brush as IconBrush, Check as IconCheck, AccessTime as IconClock, ContentCopy as IconContentCopy, Router as IconRouter } from '@/components/icons';
 import { UpdatePanelDialog } from '@/components/UpdatePanelDialog';
-import { Box, Button, CircularProgress, Divider, IconButton, InputAdornment, Link, Paper, Stack, Switch, TextField, Tooltip, Typography, Chip, type SxProps, type Theme } from '@mui/material';
+import { Box, Button, CircularProgress, Divider, IconButton, InputAdornment, Link, Stack, Switch, TextField, Tooltip, Typography, Chip, type SxProps, type Theme } from '@mui/material';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,8 +15,6 @@ import { useNotify } from '@/hooks/useNotify.ts';
 import { api } from '@/services/api.ts';
 import { getThemeOptions } from '@/theme/options.ts';
 import { SUPPORTED_LANGUAGES, resolveLanguage } from '@/i18n';
-import { isGuiMode } from '@/utils/protocol.ts';
-import { fontMono } from '@/theme/fonts';
 
 // Label column width shared by every settings row — keeps the value column
 // (the actual visual anchor) vertically aligned across cards.
@@ -87,11 +85,6 @@ const System = () => {
     const [globalProxyInput, setGlobalProxyInput] = useState('');
     const [proxyUrlSaving, setProxyUrlSaving] = useState(false);
     const [copiedVersion, setCopiedVersion] = useState(false);
-    const [shortcutStatus, setShortcutStatus] = useState<{ exists: boolean; created: string[]; scriptPath: string } | null>(null);
-    const [shortcutCreating, setShortcutCreating] = useState(false);
-    const [shortcutError, setShortcutError] = useState<string | null>(null);
-    const [copiedShortcutScript, setCopiedShortcutScript] = useState(false);
-    const showShortcutCard = !isGuiMode();
     const isServerStatusAvailable = Boolean(serverStatus);
     const serverStatusLabel = !isServerStatusAvailable
         ? t('system.status.unavailable')
@@ -138,47 +131,8 @@ const System = () => {
         await Promise.all([
             loadServerStatus(),
             loadProxyConfig(),
-            loadShortcutStatus(),
         ]);
         setLoading(false);
-    };
-
-    const loadShortcutStatus = async () => {
-        if (!showShortcutCard) return;
-        const result = await api.getShortcutStatus();
-        if (result.success) {
-            setShortcutStatus({
-                exists: result.exists,
-                created: result.data?.created ?? [],
-                scriptPath: result.data?.script_path ?? '',
-            });
-        }
-    };
-
-    const handleCreateShortcut = async () => {
-        setShortcutCreating(true);
-        setShortcutError(null);
-        const result = await api.createShortcut();
-        if (result.success) {
-            setShortcutStatus({
-                exists: true,
-                created: result.data?.created ?? [],
-                scriptPath: result.data?.script_path ?? '',
-            });
-            notify.success(t('system.shortcut.title'));
-        } else {
-            setShortcutError(result.error || 'Unknown error');
-        }
-        setShortcutCreating(false);
-    };
-
-    const handleCopyShortcutScript = () => {
-        if (!shortcutStatus?.scriptPath) return;
-        navigator.clipboard.writeText(shortcutStatus.scriptPath).then(() => {
-            setCopiedShortcutScript(true);
-            notify.success(t('common.copied'));
-            setTimeout(() => setCopiedShortcutScript(false), 2000);
-        });
     };
 
     const loadProxyConfig = async () => {
@@ -377,97 +331,6 @@ const System = () => {
                         </SettingsRow>
                     </Stack>
                 </UnifiedCard>
-
-                {/* Desktop Shortcut — Wails GUI users already have a native
-                    window/icon and don't need this; only shown when running
-                    as a web/npx/binary server. Re-entrant on purpose (no
-                    "done, hide the button" state): the action is idempotent,
-                    so it stays available to recover a deleted shortcut, or
-                    to re-point it after an upgrade or a different launch
-                    method. */}
-                {showShortcutCard && (
-                    <UnifiedCard title={t('system.shortcut.title')} size="full" maxWidth={CARD_MAX_WIDTH}>
-                        <Stack spacing={1.5}>
-                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                {t('system.shortcut.description')}
-                            </Typography>
-
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                <Button
-                                    variant="contained"
-                                    size="small"
-                                    startIcon={shortcutCreating ? <CircularProgress size={14} color="inherit" /> : <IconComputer sx={{ fontSize: 16 }} />}
-                                    onClick={handleCreateShortcut}
-                                    disabled={shortcutCreating}
-                                >
-                                    {shortcutCreating
-                                        ? t('system.shortcut.creating')
-                                        : shortcutStatus?.exists ? t('system.shortcut.recreate') : t('system.shortcut.create')}
-                                </Button>
-                                {shortcutStatus?.exists && !shortcutCreating && (
-                                    <Typography variant="caption" sx={{ color: 'success.main', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <IconCheck sx={{ fontSize: 14 }} /> {t('system.shortcut.alreadyCreated')}
-                                    </Typography>
-                                )}
-                            </Box>
-
-                            {shortcutError && (
-                                <Typography variant="caption" sx={{ color: 'error.main' }}>
-                                    {t('system.shortcut.createFailed', { error: shortcutError })}
-                                </Typography>
-                            )}
-
-                            {shortcutStatus && shortcutStatus.created.length > 0 && (
-                                <Box>
-                                    <Divider sx={{ mb: 1.5 }} />
-                                    <Stack spacing={0.5} sx={{ mb: 1 }}>
-                                        {shortcutStatus.created.map((p) => (
-                                            <Typography
-                                                key={p}
-                                                variant="caption"
-                                                sx={{ fontFamily: fontMono, color: 'text.secondary', wordBreak: 'break-all' }}
-                                            >
-                                                {p}
-                                            </Typography>
-                                        ))}
-                                    </Stack>
-
-                                    {shortcutStatus.scriptPath ? (
-                                        <Box>
-                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                                                {t('system.shortcut.runHeadless')}
-                                            </Typography>
-                                            <Paper
-                                                variant="outlined"
-                                                sx={{ p: 1.5, bgcolor: 'background.default', position: 'relative' }}
-                                            >
-                                                <Typography
-                                                    variant="body2"
-                                                    sx={{ fontFamily: fontMono, fontSize: '0.8rem', pr: 5, wordBreak: 'break-all' }}
-                                                >
-                                                    $ {shortcutStatus.scriptPath}
-                                                </Typography>
-                                                <Tooltip title={copiedShortcutScript ? t('common.copied') : t('common.copy')} placement="top" arrow>
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={handleCopyShortcutScript}
-                                                        sx={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: copiedShortcutScript ? 'success.main' : 'text.secondary' }}
-                                                    >
-                                                        {copiedShortcutScript ? <IconCheck sx={{ fontSize: 16 }} /> : <IconContentCopy sx={{ fontSize: 16 }} />}
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Paper>
-                                        </Box>
-                                    ) : (
-                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                            {t('system.shortcut.doubleClick')}
-                                        </Typography>
-                                    )}
-                                </Box>
-                            )}
-                        </Stack>
-                    </UnifiedCard>
-                )}
 
                 {/* Proxy — "How does TB reach upstream?" Env-proxy policy +
                     reusable URL preset, kept on their own card. */}
