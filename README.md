@@ -1,8 +1,5 @@
 ![Tingly Box Web UI Demo](./docs/hero.png)
 
-> **Announcement:** Here is [fault record](https://github.com/tingly-dev/tingly-box/discussions/626). Please update to the latest version to resolve known issues. Thank you for your continued support.
-
-
 <h1 align="center">Tingly Box</h1>
 
 <p align="center">
@@ -20,9 +17,6 @@
 </p>
 
 Tingly Box **serves agents, coordinates AI models, optimizes context, and routes requests** for maximum efficiency — with built-in **remote control and secure, customizable integrations**.
-
-![Tingly Box Web UI Demo](./docs/images/output.gif)
-
 
 ## Key Features
 
@@ -44,9 +38,13 @@ Tingly Box **serves agents, coordinates AI models, optimizes context, and routes
   * Usage Analytics — Track token consumption, latency, cost estimates, and model selection per request
   * Blazing Fast Performance — Typically adds **< 1ms** of overhead
 
+## Preview
+
+![Tingly Box Web UI Demo](./docs/images/output.gif)
+
 ## Quick Start
 
-[English](https://github.com/tingly-dev/tingly-box/issues/678#issuecomment-4273812882) | [中文](https://github.com/tingly-dev/tingly-box/issues/678#issue-4244345496)
+[English](https://github.com/tingly-dev/tingly-box/issues/678#issuecomment-4273812882) | [中文](https://github.com/tingly-dev/tingly-box/issues/678#issue-4244345496) | [Fault Record](https://github.com/tingly-dev/tingly-box/discussions/626)
 
 ### Install
 
