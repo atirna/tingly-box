@@ -121,6 +121,12 @@ func (ph *ProtocolHandler) HandleOpenAIImageGeneration(c *gin.Context) {
 		return
 	}
 
+	// Resolve dual endpoint: the images surface speaks the OpenAI protocol,
+	// so a dual provider must route to its OpenAI-side base URL — same as
+	// the chat/responses forwarding paths. OAuth providers (Codex/Kimi) are
+	// never dual and pass through unchanged.
+	provider = provider.ResolveStyle(protocol.APIStyleOpenAI)
+
 	actualModel := selectedService.Model
 	req.Model = openai.ImageModel(actualModel)
 
