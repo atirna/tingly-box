@@ -27,9 +27,9 @@ import (
 // dedicated images endpoint or the Responses API — the caller chooses the
 // surface and the corresponding tingly-box route.
 //
-// Exposed via the mixin route group, so any scenario whose descriptor declares
-// TransportImageGen (or TransportOpenAI as a mixin) can reach it. The canonical
-// home is the dedicated `imagegen` scenario.
+// Exposed via the mixin route group, but gated on TransportImageGen: only
+// scenarios whose descriptor declares it can reach this endpoint. The
+// canonical home is the dedicated `imagegen` scenario.
 func (ph *ProtocolHandler) HandleOpenAIImageGeneration(c *gin.Context) {
 	scenario := c.Param("scenario")
 	scenarioType := typ.RuleScenario(scenario)
@@ -121,10 +121,8 @@ func (ph *ProtocolHandler) HandleOpenAIImageGeneration(c *gin.Context) {
 		return
 	}
 
-	// Resolve dual endpoint: the images surface speaks the OpenAI protocol,
-	// so a dual provider must route to its OpenAI-side base URL — same as
-	// the chat/responses forwarding paths. OAuth providers (Codex/Kimi) are
-	// never dual and pass through unchanged.
+	// Resolve dual endpoint: when the provider has an OpenAI-compatible
+	// dual URL configured, route there natively to avoid a transform.
 	provider = provider.ResolveStyle(protocol.APIStyleOpenAI)
 
 	actualModel := selectedService.Model

@@ -83,10 +83,13 @@ func (p *ClientPool) GetOpenAIClient(ctx context.Context, provider *typ.Provider
 
 	// Set finalizer for automatic cleanup when GC collects the client.
 	// This ensures idle connections are closed without requiring explicit Close() calls.
+	// Capture only the name: the closure outlives the request, and holding the
+	// provider would pin per-request ResolveStyle clones until finalization.
+	providerName := provider.Name
 	runtime.SetFinalizer(client, func(c OpenAIClientInterface) {
 		if c != nil {
 			c.Close()
-			logrus.Debugf("Auto-closed OpenAI client for provider: %s via finalizer", provider.Name)
+			logrus.Debugf("Auto-closed OpenAI client for provider: %s via finalizer", providerName)
 		}
 	})
 
@@ -126,10 +129,12 @@ func (p *ClientPool) GetAnthropicClient(ctx context.Context, provider *typ.Provi
 	}
 
 	// Set finalizer for automatic cleanup when GC collects the client.
+	// Name-only capture, same rationale as GetOpenAIClient.
+	providerName := provider.Name
 	runtime.SetFinalizer(client, func(c AnthropicClientInterface) {
 		if c != nil {
 			c.Close()
-			logrus.Debugf("Auto-closed Anthropic client for provider: %s via finalizer", provider.Name)
+			logrus.Debugf("Auto-closed Anthropic client for provider: %s via finalizer", providerName)
 		}
 	})
 
@@ -151,10 +156,12 @@ func (p *ClientPool) GetGoogleClient(ctx context.Context, provider *typ.Provider
 	}
 
 	// Set finalizer for automatic cleanup when GC collects the client.
+	// Name-only capture, same rationale as GetOpenAIClient.
+	providerName := provider.Name
 	runtime.SetFinalizer(client, func(c *GoogleClient) {
 		if c != nil {
 			c.Close()
-			logrus.Debugf("Auto-closed Google client for provider: %s via finalizer", provider.Name)
+			logrus.Debugf("Auto-closed Google client for provider: %s via finalizer", providerName)
 		}
 	})
 

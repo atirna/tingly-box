@@ -113,10 +113,9 @@ func (ph *ProtocolHandler) HandleOpenAIEmbeddings(c *gin.Context) {
 		return
 	}
 
-	// Resolve dual endpoint: embeddings are OpenAI-protocol, so a dual
-	// provider routes to its OpenAI-side base URL — same as the image and
-	// chat/responses forwarding paths. This runs before the style check so a
-	// dual provider passes regardless of which side is its primary APIStyle.
+	// Resolve dual endpoint: when the provider has an OpenAI-compatible
+	// dual URL configured, route there natively to avoid a transform.
+	// Runs before the style check so dual providers pass either way.
 	provider = provider.ResolveStyle(protocol.APIStyleOpenAI)
 
 	if provider.APIStyle != protocol.APIStyleOpenAI {
@@ -160,30 +159,9 @@ func (ph *ProtocolHandler) HandleOpenAIEmbeddings(c *gin.Context) {
 	usage := protocol.NewTokenUsageWithCache(int(resp.Usage.PromptTokens), 0, 0)
 	ph.trackUsageWithTokenUsage(c, usage, nil)
 
-	responseJSON, err := json.Marshal(resp)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error: ErrorDetail{
-				Message: "Failed to marshal response: " + err.Error(),
-				Type:    "api_error",
-			},
-		})
-		return
-	}
-
-	var responseMap map[string]interface{}
-	if err := json.Unmarshal(responseJSON, &responseMap); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error: ErrorDetail{
-				Message: "Failed to process response: " + err.Error(),
-				Type:    "api_error",
-			},
-		})
-		return
-	}
-
-	responseMap["model"] = responseModel
-	c.JSON(http.StatusOK, responseMap)
+	// Echo the caller's request model, not the routed upstream model.
+	resp.Model = responseModel
+	c.JSON(http.StatusOK, resp)
 }
 
 // isEmbeddingInputEmpty returns true if no variant of the union input is set.

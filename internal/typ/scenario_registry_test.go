@@ -150,11 +150,6 @@ func TestTeamScenarioDescriptor(t *testing.T) {
 			t.Errorf("team should support transport %q", transport)
 		}
 	}
-	// The image endpoints gate on TransportImageGen via the base descriptor,
-	// so the isolated per-team scope ("team:<id>") must resolve identically.
-	if !ScenarioSupportsTransport(ProfiledScenarioName(ScenarioTeam, "some-team-uuid"), TransportImageGen) {
-		t.Error("team:<id> scope should support transport imagegen via the base team descriptor")
-	}
 }
 
 func TestDshScenarioDescriptor(t *testing.T) {

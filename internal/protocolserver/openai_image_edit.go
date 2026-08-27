@@ -104,9 +104,8 @@ func (ph *ProtocolHandler) HandleOpenAIImageEdit(c *gin.Context) {
 		return
 	}
 
-	// Resolve dual endpoint: same rationale as HandleOpenAIImageGeneration —
-	// the images surface is OpenAI-protocol, so dual providers route to
-	// their OpenAI-side base URL.
+	// Resolve dual endpoint: when the provider has an OpenAI-compatible
+	// dual URL configured, route there natively to avoid a transform.
 	provider = provider.ResolveStyle(protocol.APIStyleOpenAI)
 
 	actualModel := selectedService.Model
