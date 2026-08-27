@@ -70,6 +70,12 @@ func (ph *ProtocolHandler) SetupMixinEndpoints(group *gin.RouterGroup, modelAuth
 	// the same scenario, with the caller choosing which surface to use.
 	group.POST("/images/generations", modelAuth, ph.teamScopeMiddleware, DeclareOperation("image_generation"), ph.HandleOpenAIImageGeneration)
 
+	// Image edit endpoint (OpenAI compatible). Accepts the standard multipart
+	// wire format plus a JSON mirror with inline base64/data-URL images; the
+	// client layer adapts per vendor (Codex uses its native JSON edits
+	// endpoint, everyone else gets the SDK's multipart /images/edits).
+	group.POST("/images/edits", modelAuth, ph.teamScopeMiddleware, DeclareOperation("image_edit"), ph.HandleOpenAIImageEdit)
+
 	// Models endpoint (routed by scenario: openai -> OpenAIListModels, anthropic/claude_code -> AnthropicListModels)
 	group.GET("/models", modelAuth, ph.teamScopeMiddleware, ph.ListModelsByScenario)
 }

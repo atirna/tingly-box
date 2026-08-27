@@ -33,26 +33,35 @@ func (t *codexRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	// - Adds required ChatGPT backend API headers
 	// - Transforms X-ChatGPT-Account-ID to ChatGPT-Account-ID header
 	originalPath := req.URL.Path
-	newPath := rewriteCodexPath(originalPath)
+	newPath, protocol := rewriteCodexPath(originalPath)
 
 	if newPath != originalPath {
 		logrus.WithContext(req.Context()).Debugf("[Codex] Rewriting URL path: %s -> %s", originalPath, newPath)
 		req.URL.Path = newPath
 	}
 
-	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	//req.Header.Set("originator", "tingly-box")
-
 	if accountID := req.Header.Get("X-ChatGPT-Account-ID"); accountID != "" {
 		req.Header.Set("ChatGPT-Account-ID", accountID)
 		req.Header.Del("X-ChatGPT-Account-ID")
+	}
+
+	// The dedicated Codex images endpoints (images/generations, images/edits)
+	// speak plain JSON request/response — no Responses-API body rules, no SSE.
+	// Only headers and path rewriting apply to them. Which protocol a path
+	// speaks is decided once, by the path-rewrite step above, rather than
+	// re-derived here from the rewritten path string.
+	imagesEndpoint := protocol == codexProtocolPlainJSON
+
+	if !imagesEndpoint {
+		req.Header.Set("OpenAI-Beta", "responses=experimental")
+		//req.Header.Set("originator", "tingly-box")
 	}
 
 	// Filter out unsupported parameters for ChatGPT backend API
 	// ChatGPT backend API does NOT support: max_tokens, max_completion_tokens, temperature, top_p, max_output_tokens
 
 	var filtered []byte
-	if req.Body != nil && req.Method == "POST" {
+	if req.Body != nil && req.Method == "POST" && !imagesEndpoint {
 		body, err := io.ReadAll(req.Body)
 		_ = req.Body.Close()
 		if err != nil {
@@ -83,6 +92,10 @@ func (t *codexRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		errorBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		return nil, fmt.Errorf("request failed with status %s: %s", resp.Status, string(errorBody))
+	}
+
+	if imagesEndpoint {
+		return resp, nil
 	}
 
 	if err := validateCodexStreamResponse(resp); err != nil {
@@ -336,25 +349,50 @@ func codexInputItemIDRequired(itemType string) bool {
 	return false
 }
 
-func rewriteCodexPath(path string) string {
+// codexProtocol classifies which wire protocol a Codex backend path speaks,
+// so RoundTrip can switch on one value instead of re-deriving the answer at
+// each call site (header set, body filter, response validation) by sniffing
+// the rewritten path string.
+type codexProtocol int
+
+const (
+	// codexProtocolResponsesSSE is the Responses API: SSE-only, with the
+	// stream/store/param-filtering rules filterField applies.
+	codexProtocolResponsesSSE codexProtocol = iota
+	// codexProtocolPlainJSON is the Codex-native images endpoints
+	// (images/generations, images/edits): plain JSON request/response.
+	codexProtocolPlainJSON
+)
+
+// rewriteCodexPath rewrites path to its Codex backend equivalent and
+// classifies the protocol that backend path speaks.
+func rewriteCodexPath(path string) (string, codexProtocol) {
 	if strings.HasPrefix(path, "/backend-api/") {
 		return rewriteCodexAPIPath(path)
 	}
 	if strings.HasPrefix(path, "/v1/") && !strings.Contains(path, "/codex/") {
-		return strings.Replace(path, "/v1/", "/codex/", 1)
+		return strings.Replace(path, "/v1/", "/codex/", 1), codexProtocolResponsesSSE
 	}
-	return path
+	return path, codexProtocolResponsesSSE
 }
 
-func rewriteCodexAPIPath(path string) string {
+func rewriteCodexAPIPath(path string) (string, codexProtocol) {
 	switch {
 	case strings.HasPrefix(path, "/backend-api/chat/completions"):
-		return "/backend-api/codex/responses"
+		return "/backend-api/codex/responses", codexProtocolResponsesSSE
 	case path == "/backend-api/responses":
-		return "/backend-api/codex/responses"
+		return "/backend-api/codex/responses", codexProtocolResponsesSSE
+	case strings.HasPrefix(path, "/backend-api/codex/images/"):
+		// Already-canonical form (defensive; the SDK always issues the
+		// pre-rewrite form below, never this one).
+		return path, codexProtocolPlainJSON
+	case strings.HasPrefix(path, "/backend-api/images/"):
+		// SDK-relative "images/edits" / "images/generations" land here; the
+		// Codex backend serves them under /backend-api/codex/images/.
+		return strings.Replace(path, "/backend-api/images/", "/backend-api/codex/images/", 1), codexProtocolPlainJSON
 	case strings.HasPrefix(path, "/backend-api/v1/"):
-		return strings.Replace(path, "/backend-api/v1/", "/backend-api/codex/", 1)
+		return strings.Replace(path, "/backend-api/v1/", "/backend-api/codex/", 1), codexProtocolResponsesSSE
 	default:
-		return path
+		return path, codexProtocolResponsesSSE
 	}
 }

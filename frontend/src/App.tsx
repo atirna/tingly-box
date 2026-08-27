@@ -246,8 +246,9 @@ function AppContent() {
                     <Route path="/agent/xcode" element={<UseXcodePage />} />
                     <Route path="/agent/vscode" element={<UseVSCodePage />} />
                     <Route path="/agent/embed" element={<UseEmbedPage />} />
-                    <Route path="/agent/imagegen" element={<UseImageGenPage />} />
-                    <Route path="/agent/playground" element={<Navigate to="/agent/imagegen" replace />} />
+                    <Route path="/agent/image" element={<UseImageGenPage />} />
+                    <Route path="/agent/playground" element={<Navigate to="/agent/image" replace />} />
+                    <Route path="/agent/imagegen" element={<Navigate to="/agent/image" replace />} />
                     {/* Credential routes - new unified page */}
                     <Route path="/credentials" element={<CredentialPage />} />
                     {/* Virtual Models page - peer of Model Key and Sharing */}
