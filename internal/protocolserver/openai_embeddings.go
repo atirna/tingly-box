@@ -113,6 +113,12 @@ func (ph *ProtocolHandler) HandleOpenAIEmbeddings(c *gin.Context) {
 		return
 	}
 
+	// Resolve dual endpoint: embeddings are OpenAI-protocol, so a dual
+	// provider routes to its OpenAI-side base URL — same as the image and
+	// chat/responses forwarding paths. This runs before the style check so a
+	// dual provider passes regardless of which side is its primary APIStyle.
+	provider = provider.ResolveStyle(protocol.APIStyleOpenAI)
+
 	if provider.APIStyle != protocol.APIStyleOpenAI {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error: ErrorDetail{
