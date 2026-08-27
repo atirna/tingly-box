@@ -378,96 +378,6 @@ const System = () => {
                     </Stack>
                 </UnifiedCard>
 
-                {/* Proxy — "How does TB reach upstream?" Env-proxy policy +
-                    reusable URL preset, kept on their own card. */}
-                <UnifiedCard grid={{ xs: 12, md: 12 }} title={t('system.proxy.title')} size="full" maxWidth={CARD_MAX_WIDTH}>
-                    <Stack spacing={2}>
-                        {/* Env-proxy policy — an honest switch, not a flip-chip.
-                            The off-state is just "off" (no `common.direct`
-                            reuse, which collided with the network "direct"). */}
-                        <Box>
-                            <SettingsRow icon={<IconRouter sx={{ fontSize: 16 }} />} label={t('system.proxy.respectEnvProxy.label')}>
-                                {respectEnvProxy !== null && (
-                                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
-                                        <Switch
-                                            checked={respectEnvProxy}
-                                            onChange={toggleProxy}
-                                            size="small"
-                                        />
-                                    </Box>
-                                )}
-                            </SettingsRow>
-                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                                {t('system.proxy.respectEnvProxy.helper')}
-                            </Typography>
-                        </Box>
-
-                        <Divider />
-
-                        {/* Reusable proxy URL preset — description on its own
-                            line, then the input + Save below. */}
-                        <Box>
-                            <SettingsRow icon={<IconLock sx={{ fontSize: 16 }} />} label={t('system.proxy.globalProxyUrl.label')}>
-                                {null}
-                            </SettingsRow>
-                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
-                                {t('system.proxy.globalProxyUrl.helper')}
-                            </Typography>
-                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
-                                <TextField
-                                    size="small"
-                                    fullWidth
-                                    value={globalProxyInput}
-                                    onChange={(e) => setGlobalProxyInput(e.target.value)}
-                                    placeholder="http://127.0.0.1:7890"
-                                    slotProps={{
-                                        input: globalProxyUrl && globalProxyInput === globalProxyUrl ? {
-                                            endAdornment: (
-                                                <InputAdornment position="end">
-                                                    <Tooltip title={t('common.saved', { defaultValue: 'Saved' })} arrow>
-                                                        <IconCheck sx={{ fontSize: 16, color: 'success.main' }} />
-                                                    </Tooltip>
-                                                </InputAdornment>
-                                            )
-                                        } : undefined
-                                    }}
-                                />
-                                <Button
-                                    size="small"
-                                    variant="contained"
-                                    onClick={saveGlobalProxyUrl}
-                                    disabled={proxyUrlSaving || globalProxyInput === globalProxyUrl}
-                                    sx={{ whiteSpace: 'nowrap', minWidth: 72 }}
-                                >
-                                    {proxyUrlSaving ? <CircularProgress size={14} color="inherit" /> : t('common.save')}
-                                </Button>
-                            </Stack>
-                        </Box>
-                    </Stack>
-                </UnifiedCard>
-
-                {/* About — "What is this?" */}
-                <UnifiedCard title={t('system.about.title')} size="full" maxWidth={CARD_MAX_WIDTH}>
-                    <Stack spacing={1.5}>
-                        <SettingsRow icon={<IconLicense sx={{ fontSize: 16, color: 'text.secondary' }} />} label={t('system.about.license')}>
-                            <Typography variant="body2" sx={{ color: 'text.primary' }}>
-                                MPL-2.0 + Commercial
-                            </Typography>
-                        </SettingsRow>
-
-                        <SettingsRow icon={<IconBrandGithub sx={{ fontSize: 16, color: 'text.secondary' }} />} label={t('system.about.github')}>
-                            <Link
-                                href="https://github.com/tingly-dev/tingly-box"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                sx={{ typography: 'body2', color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-                            >
-                                tingly-dev/tingly-box
-                            </Link>
-                        </SettingsRow>
-                    </Stack>
-                </UnifiedCard>
-
                 {/* Desktop Shortcut — Wails GUI users already have a native
                     window/icon and don't need this; only shown when running
                     as a web/npx/binary server. Re-entrant on purpose (no
@@ -558,6 +468,96 @@ const System = () => {
                         </Stack>
                     </UnifiedCard>
                 )}
+
+                {/* Proxy — "How does TB reach upstream?" Env-proxy policy +
+                    reusable URL preset, kept on their own card. */}
+                <UnifiedCard grid={{ xs: 12, md: 12 }} title={t('system.proxy.title')} size="full" maxWidth={CARD_MAX_WIDTH}>
+                    <Stack spacing={2}>
+                        {/* Env-proxy policy — an honest switch, not a flip-chip.
+                            The off-state is just "off" (no `common.direct`
+                            reuse, which collided with the network "direct"). */}
+                        <Box>
+                            <SettingsRow icon={<IconRouter sx={{ fontSize: 16 }} />} label={t('system.proxy.respectEnvProxy.label')}>
+                                {respectEnvProxy !== null && (
+                                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+                                        <Switch
+                                            checked={respectEnvProxy}
+                                            onChange={toggleProxy}
+                                            size="small"
+                                        />
+                                    </Box>
+                                )}
+                            </SettingsRow>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                                {t('system.proxy.respectEnvProxy.helper')}
+                            </Typography>
+                        </Box>
+
+                        <Divider />
+
+                        {/* Reusable proxy URL preset — description on its own
+                            line, then the input + Save below. */}
+                        <Box>
+                            <SettingsRow icon={<IconLock sx={{ fontSize: 16 }} />} label={t('system.proxy.globalProxyUrl.label')}>
+                                {null}
+                            </SettingsRow>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                                {t('system.proxy.globalProxyUrl.helper')}
+                            </Typography>
+                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
+                                <TextField
+                                    size="small"
+                                    fullWidth
+                                    value={globalProxyInput}
+                                    onChange={(e) => setGlobalProxyInput(e.target.value)}
+                                    placeholder="http://127.0.0.1:7890"
+                                    slotProps={{
+                                        input: globalProxyUrl && globalProxyInput === globalProxyUrl ? {
+                                            endAdornment: (
+                                                <InputAdornment position="end">
+                                                    <Tooltip title={t('common.saved', { defaultValue: 'Saved' })} arrow>
+                                                        <IconCheck sx={{ fontSize: 16, color: 'success.main' }} />
+                                                    </Tooltip>
+                                                </InputAdornment>
+                                            )
+                                        } : undefined
+                                    }}
+                                />
+                                <Button
+                                    size="small"
+                                    variant="contained"
+                                    onClick={saveGlobalProxyUrl}
+                                    disabled={proxyUrlSaving || globalProxyInput === globalProxyUrl}
+                                    sx={{ whiteSpace: 'nowrap', minWidth: 72 }}
+                                >
+                                    {proxyUrlSaving ? <CircularProgress size={14} color="inherit" /> : t('common.save')}
+                                </Button>
+                            </Stack>
+                        </Box>
+                    </Stack>
+                </UnifiedCard>
+
+                {/* About — "What is this?" */}
+                <UnifiedCard title={t('system.about.title')} size="full" maxWidth={CARD_MAX_WIDTH}>
+                    <Stack spacing={1.5}>
+                        <SettingsRow icon={<IconLicense sx={{ fontSize: 16, color: 'text.secondary' }} />} label={t('system.about.license')}>
+                            <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                                MPL-2.0 + Commercial
+                            </Typography>
+                        </SettingsRow>
+
+                        <SettingsRow icon={<IconBrandGithub sx={{ fontSize: 16, color: 'text.secondary' }} />} label={t('system.about.github')}>
+                            <Link
+                                href="https://github.com/tingly-dev/tingly-box"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                sx={{ typography: 'body2', color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                            >
+                                tingly-dev/tingly-box
+                            </Link>
+                        </SettingsRow>
+                    </Stack>
+                </UnifiedCard>
 
             </CardGrid>
             {/* Update Panel Dialog */}
