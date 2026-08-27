@@ -30,6 +30,16 @@ func WithVersion(version string) ServerOption {
 	}
 }
 
+// WithLaunchSource records how this process was itself invoked ("", "npx",
+// "npx-bundle" — see internal/shortcut's Source* constants), so the
+// /api/v1/shortcut handler can build a shortcut that relaunches the same way,
+// without any detection or persistence (mirrors the CLI's own --source flag).
+func WithLaunchSource(source string) ServerOption {
+	return func(s *Server) {
+		s.launchSource = source
+	}
+}
+
 // WithUI enables or disables the UI for the server
 func WithUI(enabled bool) ServerOption {
 	return func(s *Server) {

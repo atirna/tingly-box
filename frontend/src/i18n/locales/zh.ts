@@ -899,6 +899,17 @@ export default {
     },
     "preferences": {
       "title": "外观与语言"
+    },
+    "shortcut": {
+      "title": "桌面快捷方式",
+      "description": "一键重启 Tingly Box 并打开网页界面。仅创建，不会自动更新或自动重启。",
+      "create": "创建快捷方式",
+      "recreate": "重新创建",
+      "creating": "创建中...",
+      "alreadyCreated": "已创建",
+      "doubleClick": "双击它以启动 Tingly Box 并打开网页界面。",
+      "runHeadless": "没有图形界面？在该机器上运行：",
+      "createFailed": "创建快捷方式失败：{{error}}"
     }
   },
   "serverInfo": {

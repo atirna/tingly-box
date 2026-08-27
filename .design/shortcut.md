@@ -35,8 +35,9 @@ double-click. Two things create/refresh it:
 ## 2. Module layout
 
 ```
-internal/shortcut/        # pure domain — no Kong, no CLI imports
-    shortcut.go           #   LaunchSpec, Options, ResolveLaunch, Create
+internal/shortcut/        # pure domain — no Kong, no CLI, no HTTP imports
+    shortcut.go           #   LaunchSpec, Options, ResolveLaunch, Create,
+                          #   ExpectedPaths, ExpectedLinuxScriptPath, ResolveExePath
     shortcut_test.go
     templates/            #   the actual script/entry text, as text/template
         windows_shortcut.ps1.tmpl
@@ -47,8 +48,13 @@ internal/command/
     shortcut.go           # Kong shell: ShortcutCmdKong, LaunchSource type,
                           # refreshShortcut() (called from start/restart)
 
+internal/server/module/shortcut/  # HTTP handler: GET/POST /api/v1/shortcut
+    handler.go, routes.go, types.go, handler_test.go
+
 cli/tingly-box/main.go    # wires the global --source flag, binds LaunchSource
 build/npx/*/bin.js        # injects --source=npx / --source=npx-bundle
+
+frontend/src/pages/system/System.tsx  # "Desktop Shortcut" card (web/npx/binary only)
 ```
 
 **Rule:** anything platform-specific (PowerShell COM script, `.command`
@@ -346,34 +352,45 @@ func Create(opts Options, spec LaunchSpec) ([]string, error)
 handler tomorrow) can display them. Nothing in this package writes to
 `stdout` or imports a CLI framework.
 
-### Future HTTP handler sketch
+### HTTP handler and frontend (implemented)
 
-A running server process was itself started via `start`/`restart` with some
-`--source`, and could stash that value in memory (not disk) at boot to
-answer an API request later:
+`internal/server/module/shortcut` is the HTTP handler this section used to
+only sketch. It follows the plan above exactly: `launchSource` is set once at
+boot via `server.WithLaunchSource(string(source))` (threaded from the CLI's
+`--source` flag through `startServerWithHook` → `NewServerManager`), stored on
+`*Server`, never persisted to disk.
 
-```go
-// POST /api/v1/shortcut
-func (h *ShortcutAPI) Create(c *gin.Context) {
-    var req struct {
-        Name      string `json:"name"`
-        NoDesktop bool   `json:"no_desktop"`
-        NoMenu    bool   `json:"no_menu"`
-    }
-    _ = c.BindJSON(&req)
-
-    exePath, _ := os.Executable()
-    // both set once at boot from how this process itself was invoked
-    spec := shortcut.ResolveLaunch(exePath, h.launchSource, h.version)
-    created, err := shortcut.Create(shortcut.Options{
-        Name: req.Name, NoDesktop: req.NoDesktop, NoMenu: req.NoMenu,
-    }, spec)
-    // ... response
-}
+```
+GET  /api/v1/shortcut   → ShortcutStatusResponse  (read-only; os.Stat only)
+POST /api/v1/shortcut   → ShortcutCreateResponse  (Name optional, defaults "Tingly Box")
 ```
 
-No new domain logic required, and still no disk persistence — `launchSource`
-lives only as long as the process that was actually launched that way.
+Both zero-config beyond the optional display name — no `--no-desktop`/
+`--no-menu` equivalent on the HTTP surface, since the UI has exactly one
+action ("Create Shortcut" / "Recreate") rather than a form. `GET` answers
+"does every artifact `Create` would write already exist" via
+`shortcut.ExpectedPaths` (a pure path-computation twin of `Create` — same
+Windows OneDrive-redirection caveat as `Create` itself doesn't apply to the
+best-effort `GET`, see its doc comment) — it never writes to disk, only
+`os.Stat`s.
+
+The frontend surfaces this as a card on the System settings page
+(`frontend/src/pages/system/System.tsx`), shown only outside Wails GUI mode
+(`!isGuiMode()`) — a GUI build already has a native window/icon and doesn't
+need a desktop shortcut. The card is deliberately re-entrant, not a
+one-shot "done" action (`.design/ux-principles.md` §10): `POST` is
+idempotent, so the button stays clickable after success to recover a
+deleted shortcut or re-point it after an upgrade or a different launch
+method. On success it shows the real paths written and, on Linux, the
+headless launcher script path with a copy button — matching
+`UpdatePanelDialog`'s "hand over the concrete artifact" pattern (§11) rather
+than a bare "Created!" toast.
+
+Explicitly out of scope, on purpose (security/UX call, not a gap to fill
+later): the frontend never wires this into `start`/`restart`, and never
+auto-creates or auto-refreshes a shortcut on its own — creation is only
+ever a direct, visible user click on the System page, same posture as
+`tingly-box shortcut` on the CLI side.
 
 ---
 
@@ -409,3 +426,7 @@ lives only as long as the process that was actually launched that way.
 | `cli/tingly-box/main.go`                     | global `--source` flag, binds `LaunchSource` into `ctx.Run` |
 | `build/npx/tingly-box/bin.js`                | npx wrapper, injects `--source=npx`      |
 | `build/npx/tingly-box-bundle/bin.js`         | bundle wrapper, injects `--source=npx-bundle` |
+| `internal/server/module/shortcut/`           | HTTP handler for `GET`/`POST /api/v1/shortcut` |
+| `internal/server/server_options.go`          | `WithLaunchSource`                       |
+| `frontend/src/pages/system/System.tsx`       | "Desktop Shortcut" card (web/npx/binary only, not Wails GUI) |
+| `frontend/src/services/api.ts`               | `getShortcutStatus`, `createShortcut`    |

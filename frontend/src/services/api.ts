@@ -836,6 +836,36 @@ export const api = {
         }
     },
 
+    // Desktop / start-menu shortcut. getShortcutStatus is a read-only check
+    // (does every artifact createShortcut would write already exist?); it
+    // never writes to disk. createShortcut is idempotent — safe to call again
+    // any time (after an upgrade, a source change, or to recover a deleted
+    // shortcut).
+    getShortcutStatus: async (): Promise<any> => {
+        try {
+            const client = await getClient();
+            const headers = await getAuthHeaders();
+            const response = await client.GET('/api/v1/shortcut', {headers});
+            return unwrap(response);
+        } catch (error: any) {
+            return {success: false, error: error.message};
+        }
+    },
+
+    createShortcut: async (name?: string): Promise<any> => {
+        try {
+            const client = await getClient();
+            const headers = await getAuthHeaders();
+            const response = await client.POST('/api/v1/shortcut', {
+                headers,
+                body: name ? {name} : {},
+            });
+            return unwrap(response);
+        } catch (error: any) {
+            return {success: false, error: error.message};
+        }
+    },
+
     healthCheck: async (): Promise<boolean> => {
         try {
             const client = await getClient();

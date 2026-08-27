@@ -246,6 +246,60 @@ func TestCreateMacShortcuts(t *testing.T) {
 	}
 }
 
+func TestExpectedPathsMatchesCreate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	if err := os.MkdirAll(filepath.Join(home, "Desktop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
+	opts := Options{Name: "Tingly Box"}
+
+	expected := ExpectedPaths(opts)
+	created, err := Create(opts, spec)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if strings.Join(expected, "\x00") != strings.Join(created, "\x00") {
+		t.Fatalf("ExpectedPaths %v does not match what Create wrote %v", expected, created)
+	}
+}
+
+func TestExpectedPathsRespectsAllOff(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+
+	if got := ExpectedPaths(Options{Name: "Tingly Box", NoDesktop: true, NoMenu: true}); len(got) != 0 {
+		t.Errorf("--no-desktop --no-menu should expect nothing, got %v", got)
+	}
+}
+
+func TestExpectedLinuxScriptPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	want := filepath.Join(home, ".local", "bin", "tingly-box.sh")
+	if got := ExpectedLinuxScriptPath(Options{Name: "Tingly Box"}); got != want {
+		t.Errorf("expected %q, got %q", want, got)
+	}
+	if got := ExpectedLinuxScriptPath(Options{Name: "Tingly Box", NoDesktop: true, NoMenu: true}); got != "" {
+		t.Errorf("--no-desktop --no-menu should expect no script, got %q", got)
+	}
+}
+
+func TestResolveExePath(t *testing.T) {
+	path, err := ResolveExePath()
+	if err != nil {
+		t.Fatalf("ResolveExePath: %v", err)
+	}
+	if !filepath.IsAbs(path) {
+		t.Errorf("expected absolute path, got %q", path)
+	}
+}
+
 func TestPSQuote(t *testing.T) {
 	if got := psQuote(`C:\it's\path`); got != `'C:\it''s\path'` {
 		t.Fatalf("unexpected ps quote: %q", got)

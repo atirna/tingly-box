@@ -175,6 +175,10 @@ type Server struct {
 
 	version string
 
+	// launchSource is how this process was itself invoked ("", "npx",
+	// "npx-bundle") — see WithLaunchSource.
+	launchSource string
+
 	// webHandler is the WebUI Management API's aggregate handler
 	// (internal/server.webHandler). Constructed as the LAST step of
 	// NewServer, after every field it depends on (memoryLogMW, multiLogger,

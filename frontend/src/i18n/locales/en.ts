@@ -898,6 +898,17 @@ export default {
     },
     "preferences": {
       "title": "Appearance & Language"
+    },
+    "shortcut": {
+      "title": "Desktop Shortcut",
+      "description": "One click to restart Tingly Box and open the web UI. Never auto-updates or auto-restarts on its own — creating it is the only thing this does.",
+      "create": "Create Shortcut",
+      "recreate": "Recreate",
+      "creating": "Creating...",
+      "alreadyCreated": "Already created",
+      "doubleClick": "Double-click it to start Tingly Box and open the web UI.",
+      "runHeadless": "No graphical session on this machine? Run this instead:",
+      "createFailed": "Failed to create shortcut: {{error}}"
     }
   },
   "serverInfo": {

@@ -2,8 +2,6 @@ package command
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -23,12 +21,9 @@ type LaunchSource string
 // into a LaunchSpec — the one piece shared by refreshShortcut and
 // ShortcutCmdKong.Run.
 func resolveShortcutSpec(source LaunchSource) (shortcut.LaunchSpec, error) {
-	exePath, err := os.Executable()
+	exePath, err := shortcut.ResolveExePath()
 	if err != nil {
-		return shortcut.LaunchSpec{}, fmt.Errorf("failed to resolve executable path: %w", err)
-	}
-	if resolved, rerr := filepath.EvalSymlinks(exePath); rerr == nil {
-		exePath = resolved
+		return shortcut.LaunchSpec{}, err
 	}
 	return shortcut.ResolveLaunch(exePath, string(source), BuildVersion), nil
 }
