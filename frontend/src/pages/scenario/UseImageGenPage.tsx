@@ -42,7 +42,7 @@ const UseImageGenPageContent: React.FC = () => {
                     titleHeadingLevel={1}
                     title={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <span>Image Generation API</span>
+                            <span>Image API</span>
                             <Tooltip title={t('scenarioPage.tooltip.imagegen')}>
                                 <IconButton size="small" sx={{ ml: 0.5 }}>
                                     <InfoIcon fontSize="small" sx={{ color: 'text.secondary' }} />
@@ -62,7 +62,7 @@ const UseImageGenPageContent: React.FC = () => {
                     }
                 >
                     <ProviderConfigCard
-                        title="Image Generation API"
+                        title="Image API"
                         baseUrlPath="/tingly/imagegen"
                         baseUrl={baseUrl}
                         onCopy={copyToClipboard}
