@@ -82,12 +82,13 @@ func TestReaderToDataURL_EmptyContent(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestCodexImageQuality(t *testing.T) {
-	assert.Equal(t, "auto", codexImageQuality(""))
-	assert.Equal(t, "medium", codexImageQuality("standard"))
-	assert.Equal(t, "high", codexImageQuality("high"))
-	assert.Equal(t, "low", codexImageQuality("low"))
-	assert.Equal(t, "auto", codexImageQuality("auto"))
+func TestNormalizeCodexImageQuality(t *testing.T) {
+	assert.Equal(t, "auto", normalizeCodexImageQuality(""))
+	assert.Equal(t, "medium", normalizeCodexImageQuality("standard"))
+	assert.Equal(t, "high", normalizeCodexImageQuality("hd"))
+	assert.Equal(t, "high", normalizeCodexImageQuality("high"))
+	assert.Equal(t, "low", normalizeCodexImageQuality("low"))
+	assert.Equal(t, "auto", normalizeCodexImageQuality("auto"))
 }
 
 // captureRoundTripper records the inner request and returns a canned response.
@@ -162,14 +163,22 @@ func TestCodexRoundTripper_ImagesErrorStatusSurfaced(t *testing.T) {
 }
 
 func TestRewriteCodexPath_Images(t *testing.T) {
-	assert.Equal(t, "/backend-api/codex/images/edits", rewriteCodexPath("/backend-api/images/edits"))
-	assert.Equal(t, "/backend-api/codex/images/generations", rewriteCodexPath("/backend-api/images/generations"))
-	// Already-canonical paths are untouched.
-	assert.Equal(t, "/backend-api/codex/images/edits", rewriteCodexPath("/backend-api/codex/images/edits"))
+	path, protocol := rewriteCodexPath("/backend-api/images/edits")
+	assert.Equal(t, "/backend-api/codex/images/edits", path)
+	assert.Equal(t, codexProtocolPlainJSON, protocol)
+
+	path, protocol = rewriteCodexPath("/backend-api/images/generations")
+	assert.Equal(t, "/backend-api/codex/images/generations", path)
+	assert.Equal(t, codexProtocolPlainJSON, protocol)
+
+	// Already-canonical paths are untouched but still classified as plain JSON.
+	path, protocol = rewriteCodexPath("/backend-api/codex/images/edits")
+	assert.Equal(t, "/backend-api/codex/images/edits", path)
+	assert.Equal(t, codexProtocolPlainJSON, protocol)
 }
 
-func TestIsCodexImagesPath(t *testing.T) {
-	assert.True(t, isCodexImagesPath("/backend-api/codex/images/edits"))
-	assert.True(t, isCodexImagesPath("/backend-api/codex/images/generations"))
-	assert.False(t, isCodexImagesPath("/backend-api/codex/responses"))
+func TestRewriteCodexPath_ResponsesProtocol(t *testing.T) {
+	path, protocol := rewriteCodexPath("/backend-api/responses")
+	assert.Equal(t, "/backend-api/codex/responses", path)
+	assert.Equal(t, codexProtocolResponsesSSE, protocol)
 }

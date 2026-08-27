@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
+	"github.com/tingly-dev/tingly-box/internal/protocol/request"
 	"github.com/tingly-dev/tingly-box/internal/protocolserver/forwarding"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
@@ -136,29 +138,7 @@ func (ph *ProtocolHandler) HandleOpenAIImageEdit(c *gin.Context) {
 	// Persist edited images under the config image directory (best-effort).
 	ph.persistImageEdit(req, resp)
 
-	responseJSON, err := json.Marshal(resp)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error: ErrorDetail{
-				Message: "Failed to marshal response: " + err.Error(),
-				Type:    "api_error",
-			},
-		})
-		return
-	}
-
-	var responseMap map[string]interface{}
-	if err := json.Unmarshal(responseJSON, &responseMap); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error: ErrorDetail{
-				Message: "Failed to process response: " + err.Error(),
-				Type:    "api_error",
-			},
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, responseMap)
+	c.JSON(http.StatusOK, resp)
 }
 
 // parseImageEditRequest decodes the inbound request into ImageEditParams,
@@ -209,11 +189,7 @@ func parseImageEditMultipart(c *gin.Context) (*openai.ImageEditParams, error) {
 		return nil, fmt.Errorf("at least one image file is required (field \"image\" or \"image[]\")")
 	}
 
-	files := make([]struct {
-		data        []byte
-		name        string
-		contentType string
-	}, 0, len(fileHeaders))
+	req := &openai.ImageEditParams{}
 	for _, fh := range fileHeaders {
 		data, err := readMultipartFile(fh)
 		if err != nil {
@@ -223,19 +199,11 @@ func parseImageEditMultipart(c *gin.Context) (*openai.ImageEditParams, error) {
 		if contentType == "" || contentType == "application/octet-stream" {
 			contentType = http.DetectContentType(data)
 		}
-		files = append(files, struct {
-			data        []byte
-			name        string
-			contentType string
-		}{data, fh.Filename, contentType})
-	}
-
-	req := &openai.ImageEditParams{}
-	if len(files) == 1 {
-		req.Image.OfFile = openai.File(bytes.NewReader(files[0].data), files[0].name, files[0].contentType)
-	} else {
-		for _, f := range files {
-			req.Image.OfFileArray = append(req.Image.OfFileArray, openai.File(bytes.NewReader(f.data), f.name, f.contentType))
+		file := openai.File(bytes.NewReader(data), fh.Filename, contentType)
+		if len(fileHeaders) == 1 {
+			req.Image.OfFile = file
+		} else {
+			req.Image.OfFileArray = append(req.Image.OfFileArray, file)
 		}
 	}
 
@@ -289,12 +257,7 @@ func readMultipartFile(fh *multipart.FileHeader) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	data := make([]byte, 0, fh.Size)
-	buf := bytes.NewBuffer(data)
-	if _, err := buf.ReadFrom(f); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return io.ReadAll(f)
 }
 
 // imageEditJSONRequest is the JSON mirror of the multipart edit form. Image
@@ -383,7 +346,11 @@ func parseImageEditJSON(c *gin.Context) (*openai.ImageEditParams, error) {
 }
 
 // decodeInlineImage decodes a data URL or bare base64 string into image bytes
-// plus a content type (sniffed when the data URL does not declare one).
+// plus a content type (sniffed when the data URL does not declare one). The
+// data-URL split reuses request.ParseImageURLToAnthropicSource, the same
+// helper the vision proxy and Google converters use for OpenAI image_url
+// strings, rather than re-parsing the "data:<mime>;base64,<payload>" shape
+// here.
 func decodeInlineImage(s string) ([]byte, string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -393,19 +360,11 @@ func decodeInlineImage(s string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("remote image URLs are not supported; inline the image as base64 or a data URL")
 	}
 
-	declaredType := ""
-	payload := s
-	if strings.HasPrefix(s, "data:") {
-		comma := strings.Index(s, ",")
-		if comma < 0 {
-			return nil, "", fmt.Errorf("malformed data URL")
-		}
-		meta := s[len("data:"):comma]
-		payload = s[comma+1:]
-		if !strings.HasSuffix(meta, ";base64") {
-			return nil, "", fmt.Errorf("data URL must be base64-encoded")
-		}
-		declaredType = strings.TrimSuffix(meta, ";base64")
+	mediaType, payload, remoteURL := request.ParseImageURLToAnthropicSource(s)
+	if remoteURL != "" {
+		// Not a "data:...;base64,..." URL — treat the whole string as bare
+		// base64 (or let the decode below reject it if it's malformed).
+		payload = remoteURL
 	}
 
 	data, err := base64.StdEncoding.DecodeString(payload)
@@ -416,7 +375,7 @@ func decodeInlineImage(s string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("empty image content")
 	}
 
-	contentType := declaredType
+	contentType := mediaType
 	if contentType == "" {
 		contentType = http.DetectContentType(data)
 	}

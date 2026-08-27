@@ -108,18 +108,29 @@ RoundTripper 原本按"一切都是 Responses SSE"设计:强制注入
 `stream:true/store:false`、拒绝非 SSE 的 200 响应。images 端点是普通
 JSON 请求/响应,二者都会把它打死。所以:
 
-- path 重写新增一条:`/backend-api/images/*` → `/backend-api/codex/images/*`
+- `rewriteCodexPath`/`rewriteCodexAPIPath` 现在返回 `(newPath,
+  codexProtocol)` 二元组,而不是只返回路径。`codexProtocol` 是
+  `codexProtocolResponsesSSE` / `codexProtocolPlainJSON` 两个值之一,path
+  重写这一步就把"这条路径说哪种协议"判定完了;`RoundTrip` 只 switch 这
+  一个值,不再用子串匹配从已重写的路径里反推协议(最初实现里
+  `isCodexImagesPath` 就是这种反推,已删除——分类应该和重写同时产生,不
+  是重写完之后再猜一次)。
+- path 重写覆盖:`/backend-api/images/*` → `/backend-api/codex/images/*`
   (SDK base 是 `https://chatgpt.com/backend-api`,相对路径 `images/edits`
   落在前者);
-- `isCodexImagesPath` 命中时:跳过 body 过滤、跳过 `OpenAI-Beta:
+- `codexProtocolPlainJSON` 命中时:跳过 body 过滤、跳过 `OpenAI-Beta:
   responses=experimental`、跳过 SSE 校验,JSON 响应原样透传;
 - 非 200 错误处理保持共用。
+
+> 加第三种 Codex 原生 JSON 端点时,只需要在 `rewriteCodexAPIPath` 里加
+> 一个 case 返回 `codexProtocolPlainJSON`——不需要再碰 `RoundTrip` 内部
+> 任何一处调用点。
 
 ### 3.3 参数归一
 
 | OpenAI edit 参数 | Codex wire | 处理 |
 |------|------|------|
-| `quality: standard` | 枚举无此值 | 归一为 `medium`(与 generation 路径同规) |
+| `quality: standard`/`hd` | 枚举无此值 | 归一为 `medium`/`high`(`normalizeCodexImageQuality`,generation 与 edit 两条路径共用同一份映射,定义于 `codex_images.go`) |
 | `background`/`size` 未设 | — | 填 `auto`(Codex CLI 的默认) |
 | `n` | `n?` | 原样透传(wire schema 支持,虽然 CLI 自己不传) |
 | `mask` / `response_format` / `output_format` / `output_compression` / `input_fidelity` | 无 | 丢弃 + debug log |
@@ -156,14 +167,62 @@ JSON 请求/响应,二者都会把它打死。所以:
 
 | 层 | 用例 |
 |----|------|
-| Codex 请求构造 | 单图→data URL;多图+options;quality standard→medium;n 透传;无图报错(`codex_images_test.go`) |
-| RoundTripper | images path 重写;JSON body 不被注入 stream/store;JSON 200 透传;非 200 报错;`isCodexImagesPath`(同上) |
+| Codex 请求构造 | 单图→data URL;多图+options;quality standard→medium/hd→high;n 透传;无图报错(`codex_images_test.go`) |
+| RoundTripper | images path 重写 + 协议分类(`codexProtocol`);JSON body 不被注入 stream/store;JSON 200 透传;非 200 报错(`codex_images_test.go`) |
 | 入站解析 | multipart `image`/`image[]`/字段;JSON data URL/裸 base64/数组;拒绝远程 URL;必填校验(`openai_image_edit_test.go`) |
 | decodeInlineImage | 声明 mime / 嗅探 mime / 非 base64 data URL / 非法 base64 |
 | 持久化 | edit sidecar 带 `Operation: edit`;generation 原测试不回归 |
+| quality 归一 | `normalizeCodexImageQuality` 覆盖 standard/hd/high/low/auto/空 |
 
 尚未覆盖(需真实 ChatGPT 订阅):对 `chatgpt.com/backend-api/codex/images/edits`
 的端到端请求。上线前建议用 `codex_e2e_test.go` 的模式补一个 opt-in e2e。
+
+### 5.1 `/simplify` 复审
+
+提交后跑了一遍 `/simplify`(reuse / simplification / efficiency /
+altitude 四个独立 agent)。已采纳:
+
+- `decodeInlineImage` 改为复用 `internal/protocol/request.ParseImageURLToAnthropicSource`
+  做 data URL 拆分,不再手写一遍 `data:`/`;base64,`/逗号解析。
+- edit 路径的 quality 归一(原 `codexImageQuality`)与 generation 路径
+  (`buildImageGenerationResponsesRequest` 内联逻辑)合并成
+  `normalizeCodexImageQuality`——发现并修复了两者已经出现的漂移(edit
+  路径此前漏了 `hd→high`)。
+- `HandleOpenAIImageGeneration`/`HandleOpenAIImageEdit` 尾部的
+  marshal→unmarshal→map→`c.JSON` 三次序列化去掉,直接
+  `c.JSON(http.StatusOK, resp)`。
+- `persistImageGeneration`/`persistImageEdit` 的 sidecar 文本拼装合并成
+  共用的 `buildImagePersistMeta(imageMetaInfo{...})`。
+- `parseImageEditMultipart` 去掉中间的匿名 struct 切片;`readMultipartFile`
+  改用 `io.ReadAll`。
+- `codexRoundTripper` 的协议判定从"重写路径后再子串匹配"改成"重写时直接
+  返回分类"(见 §3.2)。
+
+评估后跳过(记录理由,不是遗漏):
+
+- **JSON 便捷编码下 base64 的 decode→encode 往返**(efficiency 发现
+  #2):调用方传 data URL/裸 base64 时,`decodeInlineImage` 先解码成
+  `[]byte`塞进 `openai.File`(实现 SDK 的 `io.Reader` 字段),
+  `CodexClient.ImagesEdit` 再整体读出来重新 base64。要去掉这次往返需要
+  绕开 SDK 的 `ImageEditParamsImageUnion`(它的字段类型就是
+  `io.Reader`),把原始 base64 字符串一路串到 Codex 分支,单独给 Codex
+  开一条不经过 SDK 类型的路径。收益(省一次内存拷贝)相对这条改动的复杂度
+  不成比例,暂不做。
+- **`HandleOpenAIImageGeneration`/`HandleOpenAIImageEdit` 整体合并**
+  (simplification 发现 #1):两个 handler 在 scenario 校验→rule→service
+  选择→tracking→forward→响应这段确实高度相似,但要素化需要 Go 泛型
+  跨两个不同的 SDK 具体类型(`ImageGenerateParams`/`ImageEditParams`)取
+  字段,SDK 类型本身没有存取器方法,只能靠调用方传 closure 把每个字段揉
+  出来——这会把重复从"两个函数体"变成"两个函数各自的 closure 参数列
+  表",可读性未必更好,而且这个仓库里其它并列 handler(chat/embeddings/
+  responses/messages)也都是各自独立成篇,没有这种跨端点泛型合并的先
+  例。保持现状,不引入这个仓库唯一一处的泛型 handler 抽象。
+  为一次性收益引入这里唯一一处的泛型 handler 抽象不划算,跳过。
+- **`readerToDataURL` 里对已知大小 reader 的 `io.ReadAll`**、**5 张
+  reference image 并行读取**、**编辑结果落盘的同步 I/O**(efficiency 发
+  现 #3 及两条 minor):量级有限(单请求路径、≤5 张图、已有的 generation
+  持久化就是同步落盘的既有约定),收益不足以再引入并发/类型断言的复杂
+  度,跳过。
 
 ---
 

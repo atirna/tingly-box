@@ -26,12 +26,12 @@ var _ OpenAIClientInterface = (*CodexClient)(nil)
 // while overriding methods that require special handling for ChatGPT backend API.
 //
 // Codex (ChatGPT OAuth) limitations:
-// - Does NOT support standard Chat Completions API
-// - Does NOT support /models endpoint
-// - Does NOT support the public /images/generations or /images/edits contracts;
-//   generation rides the Responses API (image_generation tool) and editing uses
-//   the Codex-native JSON images endpoint (see codex_images.go)
-// - Chat surfaces ONLY work through the Responses API with special parameters
+//   - Does NOT support standard Chat Completions API
+//   - Does NOT support /models endpoint
+//   - Does NOT support the public /images/generations or /images/edits contracts;
+//     generation rides the Responses API (image_generation tool) and editing uses
+//     the Codex-native JSON images endpoint (see codex_images.go)
+//   - Chat surfaces ONLY work through the Responses API with special parameters
 type CodexClient struct {
 	*OpenAIClient
 }
@@ -408,18 +408,8 @@ func (c *CodexClient) buildImageGenerationResponsesRequest(req openai.ImageGener
 	inputItems := responses.ResponseInputParam{inputItem}
 	params.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: inputItems}
 
-	// Determine quality
-	quality := "auto"
-	if req.Quality != "" {
-		qualityStr := string(req.Quality)
-		if qualityStr == "standard" {
-			quality = "medium"
-		} else if qualityStr == "hd" {
-			quality = "high"
-		} else {
-			quality = qualityStr
-		}
-	}
+	// Determine quality (shared with the image edit path in codex_images.go)
+	quality := normalizeCodexImageQuality(string(req.Quality))
 
 	// Determine output format
 	outputFormat := "png"

@@ -159,29 +159,7 @@ func (ph *ProtocolHandler) HandleOpenAIImageGeneration(c *gin.Context) {
 	// Persist generated images under the config image directory (best-effort).
 	ph.persistImageGeneration(&req, resp)
 
-	responseJSON, err := json.Marshal(resp)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error: ErrorDetail{
-				Message: "Failed to marshal response: " + err.Error(),
-				Type:    "api_error",
-			},
-		})
-		return
-	}
-
-	var responseMap map[string]interface{}
-	if err := json.Unmarshal(responseJSON, &responseMap); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error: ErrorDetail{
-				Message: "Failed to process response: " + err.Error(),
-				Type:    "api_error",
-			},
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, responseMap)
+	c.JSON(http.StatusOK, resp)
 }
 
 // persistImageGeneration saves generated images and their prompts under the
@@ -194,17 +172,14 @@ func (ph *ProtocolHandler) HandleOpenAIImageGeneration(c *gin.Context) {
 func (ph *ProtocolHandler) persistImageGeneration(req *openai.ImageGenerateParams, resp *openai.ImagesResponse) {
 	var meta string
 	if req != nil {
-		meta = fmt.Sprintf("Prompt: %s\n\nModel: %s\nSize: %s\nQuality: %s\nFormat: %s\nTimestamp: %s\n",
-			req.Prompt,
-			req.Model,
-			req.Size,
-			req.Quality,
-			req.ResponseFormat,
-			time.Now().Format(time.RFC3339),
-		)
-		if req.Style != "" {
-			meta += fmt.Sprintf("Style: %s\n", req.Style)
-		}
+		meta = buildImagePersistMeta(imageMetaInfo{
+			Prompt:  req.Prompt,
+			Model:   string(req.Model),
+			Size:    string(req.Size),
+			Quality: string(req.Quality),
+			Format:  string(req.ResponseFormat),
+			Style:   string(req.Style),
+		})
 	}
 	ph.persistImages(resp, meta)
 }
@@ -214,15 +189,48 @@ func (ph *ProtocolHandler) persistImageGeneration(req *openai.ImageGenerateParam
 func (ph *ProtocolHandler) persistImageEdit(req *openai.ImageEditParams, resp *openai.ImagesResponse) {
 	var meta string
 	if req != nil {
-		meta = fmt.Sprintf("Prompt: %s\n\nOperation: edit\nModel: %s\nSize: %s\nQuality: %s\nTimestamp: %s\n",
-			req.Prompt,
-			req.Model,
-			req.Size,
-			req.Quality,
-			time.Now().Format(time.RFC3339),
-		)
+		meta = buildImagePersistMeta(imageMetaInfo{
+			Prompt:    req.Prompt,
+			Operation: "edit",
+			Model:     string(req.Model),
+			Size:      string(req.Size),
+			Quality:   string(req.Quality),
+		})
 	}
 	ph.persistImages(resp, meta)
+}
+
+// imageMetaInfo carries the fields persisted alongside a generated or edited
+// image. Generation- and edit-only fields (Format/Style vs Operation) are
+// simply left zero by the caller that doesn't have them.
+type imageMetaInfo struct {
+	Prompt    string
+	Operation string
+	Model     string
+	Size      string
+	Quality   string
+	Format    string
+	Style     string
+}
+
+// buildImagePersistMeta renders the sidecar .txt content saved next to a
+// persisted image. Shared by the generation and edit surfaces so the two
+// near-identical formats don't drift independently.
+func buildImagePersistMeta(info imageMetaInfo) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Prompt: %s\n\n", info.Prompt)
+	if info.Operation != "" {
+		fmt.Fprintf(&b, "Operation: %s\n", info.Operation)
+	}
+	fmt.Fprintf(&b, "Model: %s\nSize: %s\nQuality: %s\n", info.Model, info.Size, info.Quality)
+	if info.Format != "" {
+		fmt.Fprintf(&b, "Format: %s\n", info.Format)
+	}
+	fmt.Fprintf(&b, "Timestamp: %s\n", time.Now().Format(time.RFC3339))
+	if info.Style != "" {
+		fmt.Fprintf(&b, "Style: %s\n", info.Style)
+	}
+	return b.String()
 }
 
 // persistImages writes each base64 image in resp (plus an optional metadata

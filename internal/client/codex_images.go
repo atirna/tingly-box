@@ -125,7 +125,7 @@ func buildCodexImageEditRequest(req *openai.ImageEditParams) (*codexImageEditReq
 		Prompt:     req.Prompt,
 		Model:      string(req.Model),
 		Background: defaultCodexImageOption(string(req.Background)),
-		Quality:    codexImageQuality(string(req.Quality)),
+		Quality:    normalizeCodexImageQuality(string(req.Quality)),
 		Size:       defaultCodexImageOption(string(req.Size)),
 	}
 
@@ -179,15 +179,19 @@ func readerToDataURL(r io.Reader) (string, error) {
 	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
 
-// codexImageQuality maps OpenAI edit quality values onto what the Codex
-// endpoint accepts, defaulting to "auto" (same normalization as the
-// Responses-based generation path).
-func codexImageQuality(quality string) string {
+// normalizeCodexImageQuality maps OpenAI quality values ("standard"/"hd", the
+// dall-e vocabulary) onto what the Codex endpoint accepts ("low"/"medium"/
+// "high"/"auto"), defaulting to "auto". Shared by the edit path here and the
+// Responses-based generation path in buildImageGenerationResponsesRequest
+// (codex_client.go) — keep both quality mappings in this one place.
+func normalizeCodexImageQuality(quality string) string {
 	switch quality {
 	case "":
 		return "auto"
 	case "standard":
 		return "medium"
+	case "hd":
+		return "high"
 	default:
 		return quality
 	}
