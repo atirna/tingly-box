@@ -1,7 +1,7 @@
-import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport, ChevronRight as IconChevronRight } from '@/components/icons';
+import { Person as IconUser, Translate as IconLanguage, MessageReport as IconMessageReport, ChevronRight as IconChevronRight } from '@/components/icons';
 import { Box, Divider, IconButton, ListItemButton, ListItemIcon, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import React, { useMemo, useState } from 'react';
-import { Link as RouterLink, useLocation } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useVersion as useAppVersion } from '../contexts/VersionContext';
 import { useThemeMode } from '../contexts/ThemeContext';
@@ -41,7 +41,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     onStandaloneNavigate,
 }) => {
     const { t, i18n } = useTranslation();
-    const location = useLocation();
     const { currentVersion } = useAppVersion();
     const { mode: themeMode, setTheme } = useThemeMode();
     const [languageMenuAnchorEl, setLanguageMenuAnchorEl] = useState<HTMLElement | null>(null);
@@ -53,7 +52,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     const themeOptions = useMemo(() => getThemeOptions(t), [t]);
     const currentThemeOption = themeOptions.find((option) => option.value === themeMode);
     const renderCurrentThemeIcon = currentThemeOption?.renderIcon ?? themeOptions[0].renderIcon;
-    const isOnboardingActive = location.pathname === '/onboarding';
     const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapsed();
 
     const handleLanguageMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -223,40 +221,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                             </MenuItem>
                         ))}
                     </Menu>
-
-                {/* Onboarding Quick Add Button */}
-                    <Tooltip title={t('layout.onboarding', { defaultValue: 'Quick Add Provider' })} placement="right" arrow>
-                        <ListItemButton
-                            component={RouterLink}
-                            to="/onboarding"
-                            onClick={onStandaloneNavigate}
-                            sx={activityItemSx({
-                                '&:hover': {
-                                    bgcolor: isOnboardingActive ? 'primary.main' : 'action.hover',
-                                    color: isOnboardingActive ? 'primary.contrastText' : 'primary.main',
-                                },
-                                ...(isOnboardingActive && {
-                                    bgcolor: 'primary.main',
-                                    color: 'primary.contrastText',
-                                }),
-                            })}
-                        >
-                            <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
-                                <IconWand sx={{ fontSize: 22 }} />
-                            </ListItemIcon>
-                            <Typography
-                                variant="caption"
-                                sx={{
-                                    fontWeight: isOnboardingActive ? 600 : 400,
-                                    color: 'inherit',
-                                    textAlign: 'center',
-                                    lineHeight: 1.2,
-                                }}
-                            >
-                                {t('layout.onboardingShort', { defaultValue: 'Onboard' })}
-                            </Typography>
-                        </ListItemButton>
-                    </Tooltip>
 
             </Box>
 

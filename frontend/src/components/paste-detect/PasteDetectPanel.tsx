@@ -23,9 +23,9 @@ import {emptyForm} from '@/hooks/useProviderDialog';
 
 // Shell-agnostic core of the "Paste & detect" experience: a paste textarea, a
 // Detect button backed by the backend regex extractor, and the URLs/tokens
-// candidate lists. Used inline by Onboarding and inside PasteDetectDialog for
-// the Connect AI flow. Owns all of its own state; the parent decides whether
-// it lives inline or in a Dialog.
+// candidate lists. Used inside PasteDetectDialog for the Connect AI flow.
+// Owns all of its own state; the parent decides whether it lives inline or
+// in a Dialog.
 
 interface PasteDetectPanelProps {
     onPick: (prefill: EnhancedProviderFormData) => void;

@@ -21,16 +21,15 @@ import Layout from './layout/Layout';
 import createAppTheme from './theme';
 
 // Login is the only pre-auth screen — it's reachable before ProtectedRoute
-// can even evaluate, so it stays eager. Onboarding is a normal
-// post-auth route (OnboardingGate decides at runtime whether a fresh
-// install lands there), so it's lazy-loaded with everything else below.
+// can even evaluate, so it stays eager. Everything else, including the
+// Credentials page a fresh install lands on (OnboardingGate decides that at
+// runtime), is a normal post-auth route and lazy-loaded below.
 import Login from './pages/Login';
 import { api } from './services/api';
 
 // Every route below this point is reached only after auth + navigation, so it
 // is lazy-loaded: each becomes its own chunk that downloads on first visit
 // instead of being bundled into the initial page load.
-const Onboarding = lazy(() => import('./pages/Onboarding'));
 const SharingKeysPage = lazy(() => import('./pages/SharingKeysPage.tsx'));
 const VirtualModelsPage = lazy(() => import('./pages/VirtualModelsPage'));
 const UseOpenAIPage = lazy(() => import('./pages/scenario/UseOpenAIPage'));
@@ -140,10 +139,12 @@ const AppDialogs = () => {
 };
 
 // OnboardingGate decides where a freshly-authenticated user lands. Brand-new
-// installs (no provider configured) get sent to /onboarding; everyone else
-// lands on the agent overview at /agent. We hit /api/v2/providers once on
-// mount; while in flight we render nothing to avoid a flash of the default
-// agent page.
+// installs (no provider configured) get sent to Credentials with the Connect
+// AI picker already open (?dialog=add — the same deep link CredentialPage
+// already supports for every other "add a provider" entry point); everyone
+// else lands on the agent overview at /agent. We hit /api/v2/providers once
+// on mount; while in flight we render nothing to avoid a flash of the
+// default agent page.
 const OnboardingGate: React.FC = () => {
     const [target, setTarget] = useState<string | null>(null);
 
@@ -155,7 +156,7 @@ const OnboardingGate: React.FC = () => {
                 if (cancelled) return;
                 const providers = Array.isArray(result?.data) ? result.data : [];
                 if (providers.length === 0) {
-                    setTarget('/onboarding');
+                    setTarget('/credentials?dialog=add');
                     localStorage.removeItem('layout.activeActivity');
                     sessionStorage.removeItem('layout.activeActivity');
                     return;
@@ -221,11 +222,14 @@ function AppContent() {
                         </ProtectedRoute>
                     }
                 >
-                    {/* Default landing: send first-time users (no providers) to onboarding,
-                        everyone else to their last-active activity. */}
+                    {/* Default landing: send first-time users (no providers) to Credentials
+                        with Connect AI already open, everyone else to their last-active
+                        activity. */}
                     <Route index element={<OnboardingGate />} />
-                    {/* Onboarding for new installs */}
-                    <Route path="/onboarding" element={<Onboarding />} />
+                    {/* Back-compat: the old standalone Onboarding page was folded into
+                        Credentials (same Connect AI picker, no separate full-page browse
+                        view needed) — keep old bookmarks/links working. */}
+                    <Route path="/onboarding" element={<Navigate to="/credentials?dialog=add" replace />} />
                     {/* Function panel routes */}
                     <Route path="/agent" element={<AgentOverviewPage />} />
                     <Route path="/agent/openai" element={<UseOpenAIPage />} />

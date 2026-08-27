@@ -9,7 +9,7 @@ import Surface from '@/components/Surface';
 import { useProviderQuota } from '@/hooks/useProviderQuota';
 import { useProviderEditDialog } from '@/hooks/useProviderEditDialog';
 import { useProviderDialog } from '@/hooks/useProviderDialog';
-import { Add, ListAlt, VpnKey } from '@/components/icons';
+import { Add, VpnKey } from '@/components/icons';
 import {
     Alert,
     Box,
@@ -24,7 +24,7 @@ import {
     Typography,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { useNotify } from '@/hooks/useNotify';
 
@@ -160,10 +160,11 @@ const CredentialPage = () => {
                                 flexWrap: "wrap",
                                 justifyContent: { xs: 'flex-start', sm: 'flex-end' }
                             }}>
-                            {/* The provider catalog now lives on Onboarding (browse + connect
-                                in one place); the standalone read-only ProviderListPage was
-                                redundant with it and has been removed. */}
-                            <Button component={Link} to="/onboarding" variant="outlined" startIcon={<ListAlt />} size="small" sx={{ minWidth: 130 }}>Providers</Button>
+                            {/* Connect AI (the shared picker dialog: browse + connect in one
+                                place) is now the only "add a provider" entry point on this
+                                page — the separate "Providers" button that used to jump to
+                                the standalone Onboarding page was the exact same picker in a
+                                full-page instead of a dialog, so it was dropped as redundant. */}
                             <Button variant="contained" startIcon={<Add />} onClick={handleConnectAIClick} size="small" sx={{ minWidth: 150 }}>Connect AI</Button>
                         </Stack>
                     }
