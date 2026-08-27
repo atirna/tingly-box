@@ -26,16 +26,23 @@ Tingly Box **serves agents, coordinates AI models, optimizes context, and routes
 
 ## Key Features
 
-- **Agent-First Model Gateway** – Unified endpoint for agents — seamlessly bridge OpenAI, Anthropic, Google Gemini, and more with automatic protocol translation and native agent compatibility
-- **Agent Integration** – One-click config for Claude Code, OpenCode, Codex, Xcode, and more — transparent proxying for SDKs and CLI tools
-- **Agent Profiles** - Run agent like Claude Code with individual profiles, each profile can work with different model and agent config
-- **Remote Control via IM Bots** – Control AI agents remotely through Telegram, DingTalk, Feishu, Lark, Weixin, WeCom, Slack, and Discord
-- **Multi-Tenant API Tokens** – Isolate data per user with dedicated API tokens — each user gets their own usage tracking, provider access, and configuration
-- **Smart Routing Engine** – Intelligently route requests across models and tokens based on cost, speed, or custom policies — far beyond simple load balancing
-- **Flexible Authentication** – Support for both API keys and OAuth providers (Claude.ai, Codex, etc.) — use your existing quotas anywhere
-- **Visual Control Plane** – Intuitive web UI to manage providers, routes, aliases, models, and remote bots at a glance — no config files needed
-- **Client-Side Usage Analytics** – Track token consumption, latency, cost estimates, and model selection per request — directly from your client
-- **Blazing Fast Performance** – Adds typically **< 1ms** of overhead — get flexibility without latency tax
+* **Agent-First Model Gateway**
+  * Unified endpoint for AI — seamlessly bridge any providers
+  * One-click config for Agents - Claude Code, OpenCode, Codex, Xcode, and more 
+  * Profiles for Claude Code — switch between profiles with different models under different scenarios
+  * Both API keys and OAuth - use your existing quotas anywhere
+* **Harness-Driven Infra**
+  * VModel (Virtual Model) - for testing, validation, benchmarking, and harness-driven evaluation
+  * Harness-driven - for robustness across protocols, routing, load balancing, clients, and more
+* **UX-First**
+  * Visual management of providers, routes, aliases, models, and remote bots
+  * Intuitive workflows that make complex operations easy to understand and control
+* **Production-Ready**
+  * Smart Routing — Intelligently route requests across models and tokens based on cost, speed, or custom policies
+  * Remote Control — Control AI agents remotely through Telegram, DingTalk, Feishu, Lark, Weixin, WeCom, Slack, and Discord
+  * Team Management — Isolate data per user with dedicated API tokens, usage tracking, provider access, and configuration
+  * Usage Analytics — Track token consumption, latency, cost estimates, and model selection per request
+  * Blazing Fast Performance — Typically adds **< 1ms** of overhead
 
 ## Quick Start
 
