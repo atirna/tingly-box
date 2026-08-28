@@ -17,7 +17,8 @@
     "access": "public"
   },
   "bin": {
-    "tingly-box": "bin.js"
+    "tingly-box": "bin.js",
+    "tb": "bin.js"
   },
   "type": "module",
   "files": [
