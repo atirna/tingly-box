@@ -19,13 +19,27 @@ set -euo pipefail
 IMAGE="${1:?usage: docker-smoke-test.sh <image> <container-data-dir>}"
 DATA_DIR="${2:?usage: docker-smoke-test.sh <image> <container-data-dir>}"
 
+# The entrypoint's `chown -R` reassigns the bind-mounted directory itself
+# (not just its contents) to the container's "tingly" (UID/GID 999) — that's
+# the fix working as intended, but it also means the *host* user that
+# created the directory (this script, when not root) can no longer `ls` or
+# `rm` a 0700 dir it no longer owns. Use sudo for anything touching the
+# mount after the container has run, same as an operator would.
+priv() {
+    if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 HOST_DIR="$(mktemp -d)"
 CONTAINER="tingly-box-smoke-$$"
 
 cleanup() {
     docker logs "$CONTAINER" 2>&1 | tail -100 || true
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-    rm -rf "$HOST_DIR"
+    priv rm -rf "$HOST_DIR"
 }
 trap cleanup EXIT
 
@@ -52,7 +66,7 @@ for _ in $(seq 1 30); do
     fi
     # Anything landing in the mount (config.json, memory/, logs/, db/) proves
     # the entrypoint's chown + privilege-drop actually let the app write here.
-    if [ -n "$(ls -A "$HOST_DIR" 2>/dev/null)" ]; then
+    if [ -n "$(priv find "$HOST_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]; then
         ok=1
         break
     fi
@@ -60,7 +74,7 @@ for _ in $(seq 1 30); do
 done
 
 echo "== host dir after run =="
-ls -la "$HOST_DIR"
+priv ls -la "$HOST_DIR"
 
 if [ "$ok" != "1" ]; then
     echo "FAIL: nothing was written to $HOST_DIR (bind-mounted at $DATA_DIR) within the timeout" >&2
