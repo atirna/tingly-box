@@ -9,7 +9,7 @@ import (
 
 func TestLaunchArgs(t *testing.T) {
 	args := LaunchArgs()
-	if got := strings.Join(args, " "); got != "restart --daemon" {
+	if got := strings.Join(args, " "); got != "open" {
 		t.Fatalf("unexpected launch args: %q", got)
 	}
 }
@@ -91,7 +91,7 @@ func TestCreateLinuxShortcutsAlwaysWritesLauncherScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(content), "exec '/usr/local/bin/tingly-box' 'restart' '--daemon'") {
+	if !strings.Contains(string(content), "exec '/usr/local/bin/tingly-box' 'open'") {
 		t.Errorf("unexpected launcher script content:\n%s", content)
 	}
 }
@@ -111,13 +111,13 @@ func TestCreateLinuxShortcutsRespectsAllOff(t *testing.T) {
 func TestResolveLaunchBinary(t *testing.T) {
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "binary", "1.4.2")
 
-	if want := []string{"/usr/local/bin/tingly-box", "restart", "--daemon"}; strings.Join(spec.Argv, " ") != strings.Join(want, " ") {
+	if want := []string{"/usr/local/bin/tingly-box", "open"}; strings.Join(spec.Argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("unexpected argv: %v", spec.Argv)
 	}
 	if spec.WinTarget != "/usr/local/bin/tingly-box" {
 		t.Errorf("unexpected winTarget: %q", spec.WinTarget)
 	}
-	if spec.WinArgs != "restart --daemon" {
+	if spec.WinArgs != "open" {
 		t.Errorf("unexpected winArgs: %q", spec.WinArgs)
 	}
 }
@@ -133,11 +133,11 @@ func TestResolveLaunchEmptySourceDefaultsToBinary(t *testing.T) {
 func TestResolveLaunchNpxPinsVersion(t *testing.T) {
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "npx", "1.4.2")
 
-	wantArgv := []string{"sh", "-lc", "npx -y tingly-box@1.4.2 restart --daemon"}
+	wantArgv := []string{"sh", "-lc", "npx -y tingly-box@1.4.2 open"}
 	if strings.Join(spec.Argv, "\x00") != strings.Join(wantArgv, "\x00") {
 		t.Fatalf("unexpected argv: %#v", spec.Argv)
 	}
-	if spec.WinArgs != "/c npx -y tingly-box@1.4.2 restart --daemon" {
+	if spec.WinArgs != "/c npx -y tingly-box@1.4.2 open" {
 		t.Errorf("unexpected winArgs: %q", spec.WinArgs)
 	}
 }
@@ -145,7 +145,7 @@ func TestResolveLaunchNpxPinsVersion(t *testing.T) {
 func TestResolveLaunchNpxBundlePinsVersion(t *testing.T) {
 	spec := ResolveLaunch("/usr/local/bin/tingly-box", "npx-bundle", "1.4.2")
 
-	if spec.WinArgs != "/c npx -y tingly-box-bundle@1.4.2 restart --daemon" {
+	if spec.WinArgs != "/c npx -y tingly-box-bundle@1.4.2 open" {
 		t.Errorf("unexpected winArgs: %q", spec.WinArgs)
 	}
 }
@@ -153,7 +153,7 @@ func TestResolveLaunchNpxBundlePinsVersion(t *testing.T) {
 func TestResolveLaunchNpxUnknownVersionFallsBackToLatest(t *testing.T) {
 	for _, v := range []string{"", "dev", "unknown"} {
 		spec := ResolveLaunch("/usr/local/bin/tingly-box", "npx", v)
-		if spec.WinArgs != "/c npx -y tingly-box@latest restart --daemon" {
+		if spec.WinArgs != "/c npx -y tingly-box@latest open" {
 			t.Errorf("version=%q: unexpected winArgs: %q", v, spec.WinArgs)
 		}
 	}
@@ -168,7 +168,7 @@ func TestSlugName(t *testing.T) {
 func TestWindowsShortcutScript(t *testing.T) {
 	spec := LaunchSpec{
 		WinTarget: `C:\Program Files\tingly-box\tingly-box.exe`,
-		WinArgs:   "restart --daemon",
+		WinArgs:   "open",
 		WorkDir:   `C:\Program Files\tingly-box`,
 	}
 	script := windowsShortcutScript(Options{Name: "Tingly Box"}, spec)
@@ -199,7 +199,7 @@ func TestWindowsShortcutScript(t *testing.T) {
 }
 
 func TestWindowsShortcutScriptRespectsNoDesktopNoMenu(t *testing.T) {
-	spec := LaunchSpec{WinTarget: `C:\tingly-box.exe`, WinArgs: "restart --daemon", WorkDir: `C:\`}
+	spec := LaunchSpec{WinTarget: `C:\tingly-box.exe`, WinArgs: "open", WorkDir: `C:\`}
 
 	noDesktop := windowsShortcutScript(Options{Name: "Tingly Box", NoDesktop: true}, spec)
 	if strings.Contains(noDesktop, "'Desktop'") {

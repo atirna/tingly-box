@@ -19,8 +19,8 @@ changes are either explicitly requested or explicitly confirmed.
 **Bare invocation:**
 
 - **`npx tingly-box` / `npm exec`** (shim detects `npm_command=exec`): keeps
-  the historical `restart --daemon`. The npx invocation is itself the intent
-  to run/update now.
+  the historical run-now behavior as `restart --daemon -y` — the npx
+  invocation is itself the consent a bare `restart` would prompt for.
 - **Installed CLI** (global `npm install -g` bin run directly, or the raw Go
   binary): shows **help**. An installed CLI is a toolbox (like `git`,
   `docker`); the server is started deliberately with `tingly-box start`.
@@ -71,8 +71,22 @@ which one the user typed.
   invoked binary may well be newer, and one confirmed restart makes the
   version known from then on.
 
-**`restart` / `stop`:** remain the explicit, immediate lifecycle verbs.
-`restart` inherits the daemon-by-default (container fallback applies).
+**`restart`:** confirms before interrupting. When the server is running, a
+bare `restart` asks ("In-flight AI requests will be interrupted. [y/N]",
+default No); `-y`/`--yes` proceeds directly (what npx passes); without a TTY
+and without `-y` it leaves the server untouched and says to re-run with
+`-y`. When the server is not running there is nothing to interrupt, so it
+starts without asking — which keeps unattended first-boots (e.g. the Docker
+npx image's pm2 wrapper) working. `restart` inherits daemon-by-default
+(container fallback applies).
+
+**`stop`:** remains the explicit, immediate lifecycle verb.
+
+**Shortcuts** (desktop / start menu) launch `open` instead of the former
+`restart --daemon`: a double-click means "give me Tingly Box" — open the web
+UI, starting the server only if needed. The old restart target would now
+prompt in a popup terminal, and npx shortcuts are pinned to one version so
+their restart carried no update semantics anyway.
 
 ## Explicitly out of scope (for now)
 

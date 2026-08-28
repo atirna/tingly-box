@@ -23,7 +23,9 @@ tb start    # background by default; pass --no-daemon for foreground
 
 `tingly-box` and `tb` are the same CLI; running it with no arguments shows
 help. To update a global install: `npm install -g tingly-box@latest`, then
-`tb restart` to switch the running server to the new version. If the network
+`tb restart` to switch the running server to the new version — `restart`
+asks for confirmation while the server is running (a restart interrupts
+in-flight AI requests); pass `-y` to skip the prompt in scripts. If the network
 is a problem, install `tingly-box-bundle` instead (binaries built-in, same
 commands — install one or the other, they share the same bin names).
 

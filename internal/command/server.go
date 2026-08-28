@@ -78,6 +78,7 @@ func (s *StatusCmdKong) Run(appManager *AppManager) error {
 // RestartCmdKong is the Kong version of restart command
 type RestartCmdKong struct {
 	StartCmdKong
+	Yes bool `kong:"flag,name='yes',short='y',help='Restart without asking for confirmation'"`
 }
 
 func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
@@ -88,6 +89,23 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 	appConfig := appManager.AppConfig()
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 	wasRunning := fileLock.IsLocked()
+
+	// Restarting a running server interrupts in-flight AI requests, so a bare
+	// `restart` confirms first; -y (what the npx entrypoint passes — there the
+	// invocation itself expresses "run it now") proceeds directly. When the
+	// server isn't running there is nothing to interrupt and no question to
+	// ask. Without a terminal and without -y, leave the server untouched.
+	if wasRunning && !r.Yes {
+		if !isStdinTTY() {
+			fmt.Printf("Server is running on port %d — a restart would interrupt in-flight AI requests.\n", appManager.GetRuntimeServerPort())
+			fmt.Println("Re-run with -y ('tingly-box restart -y' / 'tb restart -y') to restart without prompting.")
+			return nil
+		}
+		if !promptYesNo("Restart the server? In-flight AI requests will be interrupted.") {
+			fmt.Println("\nKeeping the running server untouched.")
+			return nil
+		}
+	}
 
 	// A real restart continues on the port the server is actually running on,
 	// not the config default. That port may have come from `--port` at start
@@ -478,6 +496,16 @@ func resolveAlreadyRunningAction(runningVersion, currentVersion string, promptRe
 	return alreadyRunningHint
 }
 
+// promptYesNo asks a [y/N] question on stdin, defaulting to no on anything
+// but an explicit yes (including EOF from a detached stdin).
+func promptYesNo(question string) bool {
+	fmt.Print(question + " [y/N]: ")
+	var response string
+	fmt.Scanln(&response)
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes"
+}
+
 // describeRunningVersion formats the running server's version for status
 // lines, degrading to "version unknown" for servers that predate the runtime
 // version file.
@@ -614,12 +642,7 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 			if runningVersion != "" && runningVersion != BuildVersion {
 				fmt.Printf("This launcher is v%s — restarting will switch the server to it.\n", BuildVersion)
 			}
-			fmt.Print("Restart the server? In-flight AI requests will be interrupted. [y/N]: ")
-			var response string
-			fmt.Scanln(&response)
-
-			response = strings.ToLower(strings.TrimSpace(response))
-			if response != "y" && response != "yes" {
+			if !promptYesNo("Restart the server? In-flight AI requests will be interrupted.") {
 				fmt.Println("\nKeeping the running server untouched.")
 				fmt.Println("Use 'tingly-box restart' / 'tb restart' to restart it later")
 				return nil

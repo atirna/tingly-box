@@ -144,12 +144,13 @@ function cleanupRetiredInstallDirs() {
 const IS_NPX = process.env.npm_command === "exec";
 
 // Default parameters when no arguments are provided.
-// - npx: keep the historical "run it now" behavior (restart into background).
+// - npx: keep the historical "run it now" behavior (restart into background,
+//   -y: the invocation itself is the consent a bare `restart` would prompt for).
 // - global install / anything else: show help — restarting implicitly here
 //   would let a casually typed `tingly-box` kill in-flight AI requests; the
 //   user starts the server deliberately with `tingly-box start` (which
 //   daemonizes by default; --no-daemon for foreground).
-const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon"] : ["--help"];
+const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon", "-y"] : ["--help"];
 
 // Global flag prepended to every invocation so the binary records how it was
 // launched: "npx-bundle" for npx / npm exec, "npm-bundle" for a globally

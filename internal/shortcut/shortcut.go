@@ -76,10 +76,15 @@ func npxPackageForSource(source, version string) string {
 	return pkg + "@" + version
 }
 
-// LaunchArgs are the CLI args the shortcut runs: restart the daemon and
-// (since --browser defaults to true) open the web UI.
+// LaunchArgs are the CLI args the shortcut runs. `open` matches what a
+// double-click means: server running -> open the web UI; not running ->
+// start it (daemonized by default) and open the UI. The former default,
+// `restart --daemon`, would now prompt for confirmation when the server is
+// running (a restart interrupts in-flight AI requests) — pointless friction
+// in a popup terminal, and npx-based shortcuts are pinned to one version so
+// the restart carried no update semantics anyway.
 func LaunchArgs() []string {
-	return []string{"restart", "--daemon"}
+	return []string{"open"}
 }
 
 // ResolveExePath returns the running process's own executable path, with
