@@ -109,9 +109,22 @@ On startup, `bin.js` knows its own install location
 stale `.tingly-box-*` retire dirs, remove them. This un-bricks the *next*
 `npm update -g` automatically — the deterministic-name stickiness disappears.
 
-Scope guard: only delete siblings matching `.{tingly-box,tingly-box-gui,tingly-box-bundle}-*`
-directly next to our own package dir; ignore errors silently (a concurrent npm
-run will clean up after itself anyway).
+Safety guards (the retired dir is npm's *rollback source* while a transaction
+is in flight — `_rollbackMoveBackRetiredUnchanged` in arborist's reify — so
+deleting it at the wrong moment would turn a recoverable failed update into a
+broken install):
+
+- Only inside a directory literally named `node_modules`, and only names
+  matching npm's exact retire shape `.<own-name>-<8 alphanumeric>` (see
+  `@npmcli/arborist/lib/retire-path.js`). Cross-package leftovers
+  (`.tingly-box-gui-*` seen from `tingly-box`) and human-made dirs
+  (`.tingly-box-backup`) never match. If npm changes the shape, the sweep
+  degrades to a no-op — the safe direction.
+- Skip the sweep entirely when the parent `node_modules` mtime is fresh
+  (< 5 min): retiring/extracting/removing entries all touch the parent's
+  mtime, so an in-flight npm transaction always looks fresh. True leftovers
+  get swept on a later launch — eventual cleanup is the design intent.
+- Everything wrapped in try/catch; cleanup never blocks launch.
 
 #### C. Decouple binary version from npm version: `tb update`
 

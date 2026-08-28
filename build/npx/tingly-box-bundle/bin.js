@@ -123,9 +123,15 @@ function cleanupRetiredInstallDirs() {
 		const pkgDir = __dirname;
 		const parentDir = dirname(pkgDir);
 		if (basename(parentDir) !== "node_modules") return;
-		const prefix = `.${basename(pkgDir)}-`;
+		// A fresh parent mtime means an npm transaction may be in flight — the
+		// retired dir is then npm's rollback source, not trash. Skip and let a
+		// later launch sweep real leftovers.
+		if (Date.now() - statSync(parentDir).mtimeMs < 5 * 60 * 1000) return;
+		// Match exactly npm's retire-dir shape (@npmcli/arborist retire-path.js):
+		// .<name>-<8 alphanumeric chars>. Anything else is not ours to delete.
+		const retired = new RegExp(`^\\.${basename(pkgDir)}-[a-zA-Z0-9]{8}$`);
 		for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
-			if (entry.isDirectory() && entry.name.startsWith(prefix)) {
+			if (entry.isDirectory() && retired.test(entry.name)) {
 				rmSync(join(parentDir, entry.name), { recursive: true, force: true });
 			}
 		}
