@@ -38,7 +38,9 @@ the path to re-enable global installs.
   runs the matrix — sweep skipped under a fresh `node_modules` mtime, exact
   retire-shape sweep under an old one (sibling/human dirs untouched), and an
   end-to-end download + `version` against the real release. Run it before
-  touching the shims or the publish workflow.
+  touching the shims or the publish workflow. CI runs it too: the
+  `verify-npx-shim` job in `verify-build.yml` executes it on every release
+  (and on manual runs against any tag).
 
 ### The failure, precisely
 
