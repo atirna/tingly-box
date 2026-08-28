@@ -12,8 +12,8 @@ import type {EnhancedProviderFormData} from '@/components/ProviderFormDialog';
 import {emptyForm} from '@/hooks/useProviderDialog';
 
 // Dialog shell for the Connect AI "Paste & detect" path. Wraps the shared
-// PasteDetectPanel (the same core Onboarding uses inline) so the experience is
-// identical across surfaces.
+// PasteDetectPanel so the experience is identical across every surface that
+// offers the Connect AI flow (CredentialPage, ProvidersCard, ...).
 //
 // NOTE: detection calls POST /api/v1/onboarding/extract, which is only served by
 // the real backend. In MSW / mock mode there is no handler, so Detect will fail

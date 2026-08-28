@@ -55,8 +55,11 @@ cli/tingly-box/main.go    # wires the global --source flag, binds LaunchSource
 build/npx/*/bin.js        # injects --source=npx / --source=npx-bundle
 
 frontend/src/components/ShortcutCard.tsx  # the card (web/npx/binary only, not Wails GUI)
-frontend/src/pages/HelpPage.tsx           # hosts ShortcutCard, reached via the lightbulb nav entry
-frontend/src/layout/ActivityBar.tsx       # lightbulb entry point, route /help
+frontend/src/components/ProvidersCard.tsx # unrelated to shortcuts, but shares HelpPage —
+                                           # the old Onboarding page's provider-browse content
+frontend/src/pages/HelpPage.tsx           # hosts ShortcutCard + ProvidersCard
+frontend/src/layout/ActivityBar.tsx       # lightbulb entry point, route /help (replaces the
+                                           # old "Quick Add Provider" wand's exact nav slot)
 ```
 
 **Rule:** anything platform-specific (PowerShell COM script, `.command`
@@ -391,8 +394,13 @@ It first shipped on the System settings page, but that buried it too deep for
 a first-run user (the exact person who most needs it — see §1). It now lives
 on a dedicated `HelpPage` (`frontend/src/pages/HelpPage.tsx`, route `/help`),
 reached via a lightbulb entry in the activity bar
-(`frontend/src/layout/ActivityBar.tsx`) — a small, always-visible, low-noise
-collection of easy-to-miss useful actions, not a linear onboarding tour.
+(`frontend/src/layout/ActivityBar.tsx`) that sits in the *same nav slot* the
+old standalone "Quick Add Provider" wand button used to occupy — the
+lightbulb is the product's onboarding front door now, not an addition next
+to it. HelpPage carries a small, always-visible, low-noise collection of
+easy-to-miss useful actions (not a linear onboarding tour): `ShortcutCard`
+first, then `ProvidersCard` — the old Onboarding page's provider-browsing
+content, demoted from a full page to one card among others.
 Deliberately *not* a notification badge on the lightbulb itself: `GET
 /api/v1/shortcut` does give a real per-machine "exists" signal (that's what
 drives the card's own "Recreate"/"Already created" state once you're on the
@@ -445,6 +453,7 @@ ever a direct, visible user click on the System page, same posture as
 | `internal/server/module/shortcut/`           | HTTP handler for `GET`/`POST /api/v1/shortcut` |
 | `internal/server/server_options.go`          | `WithLaunchSource`                       |
 | `frontend/src/components/ShortcutCard.tsx`   | the card (web/npx/binary only, not Wails GUI) |
-| `frontend/src/pages/HelpPage.tsx`             | hosts `ShortcutCard`, reached via the lightbulb nav entry |
-| `frontend/src/layout/ActivityBar.tsx`         | lightbulb entry point, `/help` route     |
+| `frontend/src/components/ProvidersCard.tsx`  | unrelated content, shares HelpPage — old Onboarding page's provider browse/connect |
+| `frontend/src/pages/HelpPage.tsx`             | hosts `ShortcutCard` + `ProvidersCard`   |
+| `frontend/src/layout/ActivityBar.tsx`         | lightbulb entry point, `/help` route, same nav slot the old wand used |
 | `frontend/src/services/api.ts`               | `getShortcutStatus`, `createShortcut`    |
