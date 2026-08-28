@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "child_process";
-import { chmodSync, existsSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
-import { join, dirname } from "path";
+import { chmodSync, existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
+import { basename, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { mkdir } from "fs/promises";
 import unzipper from "unzipper";
@@ -113,6 +113,27 @@ async function extractBinary(platformDir) {
 	return cachedBinary;
 }
 
+// npm's global update first "retires" the old package dir by renaming it to a
+// sibling .<name>-<hash> dir; the hash is derived from the path, so a leftover
+// from one interrupted update makes every later `npm update -g` fail with
+// ENOTEMPTY until it's removed. Sweep our own leftovers on launch so the next
+// update can succeed. Best-effort: only our own .<name>-* siblings, never fail.
+function cleanupRetiredInstallDirs() {
+	try {
+		const pkgDir = __dirname;
+		const parentDir = dirname(pkgDir);
+		if (basename(parentDir) !== "node_modules") return;
+		const prefix = `.${basename(pkgDir)}-`;
+		for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
+			if (entry.isDirectory() && entry.name.startsWith(prefix)) {
+				rmSync(join(parentDir, entry.name), { recursive: true, force: true });
+			}
+		}
+	} catch {
+		// Never block launch on cleanup.
+	}
+}
+
 // Default parameters to use when no arguments are provided
 const DEFAULT_ARGS = [
 	"restart",
@@ -126,6 +147,8 @@ const SOURCE_ARGS = ["--source=npx-bundle"];
 const args = process.argv.slice(2);
 const baseArgs = args.length > 0 ? args : DEFAULT_ARGS;
 const argsToUse = [...SOURCE_ARGS, ...baseArgs];
+
+cleanupRetiredInstallDirs();
 
 const platformDir = getPlatformInfo();
 

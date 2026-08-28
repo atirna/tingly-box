@@ -22,10 +22,17 @@ install dir — binaries and caches live under `~/.cache/tingly-box/`.
 
 ## Making `npm install -g` viable again
 
-Status: proposal (2026-08). Today the README recommends `npx` only, because
+Status: A + B implemented (2026-08), effective from the next publish; C is
+still a proposal. Today the README recommends `npx` only, because
 `npm update -g tingly-box` intermittently fails with `ENOTEMPTY` and leaves the
 global install broken. The rest of this doc explains the failure and lays out
 the path to re-enable global installs.
+
+- A lives in `.github/workflows/npm.yml` ("Bundle shim into a single
+  dependency-free file" steps for the cli leg and the gui job, plus a
+  smoke-test that runs the bundled shim with no `node_modules` against the
+  real release).
+- B is `cleanupRetiredInstallDirs()` in all three `build/npx/*/bin.js`.
 
 ### The failure, precisely
 
