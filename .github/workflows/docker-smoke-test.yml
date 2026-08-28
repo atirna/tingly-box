@@ -11,11 +11,13 @@ on:
     paths:
       - 'build/docker/**'
       - '.github/workflows/docker-smoke-test.yml'
+      - '.github/scripts/docker-smoke-test.sh'
   push:
     branches: [main]
     paths:
       - 'build/docker/**'
       - '.github/workflows/docker-smoke-test.yml'
+      - '.github/scripts/docker-smoke-test.sh'
   workflow_dispatch:
 
 permissions:
