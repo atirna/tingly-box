@@ -234,6 +234,29 @@ jobs:
             echo "⏭️ No tests found, skipping..."
           fi
 
+      - name: Bundle shim into a single dependency-free file
+        if: matrix.type == 'cli'
+        working-directory: ${{ matrix.pkg_dir }}
+        run: |
+          # Zero runtime deps in the published package (see .design/npm.md).
+          # @aws-sdk/client-s3 is unzipper's optional lazy S3 support — unused.
+          npx --yes esbuild@0.25.9 bin.js --bundle --platform=node --target=node18 \
+            --format=esm --external:@aws-sdk/client-s3 \
+            --banner:js="import{createRequire as __cr}from'module';const require=__cr(import.meta.url);" \
+            --outfile=bin.bundled.js
+          mv bin.bundled.js bin.js
+          npm pkg delete dependencies
+          node --check bin.js
+          echo "✅ Bundled bin.js ($(du -h bin.js | cut -f1)), dependencies stripped"
+
+      - name: Smoke-test bundled shim (download + exec real release)
+        if: matrix.type == 'cli'
+        working-directory: ${{ matrix.pkg_dir }}
+        run: |
+          # What a user's install runs: bundled bin.js, no node_modules.
+          rm -rf node_modules
+          node bin.js --transport-version="${{ needs.setup.outputs.release_tag }}" version
+
       # Bundle-only steps
       - name: Download release zip files
         if: matrix.type == 'bundle'
@@ -523,6 +546,22 @@ jobs:
           else
             echo "⏭️ No tests found, skipping..."
           fi
+
+      - name: Bundle shim into a single dependency-free file
+        working-directory: ${{ env.PKG_DIR }}
+        run: |
+          # Same as the cli package: zero runtime deps (see .design/npm.md).
+          npx --yes esbuild@0.25.9 bin.js --bundle --platform=node --target=node18 \
+            --format=esm --external:@aws-sdk/client-s3 \
+            --banner:js="import{createRequire as __cr}from'module';const require=__cr(import.meta.url);" \
+            --outfile=bin.bundled.js
+          mv bin.bundled.js bin.js
+          npm pkg delete dependencies
+          node --check bin.js
+          # On Linux the GUI shim prints "not supported" and exits 0.
+          rm -rf node_modules
+          node bin.js
+          echo "✅ Bundled bin.js ($(du -h bin.js | cut -f1)), dependencies stripped"
 
       - name: Publish to npm
         working-directory: ${{ env.PKG_DIR }}

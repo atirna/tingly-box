@@ -3,12 +3,13 @@ name: Verify Build
 run-name: >-
   🔍 Verify build ${{ inputs.tag || github.event.release.tag_name }}
 
-# Standalone release verification. Two independent jobs:
+# Standalone release verification. Three independent jobs:
 #   - verify-release-assets: checks the already-built release assets
 #     (zip integrity, checksums, binary formats) — no rebuild.
 #   - verify-gui-build: builds the Wails GUI from source on Linux, so GUI
 #     regressions (bindings, frontend, cgo/webview) surface here even when a
 #     release was cut without GUI artifacts (build_gui=false).
+#   - verify-npx-shim: runs build/npx/test-shim.sh against the release.
 # Runs automatically when a release is published (non-blocking, in parallel
 # with the NPX publish workflow), can be triggered manually against any tag,
 # and is reusable from other workflows via workflow_call.
@@ -90,6 +91,58 @@ jobs:
             echo ""
             echo "Checked release assets: zip integrity, sha256 checksums, and"
             echo "binary format/architecture per platform."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify-npx-shim:
+    name: Verify NPX Shim
+    runs-on: ubuntu-latest
+    env:
+      NODE_VERSION: '24'
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="${{ inputs.tag }}"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "Error: no release tag provided"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Testing npx shim against release: $TAG"
+
+      # The tag's shim source — the same the publish workflow packages.
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Run shim test harness
+        run: |
+          if [ ! -f build/npx/test-shim.sh ]; then
+            echo "⏭️ build/npx/test-shim.sh not present at this tag, skipping"
+            exit 0
+          fi
+          bash build/npx/test-shim.sh "${{ steps.tag.outputs.tag }}"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## 📦 Verify NPX Shim — ${{ steps.tag.outputs.tag }}"
+            echo ""
+            echo "Bundled the cli shim like the publish workflow (esbuild,"
+            echo "single dependency-free file) and ran the test matrix:"
+            echo "retired-dir sweep guards and an end-to-end download +"
+            echo "\`version\` run of the release binary."
           } >> "$GITHUB_STEP_SUMMARY"
 
   verify-gui-build:

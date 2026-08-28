@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "child_process";
-import { chmodSync, createWriteStream, existsSync, fsyncSync, mkdirSync } from "fs";
-import { join } from "path";
+import { chmodSync, createWriteStream, existsSync, fsyncSync, mkdirSync, readdirSync, rmSync, statSync } from "fs";
+import { basename, dirname, join } from "path";
 import { Readable } from "stream";
+import { fileURLToPath } from "url";
 import { ProxyAgent } from "undici";
 import unzipper from "unzipper";
 
@@ -296,6 +297,29 @@ async function getLatestVersion() {
     return data.name;
 }
 
+// Sweep leftover npm "retire" dirs (.<name>-<hash>) from an interrupted
+// `npm update -g`; their deterministic name otherwise makes every later
+// update fail with ENOTEMPTY. See .design/npm.md.
+function cleanupRetiredInstallDirs() {
+	try {
+		const pkgDir = dirname(fileURLToPath(import.meta.url));
+		const parentDir = dirname(pkgDir);
+		if (basename(parentDir) !== "node_modules") return;
+		// Fresh parent mtime: an npm transaction may be in flight and the
+		// retired dir is its rollback source — skip.
+		if (Date.now() - statSync(parentDir).mtimeMs < 5 * 60 * 1000) return;
+		// Only npm's exact retire shape (@npmcli/arborist retire-path.js).
+		const retired = new RegExp(`^\\.${basename(pkgDir)}-[a-zA-Z0-9]{8}$`);
+		for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
+			if (entry.isDirectory() && retired.test(entry.name)) {
+				rmSync(join(parentDir, entry.name), { recursive: true, force: true });
+			}
+		}
+	} catch {
+		// Never block launch on cleanup.
+	}
+}
+
 function formatBytes(bytes) {
 	if (bytes === 0) return "0 B";
 	const k = 1024;
@@ -305,6 +329,8 @@ function formatBytes(bytes) {
 }
 
 (async () => {
+	cleanupRetiredInstallDirs();
+
 	const platform = process.platform;
 
 	// For Windows and Linux, show unsupported message
