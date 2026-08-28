@@ -33,6 +33,12 @@ the path to re-enable global installs.
   smoke-test that runs the bundled shim with no `node_modules` against the
   real release).
 - B is `cleanupRetiredInstallDirs()` in all three `build/npx/*/bin.js`.
+- `build/npx/test-shim.sh <release-tag>` codifies the verification: it builds
+  the published artifact the same way CI does (pin tag, esbuild bundle) and
+  runs the matrix — sweep skipped under a fresh `node_modules` mtime, exact
+  retire-shape sweep under an old one (sibling/human dirs untouched), and an
+  end-to-end download + `version` against the real release. Run it before
+  touching the shims or the publish workflow.
 
 ### The failure, precisely
 
