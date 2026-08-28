@@ -85,7 +85,7 @@ tb stop      # stop the server
 >
 > **To update** a global install: `npm install -g tingly-box@latest`, then
 > `tb restart` to switch the running server to the new version (`tb start`
-> will also detect the version change and offer the restart). A running
+> also notices the version change and points you to `tb restart`). A running
 > server is never interrupted silently: `restart` asks first — pass `-y`
 > to skip the confirmation (e.g. in scripts).
 

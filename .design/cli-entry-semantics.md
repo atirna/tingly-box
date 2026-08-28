@@ -53,23 +53,23 @@ which one the user typed.
   compose files working without teaching them `--no-daemon`, and avoids
   binary/Dockerfile version skew (the npx image installs whatever
   `TINGLY_VERSION` says at container start).
-- When the server is **already running**, `start` converges instead of
-  bailing with a hint:
-  - **Same version** → print the access banner (Web UI URL + token, API
-    endpoints — the thing the user actually came for) and exit. Never
-    restart: there is nothing to update.
-  - **Different or unknown version** → on a TTY, ask
-    ("Restart the server? In-flight AI requests will be interrupted. [y/N]",
-    default No); without a TTY, print how to apply (`tingly-box restart`)
-    and exit 0. A restart is never silent.
+- When the server is **already running**, `start` never restarts it and
+  never asks — it prints the access banner (Web UI URL + token, API
+  endpoints — the thing the user actually came for) and exits. If the
+  recorded server version differs from this launcher (typical right after
+  `npm install -g`), one extra hint line says so and points to
+  `tingly-box restart`. All interactive confirmation lives in `restart`;
+  `start` is purely informational when the server is up, so there is no
+  TTY branching and no `--prompt-restart` flag anymore.
 
   The running version comes from `<configDir>/tingly-server.version`
   (`pkg/lock.VersionFile`), a runtime artifact written next to the port file
   after the PID lock is acquired and removed on every shutdown path — same
-  lifecycle and reader rules as `runtime-port-file.md`. "Unknown" (a server
-  started by a build predating the file) is treated as a mismatch: the
-  invoked binary may well be newer, and one confirmed restart makes the
-  version known from then on.
+  lifecycle and reader rules as `runtime-port-file.md`. Its one job is that
+  mismatch hint — without it, `tb start` after an upgrade would show a
+  healthy banner while the old version silently keeps serving. A server
+  started by a build predating the file reads as "unknown" and simply gets
+  the generic restart hint.
 
 **`restart`:** confirms before interrupting. When the server is running, a
 bare `restart` asks ("In-flight AI requests will be interrupted. [y/N]",

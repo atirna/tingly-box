@@ -170,34 +170,3 @@ func TestServerPortConfiguration(t *testing.T) {
 		// The test just verifies that SetServerPort works within the same instance
 	})
 }
-
-// TestResolveAlreadyRunningAction covers the guard that keeps a casual
-// `tingly-box` (the npm/npx bare entrypoint, mapped to `start --daemon`)
-// from restarting a running server and killing in-flight AI requests.
-func TestResolveAlreadyRunningAction(t *testing.T) {
-	tests := []struct {
-		name           string
-		runningVersion string
-		promptRestart  bool
-		tty            bool
-		want           alreadyRunningAction
-	}{
-		{"same version shows info, no restart", "1.2.3", false, true, alreadyRunningShowInfo},
-		{"same version non-tty shows info", "1.2.3", false, false, alreadyRunningShowInfo},
-		{"different version prompts on tty", "1.2.2", false, true, alreadyRunningPrompt},
-		{"different version hints without tty", "1.2.2", false, false, alreadyRunningHint},
-		{"unknown version treated as mismatch: prompt on tty", "", false, true, alreadyRunningPrompt},
-		{"unknown version treated as mismatch: hint without tty", "", false, false, alreadyRunningHint},
-		{"explicit --prompt-restart always prompts on tty", "1.2.3", true, true, alreadyRunningPrompt},
-		{"explicit --prompt-restart without tty degrades to hint", "1.2.3", true, false, alreadyRunningHint},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := resolveAlreadyRunningAction(tt.runningVersion, "1.2.3", tt.promptRestart, tt.tty)
-			if got != tt.want {
-				t.Errorf("resolveAlreadyRunningAction(%q, %q, %v, %v) = %v, want %v",
-					tt.runningVersion, "1.2.3", tt.promptRestart, tt.tty, got, tt.want)
-			}
-		})
-	}
-}

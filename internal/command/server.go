@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pkg/browser"
@@ -37,7 +36,6 @@ type StartCmdKong struct {
 	EnableStyleTransform bool   `kong:"flag,name='adapter',default='true',help='Enable API style transform'"`
 	Daemon               bool   `kong:"flag,name='daemon',default='true',negatable,help='Run in the background (default; pass --no-daemon for foreground)'"`
 	LogFile              string `kong:"flag,name='log-file',help='Log file path'"`
-	PromptRestart        bool   `kong:"flag,name='prompt-restart',help='Prompt to restart if running'"`
 	EnableShortcut       bool   `kong:"flag,name='shortcut',help='Also create/refresh a desktop shortcut for next time'"`
 }
 
@@ -55,7 +53,6 @@ func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 		EnableStyleTransform: s.EnableStyleTransform,
 		Daemon:               s.Daemon,
 		LogFile:              s.LogFile,
-		PromptRestart:        s.PromptRestart,
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts, source)
@@ -145,7 +142,6 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 		EnableStyleTransform: r.EnableStyleTransform,
 		Daemon:               r.Daemon,
 		LogFile:              r.LogFile,
-		PromptRestart:        r.PromptRestart,
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(r.EnableDebug), flags, appManager.AppConfig())
 	return startServer(appManager, opts, source)
@@ -315,7 +311,6 @@ func resolveStartCmdKongOptions(start *StartCmdKong, appConfig *config.AppConfig
 		EnableOpenBrowser: start.EnableOpenBrowser,
 		Daemon:            start.Daemon,
 		LogFile:           start.LogFile,
-		PromptRestart:     start.PromptRestart,
 		RecordDir:         appConfig.ConfigDir() + "/record",
 	}
 }
@@ -459,43 +454,6 @@ func doStopServer(appManager *AppManager) error {
 	return nil
 }
 
-// alreadyRunningAction is what `start` does when the server is already running.
-type alreadyRunningAction int
-
-const (
-	// Same version: nothing to update — show access info, never restart.
-	alreadyRunningShowInfo alreadyRunningAction = iota
-	// Version differs/unknown and a terminal is attached (or --prompt-restart
-	// was passed): ask before restarting.
-	alreadyRunningPrompt
-	// Version differs/unknown but no terminal to ask on: print how to apply
-	// the new version and leave the server untouched.
-	alreadyRunningHint
-)
-
-// resolveAlreadyRunningAction decides how `start` treats an already-running
-// server. The bare npm/npx entrypoint maps to `start --daemon`, so this is
-// the guard that keeps a casual `tingly-box` from killing in-flight AI
-// requests: a restart only ever happens after an explicit yes. An unknown
-// running version (pre-version-file server) is treated as a mismatch — the
-// invoked binary may well be newer, and one confirmed restart makes the
-// version known from then on.
-func resolveAlreadyRunningAction(runningVersion, currentVersion string, promptRestart, tty bool) alreadyRunningAction {
-	if promptRestart {
-		if tty {
-			return alreadyRunningPrompt
-		}
-		return alreadyRunningHint
-	}
-	if runningVersion != "" && runningVersion == currentVersion {
-		return alreadyRunningShowInfo
-	}
-	if tty {
-		return alreadyRunningPrompt
-	}
-	return alreadyRunningHint
-}
-
 // promptYesNo asks a [y/N] question on stdin, defaulting to no on anything
 // but an explicit yes (including EOF from a detached stdin).
 func promptYesNo(question string) bool {
@@ -604,58 +562,31 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 	// Create file lock
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 
-	// Check if server is already running using file lock (BEFORE port check)
+	// Check if server is already running using file lock (BEFORE port check).
+	// `start` never restarts a running server — that would interrupt in-flight
+	// AI requests. It shows the access info the user came for, plus a hint
+	// when the recorded server version differs from this launcher (typical
+	// right after `npm install -g`); `restart` (confirming, or -y) is the one
+	// verb that actually switches the running server.
 	if fileLock.IsLocked() {
 		runningPort := appManager.GetRuntimeServerPort()
 		runningVersion, _ := fileLock.ReadVersion() // "" = unknown (pre-version-file server)
 
-		switch resolveAlreadyRunningAction(runningVersion, BuildVersion, opts.PromptRestart, isStdinTTY()) {
-		case alreadyRunningShowInfo:
-			// Same version: there is nothing to update, and restarting would
-			// only interrupt in-flight AI requests. Hand the user what they
-			// actually came for — the access info of the running server.
-			fmt.Printf("Server is already running on port %d (v%s)\n", runningPort, runningVersion)
-			printBanner(BannerConfig{
-				Port:         runningPort,
-				Host:         opts.Host,
-				EnableUI:     opts.EnableUI,
-				GlobalConfig: appConfig.GetGlobalConfig(),
-				IsDaemon:     false,
-			})
+		fmt.Printf("Server is already running on port %d%s\n", runningPort, describeRunningVersion(runningVersion))
+		printBanner(BannerConfig{
+			Port:         runningPort,
+			Host:         opts.Host,
+			EnableUI:     opts.EnableUI,
+			GlobalConfig: appConfig.GetGlobalConfig(),
+			IsDaemon:     false,
+		})
+		if runningVersion != "" && runningVersion != BuildVersion {
+			fmt.Printf("This launcher is v%s — run 'tingly-box restart' / 'tb restart' to switch the running server to it.\n", BuildVersion)
+		} else {
 			fmt.Println("Use 'tingly-box restart' / 'tb restart' to restart the server")
-			fmt.Println("Use 'tingly-box stop' / 'tb stop' to stop it")
-			return nil
-
-		case alreadyRunningHint:
-			// Version differs (or is unknown) but there is no terminal to ask
-			// on: never restart silently — an unattended launch must not kill
-			// in-flight AI requests.
-			fmt.Printf("Server is already running on port %d%s\n", runningPort, describeRunningVersion(runningVersion))
-			if runningVersion != BuildVersion {
-				fmt.Printf("This launcher is v%s. Run 'tingly-box restart' / 'tb restart' to switch the running server to it.\n", BuildVersion)
-			}
-			fmt.Println("Use 'tingly-box stop' / 'tb stop' to stop the server")
-			return nil
-
-		case alreadyRunningPrompt:
-			fmt.Printf("Server is already running on port %d%s\n", runningPort, describeRunningVersion(runningVersion))
-			if runningVersion != "" && runningVersion != BuildVersion {
-				fmt.Printf("This launcher is v%s — restarting will switch the server to it.\n", BuildVersion)
-			}
-			if !promptYesNo("Restart the server? In-flight AI requests will be interrupted.") {
-				fmt.Println("\nKeeping the running server untouched.")
-				fmt.Println("Use 'tingly-box restart' / 'tb restart' to restart it later")
-				return nil
-			}
-
-			fmt.Println("\nRestarting server...")
-			if err := stopServerWithFileLock(fileLock); err != nil {
-				return fmt.Errorf("failed to stop existing server: %w", err)
-			}
-			// Give a moment for cleanup
-			time.Sleep(1 * time.Second)
-			// Continue to start the server (fall through to the rest of the function)
 		}
+		fmt.Println("Use 'tingly-box stop' / 'tb stop' to stop it")
+		return nil
 	}
 
 	// Check if port is available (AFTER checking if our server is already running)
