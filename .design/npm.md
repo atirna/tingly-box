@@ -29,12 +29,14 @@ requests. `--source` follows the same split (`npx`/`npm`, `npx-bundle`/
 `npm-bundle`) with unified handling downstream.
 
 A global install of `tingly-box-bundle` works (same bins, same entry
-semantics, binaries extracted from the bundled zips), but stays discouraged
-as an advertised path: the ~70 MB package tree is exactly what widens the
-ENOTEMPTY window on `npm install -g` updates (mitigation A doesn't apply to
-it — only the self-heal B does), and both packages expose the same
-`tingly-box`/`tb` bin names, so installing cli and bundle globally side by
-side makes npm overwrite one package's bin links with the other's.
+semantics, binaries extracted from the bundled zips) and gets mitigations
+A + B like the cli package. The residual difference on `npm install -g`
+updates is payload, not dependency sprawl: the retire-rename still moves
+~70 MB of zips — a handful of large files rather than the pre-A hundreds of
+small ones, so the window is far narrower than it was but wider than the
+cli package's two tiny files. One footnote: both packages expose the same
+`tingly-box`/`tb` bin names — installs are one-or-the-other, side-by-side
+global installs overwrite each other's bin links.
 
 ## Making `npm install -g` viable again
 
@@ -45,9 +47,10 @@ global install broken. The rest of this doc explains the failure and lays out
 the path to re-enable global installs.
 
 - A lives in `.github/workflows/npm.yml` ("Bundle shim into a single
-  dependency-free file" steps for the cli leg and the gui job, plus a
-  smoke-test that runs the bundled shim with no `node_modules` against the
-  real release).
+  dependency-free file" steps for the cli and bundle legs and the gui job,
+  plus per-leg smoke-tests that run the bundled shim with no `node_modules` —
+  the cli one against the real release download, the bundle one against the
+  packaged zips).
 - B is `cleanupRetiredInstallDirs()` in all three `build/npx/*/bin.js`.
 - `build/npx/test-shim.sh <release-tag>` codifies the verification: it builds
   the published artifact the same way CI does (pin tag, esbuild bundle) and
@@ -123,8 +126,10 @@ Effect: the global package dir holds 2 files (~1–2 MB), no nested
 `npm i -g` / `npx` get faster (no dep resolution). This shrinks the ENOTEMPTY
 window to almost nothing but does not fix stickiness (B does).
 
-Applies to `tingly-box` and `tingly-box-gui`. `tingly-box-bundle` (70 MB of
-zips) should stay npx-oriented; don't advertise global install for it.
+Applies to all three packages (bundle since 2026-08 — its shim only pulled
+`unzipper`, and bundling it means an install materializes zero nested
+`node_modules`; the 70 MB of zips are package assets, not dependencies, so
+they're unaffected either way).
 
 #### B. Self-heal retired leftovers in the shim
 
