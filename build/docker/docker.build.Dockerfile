@@ -99,9 +99,12 @@ EXPOSE 12580
 ENV TINGLY_PORT=12580
 ENV TINGLY_HOST=0.0.0.0
 
-# Health check
+# Health check. Runs via `docker exec`-like mechanics under the image's
+# default user, which is root now that ENTRYPOINT starts as root to chown
+# the bind mount (see docker-entrypoint.sh) — su-exec drops back to the
+# unprivileged "tingly" for this one command, matching the main process.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD tingly status || exit 1
+    CMD su-exec tingly tingly status || exit 1
 
 # Default command (server mode)
 CMD ["sh", "-c", "echo '======================================' && \

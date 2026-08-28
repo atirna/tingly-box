@@ -6,7 +6,7 @@
 # `docker run --user ...` is left untouched.
 set -e
 
-DATA_DIR="${TINGLY_DATA_DIR:-/home/tingly/.tingly-box}"
+DATA_DIR="/home/tingly/.tingly-box"
 
 if [ "$(id -u)" = "0" ]; then
     mkdir -p "$DATA_DIR"
