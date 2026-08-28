@@ -180,15 +180,20 @@ After C, the npm package is a thin installer/launcher that changes rarely
 `npm update -g`. This is the same endgame as Claude Code's native installer,
 reached without leaving npm as the distribution channel.
 
-#### D. README posture (after A+B ship)
+#### D. README posture
 
-- Update instruction becomes `tb update` (once C lands); until then, prefer
-  `npm install -g tingly-box@latest` over `npm update -g` — the install path
-  re-resolves cleanly and also crosses major versions.
+Done (2026-08, alongside the entry-semantics split): the README and user
+manual advertise both paths — npx one-shot, and
+`npm install -g tingly-box@latest` + `tb start`, with updates via
+`npm install -g tingly-box@latest && tb restart` (prefer install over
+`npm update -g` — the install path re-resolves cleanly and also crosses
+major versions). Once C lands, the update instruction becomes `tb update`.
 
 ### Rollout
 
-1. A + B in the next shim release (no Go changes; CI + bin.js only).
-2. C behind a normal feature PR (Go `update` command + shim `current`
+1. A + B in the next shim release (no Go changes; CI + bin.js only). ✅
+   (A extended to the bundle package 2026-08.)
+2. Entry-semantics split + README/user-manual flip to "npm install -g
+   supported" (see `cli-entry-semantics.md`). ✅ 2026-08
+3. C behind a normal feature PR (Go `update` command + shim `current`
    resolution); ship shim change in the same release train as the Go command.
-3. Flip README to "npm install -g supported" once C has soaked for a release.

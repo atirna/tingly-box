@@ -48,11 +48,11 @@ Tingly Box **serves agents, coordinates AI models, optimizes context, and routes
 
 ### Install
 
-**From npm / npx (recommended)**
+**Run with npx (quickest)**
 
 ```bash
-# Install and run (auto restart, migrate and open webui while run without any args)
-# A golang binary release but npx to wrap cli for convenience
+# One command: fetch, restart the server in the background, migrate and open the web UI
+# (a golang binary release; npx wraps the cli for convenience)
 npx tingly-box@latest
 
 # or -y for convenience
@@ -66,6 +66,26 @@ npx --registry=https://registry.npmmirror.com -y tingly-box-bundle@latest
 npx --registry=https://mirrors.huaweicloud.com/repository/npm/ -y tingly-box-bundle@latest
 npx --registry=http://mirrors.tencent.com/npm/ -y tingly-box-bundle@latest
 ```
+
+**Install globally with npm**
+
+```bash
+npm install -g tingly-box@latest
+# (network trouble? use tingly-box-bundle instead — binaries built-in, same commands; install one or the other)
+
+tb start     # start the server (background by default; --no-daemon for foreground)
+tb open      # open the web UI
+tb stop      # stop the server
+```
+
+> `tingly-box` and `tb` are the same CLI — use either. Running `tingly-box`
+> with no arguments shows help; starting/restarting the server is always an
+> explicit command, so a casual invocation never interrupts in-flight AI
+> requests.
+>
+> **To update** a global install: `npm install -g tingly-box@latest`, then
+> `tb restart` to switch the running server to the new version (`tb start`
+> will also detect the version change and offer the restart).
 
 > if any trouble, please check tingly-box output, or call for an issue to help.
 
