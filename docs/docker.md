@@ -32,20 +32,18 @@ full login URL).
 ### Using Docker Compose
 
 ```bash
-cd build/docker
-
 # Start the server
-docker-compose up -d tingly-box
+docker-compose -f build/docker/docker-compose.yml up -d tingly-box
 
 # View logs
-docker-compose logs -f tingly-box
+docker-compose -f build/docker/docker-compose.yml logs -f tingly-box
 
 # Stop the server
-docker-compose down
+docker-compose -f build/docker/docker-compose.yml down
 ```
 
-Compose creates `./data/.tingly-box` for you on first `up`; no manual `mkdir`
-or `chown` is needed.
+Compose creates `build/docker/data/.tingly-box` for you on first `up`; no
+manual `mkdir` or `chown` is needed.
 
 ### Manual Docker Usage (build from source)
 

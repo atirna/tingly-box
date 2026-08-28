@@ -115,17 +115,19 @@ docker run -d \
 
 ```bash
 # Build and start in detached mode
-docker-compose up -d
+docker-compose -f build/docker/docker-compose.yml up -d
 
 # View logs
-docker-compose logs -f tingly-box
+docker-compose -f build/docker/docker-compose.yml logs -f tingly-box
 
 # Stop services
-docker-compose down
+docker-compose -f build/docker/docker-compose.yml down
 
 # Access Web UI at http://localhost:12581
 # (Note: Port 12581 is used to avoid conflict with host tingly on 12580)
 ```
+
+See [Docker Guide](./docs/docker.md) for more (running as a specific host UID/GID, building for other platforms, troubleshooting).
 
 ### Integration Guide
 
@@ -282,6 +284,8 @@ Then open `http://localhost:12580` in your browser.
 ## Documentation
 
 **[User Manual](./docs/user-manual.md)** – Installation, configuration, and operational guide
+
+**[Docker Guide](./docs/docker.md)** – Building, running, and troubleshooting the Docker images
 
 **[Guardrails](./docs/guardrails.md)** – Policy-based safety checks, built-in protections, and protected credential masking
 
