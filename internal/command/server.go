@@ -410,7 +410,7 @@ func printBanner(cfg BannerConfig) {
 	fmt.Println()
 
 	if cfg.IsDaemon {
-		fmt.Println("Server is running in background. Use 'tingly-box stop' to stop.")
+		fmt.Println("Server is running in background. Use 'tingly-box stop' / 'tb stop' to stop.")
 	}
 }
 
@@ -594,8 +594,8 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 				GlobalConfig: appConfig.GetGlobalConfig(),
 				IsDaemon:     false,
 			})
-			fmt.Println("Use 'tingly-box restart' to restart the server")
-			fmt.Println("Use 'tingly-box stop' to stop it")
+			fmt.Println("Use 'tingly-box restart' / 'tb restart' to restart the server")
+			fmt.Println("Use 'tingly-box stop' / 'tb stop' to stop it")
 			return nil
 
 		case alreadyRunningHint:
@@ -604,9 +604,9 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 			// in-flight AI requests.
 			fmt.Printf("Server is already running on port %d%s\n", runningPort, describeRunningVersion(runningVersion))
 			if runningVersion != BuildVersion {
-				fmt.Printf("This launcher is v%s. Run 'tingly-box restart' to switch the running server to it.\n", BuildVersion)
+				fmt.Printf("This launcher is v%s. Run 'tingly-box restart' / 'tb restart' to switch the running server to it.\n", BuildVersion)
 			}
-			fmt.Println("Use 'tingly-box stop' to stop the server")
+			fmt.Println("Use 'tingly-box stop' / 'tb stop' to stop the server")
 			return nil
 
 		case alreadyRunningPrompt:
@@ -621,7 +621,7 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 			response = strings.ToLower(strings.TrimSpace(response))
 			if response != "y" && response != "yes" {
 				fmt.Println("\nKeeping the running server untouched.")
-				fmt.Println("Use 'tingly-box restart' to restart it later")
+				fmt.Println("Use 'tingly-box restart' / 'tb restart' to restart it later")
 				return nil
 			}
 

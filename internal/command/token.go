@@ -125,7 +125,7 @@ func runBoxTokenList(appManager *AppManager) error {
 	fmt.Printf("  model  %s\n", maskTokenPreview(cfg.GetModelToken()))
 	fmt.Printf("         used at  http://localhost:%d (OpenAI/Anthropic API)\n", port)
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Println("Tip: 'tingly-box token view <auth|model> --reveal' to copy.")
+	fmt.Println("Tip: 'tingly-box token view <auth|model> --reveal' (or 'tb token ...') to copy.")
 	return nil
 }
 
@@ -137,7 +137,7 @@ func runBoxTokenView(appManager *AppManager, kind TokenKind, reveal bool) error 
 	}
 	value := readBoxToken(cfg, kind)
 	if value == "" {
-		return fmt.Errorf("%s token is not set; run 'tingly-box token refresh %s' to generate one", kind, kind)
+		return fmt.Errorf("%s token is not set; run 'tingly-box token refresh %s' / 'tb token refresh %s' to generate one", kind, kind, kind)
 	}
 	port := cfg.ServerPort
 	if port == 0 {

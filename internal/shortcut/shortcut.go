@@ -41,8 +41,22 @@ func render(t *template.Template, data any) string {
 const (
 	SourceBinary    = "binary"
 	SourceNpx       = "npx"
+	SourceNpm       = "npm" // installed bin from `npm install -g tingly-box` (shim run outside npx)
 	SourceNpxBundle = "npx-bundle"
+	SourceNpmBundle = "npm-bundle" // installed bin from `npm install -g tingly-box-bundle`
 )
+
+// npmShimSources lists every source that reaches the Go binary through an npm
+// shim, whatever the channel (npx or a global install) and package (cli or
+// bundle). They all get the same treatment; the split values only keep the
+// record truthful and preserve which npm package a shortcut should relaunch.
+func npmShimSource(source string) bool {
+	switch source {
+	case SourceNpx, SourceNpm, SourceNpxBundle, SourceNpmBundle:
+		return true
+	}
+	return false
+}
 
 // npxPackageForSource returns the npm package + version spec an npx-based
 // launch should run. It pins to the currently-running version so the
@@ -53,7 +67,7 @@ const (
 // "@latest".
 func npxPackageForSource(source, version string) string {
 	pkg := "tingly-box"
-	if source == SourceNpxBundle {
+	if source == SourceNpxBundle || source == SourceNpmBundle {
 		pkg = "tingly-box-bundle"
 	}
 	if version == "" || version == "dev" || version == "unknown" {
@@ -103,14 +117,19 @@ type Options struct {
 
 // ResolveLaunch decides whether the shortcut runs the binary directly or goes
 // through npx, then builds the platform-specific launch vectors. source is how
-// the *current* process was invoked (SourceNpx / SourceNpxBundle / anything
-// else meaning a plain binary) — the caller always knows this first-hand, so
-// there is no detection or persistence to do here. version pins an npx-based
-// shortcut to the currently-running release (see npxPackageForSource).
+// the *current* process was invoked (an npm shim source — see npmShimSource —
+// or anything else meaning a plain binary) — the caller always knows this
+// first-hand, so there is no detection or persistence to do here. version pins
+// an npx-based shortcut to the currently-running release (see
+// npxPackageForSource). Global installs (SourceNpm/SourceNpmBundle) are
+// handled identically to npx: the process's own exePath points into the
+// version-tagged download cache, which a later update orphans, so an npx
+// relaunch pinned to the version is the stable target for them too (npm's
+// cache still has the tarball from the install, so it works offline).
 func ResolveLaunch(exePath, source, version string) LaunchSpec {
 	args := LaunchArgs()
 
-	if source == SourceNpx || source == SourceNpxBundle {
+	if npmShimSource(source) {
 		// e.g. "npx -y tingly-box@1.4.2 restart --daemon"
 		npxArgv := append([]string{"npx", "-y", npxPackageForSource(source, version)}, args...)
 		cmdStr := strings.Join(npxArgv, " ")

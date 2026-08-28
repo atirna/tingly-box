@@ -27,6 +27,21 @@ changes are either explicitly requested or explicitly confirmed.
   Implemented twice so both layers agree: the shims pass `--help` when not
   under npx, and `cli/tingly-box/main.go` maps zero args to `--help`.
 
+**`--source` records the channel truthfully, handling stays unified:** the
+shims report `npx` / `npx-bundle` under npx and `npm` / `npm-bundle` when run
+as an installed bin (`internal/shortcut.npmShimSource` groups all four). The
+only consumer that cares about the split is shortcut generation, which keeps
+relaunching via a version-pinned `npx -y <package>@<ver>` for every npm shim
+source — a global install's own exePath sits in the version-tagged download
+cache that a later update orphans, and npm's cache still holds the installed
+tarball so the npx relaunch works offline. The bundle variants exist so a
+`tingly-box-bundle` install's shortcut relaunches the offline-capable bundle
+package, not the network-fetching cli one.
+
+Both bins are always shipped (`tingly-box` and `tb`), so command hints print
+both forms (e.g. `'tingly-box restart' / 'tb restart'`) rather than guessing
+which one the user typed.
+
 **`start`:**
 
 - Daemonizes **by default** (`--no-daemon` for foreground). "Start the
@@ -64,8 +79,6 @@ changes are either explicitly requested or explicitly confirmed.
 - Graceful drain (waiting for in-flight requests before restarting) and an
   in-flight request counter. The current guard is consent, not draining;
   `ServerManager.StopTimeout` is still short.
-- Distinguishing `npm install -g` from npx in `--source` (both shims still
-  report `npx`; only shortcut generation consumes it).
 - `tb update` (npm.md plan C) — once it lands, it becomes the primary update
   verb and the npx restart default matters less.
 

@@ -151,9 +151,13 @@ const IS_NPX = process.env.npm_command === "exec";
 //   daemonizes by default; --no-daemon for foreground).
 const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon"] : ["--help"];
 
-// Global flag prepended to every invocation so the binary records that it was
-// launched via npx-bundle. As a global flag it must come before the subcommand.
-const SOURCE_ARGS = ["--source=npx-bundle"];
+// Global flag prepended to every invocation so the binary records how it was
+// launched: "npx-bundle" for npx / npm exec, "npm-bundle" for a globally
+// installed bin. Downstream handling is identical; the value keeps the record
+// truthful and lets shortcuts relaunch the bundle package (offline-capable)
+// rather than the network-fetching cli package. As a global flag it must come
+// before the subcommand.
+const SOURCE_ARGS = [IS_NPX ? "--source=npx-bundle" : "--source=npm-bundle"];
 
 const args = process.argv.slice(2);
 const baseArgs = args.length > 0 ? args : DEFAULT_ARGS;

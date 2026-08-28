@@ -89,9 +89,12 @@ const IS_NPX = process.env.npm_command === "exec";
 //   daemonizes by default; --no-daemon for foreground).
 const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon"] : ["--help"];
 
-// Global flag prepended to every invocation so the binary records that it was
-// launched via npx. As a global flag it must come before the subcommand.
-const SOURCE_ARGS = ["--source=npx"];
+// Global flag prepended to every invocation so the binary records how it was
+// launched: "npx" for npx / npm exec, "npm" for the globally installed bin.
+// Downstream handling is identical (shortcuts relaunch via a pinned npx for
+// both); the value just keeps the record truthful. As a global flag it must
+// come before the subcommand.
+const SOURCE_ARGS = [IS_NPX ? "--source=npx" : "--source=npm"];
 
 async function getPlatformArchAndBinary() {
 	const platform = process.platform;

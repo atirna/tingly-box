@@ -25,7 +25,16 @@ npx / `npm exec` (`npm_command=exec`) the cli and bundle shims keep the
 historical `restart --daemon`; run as an installed bin (global install) they
 pass `--help` instead — server lifecycle is explicit (`tingly-box start`,
 which daemonizes by default) so a casual `tingly-box` can't kill in-flight AI
-requests.
+requests. `--source` follows the same split (`npx`/`npm`, `npx-bundle`/
+`npm-bundle`) with unified handling downstream.
+
+A global install of `tingly-box-bundle` works (same bins, same entry
+semantics, binaries extracted from the bundled zips), but stays discouraged
+as an advertised path: the ~70 MB package tree is exactly what widens the
+ENOTEMPTY window on `npm install -g` updates (mitigation A doesn't apply to
+it — only the self-heal B does), and both packages expose the same
+`tingly-box`/`tb` bin names, so installing cli and bundle globally side by
+side makes npm overwrite one package's bin links with the other's.
 
 ## Making `npm install -g` viable again
 
