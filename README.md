@@ -69,6 +69,20 @@ npx --registry=http://mirrors.tencent.com/npm/ -y tingly-box-bundle@latest
 
 > if any trouble, please check tingly-box output, or call for an issue to help.
 
+<details>
+<summary><code>npm update -g tingly-box</code> fails with <code>ENOTEMPTY</code> / <code>rename</code></summary>
+
+This is a known npm bug when updating a globally installed package in place (npm/cli issue, unrelated to tingly-box's own files) — it usually leaves a broken `tingly-box` folder behind and `tb`/`tingly-box` stops working. Clean up the stale install and reinstall:
+
+```bash
+NPM_GLOBAL_DIR=$(npm root -g)
+rm -rf "$NPM_GLOBAL_DIR/tingly-box" "$NPM_GLOBAL_DIR"/.tingly-box-*
+npm install -g tingly-box@latest
+```
+
+If it still fails, uninstall first (`npm uninstall -g tingly-box`) before reinstalling, or use `npx -y tingly-box@latest` instead of a global install.
+</details>
+
 **Install Node & NPX**
 
 ```
