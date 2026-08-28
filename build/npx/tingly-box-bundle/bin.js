@@ -113,22 +113,18 @@ async function extractBinary(platformDir) {
 	return cachedBinary;
 }
 
-// npm's global update first "retires" the old package dir by renaming it to a
-// sibling .<name>-<hash> dir; the hash is derived from the path, so a leftover
-// from one interrupted update makes every later `npm update -g` fail with
-// ENOTEMPTY until it's removed. Sweep our own leftovers on launch so the next
-// update can succeed. Best-effort: only our own .<name>-* siblings, never fail.
+// Sweep leftover npm "retire" dirs (.<name>-<hash>) from an interrupted
+// `npm update -g`; their deterministic name otherwise makes every later
+// update fail with ENOTEMPTY. See .design/npm.md.
 function cleanupRetiredInstallDirs() {
 	try {
 		const pkgDir = __dirname;
 		const parentDir = dirname(pkgDir);
 		if (basename(parentDir) !== "node_modules") return;
-		// A fresh parent mtime means an npm transaction may be in flight — the
-		// retired dir is then npm's rollback source, not trash. Skip and let a
-		// later launch sweep real leftovers.
+		// Fresh parent mtime: an npm transaction may be in flight and the
+		// retired dir is its rollback source — skip.
 		if (Date.now() - statSync(parentDir).mtimeMs < 5 * 60 * 1000) return;
-		// Match exactly npm's retire-dir shape (@npmcli/arborist retire-path.js):
-		// .<name>-<8 alphanumeric chars>. Anything else is not ours to delete.
+		// Only npm's exact retire shape (@npmcli/arborist retire-path.js).
 		const retired = new RegExp(`^\\.${basename(pkgDir)}-[a-zA-Z0-9]{8}$`);
 		for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
 			if (entry.isDirectory() && retired.test(entry.name)) {

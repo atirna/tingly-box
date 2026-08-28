@@ -74,7 +74,7 @@ own package. This is an npm-side weakness we have to engineer around, same
 class of pain that pushed Claude Code off npm-global installs to a native
 installer + self-update.
 
-Immediate user-facing workaround (already in README):
+Manual recovery, for installs predating the self-heal (B):
 
 ```bash
 NPM_GLOBAL_DIR=$(npm root -g)
@@ -164,7 +164,6 @@ reached without leaving npm as the distribution channel.
 - Update instruction becomes `tb update` (once C lands); until then, prefer
   `npm install -g tingly-box@latest` over `npm update -g` — the install path
   re-resolves cleanly and also crosses major versions.
-- Keep the ENOTEMPTY cleanup snippet as troubleshooting.
 
 ### Rollout
 

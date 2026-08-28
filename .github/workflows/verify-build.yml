@@ -9,9 +9,7 @@ run-name: >-
 #   - verify-gui-build: builds the Wails GUI from source on Linux, so GUI
 #     regressions (bindings, frontend, cgo/webview) surface here even when a
 #     release was cut without GUI artifacts (build_gui=false).
-#   - verify-npx-shim: builds the npx cli shim the way the publish workflow
-#     does (esbuild single-file bundle) and runs build/npx/test-shim.sh
-#     against the release: retired-dir sweep guards + a real download/exec.
+#   - verify-npx-shim: runs build/npx/test-shim.sh against the release.
 # Runs automatically when a release is published (non-blocking, in parallel
 # with the NPX publish workflow), can be triggered manually against any tag,
 # and is reusable from other workflows via workflow_call.
@@ -116,8 +114,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Testing npx shim against release: $TAG"
 
-      # Test the shim as it exists at the tag — the same source the NPX
-      # publish workflow packages for this release.
+      # The tag's shim source — the same the publish workflow packages.
       - name: Checkout code
         uses: actions/checkout@v6
         with:

@@ -1,25 +1,11 @@
 #!/usr/bin/env bash
-# Test harness for the npx cli shim (build/npx/tingly-box). Builds the
-# published artifact exactly like .github/workflows/npm.yml does — pin the
-# release tag, bundle with esbuild into a single dependency-free file — then
-# runs the verification matrix against the real GitHub release:
-#
-#   build  bundle parses (node --check)
-#   T1     fresh node_modules mtime -> retired-dir sweep SKIPS (npm may be
-#          mid-transaction; nothing may be deleted), shim still runs
-#   T2     old node_modules mtime  -> exactly .<name>-<8 alnum> swept;
-#          cross-package and human-made dot-dirs untouched
-#   T3     end-to-end: no node_modules next to bin.js, real download of
-#          <tag>'s binary, `version` executes and reports <tag>
+# Test the npx cli shim against a real GitHub release: build the published
+# artifact like .github/workflows/npm.yml does (pin tag, esbuild single-file
+# bundle), then verify the retired-dir sweep guards and an end-to-end
+# download + `version` run. Details: .design/npm.md.
 #
 # Usage:   ./test-shim.sh <release-tag>
 # Example: ./test-shim.sh v0.260819.0
-#
-# The tag must be an existing GitHub release with platform zips. Downloads
-# go to a sandboxed cache on Linux (XDG_CACHE_HOME); on macOS the shim
-# ignores that env, so only the tag's own cache dir is cleared (it is just a
-# re-downloadable binary). gui/bundle shims are out of scope here: gui only
-# runs on macOS and bundle ships its zips inside the package.
 set -euo pipefail
 
 TAG="${1:?usage: $0 <release-tag>   e.g. $0 v0.260819.0}"
@@ -48,7 +34,7 @@ npx --yes "esbuild@$ESBUILD_VERSION" "$ENTRY" --bundle --platform=node --target=
 	--outfile="$WORK/bin.js" --log-level=warning
 node --check "$WORK/bin.js" && pass "build: bundle parses ($(du -h "$WORK/bin.js" | cut -f1))"
 
-# --- cold cache -------------------------------------------------------------
+# --- cold cache (macOS shim ignores XDG_CACHE_HOME; clear only the tag) -----
 case "$(uname -s)" in
 	Linux) export XDG_CACHE_HOME="$WORK/cache" ;;
 	Darwin) rm -rf "$HOME/Library/Caches/tingly-box/$TAG" ;;
