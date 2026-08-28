@@ -4,171 +4,100 @@ This guide explains how to use Tingly Box with Docker.
 
 ## Overview
 
-We provide a single Docker setup with multiple use cases:
+Two Dockerfiles live under `build/docker/`:
 
-1. **Dockerfile** - Multi-stage build using Task task runner (includes both server and CLI)
-2. **docker-compose.yml** - Complete setup with volumes for production and development
+1. **`docker.build.Dockerfile`** - Multi-stage build from source (Go + frontend). This is what the published `ghcr.io/tingly-dev/tingly-box` images are built from.
+2. **`docker.npx.Dockerfile`** - Lightweight image that installs the published `tingly-box` npm package. Used by `docker-compose.yml`.
+
+Both run as a non-root `tingly` user and both ship an entrypoint that fixes up
+ownership of the bind-mounted data directory at container start, so a plain
+`mkdir` + bind mount works without a manual `chown` on the host.
 
 ## Quick Start
 
-### Using Docker Compose (Recommended)
+### Using the published image
 
 ```bash
-# Create data directories
-mkdir -p data/{.tingly-box,logs,memory}
+mkdir tingly-data
+docker run -d \
+  --name tingly-box \
+  -p 12580:12580 \
+  -v "$(pwd)/tingly-data:/home/tingly/.tingly-box" \
+  ghcr.io/tingly-dev/tingly-box
+```
 
+Open `http://localhost:12580` in your browser (the container logs print the
+full login URL).
+
+### Using Docker Compose
+
+```bash
 # Start the server
-docker-compose up tingly-box
-
-# Run in detached mode
-docker-compose up -d tingly-box
+docker-compose -f build/docker/docker-compose.yml up -d tingly-box
 
 # View logs
-docker-compose logs -f tingly-box
+docker-compose -f build/docker/docker-compose.yml logs -f tingly-box
 
 # Stop the server
-docker-compose down
+docker-compose -f build/docker/docker-compose.yml down
 ```
 
-### Manual Docker Usage
+Compose creates `build/docker/data/.tingly-box` for you on first `up`; no
+manual `mkdir` or `chown` is needed.
 
-#### 1. Build and Run Server
+### Manual Docker Usage (build from source)
 
 ```bash
 # Build the image
-docker build -t tingly-box:latest .
+docker build -f build/docker/docker.build.Dockerfile -t tingly-box:latest .
 
 # Run the server
-docker stop tingly-box && docker rm tingly-box
 docker run -d \
---name tingly-box \
--p 8080:8080 \
--v $(pwd)/data/.tingly-box:/app/.tingly-box \
--v $(pwd)/data/logs:/app/logs \
--v $(pwd)/data/memory:/app/memory \
-tingly-box:latest
-
-```
-
-#### 2. CLI Tool Usage (using same image)
-
-```bash
-# Build the image
-docker build -t tingly-box:latest .
-
-# Add a provider
-docker run -it --rm \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  tingly-box:latest add openai https://api.openai.com/v1 sk-token
-
-# List providers
-docker run -it --rm \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  tingly-box:latest list
-
-# Generate token
-docker run -it --rm \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  tingly-box:latest token
-
-# Run any other CLI command
-docker run -it --rm \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  tingly-box:latest status
-```
-
-#### 3. Development Mode
-
-For development, you can mount the source code and rebuild manually when needed:
-
-```bash
-# Run with source mounted (for development)
-docker-compose --profile dev up tingly-box-dev
-
-# Make changes to source code, then rebuild and restart:
-docker-compose exec tingly-box-dev task cli:build
-docker-compose restart tingly-box-dev
-
-# Or run manually with mounted source
-docker run -it --rm \
-  -v $(pwd):/app \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  -p 8080:8080 \
+  --name tingly-box \
+  -p 12580:12580 \
+  -v "$(pwd)/data/.tingly-box:/home/tingly/.tingly-box" \
   tingly-box:latest
+
+# CLI usage against the same data directory
+docker run -it --rm \
+  -v "$(pwd)/data/.tingly-box:/home/tingly/.tingly-box" \
+  tingly-box:latest tingly list
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-- `TINGLY_PORT` - Server port (default: 8080)
-- `TINGLY_HOST` - Server host (default: 0.0.0.0)
-- `TINGLY_DEBUG` - Enable debug mode (default: false)
+- `TINGLY_PORT` - Server port (default: `12580`)
+- `TINGLY_HOST` - Server host (default: `0.0.0.0`)
+- `TINGLY_DEBUG` - Enable debug mode (npx image only, default: `false`)
 
 ### Volume Mounts
 
-- `/app/.tingly-box` - Encrypted configuration storage
-- `/app/logs` - Server logs
-- `/app/memory` - Operation history and statistics
+Config, memory, logs and the database all live under a single directory tree
+(see `internal/config/app_config.go`), so only one bind mount is needed:
 
-## Example: Complete Setup
+- `docker.build.Dockerfile`: `/home/tingly/.tingly-box`
+- `docker.npx.Dockerfile` / `docker-compose.yml`: `/app/.tingly-box`
 
-```bash
-#!/bin/bash
+### Running as a specific host UID/GID
 
-# 1. Create directories
-mkdir -p data/{.tingly-box,logs,memory}
-
-# 2. Build and start server
-docker-compose up -d tingly-box
-
-# 3. Wait for server to start
-sleep 5
-
-# 4. Add providers
-docker run -it --rm \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  tingly-box:latest add openai https://api.openai.com/v1 sk-your-token
-
-docker run -it --rm \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  tingly-box:latest add anthropic https://api.anthropic.com sk-your-token
-
-# 5. Generate token
-TOKEN=$(docker run -it --rm \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  tingly-box:latest token | grep "sk-" | head -1)
-
-# 6. Test the API
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-3.5-turbo",
-    "messages": [{"role": "user", "content": "Hello from Docker!"}]
-  }'
-```
+The entrypoint only fixes ownership when the container starts as root (the
+default). If you explicitly run with `docker run --user <uid>:<gid>`, make
+sure that UID/GID already owns the mounted directory on the host — the
+entrypoint leaves an explicit `--user` untouched.
 
 ## Production Tips
 
 ### Security
 
-1. Use secrets for API tokens:
-```yaml
-services:
-  tingly-box:
-    environment:
-      - OPENAI_TOKEN=${OPENAI_TOKEN}
-      - ANTHROPIC_TOKEN=${ANTHROPIC_TOKEN}
-```
-
-2. Run as non-root user (included in Dockerfile)
-
-3. Use read-only volumes where possible
+1. Use secrets/env files for API tokens rather than baking them into the image.
+2. The image already runs as a non-root user by default.
+3. Use read-only volumes where possible.
 
 ### Performance
 
-1. Set memory limits:
+Set memory limits in `docker-compose.yml`:
 ```yaml
 services:
   tingly-box:
@@ -178,14 +107,11 @@ services:
           memory: 512M
 ```
 
-2. Use health checks (included in Dockerfile)
-
 ### Backup
 
-Backup the `.tingly-box` directory regularly:
+Back up the `.tingly-box` directory regularly, e.g.:
 ```bash
-docker run --rm -v tingly-config:/data -v $(pwd):/backup \
-  alpine tar czf /backup/tingly-config-backup.tar.gz -C /data .
+tar czf tingly-config-backup.tar.gz -C data .tingly-box
 ```
 
 ## Troubleshooting
@@ -193,40 +119,29 @@ docker run --rm -v tingly-config:/data -v $(pwd):/backup \
 ### Common Issues
 
 1. **Port already in use**
-   - Change the host port mapping
-   - Example: `-p 9090:8080`
+   - Change the host port mapping, e.g. `-p 12581:12580`.
 
-2. **Permission errors**
-   - Ensure proper ownership of data directories
-   - `sudo chown -R 1000:1000 data/`
+2. **Permission errors on the bind mount**
+   - The image's entrypoint chowns the mounted directory to the container's
+     `tingly` user automatically on startup as long as the container runs as
+     root (the default). If you still see `permission denied`, check
+     whether you passed `--user`, or whether the mount is on a filesystem
+     that doesn't support `chown` (e.g. some network/FUSE mounts).
 
 3. **Configuration not persisting**
-   - Check volume mounts
-   - Ensure correct paths
-
-### Debug Mode
-
-Enable debug logging:
-```bash
-docker run -d \
-  --name tingly-box-debug \
-  -p 8080:8080 \
-  -v $(pwd)/data/.tingly-box:/app/.tingly-box \
-  -e TINGLY_DEBUG=true \
-  tingly-box:latest
-
-# View debug logs
-docker logs -f tingly-box-debug
-```
+   - Check the volume mount path matches the image you're running
+     (`/home/tingly/.tingly-box` for the source-build image,
+     `/app/.tingly-box` for the npx image / Compose).
 
 ## Building for Different Platforms
 
 ```bash
 # Build for ARM64 (Apple Silicon)
-docker buildx build --platform linux/arm64 -t tingly-box:arm64 .
+docker buildx build --platform linux/arm64 -f build/docker/docker.build.Dockerfile -t tingly-box:arm64 .
 
 # Build for AMD64 (Intel/AMD)
-docker buildx build --platform linux/amd64 -t tingly-box:amd64 .
+docker buildx build --platform linux/amd64 -f build/docker/docker.build.Dockerfile -t tingly-box:amd64 .
 
 # Build multi-arch image
-docker buildx build --platform linux/amd64,linux/arm64 -t tingly-box:latest .
+docker buildx build --platform linux/amd64,linux/arm64 -f build/docker/docker.build.Dockerfile -t tingly-box:latest .
+```

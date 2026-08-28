@@ -78,12 +78,19 @@ WORKDIR /app
 # Copy the binary from builder stage
 COPY --from=builder /app/tingly /usr/local/bin/tingly
 
-# Create necessary directories with proper permissions
-RUN mkdir -p /home/tingly/.tingly-box /app/memory /app/logs && \
+# Create the config/data directory (memory, logs and db all live under this
+# single tree, see internal/config/app_config.go) with proper permissions.
+RUN mkdir -p /home/tingly/.tingly-box && \
     chown -R tingly:tingly /app /home/tingly
 
-# Switch to non-root user
-USER tingly
+# Entrypoint fixes up ownership of a bind-mounted data directory at runtime
+# (a freshly `mkdir`ed host directory is owned by the host user, not the
+# container's UID/GID, and the non-root "tingly" user can't write into it)
+# before dropping from root down to "tingly". Deliberately does NOT switch
+# to USER tingly here, so the entrypoint still starts as root.
+COPY build/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Expose port
 EXPOSE 12580
@@ -92,9 +99,12 @@ EXPOSE 12580
 ENV TINGLY_PORT=12580
 ENV TINGLY_HOST=0.0.0.0
 
-# Health check
+# Health check. Runs via `docker exec`-like mechanics under the image's
+# default user, which is root now that ENTRYPOINT starts as root to chown
+# the bind mount (see docker-entrypoint.sh) — su-exec drops back to the
+# unprivileged "tingly" for this one command, matching the main process.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD tingly status || exit 1
+    CMD su-exec tingly tingly status || exit 1
 
 # Default command (server mode)
 CMD ["sh", "-c", "echo '======================================' && \
@@ -105,5 +115,5 @@ CMD ["sh", "-c", "echo '======================================' && \
      rm -f /home/tingly/.tingly-box/tingly-server.pid && \
      exec tingly start --host ${TINGLY_HOST} --port ${TINGLY_PORT}"]
 
-# Volumes for persistent data
-VOLUME ["/home/tingly/.tingly-box", "/app/memory", "/app/logs"]
+# Volume for persistent data (memory, logs and db all live under this tree)
+VOLUME ["/home/tingly/.tingly-box"]
