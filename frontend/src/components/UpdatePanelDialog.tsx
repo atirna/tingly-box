@@ -1,10 +1,9 @@
 import { ContentCopy, Check, GitHub, AppRegistration as NPM, Refresh } from '@/components/icons';
-import { Box, Button, Collapse, Dialog, DialogActions, DialogContent, Divider, IconButton, Stack, Typography, useTheme } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, Divider, IconButton, Stack, ToggleButton, ToggleButtonGroup, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { fontMono } from '@/theme/fonts';
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TransitionGroup } from 'react-transition-group';
 import { useVersion } from '@/contexts/VersionContext';
 import { Paper, Tooltip } from '@mui/material';
 
@@ -25,8 +24,9 @@ export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onCl
     const theme = useTheme();
     const { currentVersion, latestVersion, checking, releaseURL, checkForUpdates, hasUpdate } = useVersion();
 
-    const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+    const [copiedMethod, setCopiedMethod] = useState<string | null>(null);
     const [copiedVersion, setCopiedVersion] = useState(false);
+    const [selectedMethodId, setSelectedMethodId] = useState<string>('npx');
 
     const displayCurrentVersion = (currentVersion || 'Unknown').split('+')[0];
     const displayLatestVersion = (latestVersion || currentVersion || 'Unknown').split('+')[0];
@@ -40,35 +40,51 @@ export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onCl
     // Only fallback to currentVersion if latestVersion is not available
     const versionForCommand = latestVersion || currentVersion;
 
-    // Update methods with commands - always use specific version
+    // Update methods with commands - always use specific version.
+    // Selected via the channel toggle below; only one method is expanded at a
+    // time so adding channels doesn't grow the dialog.
     const updateMethods = [
         {
             id: 'npx',
             title: t('update.methods.npx.title'),
             description: t('update.methods.npx.description'),
-            command: versionForCommand ? `npx tingly-box@${versionForCommand}` : 'npx tingly-box@latest',
+            commands: [versionForCommand ? `npx tingly-box@${versionForCommand}` : 'npx tingly-box@latest'],
+            icon: <NPM />,
+        },
+        {
+            id: 'npm',
+            title: t('update.methods.npm.title'),
+            description: t('update.methods.npm.description'),
+            // Two commands on purpose (no `&&`, which older PowerShell lacks):
+            // pasting the pair runs them sequentially in any shell.
+            commands: [
+                versionForCommand ? `npm install -g tingly-box@${versionForCommand}` : 'npm install -g tingly-box@latest',
+                'tingly-box restart',
+            ],
             icon: <NPM />,
         },
         {
             id: 'bundle',
             title: t('update.methods.bundle.title'),
             description: t('update.methods.bundle.description'),
-            command: versionForCommand ? `npx -y tingly-box-bundle@${versionForCommand}` : 'npx -y tingly-box-bundle@latest',
+            commands: [versionForCommand ? `npx -y tingly-box-bundle@${versionForCommand}` : 'npx -y tingly-box-bundle@latest'],
             icon: <NPM />,
         },
         {
             id: 'docker',
             title: t('update.methods.docker.title'),
             description: t('update.methods.docker.description'),
-            command: versionForCommand ? `docker pull ghcr.io/tingly-dev/tingly-box:v${versionForCommand}` : 'docker pull ghcr.io/tingly-dev/tingly-box:latest',
+            commands: [versionForCommand ? `docker pull ghcr.io/tingly-dev/tingly-box:v${versionForCommand}` : 'docker pull ghcr.io/tingly-dev/tingly-box:latest'],
             icon: <GitHub />,
         },
     ] as const;
 
-    const handleCopy = useCallback((command: string, index: number) => {
-        navigator.clipboard.writeText(command).then(() => {
-            setCopiedIndex(index);
-            setTimeout(() => setCopiedIndex(null), 2000);
+    const selectedMethod = updateMethods.find((m) => m.id === selectedMethodId) ?? updateMethods[0];
+
+    const handleCopy = useCallback((commands: readonly string[], methodId: string) => {
+        navigator.clipboard.writeText(commands.join('\n')).then(() => {
+            setCopiedMethod(methodId);
+            setTimeout(() => setCopiedMethod(null), 2000);
         });
     }, []);
 
@@ -207,78 +223,91 @@ export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onCl
                             {t('update.updateMethods')}
                         </Typography>
 
-                        <TransitionGroup>
-                            {updateMethods.map((method, index) => (
-                                <Collapse key={method.id}>
-                                    <Box sx={{ mb: index < updateMethods.length - 1 ? 2 : 0 }}>
-                                        <Typography
-                                            variant="body2"
-                                            sx={{
-                                                fontWeight: 500,
-                                                mb: 0.5,
-                                                color: 'text.primary',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 0.5,
-                                            }}
-                                        >
-                                            {method.icon}
-                                            {method.title}
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
-                                            {method.description}
-                                        </Typography>
-                                        <Paper
-                                            variant="outlined"
-                                            sx={{
-                                                p: 2,
-                                                bgcolor: 'background.paper',
-                                                border: '1px solid',
-                                                borderColor: 'divider',
-                                                position: 'relative',
-                                            }}
-                                        >
-                                            <Typography
-                                                variant="body2"
-                                                sx={{
-                                                    fontFamily: fontMono,
-                                                    color: 'text.primary',
-                                                    fontSize: '0.875rem',
-                                                    pr: 5,
-                                                    wordBreak: 'break-all',
-                                                }}
-                                            >
-                                                $ {method.command}
-                                            </Typography>
-                                            <Tooltip
-                                                title={copiedIndex === index ? t('update.copied') : t('update.copy')}
-                                                placement="top"
-                                                arrow
-                                            >
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => handleCopy(method.command, index)}
-                                                    sx={{
-                                                        position: 'absolute',
-                                                        right: 8,
-                                                        top: '50%',
-                                                        transform: 'translateY(-50%)',
-                                                        color: copiedIndex === index ? 'success.main' : 'text.secondary',
-                                                        bgcolor: copiedIndex === index ? 'success.light' : 'transparent',
-                                                        '&:hover': {
-                                                            color: 'primary.main',
-                                                            bgcolor: 'action.hover',
-                                                        },
-                                                    }}
-                                                >
-                                                    <ContentCopy sx={{ fontSize: 18 }} />
-                                                </IconButton>
-                                            </Tooltip>
-                                        </Paper>
-                                    </Box>
-                                </Collapse>
+                        {/* Channel selector: literal channel names (npx / npm / …) so the
+                            toggle reads as the real-world install method, with the
+                            translated title + description shown for the selected one. */}
+                        <ToggleButtonGroup
+                            value={selectedMethod.id}
+                            exclusive
+                            onChange={(_, value) => value && setSelectedMethodId(value)}
+                            size="small"
+                            fullWidth
+                            sx={{ mb: 1.5 }}
+                        >
+                            {updateMethods.map((method) => (
+                                <ToggleButton key={method.id} value={method.id} sx={{ textTransform: 'none', fontFamily: fontMono }}>
+                                    {method.id}
+                                </ToggleButton>
                             ))}
-                        </TransitionGroup>
+                        </ToggleButtonGroup>
+
+                        <Typography
+                            variant="body2"
+                            sx={{
+                                fontWeight: 500,
+                                mb: 0.5,
+                                color: 'text.primary',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                            }}
+                        >
+                            {selectedMethod.icon}
+                            {selectedMethod.title}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                            {selectedMethod.description}
+                        </Typography>
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                p: 2,
+                                bgcolor: 'background.paper',
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                position: 'relative',
+                            }}
+                        >
+                            {selectedMethod.commands.map((command) => (
+                                <Typography
+                                    key={command}
+                                    variant="body2"
+                                    sx={{
+                                        fontFamily: fontMono,
+                                        color: 'text.primary',
+                                        fontSize: '0.875rem',
+                                        pr: 5,
+                                        wordBreak: 'break-all',
+                                    }}
+                                >
+                                    $ {command}
+                                </Typography>
+                            ))}
+                            <Tooltip
+                                title={copiedMethod === selectedMethod.id ? t('update.copied') : t('update.copy')}
+                                placement="top"
+                                arrow
+                            >
+                                <IconButton
+                                    size="small"
+                                    onClick={() => handleCopy(selectedMethod.commands, selectedMethod.id)}
+                                    sx={{
+                                        position: 'absolute',
+                                        right: 8,
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        color: copiedMethod === selectedMethod.id ? 'success.main' : 'text.secondary',
+                                        bgcolor: copiedMethod === selectedMethod.id ? 'success.light' : 'transparent',
+                                        '&:hover': {
+                                            color: 'primary.main',
+                                            bgcolor: 'action.hover',
+                                        },
+                                    }}
+                                >
+                                    <ContentCopy sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </Tooltip>
+                        </Paper>
                     </Box>
                 </Stack>
             </DialogContent>

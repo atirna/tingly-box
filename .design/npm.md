@@ -20,6 +20,13 @@ each GitHub release:
 All three expose `tingly-box` and `tb` bins. The shim never writes into its own
 install dir — binaries and caches live under `~/.cache/tingly-box/`.
 
+No-args behavior is split by invocation (see `cli-entry-semantics.md`): under
+npx / `npm exec` (`npm_command=exec`) the cli and bundle shims keep the
+historical `restart --daemon`; run as an installed bin (global install) they
+pass `--help` instead — server lifecycle is explicit (`tingly-box start`,
+which daemonizes by default) so a casual `tingly-box` can't kill in-flight AI
+requests.
+
 ## Making `npm install -g` viable again
 
 Status: A + B implemented (2026-08), effective from the next publish; C is

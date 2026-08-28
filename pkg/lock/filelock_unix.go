@@ -24,18 +24,20 @@ var (
 // The lock is automatically released when the process dies, even if it crashes.
 // It also stores the current process PID for signal-based shutdown.
 type FileLock struct {
-	lockFile string
-	file     *os.File
-	pid      int
-	portFile *PortFile
+	lockFile    string
+	file        *os.File
+	pid         int
+	portFile    *PortFile
+	versionFile *VersionFile
 }
 
 // NewFileLock creates a new file lock instance.
 // The lock file will be created in the specified config directory.
 func NewFileLock(configDir string) *FileLock {
 	return &FileLock{
-		lockFile: filepath.Join(configDir, "tingly-server.lock"),
-		portFile: NewPortFile(configDir),
+		lockFile:    filepath.Join(configDir, "tingly-server.lock"),
+		portFile:    NewPortFile(configDir),
+		versionFile: NewVersionFile(configDir),
 	}
 }
 
@@ -106,10 +108,11 @@ func (fl *FileLock) Unlock() error {
 	closeErr := fl.file.Close()
 	fl.file = nil
 
-	// Remove the lock file and the associated runtime port file (both are
-	// runtime artifacts of this lock; keeps the config directory clean).
+	// Remove the lock file and the associated runtime port/version files (all
+	// are runtime artifacts of this lock; keeps the config directory clean).
 	_ = os.Remove(fl.lockFile)
 	_ = fl.portFile.Remove()
+	_ = fl.versionFile.Remove()
 
 	if closeErr != nil {
 		return fmt.Errorf("failed to close lock file: %w", closeErr)

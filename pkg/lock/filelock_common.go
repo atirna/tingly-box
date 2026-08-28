@@ -32,6 +32,27 @@ func (fl *FileLock) RemovePort() error {
 	return fl.portFile.Remove()
 }
 
+// WriteVersion records the running server's build version. Like the port
+// file, it is a runtime artifact tied to this lock's lifetime: written after
+// TryLock and removed by Unlock (or RemoveVersion on the stopping side).
+func (fl *FileLock) WriteVersion(version string) error {
+	return fl.versionFile.Write(version)
+}
+
+// ReadVersion returns the version recorded by the running server. Callers
+// must gate on IsLocked() and treat any error as "version unknown" — servers
+// started by builds predating version recording never wrote one.
+func (fl *FileLock) ReadVersion() (string, error) {
+	return fl.versionFile.Read()
+}
+
+// RemoveVersion deletes the runtime version file. Unlock already does this
+// for the lock holder; the stop command uses it to clean up after a server
+// that was killed without releasing the lock itself.
+func (fl *FileLock) RemoveVersion() error {
+	return fl.versionFile.Remove()
+}
+
 // readPIDFile reads a PID from the first line of the file at path.
 // label names the file kind ("lock file" on Unix, "PID file" on Windows)
 // in error messages.

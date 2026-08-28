@@ -136,11 +136,20 @@ function cleanupRetiredInstallDirs() {
 	}
 }
 
-// Default parameters to use when no arguments are provided
-const DEFAULT_ARGS = [
-	"restart",
-	"--daemon",
-];
+// Whether this run came through `npx` / `npm exec` (npm sets npm_command=exec
+// for those) rather than a bin launched directly, e.g. from `npm install -g`.
+// The distinction drives the no-args default below: an npx invocation itself
+// expresses "run it now", while a globally installed `tingly-box` is a CLI
+// toolbox whose server lifecycle must stay an explicit action.
+const IS_NPX = process.env.npm_command === "exec";
+
+// Default parameters when no arguments are provided.
+// - npx: keep the historical "run it now" behavior (restart into background).
+// - global install / anything else: show help — restarting implicitly here
+//   would let a casually typed `tingly-box` kill in-flight AI requests; the
+//   user starts the server deliberately with `tingly-box start` (which
+//   daemonizes by default; --no-daemon for foreground).
+const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon"] : ["--help"];
 
 // Global flag prepended to every invocation so the binary records that it was
 // launched via npx-bundle. As a global flag it must come before the subcommand.

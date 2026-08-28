@@ -35,7 +35,7 @@ type StartCmdKong struct {
 	EnableDebug          bool   `kong:"flag,name='debug',help='Enable debug mode'"`
 	EnableOpenBrowser    bool   `kong:"flag,name='browser',default='true',help='Auto-open browser'"`
 	EnableStyleTransform bool   `kong:"flag,name='adapter',default='true',help='Enable API style transform'"`
-	Daemon               bool   `kong:"flag,name='daemon',help='Run as daemon'"`
+	Daemon               bool   `kong:"flag,name='daemon',default='true',negatable,help='Run in the background (default; pass --no-daemon for foreground)'"`
 	LogFile              string `kong:"flag,name='log-file',help='Log file path'"`
 	PromptRestart        bool   `kong:"flag,name='prompt-restart',help='Prompt to restart if running'"`
 	EnableShortcut       bool   `kong:"flag,name='shortcut',help='Also create/refresh a desktop shortcut for next time'"`
@@ -441,14 +441,85 @@ func doStopServer(appManager *AppManager) error {
 	return nil
 }
 
+// alreadyRunningAction is what `start` does when the server is already running.
+type alreadyRunningAction int
+
+const (
+	// Same version: nothing to update — show access info, never restart.
+	alreadyRunningShowInfo alreadyRunningAction = iota
+	// Version differs/unknown and a terminal is attached (or --prompt-restart
+	// was passed): ask before restarting.
+	alreadyRunningPrompt
+	// Version differs/unknown but no terminal to ask on: print how to apply
+	// the new version and leave the server untouched.
+	alreadyRunningHint
+)
+
+// resolveAlreadyRunningAction decides how `start` treats an already-running
+// server. The bare npm/npx entrypoint maps to `start --daemon`, so this is
+// the guard that keeps a casual `tingly-box` from killing in-flight AI
+// requests: a restart only ever happens after an explicit yes. An unknown
+// running version (pre-version-file server) is treated as a mismatch — the
+// invoked binary may well be newer, and one confirmed restart makes the
+// version known from then on.
+func resolveAlreadyRunningAction(runningVersion, currentVersion string, promptRestart, tty bool) alreadyRunningAction {
+	if promptRestart {
+		if tty {
+			return alreadyRunningPrompt
+		}
+		return alreadyRunningHint
+	}
+	if runningVersion != "" && runningVersion == currentVersion {
+		return alreadyRunningShowInfo
+	}
+	if tty {
+		return alreadyRunningPrompt
+	}
+	return alreadyRunningHint
+}
+
+// describeRunningVersion formats the running server's version for status
+// lines, degrading to "version unknown" for servers that predate the runtime
+// version file.
+func describeRunningVersion(runningVersion string) string {
+	if runningVersion == "" {
+		return " (version unknown)"
+	}
+	return fmt.Sprintf(" (v%s)", runningVersion)
+}
+
 // startServer handles the server starting logic
 func startServer(appManager *AppManager, opts options.StartServerOptions, source LaunchSource) error {
 	return startServerWithHook(appManager, opts, source)
 }
 
+// runningInContainer reports whether this process runs inside a container,
+// where daemonizing is always wrong: the forked parent is PID 1 (or the
+// supervisor's child) and its exit kills the container. Detected via PID 1 or
+// the standard container marker files (Docker, Podman).
+func runningInContainer() bool {
+	if os.Getpid() == 1 {
+		return true
+	}
+	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // startServerWithHook handles the server starting logic with optional setup hooks.
 func startServerWithHook(appManager *AppManager, opts options.StartServerOptions, source LaunchSource, hooks ...func(*ServerManager) error) error {
 	appConfig := appManager.AppConfig()
+
+	// `start` daemonizes by default, but inside a container that would exit
+	// PID 1 and kill the container — fall back to foreground instead of
+	// requiring every image and compose file to know about --no-daemon.
+	if opts.Daemon && runningInContainer() {
+		fmt.Println("Container environment detected — running in the foreground.")
+		opts.Daemon = false
+	}
 
 	// Set logrus level based on debug flag
 	if opts.EnableDebug {
@@ -507,32 +578,60 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 
 	// Check if server is already running using file lock (BEFORE port check)
 	if fileLock.IsLocked() {
-		fmt.Printf("Server is already running on port %d\n", appManager.GetRuntimeServerPort())
-		fmt.Println("Use 'tingly-box restart' to restart the server")
-		fmt.Println("Use 'tingly-box stop' to stop it")
+		runningPort := appManager.GetRuntimeServerPort()
+		runningVersion, _ := fileLock.ReadVersion() // "" = unknown (pre-version-file server)
 
-		// If prompt-restart is enabled, ask user if they want to restart
-		if opts.PromptRestart {
-			fmt.Print("\nDo you want to restart the server? [y/N]: ")
+		switch resolveAlreadyRunningAction(runningVersion, BuildVersion, opts.PromptRestart, isStdinTTY()) {
+		case alreadyRunningShowInfo:
+			// Same version: there is nothing to update, and restarting would
+			// only interrupt in-flight AI requests. Hand the user what they
+			// actually came for — the access info of the running server.
+			fmt.Printf("Server is already running on port %d (v%s)\n", runningPort, runningVersion)
+			printBanner(BannerConfig{
+				Port:         runningPort,
+				Host:         opts.Host,
+				EnableUI:     opts.EnableUI,
+				GlobalConfig: appConfig.GetGlobalConfig(),
+				IsDaemon:     false,
+			})
+			fmt.Println("Use 'tingly-box restart' to restart the server")
+			fmt.Println("Use 'tingly-box stop' to stop it")
+			return nil
+
+		case alreadyRunningHint:
+			// Version differs (or is unknown) but there is no terminal to ask
+			// on: never restart silently — an unattended launch must not kill
+			// in-flight AI requests.
+			fmt.Printf("Server is already running on port %d%s\n", runningPort, describeRunningVersion(runningVersion))
+			if runningVersion != BuildVersion {
+				fmt.Printf("This launcher is v%s. Run 'tingly-box restart' to switch the running server to it.\n", BuildVersion)
+			}
+			fmt.Println("Use 'tingly-box stop' to stop the server")
+			return nil
+
+		case alreadyRunningPrompt:
+			fmt.Printf("Server is already running on port %d%s\n", runningPort, describeRunningVersion(runningVersion))
+			if runningVersion != "" && runningVersion != BuildVersion {
+				fmt.Printf("This launcher is v%s — restarting will switch the server to it.\n", BuildVersion)
+			}
+			fmt.Print("Restart the server? In-flight AI requests will be interrupted. [y/N]: ")
 			var response string
 			fmt.Scanln(&response)
 
-			// Check if user wants to restart
-			if strings.ToLower(strings.TrimSpace(response)) == "y" || strings.ToLower(strings.TrimSpace(response)) == "yes" {
-				fmt.Println("\nRestarting server...")
-				// Stop the existing server first
-				if err := stopServerWithFileLock(fileLock); err != nil {
-					return fmt.Errorf("failed to stop existing server: %w", err)
-				}
-				// Give a moment for cleanup
-				time.Sleep(1 * time.Second)
-				// Continue to start the server (fall through to the rest of the function)
-			} else {
-				fmt.Println("\nRestart cancelled.")
+			response = strings.ToLower(strings.TrimSpace(response))
+			if response != "y" && response != "yes" {
+				fmt.Println("\nKeeping the running server untouched.")
+				fmt.Println("Use 'tingly-box restart' to restart it later")
 				return nil
 			}
-		} else {
-			return nil
+
+			fmt.Println("\nRestarting server...")
+			if err := stopServerWithFileLock(fileLock); err != nil {
+				return fmt.Errorf("failed to stop existing server: %w", err)
+			}
+			// Give a moment for cleanup
+			time.Sleep(1 * time.Second)
+			// Continue to start the server (fall through to the rest of the function)
 		}
 	}
 
@@ -554,6 +653,13 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 	// is needed here.
 	if err := fileLock.WritePort(port); err != nil {
 		logrus.Warnf("Failed to record server port: %v", err)
+	}
+
+	// Record the running version alongside the port, so a later launcher
+	// (bare `tingly-box`, `start`) can tell whether this server already
+	// matches its own version and skip a needless, request-killing restart.
+	if err := fileLock.WriteVersion(BuildVersion); err != nil {
+		logrus.Warnf("Failed to record server version: %v", err)
 	}
 
 	serverManager := NewServerManager(
