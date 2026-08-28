@@ -17,9 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
+# Create non-root user for security. Home is pinned to /app (rather than
+# left to useradd's system-account default) so it unambiguously matches the
+# /app/.tingly-box path this image documents and mounts as a volume — the
+# app resolves its config dir from $HOME/.tingly-box (pkg/fs.GetUserPath).
 RUN groupadd -r tingly && \
-    useradd -r -g tingly tingly
+    useradd -r -g tingly -d /app tingly
 
 # update modules, spec version to confirm security
 RUN npm install -g npm@10.8.2
@@ -34,16 +37,26 @@ RUN chown -R tingly:tingly /usr/local/lib/node_modules /usr/local/bin /root/.npm
 # Set working directory
 WORKDIR /app
 
-# Create necessary directories with proper permissions
-RUN mkdir -p /app/.tingly-box /app/memory /app/logs && \
+# Create the config/data directory (memory, logs and db all live under this
+# single tree, see internal/config/app_config.go) with proper permissions.
+RUN mkdir -p /app/.tingly-box && \
     chown -R tingly:tingly /app
 
-RUN mkdir /home/tingly && chown -R tingly:tingly /home/tingly/
+# Entrypoint fixes up ownership of a bind-mounted data directory at runtime
+# (a freshly `mkdir`ed host directory is owned by the host user, not the
+# container's UID/GID, and the non-root "tingly" user can't write into it)
+# before dropping from root down to "tingly". Deliberately does NOT switch
+# to USER tingly here, so the entrypoint still starts as root.
+COPY build/docker/docker-entrypoint-npx.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
-# Switch to non-root user
-USER tingly
+# HOME is set here (after the npm/root install layers, so it doesn't perturb
+# root's own npm cache/config lookups) and applies to the container's
+# runtime env from this point on.
+ENV HOME=/app
 
-RUN tingly-box version
+RUN su tingly -c "tingly-box version"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
@@ -60,5 +73,5 @@ CMD ["sh", "-c", "echo '======================================' && \
     exec pm2 logs --raw"]
 
 
-# Volumes for persistent data
-VOLUME ["/app/.tingly-box", "/app/memory", "/app/logs"]
+# Volume for persistent data (memory, logs and db all live under this tree)
+VOLUME ["/app/.tingly-box"]
