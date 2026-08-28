@@ -111,23 +111,7 @@ docker run -d \
   ghcr.io/tingly-dev/tingly-box
 ```
 
-**From Docker Compose (Recommend for isolated env)**
-
-```bash
-# Build and start in detached mode
-docker-compose -f build/docker/docker-compose.yml up -d
-
-# View logs
-docker-compose -f build/docker/docker-compose.yml logs -f tingly-box
-
-# Stop services
-docker-compose -f build/docker/docker-compose.yml down
-
-# Access Web UI at http://localhost:12581
-# (Note: Port 12581 is used to avoid conflict with host tingly on 12580)
-```
-
-See [Docker Guide](./docs/docker.md) for more (running as a specific host UID/GID, building for other platforms, troubleshooting).
+**From Docker Compose (recommended for isolated env), building your own image, or troubleshooting** — see the [Docker Guide](./docs/docker.md).
 
 ### Integration Guide
 

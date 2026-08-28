@@ -19,17 +19,15 @@ tingly-box start
 ### Method 2: Docker
 Run as a background container:
 ```bash
-# run the prebuilt image
 mkdir tingly-data
 docker run -d \
   --name tingly-box \
   -p 12580:12580 \
   -v "$(pwd)/tingly-data:/home/tingly/.tingly-box" \
   ghcr.io/tingly-dev/tingly-box
-
-# or build for your own, see docs/docker.md
-docker build -f build/docker/docker.build.Dockerfile -t tingly-box:latest .
 ```
+
+For Docker Compose, building your own image, or troubleshooting, see the [Docker Guide](./docker.md).
 
 ---
 
