@@ -141,33 +141,16 @@ function cleanupRetiredInstallDirs() {
 // .design/cli-entry-semantics.md.
 const IS_NPX = process.env.npm_command === "exec";
 
-// Bare npx invocation = "run it now": restart into the background, -y being
-// the consent a bare `restart` would otherwise prompt for.
-const DEFAULT_ARGS = ["restart", "--daemon", "-y"];
+// Bare npx invocation = "run it now" (restart into the background, -y being
+// the consent a bare `restart` would otherwise prompt for); a bare installed
+// bin shows help.
+const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon", "-y"] : ["--help"];
 
 // Records how this process was launched; also decides which npm package a
 // shortcut relaunches. As a global flag it must come before the subcommand.
 const SOURCE_ARGS = [IS_NPX ? "--source=npx-bundle" : "--source=npm-bundle"];
 
 const args = process.argv.slice(2);
-
-// A bare installed-bin invocation means "show help". Print it locally: no
-// need to extract the packaged binary just to render a help screen.
-if (!IS_NPX && args.length === 0) {
-	console.log(`Tingly Box — LLM gateway & intelligence orchestrator
-
-Usage: tingly-box <command>   ('tb' works too)
-
-  start     Start the server (background by default; --no-daemon for foreground)
-  open      Open the web UI (starts the server if needed)
-  status    Show server status
-  restart   Restart the server (asks first; -y to skip)
-  stop      Stop the server
-
-Run 'tingly-box --help' for the full command list.`);
-	process.exit(0);
-}
-
 const baseArgs = args.length > 0 ? args : DEFAULT_ARGS;
 const argsToUse = [...SOURCE_ARGS, ...baseArgs];
 

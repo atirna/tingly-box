@@ -24,11 +24,8 @@ changes are either explicitly requested or explicitly confirmed.
 - **Installed CLI** (global `npm install -g` bin run directly, or the raw Go
   binary): shows **help**. An installed CLI is a toolbox (like `git`,
   `docker`); the server is started deliberately with `tingly-box start`.
-  The shims print a short local usage banner and exit — the binary may not
-  be downloaded/extracted yet, and fetching tens of MB (or failing offline)
-  just to render a help screen would be absurd; `tingly-box --help` still
-  materializes the binary for Kong's full help. The raw Go binary maps zero
-  args to `--help` in `cli/tingly-box/main.go`.
+  Implemented twice so both layers agree: the shims pass `--help` when not
+  under npx, and `cli/tingly-box/main.go` maps zero args to `--help`.
 
 **`--source` records the channel truthfully, handling stays unified:** the
 shims report `npx` / `npx-bundle` under npx and `npm` / `npm-bundle` when run
@@ -50,12 +47,9 @@ which one the user typed.
 - Daemonizes **by default** (`--no-daemon` for foreground). "Start the
   server" is service semantics; the terminal is handed back with the access
   banner. Foreground stays one flag away for debugging.
-- Inside a container (PID 1, `/.dockerenv`, `/run/.containerenv`),
-  daemonizing would exit PID 1 and kill the container, so `start` auto-falls
-  back to foreground with a notice. This keeps existing Docker images and
-  compose files working without teaching them `--no-daemon`, and avoids
-  binary/Dockerfile version skew (the npx image installs whatever
-  `TINGLY_VERSION` says at container start).
+- Containers pass `--no-daemon` explicitly (see `build/docker/*.Dockerfile`)
+  — daemonizing would exit PID 1 and kill the container. This is deliberate
+  configuration at the call site, not runtime environment sniffing.
 - When the server is **already running**, `start` never restarts it and
   never asks — it prints the access banner (Web UI URL + token, API
   endpoints — the thing the user actually came for) and exits. If the
@@ -79,8 +73,7 @@ default No); `-y`/`--yes` proceeds directly (what npx passes); without a TTY
 and without `-y` it leaves the server untouched and says to re-run with
 `-y`. When the server is not running there is nothing to interrupt, so it
 starts without asking — which keeps unattended first-boots (e.g. the Docker
-npx image's pm2 wrapper) working. `restart` inherits daemon-by-default
-(container fallback applies).
+npx image's pm2 wrapper) working. `restart` inherits daemon-by-default.
 
 **`stop`:** remains the explicit, immediate lifecycle verb.
 

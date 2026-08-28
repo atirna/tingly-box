@@ -79,31 +79,14 @@ const { version: VERSION, remainingArgs } = parseTransportVersion();
 // .design/cli-entry-semantics.md.
 const IS_NPX = process.env.npm_command === "exec";
 
-// Bare npx invocation = "run it now": restart into the background, -y being
-// the consent a bare `restart` would otherwise prompt for.
-const DEFAULT_ARGS = ["restart", "--daemon", "-y"];
+// Bare npx invocation = "run it now" (restart into the background, -y being
+// the consent a bare `restart` would otherwise prompt for); a bare installed
+// bin shows help.
+const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon", "-y"] : ["--help"];
 
 // Records how this process was launched; also decides which npm package a
 // shortcut relaunches. As a global flag it must come before the subcommand.
 const SOURCE_ARGS = [IS_NPX ? "--source=npx" : "--source=npm"];
-
-// A bare installed-bin invocation means "show help". Print it locally: the
-// binary may not be downloaded yet, and fetching tens of MB (or failing
-// offline) just to render a help screen would be absurd.
-if (!IS_NPX && remainingArgs.length === 0) {
-	console.log(`Tingly Box — LLM gateway & intelligence orchestrator
-
-Usage: tingly-box <command>   ('tb' works too)
-
-  start     Start the server (background by default; --no-daemon for foreground)
-  open      Open the web UI (starts the server if needed)
-  status    Show server status
-  restart   Restart the server (asks first; -y to skip)
-  stop      Stop the server
-
-Run 'tingly-box --help' for the full command list (downloads the CLI binary on first use).`);
-	process.exit(0);
-}
 
 async function getPlatformArchAndBinary() {
 	const platform = process.platform;

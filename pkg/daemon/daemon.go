@@ -44,23 +44,6 @@ func IsDaemonProcess() bool {
 	return os.Getenv("_TINGLY_BOX_DAEMON") == "1"
 }
 
-// InContainer reports whether this process runs inside a container, where
-// Daemonize is always wrong: the forked parent is PID 1 (or the supervisor's
-// child) and its exit kills the container. Callers should fall back to
-// running in the foreground instead. Detected via PID 1 or the standard
-// container marker files (Docker, Podman).
-func InContainer() bool {
-	if os.Getpid() == 1 {
-		return true
-	}
-	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
-		if _, err := os.Stat(marker); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
 // Daemonize detaches the process from the terminal and runs it in the
 // background by re-executing the current command as a detached child
 // (session leader on Unix, detached process on Windows) and exiting the

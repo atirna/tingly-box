@@ -454,14 +454,6 @@ func startServer(appManager *AppManager, opts options.StartServerOptions, source
 func startServerWithHook(appManager *AppManager, opts options.StartServerOptions, source LaunchSource, hooks ...func(*ServerManager) error) error {
 	appConfig := appManager.AppConfig()
 
-	// `start` daemonizes by default, but inside a container that would exit
-	// PID 1 and kill the container — fall back to foreground instead of
-	// requiring every image and compose file to know about --no-daemon.
-	if opts.Daemon && daemon.InContainer() {
-		fmt.Println("Container environment detected — running in the foreground.")
-		opts.Daemon = false
-	}
-
 	// Set logrus level based on debug flag
 	if opts.EnableDebug {
 		appConfig.SetDebug(true)

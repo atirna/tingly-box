@@ -24,8 +24,7 @@ No-args behavior is split by invocation (see `cli-entry-semantics.md`): under
 npx / `npm exec` (`npm_command=exec`) the cli and bundle shims keep the
 historical run-now behavior as `restart --daemon -y` (the invocation is the
 consent a bare `restart` prompts for); run as an installed bin (global
-install) they print a short local usage banner instead — without
-downloading or extracting the binary — server lifecycle is explicit (`tingly-box start`,
+install) they pass `--help` instead — server lifecycle is explicit (`tingly-box start`,
 which daemonizes by default) so a casual `tingly-box` can't kill in-flight AI
 requests. `--source` follows the same split (`npx`/`npm`, `npx-bundle`/
 `npm-bundle`) with unified handling downstream.
