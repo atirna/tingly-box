@@ -60,6 +60,7 @@ import {
     IconPlugConnected,
     IconBug,
     IconWand,
+    IconBulb,
     IconSparkles,
     IconArrowRight,
     IconArrowLeft,
@@ -236,6 +237,7 @@ export const AccessTime = tablerMui(IconClock);
 export const Science = tablerMui(IconFlask);
 export const BugReport = tablerMui(IconBug);
 export const AutoFixHigh = tablerMui(IconWand);
+export const Lightbulb = tablerMui(IconBulb);
 export const AutoAwesome = tablerMui(IconSparkles);
 export const CompareArrows = tablerMui(IconArrowsLeftRight);
 export const Dual = tablerMui(IconArrowsSplit2);

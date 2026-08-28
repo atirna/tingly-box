@@ -1,4 +1,4 @@
-import { Person as IconUser, Translate as IconLanguage, AutoFixHigh as IconWand, MessageReport as IconMessageReport, ChevronRight as IconChevronRight } from '@/components/icons';
+import { Person as IconUser, Translate as IconLanguage, MessageReport as IconMessageReport, ChevronRight as IconChevronRight, Lightbulb as IconLightbulb } from '@/components/icons';
 import { Box, Divider, IconButton, ListItemButton, ListItemIcon, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
@@ -53,7 +53,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     const themeOptions = useMemo(() => getThemeOptions(t), [t]);
     const currentThemeOption = themeOptions.find((option) => option.value === themeMode);
     const renderCurrentThemeIcon = currentThemeOption?.renderIcon ?? themeOptions[0].renderIcon;
-    const isOnboardingActive = location.pathname === '/onboarding';
+    const isHelpActive = location.pathname === '/help';
     const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapsed();
 
     const handleLanguageMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -224,36 +224,41 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                         ))}
                     </Menu>
 
-                {/* Onboarding Quick Add Button */}
-                    <Tooltip title={t('layout.onboarding', { defaultValue: 'Quick Add Provider' })} placement="right" arrow>
+                {/* Help — the onboarding front door now (replaces the old
+                    standalone "Quick Add Provider" wand in this exact slot).
+                    Opens the lightbulb Help page: a small, growing set of
+                    easy-to-miss useful actions (desktop shortcut, browse &
+                    connect providers, ...), not a single-purpose shortcut to
+                    one flow. */}
+                    <Tooltip title={t('layout.help', { defaultValue: 'Tips & Help' })} placement="right" arrow>
                         <ListItemButton
                             component={RouterLink}
-                            to="/onboarding"
+                            to="/help"
                             onClick={onStandaloneNavigate}
                             sx={activityItemSx({
                                 '&:hover': {
-                                    bgcolor: isOnboardingActive ? 'primary.main' : 'action.hover',
-                                    color: isOnboardingActive ? 'primary.contrastText' : 'primary.main',
+                                    bgcolor: isHelpActive ? 'primary.main' : 'action.hover',
+                                    color: isHelpActive ? 'primary.contrastText' : 'primary.main',
                                 },
-                                ...(isOnboardingActive && {
+                                ...(isHelpActive && {
                                     bgcolor: 'primary.main',
                                     color: 'primary.contrastText',
                                 }),
                             })}
                         >
                             <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
-                                <IconWand sx={{ fontSize: 22 }} />
+                                <IconLightbulb sx={{ fontSize: 22 }} />
                             </ListItemIcon>
                             <Typography
                                 variant="caption"
                                 sx={{
-                                    fontWeight: isOnboardingActive ? 600 : 400,
+                                    fontWeight: isHelpActive ? 600 : 400,
                                     color: 'inherit',
                                     textAlign: 'center',
                                     lineHeight: 1.2,
                                 }}
                             >
-                                {t('layout.onboardingShort', { defaultValue: 'Onboard' })}
+                                {t('layout.helpShort', { defaultValue: 'Help' })}
                             </Typography>
                         </ListItemButton>
                     </Tooltip>

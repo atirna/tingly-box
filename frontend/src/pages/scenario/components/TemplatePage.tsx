@@ -325,9 +325,9 @@ const TemplatePage: React.FC<TemplatePageProps> = (props) => {
             return null;
         }
 
-        // First-run path: send users to the onboarding flow rather than the
-        // bare provider dialog — they get to browse the catalog or paste a
-        // config snippet for auto-detection.
+        // First-run path: send users to the Help page's Providers card rather
+        // than the bare provider dialog — they get to browse the catalog or
+        // paste a config snippet for auto-detection.
         return (
             <UnifiedCard size="full" title={title}>
                 <EmptyState
@@ -335,7 +335,7 @@ const TemplatePage: React.FC<TemplatePageProps> = (props) => {
                     description={t('templatePage.noProviders.description')}
                     primaryAction={{
                         label: t('templatePage.noProviders.action'),
-                        onClick: onAddApiKeyClick || (() => navigate('/onboarding')),
+                        onClick: onAddApiKeyClick || (() => navigate('/help')),
                     }}
                 />
             </UnifiedCard>

@@ -49,7 +49,7 @@ const LayoutInner = ({ children }: LayoutProps) => {
 
     // Determine active activity from current path, falling back to localStorage
     const activeActivity = useMemo(() => {
-        if (location.pathname === '/onboarding') return 'onboarding';
+        if (location.pathname === '/help') return 'help';
         for (const item of activityItems) {
             if (item.path && isActive(item.path)) return item.key;
             if (item.children && isChildActive(item.children)) return item.key;

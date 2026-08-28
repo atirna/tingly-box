@@ -68,6 +68,22 @@ func LaunchArgs() []string {
 	return []string{"restart", "--daemon"}
 }
 
+// ResolveExePath returns the running process's own executable path, with
+// symlinks resolved (e.g. a Homebrew Cellar symlink) so shortcuts target the
+// real binary. Shared by every caller that builds a LaunchSpec for the
+// process's own executable — the CLI's `shortcut` command and the HTTP
+// handler backing it both need exactly this.
+func ResolveExePath() (string, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve executable path: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = resolved
+	}
+	return exePath, nil
+}
+
 // LaunchSpec describes how the shortcut should invoke Tingly Box on each
 // platform. Argv is the POSIX-style command vector used for macOS .command and
 // Linux .desktop entries; WinTarget/WinArgs are the .lnk TargetPath/Arguments.
@@ -133,6 +149,78 @@ func Create(opts Options, spec LaunchSpec) ([]string, error) {
 	default:
 		return createLinuxShortcuts(opts, spec)
 	}
+}
+
+// ExpectedPaths returns the paths Create would write to for opts on this
+// platform, without touching disk — used to answer "does a shortcut already
+// exist" (a plain os.Stat per path) so the UI can show existing state instead
+// of always presenting a bare "Create" action with no memory.
+//
+// Windows is best-effort here: it uses the plain (non-OneDrive-redirected)
+// Desktop/Start Menu locations, unlike the real PowerShell/COM-driven Create,
+// which resolves OneDrive redirection correctly. A false "not created" on a
+// redirected Desktop is a harmless status miss — Create itself is idempotent,
+// so clicking it again just re-writes to the right place.
+func ExpectedPaths(opts Options) []string {
+	name := slugName(opts.Name)
+	var paths []string
+
+	switch runtime.GOOS {
+	case "windows":
+		if !opts.NoDesktop {
+			if home, err := os.UserHomeDir(); err == nil {
+				paths = append(paths, filepath.Join(home, "Desktop", name+".lnk"))
+			}
+		}
+		if !opts.NoMenu {
+			if appData := os.Getenv("APPDATA"); appData != "" {
+				paths = append(paths, filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", name+".lnk"))
+			}
+		}
+	case "darwin":
+		if !opts.NoDesktop {
+			if dir, err := userSubdir("Desktop"); err == nil {
+				paths = append(paths, filepath.Join(dir, name+".command"))
+			}
+		}
+	default:
+		if !opts.NoMenu {
+			if dir, err := userDataSubdir("applications"); err == nil {
+				paths = append(paths, filepath.Join(dir, name+".desktop"))
+			}
+		}
+		if !opts.NoDesktop {
+			// Matches createLinuxShortcuts: the Desktop copy is only written
+			// when ~/Desktop already exists (a headless box may not have
+			// one), so it must only be "expected" under the same condition.
+			if dir, err := userSubdir("Desktop"); err == nil {
+				if _, statErr := os.Stat(dir); statErr == nil {
+					paths = append(paths, filepath.Join(dir, name+".desktop"))
+				}
+			}
+		}
+		if script := ExpectedLinuxScriptPath(opts); script != "" {
+			paths = append(paths, script)
+		}
+	}
+	return paths
+}
+
+// ExpectedLinuxScriptPath returns the path of the headless launcher script
+// Create would write on Linux, or "" when nothing would be written (both
+// --no-desktop and --no-menu) or off-Linux.
+func ExpectedLinuxScriptPath(opts Options) string {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		return ""
+	}
+	if opts.NoDesktop && opts.NoMenu {
+		return ""
+	}
+	dir, err := userSubdir(filepath.Join(".local", "bin"))
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, slugName(opts.Name)+".sh")
 }
 
 // ---------------- Windows ----------------

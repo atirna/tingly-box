@@ -160,10 +160,11 @@ const CredentialPage = () => {
                                 flexWrap: "wrap",
                                 justifyContent: { xs: 'flex-start', sm: 'flex-end' }
                             }}>
-                            {/* The provider catalog now lives on Onboarding (browse + connect
-                                in one place); the standalone read-only ProviderListPage was
-                                redundant with it and has been removed. */}
-                            <Button component={Link} to="/onboarding" variant="outlined" startIcon={<ListAlt />} size="small" sx={{ minWidth: 130 }}>Providers</Button>
+                            {/* The provider catalog (browse + connect in one place) now lives
+                                on the Help page's ProvidersCard, not a standalone page — the
+                                old read-only ProviderListPage was redundant with it and has
+                                been removed. */}
+                            <Button component={Link} to="/help" variant="outlined" startIcon={<ListAlt />} size="small" sx={{ minWidth: 130 }}>Providers</Button>
                             <Button variant="contained" startIcon={<Add />} onClick={handleConnectAIClick} size="small" sx={{ minWidth: 150 }}>Connect AI</Button>
                         </Stack>
                     }

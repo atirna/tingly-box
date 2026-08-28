@@ -144,9 +144,8 @@ export default {
     "addProfile": "添加配置文件",
     "addTeam": "添加 Team",
     "default": "默认",
-    "onboarding": "快速添加提供商",
-    "onboardingHint": "浏览或粘贴配置",
-    "onboardingShort": "入门",
+    "help": "帮助与技巧",
+    "helpShort": "帮助",
     "tools": "工具",
     "servertool": "服务端工具"
   },
@@ -899,6 +898,25 @@ export default {
     },
     "preferences": {
       "title": "外观与语言"
+    }
+  },
+  "help": {
+    "title": "帮助与技巧",
+    "description": "一些容易被忽略但很有用的小功能。",
+    "shortcut": {
+      "title": "桌面快捷方式",
+      "description": "一键重启 Tingly Box 并打开网页界面。仅创建，不会自动更新或自动重启。",
+      "create": "创建快捷方式",
+      "recreate": "重新创建",
+      "creating": "创建中...",
+      "alreadyCreated": "已创建",
+      "doubleClick": "双击它以启动 Tingly Box 并打开网页界面。",
+      "runHeadless": "没有图形界面？在该机器上运行：",
+      "createFailed": "创建快捷方式失败：{{error}}"
+    },
+    "providers": {
+      "title": "提供商",
+      "description": "浏览目录，或粘贴一段配置片段——剩下的交给我们。"
     }
   },
   "serverInfo": {

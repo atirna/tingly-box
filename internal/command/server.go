@@ -58,7 +58,7 @@ func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 		PromptRestart:        s.PromptRestart,
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appManager.AppConfig())
-	return startServer(appManager, opts)
+	return startServer(appManager, opts, source)
 }
 
 // StopCmdKong is the Kong version of stop command
@@ -130,7 +130,7 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 		PromptRestart:        r.PromptRestart,
 	}
 	opts := options.ResolveStartOptions(newKongShimCmd(r.EnableDebug), flags, appManager.AppConfig())
-	return startServer(appManager, opts)
+	return startServer(appManager, opts, source)
 }
 
 // OpenCmdKong opens the web UI
@@ -139,7 +139,7 @@ type OpenCmdKong struct {
 	StartCmdKong
 }
 
-func (o *OpenCmdKong) Run(appManager *AppManager) error {
+func (o *OpenCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 	opts := resolveStartCmdKongOptions(&o.StartCmdKong, appManager.AppConfig())
 	appConfig := appManager.AppConfig()
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
@@ -164,7 +164,7 @@ func (o *OpenCmdKong) Run(appManager *AppManager) error {
 	}
 
 	fmt.Println("Server is not running, starting it...")
-	return startServer(appManager, opts)
+	return startServer(appManager, opts, source)
 }
 
 // VersionCmdKong is the Kong version of version command
@@ -442,12 +442,12 @@ func doStopServer(appManager *AppManager) error {
 }
 
 // startServer handles the server starting logic
-func startServer(appManager *AppManager, opts options.StartServerOptions) error {
-	return startServerWithHook(appManager, opts)
+func startServer(appManager *AppManager, opts options.StartServerOptions, source LaunchSource) error {
+	return startServerWithHook(appManager, opts, source)
 }
 
 // startServerWithHook handles the server starting logic with optional setup hooks.
-func startServerWithHook(appManager *AppManager, opts options.StartServerOptions, hooks ...func(*ServerManager) error) error {
+func startServerWithHook(appManager *AppManager, opts options.StartServerOptions, source LaunchSource, hooks ...func(*ServerManager) error) error {
 	appConfig := appManager.AppConfig()
 
 	// Set logrus level based on debug flag
@@ -564,6 +564,7 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 		server.WithHost(opts.Host),
 		server.WithRecordDir(opts.RecordDir),
 		server.WithMultiLogger(multiLogger),
+		server.WithLaunchSource(string(source)),
 	)
 
 	for _, hook := range hooks {

@@ -17,6 +17,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/server/module/providertemplate"
 	rulemodule "github.com/tingly-dev/tingly-box/internal/server/module/rule"
 	"github.com/tingly-dev/tingly-box/internal/server/module/scenario"
+	shortcutmodule "github.com/tingly-dev/tingly-box/internal/server/module/shortcut"
 	"github.com/tingly-dev/tingly-box/internal/server/module/skill"
 	"github.com/tingly-dev/tingly-box/swagger"
 )
@@ -70,6 +71,12 @@ func (s *Server) UseWebAPIEndpoints(manager *swagger.RouteManager) {
 	// Info endpoints: health (unauthenticated) + config/version (authenticated)
 	infoHandler := info.NewHandler(s.version, s.config.ConfigFile, s.config.ConfigDir)
 	info.RegisterRoutes(apiAuth, apiV1, infoHandler)
+
+	// Desktop / start-menu shortcut creation (authenticated) — see
+	// .design/shortcut.md §6. Not shown to Wails GUI users on the frontend
+	// side; the endpoint itself is harmless to call from any runtime mode.
+	shortcutHandler := shortcutmodule.NewHandler(s.launchSource, s.version)
+	shortcutmodule.RegisterRoutes(apiV1, shortcutHandler)
 
 	apiV1.GET("/auth/token", s.GetUserToken,
 		swagger.WithDescription("Get current user token (masked)"),

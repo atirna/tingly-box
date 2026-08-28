@@ -143,9 +143,8 @@ export default {
     "addProfile": "Add Profile",
     "addTeam": "Add Team",
     "default": "default",
-    "onboarding": "Quick Add Provider",
-    "onboardingHint": "Browse or paste config",
-    "onboardingShort": "Onboard",
+    "help": "Tips & Help",
+    "helpShort": "Help",
     "tools": "Tools",
     "servertool": "Servertool"
   },
@@ -898,6 +897,25 @@ export default {
     },
     "preferences": {
       "title": "Appearance & Language"
+    }
+  },
+  "help": {
+    "title": "Tips & Help",
+    "description": "A few easy-to-miss but useful things.",
+    "shortcut": {
+      "title": "Desktop Shortcut",
+      "description": "One click to restart Tingly Box and open the web UI. Never auto-updates or auto-restarts on its own — creating it is the only thing this does.",
+      "create": "Create Shortcut",
+      "recreate": "Recreate",
+      "creating": "Creating...",
+      "alreadyCreated": "Already created",
+      "doubleClick": "Double-click it to start Tingly Box and open the web UI.",
+      "runHeadless": "No graphical session on this machine? Run this instead:",
+      "createFailed": "Failed to create shortcut: {{error}}"
+    },
+    "providers": {
+      "title": "Providers",
+      "description": "Browse the catalog or paste a config snippet — we'll figure out the rest."
     }
   },
   "serverInfo": {
