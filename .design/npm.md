@@ -1,11 +1,33 @@
-# Making `npm install -g` viable again
+# npm distribution
+
+How tingly-box ships through npm, and the plan to make `npm install -g` viable
+again.
+
+## Architecture today
+
+Three packages under `build/npx/`, published by `.github/workflows/npm.yml` on
+each GitHub release:
+
+- **`tingly-box`** — thin shim (`bin.js` + `package.json`, ~16 KB published).
+  On first run it downloads the platform zip from GitHub Releases into
+  `~/.cache/tingly-box/<tag>/bin/` and execs the Go binary from there. CI bakes
+  the release tag into `BINARY_RELEASE_BRANCH` at publish time, so npm package
+  version ↔ binary version are 1:1 coupled.
+- **`tingly-box-bundle`** — same shim plus the platform zips inside the package
+  (~70 MB, offline-ready). npx-oriented; not a global-install target.
+- **`tingly-box-gui`** — shim variant for the desktop UI, published on demand.
+
+All three expose `tingly-box` and `tb` bins. The shim never writes into its own
+install dir — binaries and caches live under `~/.cache/tingly-box/`.
+
+## Making `npm install -g` viable again
 
 Status: proposal (2026-08). Today the README recommends `npx` only, because
 `npm update -g tingly-box` intermittently fails with `ENOTEMPTY` and leaves the
-global install broken. This doc explains the failure and lays out the path to
-re-enable global installs.
+global install broken. The rest of this doc explains the failure and lays out
+the path to re-enable global installs.
 
-## The failure, precisely
+### The failure, precisely
 
 ```
 npm error code ENOTEMPTY
@@ -45,12 +67,12 @@ rm -rf "$NPM_GLOBAL_DIR/tingly-box" "$NPM_GLOBAL_DIR"/.tingly-box-*
 npm install -g tingly-box@latest
 ```
 
-## Plan
+### Plan
 
 Ordered by cost; A+B remove the sharp edges, C removes the *need* to ever run
 `npm update -g`, which is the real fix.
 
-### A. Ship the shim as a zero-dependency single file
+#### A. Ship the shim as a zero-dependency single file
 
 Bundle `bin.js` with esbuild at publish time (CI step in `npm.yml`, before
 `npm publish`) so `undici` + `unzipper` are inlined and published
@@ -73,7 +95,7 @@ window to almost nothing but does not fix stickiness (B does).
 Applies to `tingly-box` and `tingly-box-gui`. `tingly-box-bundle` (70 MB of
 zips) should stay npx-oriented; don't advertise global install for it.
 
-### B. Self-heal retired leftovers in the shim
+#### B. Self-heal retired leftovers in the shim
 
 On startup, `bin.js` knows its own install location
 (`dirname(fileURLToPath(import.meta.url))`). If its parent directory contains
@@ -84,7 +106,7 @@ Scope guard: only delete siblings matching `.{tingly-box,tingly-box-gui,tingly-b
 directly next to our own package dir; ignore errors silently (a concurrent npm
 run will clean up after itself anyway).
 
-### C. Decouple binary version from npm version: `tb update`
+#### C. Decouple binary version from npm version: `tb update`
 
 Today CI pins `BINARY_RELEASE_BRANCH` to the release tag inside the published
 `bin.js`, so getting a new Go binary requires a new npm package — that's why
@@ -109,14 +131,14 @@ After C, the npm package is a thin installer/launcher that changes rarely
 `npm update -g`. This is the same endgame as Claude Code's native installer,
 reached without leaving npm as the distribution channel.
 
-### D. README posture (after A+B ship)
+#### D. README posture (after A+B ship)
 
 - Update instruction becomes `tb update` (once C lands); until then, prefer
   `npm install -g tingly-box@latest` over `npm update -g` — the install path
   re-resolves cleanly and also crosses major versions.
 - Keep the ENOTEMPTY cleanup snippet as troubleshooting.
 
-## Rollout
+### Rollout
 
 1. A + B in the next shim release (no Go changes; CI + bin.js only).
 2. C behind a normal feature PR (Go `update` command + shim `current`
