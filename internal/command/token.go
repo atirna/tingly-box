@@ -172,12 +172,7 @@ func runBoxTokenRefresh(appManager *AppManager, kind TokenKind, reveal, yes bool
 	}
 
 	if !yes {
-		fmt.Printf("Rotate the %s token now? Existing clients using the current token will stop working until updated. [y/N]: ", kind)
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		switch strings.ToLower(strings.TrimSpace(input)) {
-		case "y", "yes":
-		default:
+		if !promptYesNo(fmt.Sprintf("Rotate the %s token now? Existing clients using the current token will stop working until updated.", kind)) {
 			fmt.Println("Cancelled.")
 			return nil
 		}

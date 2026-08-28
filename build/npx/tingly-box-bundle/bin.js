@@ -136,31 +136,38 @@ function cleanupRetiredInstallDirs() {
 	}
 }
 
-// Whether this run came through `npx` / `npm exec` (npm sets npm_command=exec
-// for those) rather than a bin launched directly, e.g. from `npm install -g`.
-// The distinction drives the no-args default below: an npx invocation itself
-// expresses "run it now", while a globally installed `tingly-box` is a CLI
-// toolbox whose server lifecycle must stay an explicit action.
+// npx / `npm exec` sets npm_command=exec; a bin launched directly (e.g. from
+// `npm install -g`) does not. Entry-semantics rationale for everything below:
+// .design/cli-entry-semantics.md.
 const IS_NPX = process.env.npm_command === "exec";
 
-// Default parameters when no arguments are provided.
-// - npx: keep the historical "run it now" behavior (restart into background,
-//   -y: the invocation itself is the consent a bare `restart` would prompt for).
-// - global install / anything else: show help — restarting implicitly here
-//   would let a casually typed `tingly-box` kill in-flight AI requests; the
-//   user starts the server deliberately with `tingly-box start` (which
-//   daemonizes by default; --no-daemon for foreground).
-const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon", "-y"] : ["--help"];
+// Bare npx invocation = "run it now": restart into the background, -y being
+// the consent a bare `restart` would otherwise prompt for.
+const DEFAULT_ARGS = ["restart", "--daemon", "-y"];
 
-// Global flag prepended to every invocation so the binary records how it was
-// launched: "npx-bundle" for npx / npm exec, "npm-bundle" for a globally
-// installed bin. Downstream handling is identical; the value keeps the record
-// truthful and lets shortcuts relaunch the bundle package (offline-capable)
-// rather than the network-fetching cli package. As a global flag it must come
-// before the subcommand.
+// Records how this process was launched; also decides which npm package a
+// shortcut relaunches. As a global flag it must come before the subcommand.
 const SOURCE_ARGS = [IS_NPX ? "--source=npx-bundle" : "--source=npm-bundle"];
 
 const args = process.argv.slice(2);
+
+// A bare installed-bin invocation means "show help". Print it locally: no
+// need to extract the packaged binary just to render a help screen.
+if (!IS_NPX && args.length === 0) {
+	console.log(`Tingly Box — LLM gateway & intelligence orchestrator
+
+Usage: tingly-box <command>   ('tb' works too)
+
+  start     Start the server (background by default; --no-daemon for foreground)
+  open      Open the web UI (starts the server if needed)
+  status    Show server status
+  restart   Restart the server (asks first; -y to skip)
+  stop      Stop the server
+
+Run 'tingly-box --help' for the full command list.`);
+	process.exit(0);
+}
+
 const baseArgs = args.length > 0 ? args : DEFAULT_ARGS;
 const argsToUse = [...SOURCE_ARGS, ...baseArgs];
 

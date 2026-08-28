@@ -46,7 +46,7 @@ const (
 	SourceNpmBundle = "npm-bundle" // installed bin from `npm install -g tingly-box-bundle`
 )
 
-// npmShimSources lists every source that reaches the Go binary through an npm
+// npmShimSource reports whether source reaches the Go binary through an npm
 // shim, whatever the channel (npx or a global install) and package (cli or
 // bundle). They all get the same treatment; the split values only keep the
 // record truthful and preserve which npm package a shortcut should relaunch.
@@ -66,8 +66,11 @@ func npmShimSource(source string) bool {
 // "dev"/"unknown" placeholders used by unversioned builds) falls back to
 // "@latest".
 func npxPackageForSource(source, version string) string {
+	// The source values encode channel × package ("npx-bundle", "npm-bundle");
+	// the package axis is the "-bundle" suffix, so a new channel value can't
+	// silently fall back to the cli package here.
 	pkg := "tingly-box"
-	if source == SourceNpxBundle || source == SourceNpmBundle {
+	if strings.HasSuffix(source, "-bundle") {
 		pkg = "tingly-box-bundle"
 	}
 	if version == "" || version == "dev" || version == "unknown" {
@@ -78,11 +81,8 @@ func npxPackageForSource(source, version string) string {
 
 // LaunchArgs are the CLI args the shortcut runs. `open` matches what a
 // double-click means: server running -> open the web UI; not running ->
-// start it (daemonized by default) and open the UI. The former default,
-// `restart --daemon`, would now prompt for confirmation when the server is
-// running (a restart interrupts in-flight AI requests) — pointless friction
-// in a popup terminal, and npx-based shortcuts are pinned to one version so
-// the restart carried no update semantics anyway.
+// start it (daemonized by default) and open the UI. Rationale for moving off
+// `restart --daemon`: .design/cli-entry-semantics.md.
 func LaunchArgs() []string {
 	return []string{"open"}
 }
@@ -121,16 +121,11 @@ type Options struct {
 }
 
 // ResolveLaunch decides whether the shortcut runs the binary directly or goes
-// through npx, then builds the platform-specific launch vectors. source is how
-// the *current* process was invoked (an npm shim source — see npmShimSource —
-// or anything else meaning a plain binary) — the caller always knows this
-// first-hand, so there is no detection or persistence to do here. version pins
-// an npx-based shortcut to the currently-running release (see
-// npxPackageForSource). Global installs (SourceNpm/SourceNpmBundle) are
-// handled identically to npx: the process's own exePath points into the
-// version-tagged download cache, which a later update orphans, so an npx
-// relaunch pinned to the version is the stable target for them too (npm's
-// cache still has the tarball from the install, so it works offline).
+// through a version-pinned npx relaunch (every npm shim source, npx or global
+// install alike — a shim's own exePath points into the download cache, which
+// a later update orphans), then builds the platform-specific launch vectors.
+// source is how the *current* process was invoked; the caller always knows
+// this first-hand. See .design/cli-entry-semantics.md.
 func ResolveLaunch(exePath, source, version string) LaunchSpec {
 	args := LaunchArgs()
 

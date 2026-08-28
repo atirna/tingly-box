@@ -5,6 +5,7 @@ import { fontMono } from '@/theme/fonts';
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useVersion } from '@/contexts/VersionContext';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { Paper, Tooltip } from '@mui/material';
 
 interface UpdatePanelDialogProps {
@@ -24,8 +25,8 @@ export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onCl
     const theme = useTheme();
     const { currentVersion, latestVersion, checking, releaseURL, checkForUpdates, hasUpdate } = useVersion();
 
-    const [copiedMethod, setCopiedMethod] = useState<string | null>(null);
-    const [copiedVersion, setCopiedVersion] = useState(false);
+    const { copied: copiedCommand, copy: copyCommand } = useCopyFeedback();
+    const { copied: copiedVersion, copy: copyVersion } = useCopyFeedback();
     const [selectedMethodId, setSelectedMethodId] = useState<string>('npx');
 
     const displayCurrentVersion = (currentVersion || 'Unknown').split('+')[0];
@@ -81,19 +82,13 @@ export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onCl
 
     const selectedMethod = updateMethods.find((m) => m.id === selectedMethodId) ?? updateMethods[0];
 
-    const handleCopy = useCallback((commands: readonly string[], methodId: string) => {
-        navigator.clipboard.writeText(commands.join('\n')).then(() => {
-            setCopiedMethod(methodId);
-            setTimeout(() => setCopiedMethod(null), 2000);
-        });
-    }, []);
+    const handleCopy = useCallback(() => {
+        copyCommand(selectedMethod.commands.join('\n'));
+    }, [copyCommand, selectedMethod]);
 
     const handleCopyVersion = useCallback(() => {
-        navigator.clipboard.writeText(displayCurrentVersion).then(() => {
-            setCopiedVersion(true);
-            setTimeout(() => setCopiedVersion(false), 2000);
-        });
-    }, [displayCurrentVersion]);
+        copyVersion(displayCurrentVersion);
+    }, [copyVersion, displayCurrentVersion]);
 
     const handleCheckForUpdates = useCallback(() => {
         checkForUpdates(true);
@@ -284,20 +279,20 @@ export const UpdatePanelDialog: React.FC<UpdatePanelDialogProps> = ({ open, onCl
                                 </Typography>
                             ))}
                             <Tooltip
-                                title={copiedMethod === selectedMethod.id ? t('update.copied') : t('update.copy')}
+                                title={copiedCommand ? t('update.copied') : t('update.copy')}
                                 placement="top"
                                 arrow
                             >
                                 <IconButton
                                     size="small"
-                                    onClick={() => handleCopy(selectedMethod.commands, selectedMethod.id)}
+                                    onClick={handleCopy}
                                     sx={{
                                         position: 'absolute',
                                         right: 8,
                                         top: '50%',
                                         transform: 'translateY(-50%)',
-                                        color: copiedMethod === selectedMethod.id ? 'success.main' : 'text.secondary',
-                                        bgcolor: copiedMethod === selectedMethod.id ? 'success.light' : 'transparent',
+                                        color: copiedCommand ? 'success.main' : 'text.secondary',
+                                        bgcolor: copiedCommand ? 'success.light' : 'transparent',
                                         '&:hover': {
                                             color: 'primary.main',
                                             bgcolor: 'action.hover',

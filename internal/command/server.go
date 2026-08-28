@@ -39,13 +39,16 @@ type StartCmdKong struct {
 	EnableShortcut       bool   `kong:"flag,name='shortcut',help='Also create/refresh a desktop shortcut for next time'"`
 }
 
-func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
-	if s.EnableShortcut {
-		refreshShortcut(source)
+// resolveOptions converts the parsed Kong flags into resolved server options.
+// portOverride, when non-zero, replaces the flag port (restart uses it to
+// continue on the live port).
+func (s *StartCmdKong) resolveOptions(appConfig *config.AppConfig, portOverride int) options.StartServerOptions {
+	port := s.Port
+	if portOverride != 0 {
+		port = portOverride
 	}
-
 	flags := options.StartFlags{
-		Port:                 s.Port,
+		Port:                 port,
 		Host:                 s.Host,
 		EnableUI:             s.EnableUI,
 		EnableDebug:          s.EnableDebug,
@@ -54,7 +57,15 @@ func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 		Daemon:               s.Daemon,
 		LogFile:              s.LogFile,
 	}
-	opts := options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appManager.AppConfig())
+	return options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appConfig)
+}
+
+func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
+	if s.EnableShortcut {
+		refreshShortcut(source)
+	}
+
+	opts := s.resolveOptions(appManager.AppConfig(), 0)
 	return startServer(appManager, opts, source)
 }
 
@@ -87,6 +98,13 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 	wasRunning := fileLock.IsLocked()
 
+	// Read the live port once, BEFORE stopping — stopping removes the runtime
+	// port file.
+	runningPort := 0
+	if wasRunning {
+		runningPort = appManager.GetRuntimeServerPort()
+	}
+
 	// Restarting a running server interrupts in-flight AI requests, so a bare
 	// `restart` confirms first; -y (what the npx entrypoint passes — there the
 	// invocation itself expresses "run it now") proceeds directly. When the
@@ -94,7 +112,7 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 	// ask. Without a terminal and without -y, leave the server untouched.
 	if wasRunning && !r.Yes {
 		if !isStdinTTY() {
-			fmt.Printf("Server is running on port %d — a restart would interrupt in-flight AI requests.\n", appManager.GetRuntimeServerPort())
+			fmt.Printf("Server is running on port %d — a restart would interrupt in-flight AI requests.\n", runningPort)
 			fmt.Println("Re-run with -y ('tingly-box restart -y' / 'tb restart -y') to restart without prompting.")
 			return nil
 		}
@@ -109,12 +127,11 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 	// time and is intentionally never persisted, so without this a bare
 	// `restart` would silently relocate the server and break clients (cc /
 	// profile / an open web UI) pointed at the live port. An explicit `--port`
-	// still wins. The live port must be read BEFORE stopping, since stopping
-	// removes the runtime port file.
+	// still wins.
 	restartPort := r.Port
 	preservedPort := restartPort == 0 && wasRunning
 	if preservedPort {
-		restartPort = appManager.GetRuntimeServerPort()
+		restartPort = runningPort
 	}
 
 	if wasRunning {
@@ -133,17 +150,7 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 		fmt.Printf("Continuing on the running port %d (pass --port to change it; run 'stop' then 'start' for the default).\n", restartPort)
 	}
 
-	flags := options.StartFlags{
-		Port:                 restartPort,
-		Host:                 r.Host,
-		EnableUI:             r.EnableUI,
-		EnableDebug:          r.EnableDebug,
-		EnableOpenBrowser:    r.EnableOpenBrowser,
-		EnableStyleTransform: r.EnableStyleTransform,
-		Daemon:               r.Daemon,
-		LogFile:              r.LogFile,
-	}
-	opts := options.ResolveStartOptions(newKongShimCmd(r.EnableDebug), flags, appManager.AppConfig())
+	opts := r.resolveOptions(appManager.AppConfig(), restartPort)
 	return startServer(appManager, opts, source)
 }
 
@@ -154,7 +161,7 @@ type OpenCmdKong struct {
 }
 
 func (o *OpenCmdKong) Run(appManager *AppManager, source LaunchSource) error {
-	opts := resolveStartCmdKongOptions(&o.StartCmdKong, appManager.AppConfig())
+	opts := o.resolveOptions(appManager.AppConfig(), 0)
 	appConfig := appManager.AppConfig()
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 
@@ -287,32 +294,6 @@ func runStatusCmd(appManager *AppManager) error {
 	}
 
 	return nil
-}
-
-// resolveStartCmdKongOptions converts StartCmdKong to StartServerOptions
-func resolveStartCmdKongOptions(start *StartCmdKong, appConfig *config.AppConfig) options.StartServerOptions {
-	resolvedDebug := start.EnableDebug
-	if !start.EnableDebug {
-		resolvedDebug = appConfig.GetDebug()
-	}
-
-	resolvedPort := start.Port
-	if resolvedPort == 0 {
-		resolvedPort = appConfig.GetServerPort()
-	} else {
-		appConfig.SetServerPort(start.Port)
-	}
-
-	return options.StartServerOptions{
-		Host:              start.Host,
-		Port:              resolvedPort,
-		EnableUI:          start.EnableUI,
-		EnableDebug:       resolvedDebug,
-		EnableOpenBrowser: start.EnableOpenBrowser,
-		Daemon:            start.Daemon,
-		LogFile:           start.LogFile,
-		RecordDir:         appConfig.ConfigDir() + "/record",
-	}
 }
 
 // runSwagger extracts swagger logic from SwaggerCommand
@@ -464,35 +445,9 @@ func promptYesNo(question string) bool {
 	return response == "y" || response == "yes"
 }
 
-// describeRunningVersion formats the running server's version for status
-// lines, degrading to "version unknown" for servers that predate the runtime
-// version file.
-func describeRunningVersion(runningVersion string) string {
-	if runningVersion == "" {
-		return " (version unknown)"
-	}
-	return fmt.Sprintf(" (v%s)", runningVersion)
-}
-
 // startServer handles the server starting logic
 func startServer(appManager *AppManager, opts options.StartServerOptions, source LaunchSource) error {
 	return startServerWithHook(appManager, opts, source)
-}
-
-// runningInContainer reports whether this process runs inside a container,
-// where daemonizing is always wrong: the forked parent is PID 1 (or the
-// supervisor's child) and its exit kills the container. Detected via PID 1 or
-// the standard container marker files (Docker, Podman).
-func runningInContainer() bool {
-	if os.Getpid() == 1 {
-		return true
-	}
-	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
-		if _, err := os.Stat(marker); err == nil {
-			return true
-		}
-	}
-	return false
 }
 
 // startServerWithHook handles the server starting logic with optional setup hooks.
@@ -502,7 +457,7 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 	// `start` daemonizes by default, but inside a container that would exit
 	// PID 1 and kill the container — fall back to foreground instead of
 	// requiring every image and compose file to know about --no-daemon.
-	if opts.Daemon && runningInContainer() {
+	if opts.Daemon && daemon.InContainer() {
 		fmt.Println("Container environment detected — running in the foreground.")
 		opts.Daemon = false
 	}
@@ -562,17 +517,18 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 	// Create file lock
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 
-	// Check if server is already running using file lock (BEFORE port check).
-	// `start` never restarts a running server — that would interrupt in-flight
-	// AI requests. It shows the access info the user came for, plus a hint
-	// when the recorded server version differs from this launcher (typical
-	// right after `npm install -g`); `restart` (confirming, or -y) is the one
-	// verb that actually switches the running server.
+	// Already running (checked BEFORE the port check): `start` never restarts
+	// a running server — that would interrupt in-flight AI requests. All it
+	// does is show access info and hint at `restart` on a version mismatch.
 	if fileLock.IsLocked() {
 		runningPort := appManager.GetRuntimeServerPort()
 		runningVersion, _ := fileLock.ReadVersion() // "" = unknown (pre-version-file server)
 
-		fmt.Printf("Server is already running on port %d%s\n", runningPort, describeRunningVersion(runningVersion))
+		versionNote := " (version unknown)"
+		if runningVersion != "" {
+			versionNote = fmt.Sprintf(" (v%s)", runningVersion)
+		}
+		fmt.Printf("Server is already running on port %d%s\n", runningPort, versionNote)
 		printBanner(BannerConfig{
 			Port:         runningPort,
 			Host:         opts.Host,

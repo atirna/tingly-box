@@ -24,8 +24,11 @@ changes are either explicitly requested or explicitly confirmed.
 - **Installed CLI** (global `npm install -g` bin run directly, or the raw Go
   binary): shows **help**. An installed CLI is a toolbox (like `git`,
   `docker`); the server is started deliberately with `tingly-box start`.
-  Implemented twice so both layers agree: the shims pass `--help` when not
-  under npx, and `cli/tingly-box/main.go` maps zero args to `--help`.
+  The shims print a short local usage banner and exit — the binary may not
+  be downloaded/extracted yet, and fetching tens of MB (or failing offline)
+  just to render a help screen would be absurd; `tingly-box --help` still
+  materializes the binary for Kong's full help. The raw Go binary maps zero
+  args to `--help` in `cli/tingly-box/main.go`.
 
 **`--source` records the channel truthfully, handling stays unified:** the
 shims report `npx` / `npx-bundle` under npx and `npm` / `npm-bundle` when run
@@ -58,9 +61,8 @@ which one the user typed.
   endpoints — the thing the user actually came for) and exits. If the
   recorded server version differs from this launcher (typical right after
   `npm install -g`), one extra hint line says so and points to
-  `tingly-box restart`. All interactive confirmation lives in `restart`;
-  `start` is purely informational when the server is up, so there is no
-  TTY branching and no `--prompt-restart` flag anymore.
+  `tingly-box restart`. `start` is purely informational when the server is
+  up; all interactive confirmation lives in `restart`.
 
   The running version comes from `<configDir>/tingly-server.version`
   (`pkg/lock.VersionFile`), a runtime artifact written next to the port file
