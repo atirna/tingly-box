@@ -117,7 +117,7 @@ func TestConvertOpenAIResponsesToChat_FunctionCallOutputImage(t *testing.T) {
 					CallID: "call_1", Name: "vision_analyze", Arguments: "{}",
 				}},
 				{OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: "call_1",
+					CallID: param.NewOpt("call_1"),
 					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
 						OfResponseFunctionCallOutputItemArray: responses.ResponseFunctionCallOutputItemListParam{
 							{OfInputText: &responses.ResponseInputTextContentParam{Text: "Image loaded."}},

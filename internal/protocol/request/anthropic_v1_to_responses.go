@@ -165,7 +165,7 @@ func responsesFunctionCallOutputFromToolResult(block *anthropic.ToolResultBlockP
 
 	return responses.ResponseInputItemUnionParam{
 		OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-			CallID: block.ToolUseID,
+			CallID: param.NewOpt(block.ToolUseID),
 			Output: output,
 			Status: "completed",
 		},

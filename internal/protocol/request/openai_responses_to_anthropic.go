@@ -299,7 +299,7 @@ func convertResponsesFunctionCallOutputToAnthropicBeta(output *responses.Respons
 	}
 
 	// Create user message with tool_result block
-	block := anthropic.NewBetaToolResultBlock(output.CallID, outputStr, false)
+	block := anthropic.NewBetaToolResultBlock(output.CallID.Value, outputStr, false)
 	if hasCacheControl {
 		block.OfToolResult.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
 	}

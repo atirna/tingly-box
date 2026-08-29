@@ -157,7 +157,7 @@ func ConvertResponsesInputToMessages(items responses.ResponseInputParam) []opena
 
 			// Extract output content
 			if !param.IsOmitted(output.Output.OfString) {
-				messages = append(messages, openai.ToolMessage(output.Output.OfString.Value, output.CallID))
+				messages = append(messages, openai.ToolMessage(output.Output.OfString.Value, output.CallID.Value))
 				continue
 			}
 			parts := make([]openai.ChatCompletionContentPartUnionParam, 0,
@@ -183,14 +183,14 @@ func ConvertResponsesInputToMessages(items responses.ResponseInputParam) []opena
 			if len(parts) > 0 {
 				messages = append(messages, openai.ChatCompletionMessageParamUnion{
 					OfTool: &openai.ChatCompletionToolMessageParam{
-						ToolCallID: output.CallID,
+						ToolCallID: output.CallID.Value,
 						Content: openai.ChatCompletionToolMessageParamContentUnion{
 							OfArrayOfContentParts: parts,
 						},
 					},
 				})
 			} else {
-				messages = append(messages, openai.ToolMessage("", output.CallID))
+				messages = append(messages, openai.ToolMessage("", output.CallID.Value))
 			}
 		}
 	}
