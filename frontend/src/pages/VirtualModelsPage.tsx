@@ -86,7 +86,7 @@ const VirtualModelsPage = () => {
             </UnifiedCard>
             <Snackbar
                 open={snackbar.open}
-                autoHideDuration={6000}
+                autoHideDuration={snackbar.severity === 'error' ? null : 6000}
                 onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             >
