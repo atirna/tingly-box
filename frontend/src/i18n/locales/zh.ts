@@ -922,6 +922,13 @@ export default {
     "providers": {
       "title": "提供商",
       "description": "浏览目录，或粘贴一段配置片段——剩下的交给我们。"
+    },
+    "routing": {
+      "title": "路由与分层指南",
+      "description": "回顾直连路由、智能路由和模型分层的工作方式——复用的是其他页面上那份一样的图和步骤。",
+      "direct": "直连路由指南",
+      "smart": "智能路由指南",
+      "tier": "分层（Tier）指南"
     }
   },
   "serverInfo": {
