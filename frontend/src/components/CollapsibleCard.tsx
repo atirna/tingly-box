@@ -12,6 +12,10 @@ interface CollapsibleCardProps {
     /** Cap the *collapsed body*'s width only — the header/toggle always
      * spans the full card so the chevron sits flush at the true edge. */
     contentMaxWidth?: number | string;
+    /** Cap the body's height with an internal scrollbar, for a section whose
+     * content can grow arbitrarily long (e.g. a provider catalog) — so one
+     * card can't push every other section on the page below the fold. */
+    contentMaxHeight?: number | string;
     children: ReactNode;
 }
 
@@ -30,7 +34,7 @@ interface CollapsibleCardProps {
  *
  * State (open/closed) is fully controlled by the caller — this only renders.
  */
-export const CollapsibleCard = ({ title, description, expanded, onToggle, contentMaxWidth, children }: CollapsibleCardProps) => {
+export const CollapsibleCard = ({ title, description, expanded, onToggle, contentMaxWidth, contentMaxHeight, children }: CollapsibleCardProps) => {
     return (
         <UnifiedCard size="full">
             <ButtonBase
@@ -71,7 +75,13 @@ export const CollapsibleCard = ({ title, description, expanded, onToggle, conten
             </ButtonBase>
 
             <Collapse in={expanded} timeout="auto">
-                <Box sx={{ pt: 2, ...(contentMaxWidth !== undefined && { maxWidth: contentMaxWidth }) }}>
+                <Box
+                    sx={{
+                        pt: 2,
+                        ...(contentMaxWidth !== undefined && { maxWidth: contentMaxWidth }),
+                        ...(contentMaxHeight !== undefined && { maxHeight: contentMaxHeight, overflowY: 'auto' }),
+                    }}
+                >
                     {children}
                 </Box>
             </Collapse>

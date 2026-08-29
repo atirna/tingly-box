@@ -14,6 +14,11 @@ import { TierGuideDialog } from '@/components/tier/TierGuideDialog';
 // its provider grid wants the room.
 const SHORTCUT_CONTENT_MAX_WIDTH = 720;
 
+// The provider catalog is unbounded (many key + OAuth providers) — cap it so
+// this one section can't push Shortcut/Routing off screen; it scrolls
+// internally past this height instead of growing the page.
+const PROVIDERS_CONTENT_MAX_HEIGHT = 480;
+
 type HelpSectionId = 'shortcut' | 'providers' | 'routing';
 
 /**
@@ -74,6 +79,7 @@ const HelpPage = () => {
                     description={t('help.providers.description')}
                     expanded={expanded.has('providers')}
                     onToggle={() => toggle('providers')}
+                    contentMaxHeight={PROVIDERS_CONTENT_MAX_HEIGHT}
                 >
                     <ProvidersCard />
                 </CollapsibleCard>
