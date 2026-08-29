@@ -14,7 +14,7 @@ func (fl *FileLock) GetLockFilePath() string {
 
 // WritePort records the port the running server is listening on. It is a
 // runtime artifact tied to this lock's lifetime: written after TryLock and
-// removed by Unlock (or RemoveRuntimeFiles on the stopping side).
+// removed by Unlock (or RemovePort for a crashed server the stopper cleans up).
 func (fl *FileLock) WritePort(port int) error {
 	return fl.portFile.Write(port)
 }
@@ -25,8 +25,16 @@ func (fl *FileLock) ReadPort() (int, error) {
 	return fl.portFile.Read()
 }
 
-// WriteVersion records the running server's build version. Same lifetime
-// rules as WritePort.
+// RemovePort deletes the runtime port file. Unlock already does this for the
+// lock holder; the stop command uses it to clean up after a server that was
+// killed without releasing the lock itself.
+func (fl *FileLock) RemovePort() error {
+	return fl.portFile.Remove()
+}
+
+// WriteVersion records the running server's build version. Like the port
+// file, it is a runtime artifact tied to this lock's lifetime: written after
+// TryLock and removed by Unlock (or RemoveVersion on the stopping side).
 func (fl *FileLock) WriteVersion(version string) error {
 	return fl.versionFile.Write(version)
 }
@@ -38,17 +46,11 @@ func (fl *FileLock) ReadVersion() (string, error) {
 	return fl.versionFile.Read()
 }
 
-// RemoveRuntimeFiles deletes every runtime artifact tied to this lock (port
-// and version files). Unlock already does this for the lock holder; the stop
-// command uses it to clean up after a server that was killed without
-// releasing the lock itself. Adding a new runtime artifact means adding it
-// here (and to the per-platform constructors) so no removal site is missed.
-func (fl *FileLock) RemoveRuntimeFiles() error {
-	portErr := fl.portFile.Remove()
-	if err := fl.versionFile.Remove(); err != nil {
-		return err
-	}
-	return portErr
+// RemoveVersion deletes the runtime version file. Unlock already does this
+// for the lock holder; the stop command uses it to clean up after a server
+// that was killed without releasing the lock itself.
+func (fl *FileLock) RemoveVersion() error {
+	return fl.versionFile.Remove()
 }
 
 // readPIDFile reads a PID from the first line of the file at path.

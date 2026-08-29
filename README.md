@@ -70,24 +70,15 @@ npx --registry=http://mirrors.tencent.com/npm/ -y tingly-box-bundle@latest
 **Install globally with npm**
 
 ```bash
+npm install -g tingly-box@latest   # or tingly-box-bundle (binaries built-in, same commands)
+
+tb start   # tb = tingly-box; runs in the background (--no-daemon for foreground)
+tb open    # open the web UI
+
+# update: reinstall, then restart to apply (asks first; -y skips)
 npm install -g tingly-box@latest
-# (network trouble? use tingly-box-bundle instead — binaries built-in, same commands; install one or the other)
-
-tb start     # start the server (background by default; --no-daemon for foreground)
-tb open      # open the web UI
-tb stop      # stop the server
+tb restart
 ```
-
-> `tingly-box` and `tb` are the same CLI — use either. Running `tingly-box`
-> with no arguments shows help; starting/restarting the server is always an
-> explicit command, so a casual invocation never interrupts in-flight AI
-> requests.
->
-> **To update** a global install: `npm install -g tingly-box@latest`, then
-> `tb restart` to switch the running server to the new version (`tb start`
-> also notices the version change and points you to `tb restart`). A running
-> server is never interrupted silently: `restart` asks first — pass `-y`
-> to skip the confirmation (e.g. in scripts).
 
 > if any trouble, please check tingly-box output, or call for an issue to help.
 

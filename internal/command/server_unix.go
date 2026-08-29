@@ -51,7 +51,8 @@ func stopServerWithFileLock(fileLock *lock.FileLock) error {
 	// Wait for process to exit
 	for i := 0; i < 5; i++ { // Wait up to 5 seconds
 		if !fileLock.IsLocked() {
-			_ = fileLock.RemoveRuntimeFiles()
+			_ = fileLock.RemovePort()
+			_ = fileLock.RemoveVersion()
 			return nil
 		}
 		time.Sleep(1 * time.Second)
@@ -63,6 +64,7 @@ func stopServerWithFileLock(fileLock *lock.FileLock) error {
 		return fmt.Errorf("failed to force kill process: %w", err)
 	}
 
-	_ = fileLock.RemoveRuntimeFiles()
+	_ = fileLock.RemovePort()
+	_ = fileLock.RemoveVersion()
 	return nil
 }

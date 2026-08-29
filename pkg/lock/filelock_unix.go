@@ -108,10 +108,11 @@ func (fl *FileLock) Unlock() error {
 	closeErr := fl.file.Close()
 	fl.file = nil
 
-	// Remove the lock file and the associated runtime files (all are runtime
-	// artifacts of this lock; keeps the config directory clean).
+	// Remove the lock file and the associated runtime port/version files (all
+	// are runtime artifacts of this lock; keeps the config directory clean).
 	_ = os.Remove(fl.lockFile)
-	_ = fl.RemoveRuntimeFiles()
+	_ = fl.portFile.Remove()
+	_ = fl.versionFile.Remove()
 
 	if closeErr != nil {
 		return fmt.Errorf("failed to close lock file: %w", closeErr)
