@@ -217,9 +217,8 @@ jobs:
           rm -f bin.js.bak
           cd ..
 
-      # CLI-only steps
+      # Both legs need node_modules for the esbuild bundling step below.
       - name: Install dependencies
-        if: matrix.type == 'cli'
         working-directory: ${{ matrix.pkg_dir }}
         run: npm ci
 
@@ -234,8 +233,11 @@ jobs:
             echo "⏭️ No tests found, skipping..."
           fi
 
+      # Applies to both legs (mitigation A in .design/npm.md): the cli shim
+      # loses undici+unzipper, the bundle shim loses unzipper — either way the
+      # installed package materializes no nested node_modules, which is what
+      # keeps npm's retire-rename on global updates near-atomic.
       - name: Bundle shim into a single dependency-free file
-        if: matrix.type == 'cli'
         working-directory: ${{ matrix.pkg_dir }}
         run: |
           # Zero runtime deps in the published package (see .design/npm.md).
@@ -317,6 +319,15 @@ jobs:
           done
 
           echo "✅ Bundle structure verified"
+
+      - name: Smoke-test bundled shim (extract + exec, no node_modules)
+        if: matrix.type == 'bundle'
+        working-directory: ${{ matrix.pkg_dir }}
+        run: |
+          # What a user's install runs: bundled bin.js resolving the binary
+          # from the packaged zips, with no node_modules present.
+          rm -rf node_modules
+          node bin.js version
 
       - name: Calculate package size
         if: matrix.type == 'bundle'
