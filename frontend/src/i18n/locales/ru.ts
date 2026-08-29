@@ -137,6 +137,7 @@ export default {
     "system": "Система",
     "general": "Общие",
     "experimental": "Эксперименты",
+    "develop": "Разработка",
     "logs": "Журналы",
     "userRequest": "Запрос пользователя",
     "skills": "Навыки",

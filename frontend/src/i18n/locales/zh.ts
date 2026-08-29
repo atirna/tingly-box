@@ -138,6 +138,7 @@ export default {
     "system": "系统",
     "general": "通用",
     "experimental": "实验功能",
+    "develop": "开发者",
     "logs": "日志",
     "userRequest": "用户请求",
     "skills": "技能",

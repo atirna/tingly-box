@@ -55,6 +55,7 @@ const System = lazy(() => import('./pages/system/System.tsx'));
 const AccessControl = lazy(() => import('./pages/system/AccessControl.tsx'));
 const LogsPage = lazy(() => import('./pages/system/LogsPage'));
 const ExperimentalPage = lazy(() => import('./pages/system/ExperimentalPage'));
+const DevelopPage = lazy(() => import('./pages/system/DevelopPage'));
 const GuardrailsPage = lazy(() => import('./pages/GuardrailsPage'));
 const GuardrailsRulesPage = lazy(() => import('./pages/guardrails/RulesPage'));
 const GuardrailsCredentialsPage = lazy(() => import('./pages/guardrails/CredentialsPage'));
@@ -262,6 +263,7 @@ function AppContent() {
                     <Route path="/system" element={<System />} />
                     <Route path="/access-control" element={<AccessControl />} />
                     <Route path="/tingly-box-token" element={<SharingKeysPage />} />
+                    <Route path="/system/develop" element={<DevelopPage />} />
                     <Route path="/system/logs" element={<LogsPage />} />
                     <Route path="/system/experimental" element={<ExperimentalPage />} />
                     {/* Dashboard routes with time range */}

@@ -31,6 +31,7 @@ import {
     Server as IconServer,
     AiAgents as IconAiAgents,
     Extension as IconExtension,
+    Code as IconCode,
 } from '@/components/icons';
 import { useFeatureFlags } from '../contexts/FeatureFlagsContext';
 import { useProfileContext } from '@/contexts/ProfileContext';
@@ -269,6 +270,7 @@ export function useActivityItems(): ActivityItem[] {
                     { path: '/system', label: t('layout.general'), icon: <IconSettings sx={{ fontSize: 20 }} /> },
                     { path: '/access-control', label: t('layout.accessControl'), icon: <IconShield sx={{ fontSize: 20 }} /> },
                     { path: '/system/experimental', label: t('layout.experimental'), icon: <IconFlask sx={{ fontSize: 20 }} /> },
+                    { path: '/system/develop', label: t('layout.develop'), icon: <IconCode sx={{ fontSize: 20 }} /> },
                     { path: '/system/logs', label: t('layout.logs'), icon: <IconFileText sx={{ fontSize: 20 }} /> },
                 ],
             },
