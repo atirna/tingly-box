@@ -6,7 +6,9 @@
  * never need to wire notification state into their own components.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Alert, AlertTitle, Box, Collapse, Slide } from '@mui/material';
+import { Alert, AlertTitle, Box, Collapse, IconButton, Slide, Tooltip } from '@mui/material';
+import { Check, Close, ContentCopy } from '@/components/icons';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import {
   type NotifyItem,
   dismissNotify,
@@ -23,6 +25,7 @@ function useNotifyItems(): NotifyItem[] {
 function NotificationToast({ item }: { item: NotifyItem }) {
   const [open, setOpen] = useState(false);
   const removeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { copied, copy } = useCopyFeedback();
 
   // Trigger the enter transition once mounted.
   useEffect(() => {
@@ -49,6 +52,10 @@ function NotificationToast({ item }: { item: NotifyItem }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.duration]);
 
+  const isError = item.severity === 'error';
+  // What lands on the clipboard when the user copies an error for a report.
+  const reportText = item.title ? `${item.title}\n${item.message}` : item.message;
+
   return (
     <Collapse in={open} appear>
       <Box sx={{ mb: 1.5 }}>
@@ -56,7 +63,31 @@ function NotificationToast({ item }: { item: NotifyItem }) {
           <Alert
             severity={item.severity}
             variant="filled"
-            onClose={handleClose}
+            onClose={isError ? undefined : handleClose}
+            action={
+              isError ? (
+                <>
+                  <Tooltip title={copied ? 'Copied' : 'Copy for report'}>
+                    <IconButton
+                      aria-label="copy error"
+                      color="inherit"
+                      size="small"
+                      onClick={() => copy(reportText)}
+                    >
+                      {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                    </IconButton>
+                  </Tooltip>
+                  <IconButton
+                    aria-label="close"
+                    color="inherit"
+                    size="small"
+                    onClick={handleClose}
+                  >
+                    <Close fontSize="small" />
+                  </IconButton>
+                </>
+              ) : undefined
+            }
             sx={{
               width: '100%',
               boxShadow: 6,

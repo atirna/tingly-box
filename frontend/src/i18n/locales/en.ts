@@ -137,6 +137,7 @@ export default {
     "system": "System",
     "general": "General",
     "experimental": "Experimental",
+    "develop": "Develop",
     "logs": "Logs",
     "userRequest": "User Request",
     "skills": "Skills",

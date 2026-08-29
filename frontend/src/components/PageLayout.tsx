@@ -1,5 +1,7 @@
-import { CircularProgress, Box, Alert, IconButton } from '@mui/material';
+import { CircularProgress, Box, Alert, IconButton, Tooltip } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
+import { Check, ContentCopy } from '@/components/icons';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import PageHeader from './PageHeader';
 
 type TimerId = ReturnType<typeof setTimeout>;
@@ -68,6 +70,7 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
   rightAction,
 }) => {
   const timeoutRef = useRef<TimerId | null>(null);
+  const { copied, copy } = useCopyFeedback();
 
   // Only start showing the loading state once `loading` has been true for
   // LOADING_SHOW_DELAY_MS. If the data arrives before that, nothing is
@@ -84,9 +87,16 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
     return () => clearTimeout(t);
   }, [loading]);
 
-  // Auto-hide notification after specified duration
+  // Auto-hide notification after specified duration. Errors are exempt: they
+  // stay until the user explicitly closes them, so the text is always
+  // available to copy for a report.
   useEffect(() => {
-    if (notification?.open && notification.autoHideDuration && notification.autoHideDuration > 0) {
+    if (
+      notification?.open &&
+      notification.severity !== 'error' &&
+      notification.autoHideDuration &&
+      notification.autoHideDuration > 0
+    ) {
       timeoutRef.current = setTimeout(() => {
         if (notification.onClose) {
           notification.onClose();
@@ -100,7 +110,7 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
         timeoutRef.current = null;
       }
     };
-  }, [notification?.open, notification?.autoHideDuration, notification?.onClose]);
+  }, [notification?.open, notification?.severity, notification?.autoHideDuration, notification?.onClose]);
 
   // Close notification on page refresh/unload
   useEffect(() => {
@@ -189,14 +199,28 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
                 }
               }}
               action={
-                <IconButton
-                  aria-label="close"
-                  color="inherit"
-                  size="small"
-                  onClick={notification.onClose}
-                >
-                  ×
-                </IconButton>
+                <>
+                  {notification.severity === 'error' && notification.message && (
+                    <Tooltip title={copied ? 'Copied' : 'Copy for report'}>
+                      <IconButton
+                        aria-label="copy error"
+                        color="inherit"
+                        size="small"
+                        onClick={() => copy(notification.message ?? '')}
+                      >
+                        {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  <IconButton
+                    aria-label="close"
+                    color="inherit"
+                    size="small"
+                    onClick={notification.onClose}
+                  >
+                    ×
+                  </IconButton>
+                </>
               }
             >
               {notification.customContent}
@@ -204,7 +228,33 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
           ) : (
             <Alert
               severity={notification.severity || 'info'}
-              onClose={notification.onClose}
+              onClose={
+                notification.severity === 'error' ? undefined : notification.onClose
+              }
+              action={
+                notification.severity === 'error' ? (
+                  <>
+                    <Tooltip title={copied ? 'Copied' : 'Copy for report'}>
+                      <IconButton
+                        aria-label="copy error"
+                        color="inherit"
+                        size="small"
+                        onClick={() => copy(notification.message ?? '')}
+                      >
+                        {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
+                    <IconButton
+                      aria-label="close"
+                      color="inherit"
+                      size="small"
+                      onClick={notification.onClose}
+                    >
+                      ×
+                    </IconButton>
+                  </>
+                ) : undefined
+              }
               sx={{
                 mb: 0,
                 width: '100%',

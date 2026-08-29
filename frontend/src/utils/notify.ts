@@ -32,7 +32,9 @@ const DEFAULT_DURATION: Record<NotifySeverity, number> = {
   success: 3500,
   info: 3500,
   warning: 5000,
-  error: 6000,
+  // Errors must never vanish on their own: they require an explicit user
+  // action, and their text is what the user copies out to report a problem.
+  error: 0,
 };
 
 let items: NotifyItem[] = [];
@@ -65,7 +67,9 @@ export function pushNotify(
     severity,
     message,
     title: options?.title,
-    duration: options?.duration ?? DEFAULT_DURATION[severity],
+    // Enforced centrally so no caller can accidentally re-introduce a
+    // self-dismissing error toast (even with an explicit duration).
+    duration: severity === 'error' ? 0 : (options?.duration ?? DEFAULT_DURATION[severity]),
     createdAt: Date.now(),
   };
   const existingIndex = items.findIndex((i) => i.id === id);
