@@ -181,7 +181,11 @@ export default {
     "methods": {
       "npx": {
         "title": "Quick Update (npx)",
-        "description": "Run once with latest version"
+        "description": "One command: downloads the new version and restarts the server"
+      },
+      "npm": {
+        "title": "Global Install (npm)",
+        "description": "Update the installed CLI, then restart the server to apply"
       },
       "bundle": {
         "title": "Offline Bundle (npx)",

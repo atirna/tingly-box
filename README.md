@@ -48,11 +48,11 @@ Tingly Box **serves agents, coordinates AI models, optimizes context, and routes
 
 ### Install
 
-**From npm / npx (recommended)**
+**Run with npx (quickest)**
 
 ```bash
-# Install and run (auto restart, migrate and open webui while run without any args)
-# A golang binary release but npx to wrap cli for convenience
+# One command: fetch, restart the server in the background, migrate and open the web UI
+# (a golang binary release; npx wraps the cli for convenience)
 npx tingly-box@latest
 
 # or -y for convenience
@@ -65,6 +65,19 @@ npx -y tingly-box-bundle@latest
 npx --registry=https://registry.npmmirror.com -y tingly-box-bundle@latest
 npx --registry=https://mirrors.huaweicloud.com/repository/npm/ -y tingly-box-bundle@latest
 npx --registry=http://mirrors.tencent.com/npm/ -y tingly-box-bundle@latest
+```
+
+**Install globally with npm**
+
+```bash
+npm install -g tingly-box@latest   # or tingly-box-bundle (binaries built-in, same commands)
+
+tb start   # tb = tingly-box; runs in the background (--no-daemon for foreground)
+tb open    # open the web UI
+
+# update: reinstall, then restart to apply (asks first; -y skips)
+npm install -g tingly-box@latest
+tb restart
 ```
 
 > if any trouble, please check tingly-box output, or call for an issue to help.

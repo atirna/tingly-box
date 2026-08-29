@@ -20,6 +20,25 @@ each GitHub release:
 All three expose `tingly-box` and `tb` bins. The shim never writes into its own
 install dir — binaries and caches live under `~/.cache/tingly-box/`.
 
+No-args behavior is split by invocation (see `cli-entry-semantics.md`): under
+npx / `npm exec` (`npm_command=exec`) the cli and bundle shims keep the
+historical run-now behavior as `restart --daemon -y` (the invocation is the
+consent a bare `restart` prompts for); run as an installed bin (global
+install) they pass `--help` instead — server lifecycle is explicit (`tingly-box start`,
+which daemonizes by default) so a casual `tingly-box` can't kill in-flight AI
+requests. `--source` follows the same split (`npx`/`npm`, `npx-bundle`/
+`npm-bundle`) with unified handling downstream.
+
+A global install of `tingly-box-bundle` works (same bins, same entry
+semantics, binaries extracted from the bundled zips) and gets mitigations
+A + B like the cli package. The residual difference on `npm install -g`
+updates is payload, not dependency sprawl: the retire-rename still moves
+~70 MB of zips — a handful of large files rather than the pre-A hundreds of
+small ones, so the window is far narrower than it was but wider than the
+cli package's two tiny files. One footnote: both packages expose the same
+`tingly-box`/`tb` bin names — installs are one-or-the-other, side-by-side
+global installs overwrite each other's bin links.
+
 ## Making `npm install -g` viable again
 
 Status: A + B implemented (2026-08), effective from the next publish; C is
@@ -29,9 +48,10 @@ global install broken. The rest of this doc explains the failure and lays out
 the path to re-enable global installs.
 
 - A lives in `.github/workflows/npm.yml` ("Bundle shim into a single
-  dependency-free file" steps for the cli leg and the gui job, plus a
-  smoke-test that runs the bundled shim with no `node_modules` against the
-  real release).
+  dependency-free file" steps for the cli and bundle legs and the gui job,
+  plus per-leg smoke-tests that run the bundled shim with no `node_modules` —
+  the cli one against the real release download, the bundle one against the
+  packaged zips).
 - B is `cleanupRetiredInstallDirs()` in all three `build/npx/*/bin.js`.
 - `build/npx/test-shim.sh <release-tag>` codifies the verification: it builds
   the published artifact the same way CI does (pin tag, esbuild bundle) and
@@ -107,8 +127,10 @@ Effect: the global package dir holds 2 files (~1–2 MB), no nested
 `npm i -g` / `npx` get faster (no dep resolution). This shrinks the ENOTEMPTY
 window to almost nothing but does not fix stickiness (B does).
 
-Applies to `tingly-box` and `tingly-box-gui`. `tingly-box-bundle` (70 MB of
-zips) should stay npx-oriented; don't advertise global install for it.
+Applies to all three packages (bundle since 2026-08 — its shim only pulled
+`unzipper`, and bundling it means an install materializes zero nested
+`node_modules`; the 70 MB of zips are package assets, not dependencies, so
+they're unaffected either way).
 
 #### B. Self-heal retired leftovers in the shim
 
@@ -159,15 +181,20 @@ After C, the npm package is a thin installer/launcher that changes rarely
 `npm update -g`. This is the same endgame as Claude Code's native installer,
 reached without leaving npm as the distribution channel.
 
-#### D. README posture (after A+B ship)
+#### D. README posture
 
-- Update instruction becomes `tb update` (once C lands); until then, prefer
-  `npm install -g tingly-box@latest` over `npm update -g` — the install path
-  re-resolves cleanly and also crosses major versions.
+Done (2026-08, alongside the entry-semantics split): the README and user
+manual advertise both paths — npx one-shot, and
+`npm install -g tingly-box@latest` + `tb start`, with updates via
+`npm install -g tingly-box@latest && tb restart` (prefer install over
+`npm update -g` — the install path re-resolves cleanly and also crosses
+major versions). Once C lands, the update instruction becomes `tb update`.
 
 ### Rollout
 
-1. A + B in the next shim release (no Go changes; CI + bin.js only).
-2. C behind a normal feature PR (Go `update` command + shim `current`
+1. A + B in the next shim release (no Go changes; CI + bin.js only). ✅
+   (A extended to the bundle package 2026-08.)
+2. Entry-semantics split + README/user-manual flip to "npm install -g
+   supported" (see `cli-entry-semantics.md`). ✅ 2026-08
+3. C behind a normal feature PR (Go `update` command + shim `current`
    resolution); ship shim change in the same release train as the Go command.
-3. Flip README to "npm install -g supported" once C has soaked for a release.

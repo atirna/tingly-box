@@ -240,7 +240,7 @@ func promptForAgentTypeChoice(reader *bufio.Reader) (agent.AgentType, error) {
 func promptForAgentConfig(reader *bufio.Reader, appManager *AppManager, req *agent.ApplyAgentRequest) error {
 	providers := usecase.NewProviderUseCase(appManager.GetGlobalConfig()).List().Providers
 	if len(providers) == 0 {
-		return fmt.Errorf("no providers configured. Please add a provider first using 'tingly-box config provider add'")
+		return fmt.Errorf("no providers configured. Please add a provider first using 'tingly-box config provider add' / 'tb config provider add'")
 	}
 
 	// Prompt for provider if not specified
@@ -309,7 +309,7 @@ func resolveAgentConfigFromRules(appManager *AppManager, req *agent.ApplyAgentRe
 		"Warning: no routing service configured for '%s' (scenario '%s').\n",
 		routing.RequestModel, routing.Scenario)
 	fmt.Fprintln(os.Stderr,
-		"Config files will still be applied. Run 'tingly-box tui' to set up routing rules later.")
+		"Config files will still be applied. Run 'tingly-box tui' / 'tb tui' to set up routing rules later.")
 
 	providers := usecase.NewProviderUseCase(appManager.GetGlobalConfig()).List().Providers
 	if len(providers) == 0 || !isStdinTTY() {

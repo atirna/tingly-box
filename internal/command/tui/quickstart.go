@@ -78,7 +78,7 @@ func RunQuickstart(mgr TUIManager) error {
 		return startServer(mgr)
 	}
 	fmt.Println()
-	fmt.Println(descStyle.Render("You can start the server later with: ") + valueStyle.Render("tingly-box start"))
+	fmt.Println(descStyle.Render("You can start the server later with: ") + valueStyle.Render("tingly-box start / tb start"))
 	return nil
 }
 
@@ -646,7 +646,7 @@ func qsShowToken(ctx StepContext, s quickstartState) (quickstartState, StepResul
 	fmt.Println(promptStyle.Render("Tingly Box model token (copy into your AI client):"))
 	fmt.Println(descStyle.Render("  Endpoint ") + valueStyle.Render(fmt.Sprintf("http://localhost:%d", port)))
 	fmt.Println(descStyle.Render("  Token    ") + valueStyle.Render(modelToken))
-	fmt.Println(descStyle.Render("  Tip: 'tingly-box token view model --reveal' to copy later, 'token refresh model' to rotate."))
+	fmt.Println(descStyle.Render("  Tip: 'tingly-box token view model --reveal' (or 'tb token ...') to copy later, 'token refresh model' to rotate."))
 	fmt.Println()
 	return s, StepContinue, nil
 }

@@ -69,7 +69,7 @@ CMD ["sh", "-c", "echo '======================================' && \
     echo '  Web UI will be available at:' && \
     echo '  http://localhost:'${TINGLY_PORT}'/dashboard?user_auth_token=tingly-box-user-token' && \
     echo '======================================' && \
-    pm2 start \"tingly-box restart --host ${TINGLY_HOST} --port ${TINGLY_PORT} ${TINGLY_DEBUG:+--verbose --debug}\" --name tingly-box && \
+    pm2 start \"tingly-box restart -y --no-daemon --host ${TINGLY_HOST} --port ${TINGLY_PORT} ${TINGLY_DEBUG:+--verbose --debug}\" --name tingly-box && \
     exec pm2 logs --raw"]
 
 

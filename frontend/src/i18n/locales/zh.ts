@@ -182,7 +182,11 @@ export default {
     "methods": {
       "npx": {
         "title": "快速更新（npx）",
-        "description": "使用最新版本运行一次"
+        "description": "一条命令：下载新版本并重启服务"
+      },
+      "npm": {
+        "title": "全局安装（npm）",
+        "description": "更新已安装的 CLI，然后重启服务以生效"
       },
       "bundle": {
         "title": "离线包（npx）",

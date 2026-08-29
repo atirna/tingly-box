@@ -113,7 +113,7 @@ CMD ["sh", "-c", "echo '======================================' && \
      echo '  http://localhost:'${TINGLY_PORT}'/dashboard?user_auth_token=tingly-box-user-token' && \
      echo '======================================' && \
      rm -f /home/tingly/.tingly-box/tingly-server.pid && \
-     exec tingly start --host ${TINGLY_HOST} --port ${TINGLY_PORT}"]
+     exec tingly start --no-daemon --host ${TINGLY_HOST} --port ${TINGLY_PORT}"]
 
 # Volume for persistent data (memory, logs and db all live under this tree)
 VOLUME ["/home/tingly/.tingly-box"]

@@ -41,8 +41,22 @@ func render(t *template.Template, data any) string {
 const (
 	SourceBinary    = "binary"
 	SourceNpx       = "npx"
+	SourceNpm       = "npm" // installed bin from `npm install -g tingly-box` (shim run outside npx)
 	SourceNpxBundle = "npx-bundle"
+	SourceNpmBundle = "npm-bundle" // installed bin from `npm install -g tingly-box-bundle`
 )
+
+// npmShimSource reports whether source reaches the Go binary through an npm
+// shim, whatever the channel (npx or a global install) and package (cli or
+// bundle). They all get the same treatment; the split values only keep the
+// record truthful and preserve which npm package a shortcut should relaunch.
+func npmShimSource(source string) bool {
+	switch source {
+	case SourceNpx, SourceNpm, SourceNpxBundle, SourceNpmBundle:
+		return true
+	}
+	return false
+}
 
 // npxPackageForSource returns the npm package + version spec an npx-based
 // launch should run. It pins to the currently-running version so the
@@ -52,8 +66,11 @@ const (
 // "dev"/"unknown" placeholders used by unversioned builds) falls back to
 // "@latest".
 func npxPackageForSource(source, version string) string {
+	// The source values encode channel × package ("npx-bundle", "npm-bundle");
+	// the package axis is the "-bundle" suffix, so a new channel value can't
+	// silently fall back to the cli package here.
 	pkg := "tingly-box"
-	if source == SourceNpxBundle {
+	if strings.HasSuffix(source, "-bundle") {
 		pkg = "tingly-box-bundle"
 	}
 	if version == "" || version == "dev" || version == "unknown" {
@@ -62,10 +79,12 @@ func npxPackageForSource(source, version string) string {
 	return pkg + "@" + version
 }
 
-// LaunchArgs are the CLI args the shortcut runs: restart the daemon and
-// (since --browser defaults to true) open the web UI.
+// LaunchArgs are the CLI args the shortcut runs. `open` matches what a
+// double-click means: server running -> open the web UI; not running ->
+// start it (daemonized by default) and open the UI. Rationale for moving off
+// `restart --daemon`: .design/cli-entry-semantics.md.
 func LaunchArgs() []string {
-	return []string{"restart", "--daemon"}
+	return []string{"open"}
 }
 
 // ResolveExePath returns the running process's own executable path, with
@@ -102,15 +121,15 @@ type Options struct {
 }
 
 // ResolveLaunch decides whether the shortcut runs the binary directly or goes
-// through npx, then builds the platform-specific launch vectors. source is how
-// the *current* process was invoked (SourceNpx / SourceNpxBundle / anything
-// else meaning a plain binary) — the caller always knows this first-hand, so
-// there is no detection or persistence to do here. version pins an npx-based
-// shortcut to the currently-running release (see npxPackageForSource).
+// through a version-pinned npx relaunch (every npm shim source, npx or global
+// install alike — a shim's own exePath points into the download cache, which
+// a later update orphans), then builds the platform-specific launch vectors.
+// source is how the *current* process was invoked; the caller always knows
+// this first-hand. See .design/cli-entry-semantics.md.
 func ResolveLaunch(exePath, source, version string) LaunchSpec {
 	args := LaunchArgs()
 
-	if source == SourceNpx || source == SourceNpxBundle {
+	if npmShimSource(source) {
 		// e.g. "npx -y tingly-box@1.4.2 restart --daemon"
 		npxArgv := append([]string{"npx", "-y", npxPackageForSource(source, version)}, args...)
 		cmdStr := strings.Join(npxArgv, " ")
