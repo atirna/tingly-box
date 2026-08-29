@@ -6,15 +6,28 @@
 
 ## 1. Installation & Setup
 
-### Method 1: npx (Recommended)
-Run directly without local installation (requires Node.js 18+):
-```bash
-npx tingly-box@latest start
-# or install then run
-npm install -g tingly-box
-tingly-box start
+### Method 1: npm / npx (Recommended)
+Requires Node.js 18+.
 
+Run one-shot with npx (fetches the release, restarts the server in the
+background and opens the web UI):
+```bash
+npx -y tingly-box@latest
 ```
+
+Or install globally, then manage the server explicitly:
+```bash
+npm install -g tingly-box
+tb start    # background by default; pass --no-daemon for foreground
+```
+
+`tingly-box` and `tb` are the same CLI; running it with no arguments shows
+help. To update a global install: `npm install -g tingly-box@latest`, then
+`tb restart` to switch the running server to the new version — `restart`
+asks for confirmation while the server is running (a restart interrupts
+in-flight AI requests); pass `-y` to skip the prompt in scripts. If the network
+is a problem, install `tingly-box-bundle` instead (binaries built-in, same
+commands — install one or the other, they share the same bin names).
 
 ### Method 2: Docker
 Run as a background container:
