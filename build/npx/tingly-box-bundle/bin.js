@@ -136,15 +136,19 @@ function cleanupRetiredInstallDirs() {
 	}
 }
 
-// Default parameters to use when no arguments are provided
-const DEFAULT_ARGS = [
-	"restart",
-	"--daemon",
-];
+// npx / `npm exec` sets npm_command=exec; a bin launched directly (e.g. from
+// `npm install -g`) does not. Entry-semantics rationale for everything below:
+// .design/cli-entry-semantics.md.
+const IS_NPX = process.env.npm_command === "exec";
 
-// Global flag prepended to every invocation so the binary records that it was
-// launched via npx-bundle. As a global flag it must come before the subcommand.
-const SOURCE_ARGS = ["--source=npx-bundle"];
+// Bare npx invocation = "run it now" (restart into the background, -y being
+// the consent a bare `restart` would otherwise prompt for); a bare installed
+// bin shows help.
+const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon", "-y"] : ["--help"];
+
+// Records how this process was launched; also decides which npm package a
+// shortcut relaunches. As a global flag it must come before the subcommand.
+const SOURCE_ARGS = [IS_NPX ? "--source=npx-bundle" : "--source=npm-bundle"];
 
 const args = process.argv.slice(2);
 const baseArgs = args.length > 0 ? args : DEFAULT_ARGS;

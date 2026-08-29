@@ -16,7 +16,6 @@ type StartFlags struct {
 	EnableStyleTransform bool
 	Daemon               bool
 	LogFile              string
-	PromptRestart        bool
 }
 
 // StartServerOptions contains resolved options for starting the server
@@ -28,7 +27,6 @@ type StartServerOptions struct {
 	EnableOpenBrowser bool
 	Daemon            bool
 	LogFile           string
-	PromptRestart     bool
 	// RecordDir is where scenario recording sinks write when the scenario's
 	// recording_v2 flag enables recording. Always the config-dir default —
 	// recording enablement is flag-driven, not a CLI concern.
@@ -46,7 +44,6 @@ func AddStartFlags(cmd *cobra.Command, flags *StartFlags) {
 	cmd.Flags().BoolVar(&flags.EnableStyleTransform, "adapter", true, "Enable API style transformation (default: true)")
 	cmd.Flags().BoolVar(&flags.Daemon, "daemon", false, "Run as daemon in background (default: false)")
 	cmd.Flags().StringVar(&flags.LogFile, "log-file", "", "Log file path for daemon mode (default: ~/.tingly-box/tingly-box.log)")
-	cmd.Flags().BoolVar(&flags.PromptRestart, "prompt-restart", false, "Prompt to restart if server is already running (default: false)")
 }
 
 // ResolveStartOptions resolves CLI flags with config file defaults
@@ -73,7 +70,6 @@ func ResolveStartOptions(cmd *cobra.Command, flags StartFlags, appConfig *config
 		EnableOpenBrowser: flags.EnableOpenBrowser,
 		Daemon:            flags.Daemon,
 		LogFile:           flags.LogFile,
-		PromptRestart:     flags.PromptRestart,
 		RecordDir:         appConfig.ConfigDir() + "/record",
 	}
 }

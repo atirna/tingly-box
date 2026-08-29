@@ -188,7 +188,7 @@ func selectBotInteractively(store *db.ImBotSettingsStore) (string, error) {
 func promptForSmartGuideModel(reader *bufio.Reader, appManager *AppManager) (string, string, error) {
 	providers := usecase.NewProviderUseCase(appManager.GetGlobalConfig()).List().Providers
 	if len(providers) == 0 {
-		return "", "", fmt.Errorf("no providers configured. Please add a provider first using 'tingly-box config provider add'")
+		return "", "", fmt.Errorf("no providers configured. Please add a provider first using 'tingly-box config provider add' / 'tb config provider add'")
 	}
 
 	// Select provider

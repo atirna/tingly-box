@@ -52,6 +52,7 @@ func stopServerWithFileLock(fileLock *lock.FileLock) error {
 	for i := 0; i < 5; i++ { // Wait up to 5 seconds
 		if !fileLock.IsLocked() {
 			_ = fileLock.RemovePort()
+			_ = fileLock.RemoveVersion()
 			return nil
 		}
 		time.Sleep(1 * time.Second)
@@ -64,5 +65,6 @@ func stopServerWithFileLock(fileLock *lock.FileLock) error {
 	}
 
 	_ = fileLock.RemovePort()
+	_ = fileLock.RemoveVersion()
 	return nil
 }

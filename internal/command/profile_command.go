@@ -78,7 +78,7 @@ func profileList(appManager *AppManager) error {
 
 	if len(profiles) == 0 {
 		fmt.Println("No profiles configured for Claude Code.")
-		fmt.Println("Use 'tingly-box tui' to create profiles via the web UI.")
+		fmt.Println("Use 'tingly-box tui' / 'tb tui' to create profiles via the web UI.")
 		return nil
 	}
 
@@ -160,7 +160,7 @@ func profileShowInteractive(appManager *AppManager) error {
 
 	if len(profiles) == 0 {
 		fmt.Println("No profiles configured for Claude Code.")
-		fmt.Println("Use 'tingly-box tui' to create profiles via the web UI.")
+		fmt.Println("Use 'tingly-box tui' / 'tb tui' to create profiles via the web UI.")
 		return nil
 	}
 
@@ -222,7 +222,7 @@ func profileLaunchInteractive(appManager *AppManager, port int) error {
 
 	if len(profiles) == 0 {
 		fmt.Println("No profiles configured for Claude Code.")
-		fmt.Println("Use 'tingly-box tui' to create profiles via the web UI.")
+		fmt.Println("Use 'tingly-box tui' / 'tb tui' to create profiles via the web UI.")
 		return nil
 	}
 

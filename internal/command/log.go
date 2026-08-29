@@ -44,7 +44,7 @@ func (l *LogCmdKong) Run(appManager *AppManager) error {
 	// Make sure the server is actually running, otherwise the API is not reachable.
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 	if !fileLock.IsLocked() {
-		return fmt.Errorf("server is not running; start it first with 'tingly-box start'")
+		return fmt.Errorf("server is not running; start it first with 'tingly-box start' / 'tb start'")
 	}
 
 	port := l.Port

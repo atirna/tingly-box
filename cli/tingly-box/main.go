@@ -30,7 +30,7 @@ type CLI struct {
 	ConfigDir string `kong:"flag,name='config-dir',help='Configuration directory'"`
 	Verbose   bool   `kong:"flag,name='verbose',short='v',help='Verbose output'"`
 	PProf     bool   `kong:"flag,name='pprof',help='Run with pprof in :6060'"`
-	Source    string `kong:"flag,name='source',help='How tingly-box was launched (binary, npx, npx-bundle); used to match the shortcut it creates/refreshes to the install method'"`
+	Source    string `kong:"flag,name='source',help='How tingly-box was launched (binary, npx, npm, npx-bundle, npm-bundle); used to match the shortcut it creates/refreshes to the install method'"`
 
 	// Server commands
 	Start   command.StartCmdKong   `kong:"cmd,help='Start the server'"`
@@ -111,7 +111,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, parseErr := parser.Parse(os.Args[1:])
+	// A bare `tingly-box` shows help instead of a parse error: the CLI is a
+	// toolbox, and starting/restarting the server stays an explicit action
+	// (`tingly-box start`). Only the npx shim, where invocation itself
+	// expresses "run it now", injects a default command.
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"--help"}
+	}
+
+	ctx, parseErr := parser.Parse(args)
 	if parseErr != nil {
 		parser.Errorf("%v", parseErr)
 		os.Exit(1)

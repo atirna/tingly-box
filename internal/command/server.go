@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pkg/browser"
@@ -35,19 +34,21 @@ type StartCmdKong struct {
 	EnableDebug          bool   `kong:"flag,name='debug',help='Enable debug mode'"`
 	EnableOpenBrowser    bool   `kong:"flag,name='browser',default='true',help='Auto-open browser'"`
 	EnableStyleTransform bool   `kong:"flag,name='adapter',default='true',help='Enable API style transform'"`
-	Daemon               bool   `kong:"flag,name='daemon',help='Run as daemon'"`
+	Daemon               bool   `kong:"flag,name='daemon',default='true',negatable,help='Run in the background (default; pass --no-daemon for foreground)'"`
 	LogFile              string `kong:"flag,name='log-file',help='Log file path'"`
-	PromptRestart        bool   `kong:"flag,name='prompt-restart',help='Prompt to restart if running'"`
 	EnableShortcut       bool   `kong:"flag,name='shortcut',help='Also create/refresh a desktop shortcut for next time'"`
 }
 
-func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
-	if s.EnableShortcut {
-		refreshShortcut(source)
+// resolveOptions converts the parsed Kong flags into resolved server options.
+// portOverride, when non-zero, replaces the flag port (restart uses it to
+// continue on the live port).
+func (s *StartCmdKong) resolveOptions(appConfig *config.AppConfig, portOverride int) options.StartServerOptions {
+	port := s.Port
+	if portOverride != 0 {
+		port = portOverride
 	}
-
 	flags := options.StartFlags{
-		Port:                 s.Port,
+		Port:                 port,
 		Host:                 s.Host,
 		EnableUI:             s.EnableUI,
 		EnableDebug:          s.EnableDebug,
@@ -55,9 +56,16 @@ func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
 		EnableStyleTransform: s.EnableStyleTransform,
 		Daemon:               s.Daemon,
 		LogFile:              s.LogFile,
-		PromptRestart:        s.PromptRestart,
 	}
-	opts := options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appManager.AppConfig())
+	return options.ResolveStartOptions(newKongShimCmd(s.EnableDebug), flags, appConfig)
+}
+
+func (s *StartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
+	if s.EnableShortcut {
+		refreshShortcut(source)
+	}
+
+	opts := s.resolveOptions(appManager.AppConfig(), 0)
 	return startServer(appManager, opts, source)
 }
 
@@ -78,6 +86,7 @@ func (s *StatusCmdKong) Run(appManager *AppManager) error {
 // RestartCmdKong is the Kong version of restart command
 type RestartCmdKong struct {
 	StartCmdKong
+	Yes bool `kong:"flag,name='yes',short='y',help='Restart without asking for confirmation'"`
 }
 
 func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error {
@@ -89,17 +98,40 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 	wasRunning := fileLock.IsLocked()
 
+	// Read the live port once, BEFORE stopping — stopping removes the runtime
+	// port file.
+	runningPort := 0
+	if wasRunning {
+		runningPort = appManager.GetRuntimeServerPort()
+	}
+
+	// Restarting a running server interrupts in-flight AI requests, so a bare
+	// `restart` confirms first; -y (what the npx entrypoint passes — there the
+	// invocation itself expresses "run it now") proceeds directly. When the
+	// server isn't running there is nothing to interrupt and no question to
+	// ask. Without a terminal and without -y, leave the server untouched.
+	if wasRunning && !r.Yes {
+		if !isStdinTTY() {
+			fmt.Printf("Server is running on port %d — a restart would interrupt in-flight AI requests.\n", runningPort)
+			fmt.Println("Re-run with -y ('tingly-box restart -y' / 'tb restart -y') to restart without prompting.")
+			return nil
+		}
+		if !promptYesNo("Restart the server? In-flight AI requests will be interrupted.") {
+			fmt.Println("\nKeeping the running server untouched.")
+			return nil
+		}
+	}
+
 	// A real restart continues on the port the server is actually running on,
 	// not the config default. That port may have come from `--port` at start
 	// time and is intentionally never persisted, so without this a bare
 	// `restart` would silently relocate the server and break clients (cc /
 	// profile / an open web UI) pointed at the live port. An explicit `--port`
-	// still wins. The live port must be read BEFORE stopping, since stopping
-	// removes the runtime port file.
+	// still wins.
 	restartPort := r.Port
 	preservedPort := restartPort == 0 && wasRunning
 	if preservedPort {
-		restartPort = appManager.GetRuntimeServerPort()
+		restartPort = runningPort
 	}
 
 	if wasRunning {
@@ -118,18 +150,7 @@ func (r *RestartCmdKong) Run(appManager *AppManager, source LaunchSource) error 
 		fmt.Printf("Continuing on the running port %d (pass --port to change it; run 'stop' then 'start' for the default).\n", restartPort)
 	}
 
-	flags := options.StartFlags{
-		Port:                 restartPort,
-		Host:                 r.Host,
-		EnableUI:             r.EnableUI,
-		EnableDebug:          r.EnableDebug,
-		EnableOpenBrowser:    r.EnableOpenBrowser,
-		EnableStyleTransform: r.EnableStyleTransform,
-		Daemon:               r.Daemon,
-		LogFile:              r.LogFile,
-		PromptRestart:        r.PromptRestart,
-	}
-	opts := options.ResolveStartOptions(newKongShimCmd(r.EnableDebug), flags, appManager.AppConfig())
+	opts := r.resolveOptions(appManager.AppConfig(), restartPort)
 	return startServer(appManager, opts, source)
 }
 
@@ -140,7 +161,7 @@ type OpenCmdKong struct {
 }
 
 func (o *OpenCmdKong) Run(appManager *AppManager, source LaunchSource) error {
-	opts := resolveStartCmdKongOptions(&o.StartCmdKong, appManager.AppConfig())
+	opts := o.resolveOptions(appManager.AppConfig(), 0)
 	appConfig := appManager.AppConfig()
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 
@@ -275,33 +296,6 @@ func runStatusCmd(appManager *AppManager) error {
 	return nil
 }
 
-// resolveStartCmdKongOptions converts StartCmdKong to StartServerOptions
-func resolveStartCmdKongOptions(start *StartCmdKong, appConfig *config.AppConfig) options.StartServerOptions {
-	resolvedDebug := start.EnableDebug
-	if !start.EnableDebug {
-		resolvedDebug = appConfig.GetDebug()
-	}
-
-	resolvedPort := start.Port
-	if resolvedPort == 0 {
-		resolvedPort = appConfig.GetServerPort()
-	} else {
-		appConfig.SetServerPort(start.Port)
-	}
-
-	return options.StartServerOptions{
-		Host:              start.Host,
-		Port:              resolvedPort,
-		EnableUI:          start.EnableUI,
-		EnableDebug:       resolvedDebug,
-		EnableOpenBrowser: start.EnableOpenBrowser,
-		Daemon:            start.Daemon,
-		LogFile:           start.LogFile,
-		PromptRestart:     start.PromptRestart,
-		RecordDir:         appConfig.ConfigDir() + "/record",
-	}
-}
-
 // runSwagger extracts swagger logic from SwaggerCommand
 func runSwagger(appManager *AppManager, output string, stdout bool) error {
 	cfg := appManager.GetGlobalConfig()
@@ -410,7 +404,7 @@ func printBanner(cfg BannerConfig) {
 	fmt.Println()
 
 	if cfg.IsDaemon {
-		fmt.Println("Server is running in background. Use 'tingly-box stop' to stop.")
+		fmt.Println("Server is running in background. Use 'tingly-box stop' / 'tb stop' to stop.")
 	}
 }
 
@@ -439,6 +433,16 @@ func doStopServer(appManager *AppManager) error {
 
 	fmt.Println("Server stopped successfully")
 	return nil
+}
+
+// promptYesNo asks a [y/N] question on stdin, defaulting to no on anything
+// but an explicit yes (including EOF from a detached stdin).
+func promptYesNo(question string) bool {
+	fmt.Print(question + " [y/N]: ")
+	var response string
+	fmt.Scanln(&response)
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes"
 }
 
 // startServer handles the server starting logic
@@ -505,35 +509,32 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 	// Create file lock
 	fileLock := lock.NewFileLock(appConfig.ConfigDir())
 
-	// Check if server is already running using file lock (BEFORE port check)
+	// Already running (checked BEFORE the port check): `start` never restarts
+	// a running server — that would interrupt in-flight AI requests. All it
+	// does is show access info and hint at `restart` on a version mismatch.
 	if fileLock.IsLocked() {
-		fmt.Printf("Server is already running on port %d\n", appManager.GetRuntimeServerPort())
-		fmt.Println("Use 'tingly-box restart' to restart the server")
-		fmt.Println("Use 'tingly-box stop' to stop it")
+		runningPort := appManager.GetRuntimeServerPort()
+		runningVersion, _ := fileLock.ReadVersion() // "" = unknown (pre-version-file server)
 
-		// If prompt-restart is enabled, ask user if they want to restart
-		if opts.PromptRestart {
-			fmt.Print("\nDo you want to restart the server? [y/N]: ")
-			var response string
-			fmt.Scanln(&response)
-
-			// Check if user wants to restart
-			if strings.ToLower(strings.TrimSpace(response)) == "y" || strings.ToLower(strings.TrimSpace(response)) == "yes" {
-				fmt.Println("\nRestarting server...")
-				// Stop the existing server first
-				if err := stopServerWithFileLock(fileLock); err != nil {
-					return fmt.Errorf("failed to stop existing server: %w", err)
-				}
-				// Give a moment for cleanup
-				time.Sleep(1 * time.Second)
-				// Continue to start the server (fall through to the rest of the function)
-			} else {
-				fmt.Println("\nRestart cancelled.")
-				return nil
-			}
-		} else {
-			return nil
+		versionNote := " (version unknown)"
+		if runningVersion != "" {
+			versionNote = fmt.Sprintf(" (v%s)", runningVersion)
 		}
+		fmt.Printf("Server is already running on port %d%s\n", runningPort, versionNote)
+		printBanner(BannerConfig{
+			Port:         runningPort,
+			Host:         opts.Host,
+			EnableUI:     opts.EnableUI,
+			GlobalConfig: appConfig.GetGlobalConfig(),
+			IsDaemon:     false,
+		})
+		if runningVersion != "" && runningVersion != BuildVersion {
+			fmt.Printf("This launcher is v%s — run 'tingly-box restart' / 'tb restart' to switch the running server to it.\n", BuildVersion)
+		} else {
+			fmt.Println("Use 'tingly-box restart' / 'tb restart' to restart the server")
+		}
+		fmt.Println("Use 'tingly-box stop' / 'tb stop' to stop it")
+		return nil
 	}
 
 	// Check if port is available (AFTER checking if our server is already running)
@@ -554,6 +555,13 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 	// is needed here.
 	if err := fileLock.WritePort(port); err != nil {
 		logrus.Warnf("Failed to record server port: %v", err)
+	}
+
+	// Record the running version alongside the port, so a later launcher
+	// (bare `tingly-box`, `start`) can tell whether this server already
+	// matches its own version and skip a needless, request-killing restart.
+	if err := fileLock.WriteVersion(BuildVersion); err != nil {
+		logrus.Warnf("Failed to record server version: %v", err)
 	}
 
 	serverManager := NewServerManager(
