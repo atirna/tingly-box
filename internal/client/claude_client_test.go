@@ -130,81 +130,6 @@ func TestClaudeClient_ListModels_UsesUpstream(t *testing.T) {
 }
 
 // ===================================================================
-// remapBetaRequestToolNames
-// ===================================================================
-
-func TestRemapBetaRequestToolNames(t *testing.T) {
-	t.Run("renames bash to Bash in OfTool", func(t *testing.T) {
-		req := &anthropic.BetaMessageNewParams{Tools: []anthropic.BetaToolUnionParam{
-			{OfTool: &anthropic.BetaToolParam{Name: "bash"}},
-		}}
-		rev := remapBetaRequestToolNames(req)
-		assert.Equal(t, "Bash", req.Tools[0].OfTool.Name)
-		assert.Equal(t, map[string]string{"Bash": "bash"}, rev)
-	})
-
-	t.Run("skips built-in tools (OfTool is nil)", func(t *testing.T) {
-		req := &anthropic.BetaMessageNewParams{Tools: []anthropic.BetaToolUnionParam{
-			{OfBashTool20250124: &anthropic.BetaToolBash20250124Param{}},
-		}}
-		rev := remapBetaRequestToolNames(req)
-		assert.Empty(t, rev)
-	})
-
-	t.Run("already TitleCase — no rename", func(t *testing.T) {
-		req := &anthropic.BetaMessageNewParams{Tools: []anthropic.BetaToolUnionParam{
-			{OfTool: &anthropic.BetaToolParam{Name: "Bash"}},
-		}}
-		rev := remapBetaRequestToolNames(req)
-		assert.Equal(t, "Bash", req.Tools[0].OfTool.Name)
-		assert.Empty(t, rev)
-	})
-
-	t.Run("unknown tool — TitleCased", func(t *testing.T) {
-		// Anthropic's OAuth path rejects requests carrying many snake_case
-		// tool names, so unknown tools are folded too — not just the
-		// well-known Claude Code ones.
-		req := &anthropic.BetaMessageNewParams{Tools: []anthropic.BetaToolUnionParam{
-			{OfTool: &anthropic.BetaToolParam{Name: "my_custom_tool"}},
-		}}
-		rev := remapBetaRequestToolNames(req)
-		assert.Equal(t, "MyCustomTool", req.Tools[0].OfTool.Name)
-		assert.Equal(t, map[string]string{"MyCustomTool": "my_custom_tool"}, rev)
-	})
-
-	t.Run("multiple tools — known names keep official spelling", func(t *testing.T) {
-		req := &anthropic.BetaMessageNewParams{Tools: []anthropic.BetaToolUnionParam{
-			{OfTool: &anthropic.BetaToolParam{Name: "read"}},
-			{OfTool: &anthropic.BetaToolParam{Name: "my_tool"}},
-			{OfTool: &anthropic.BetaToolParam{Name: "ls"}},
-		}}
-		rev := remapBetaRequestToolNames(req)
-		assert.Equal(t, "Read", req.Tools[0].OfTool.Name)
-		assert.Equal(t, "MyTool", req.Tools[1].OfTool.Name)
-		// "ls" comes from the map as "LS", not the mechanical "Ls".
-		assert.Equal(t, "LS", req.Tools[2].OfTool.Name)
-		assert.Equal(t, map[string]string{"Read": "read", "MyTool": "my_tool", "LS": "ls"}, rev)
-	})
-
-	t.Run("collision — both left alone", func(t *testing.T) {
-		// Renaming would make the reverse map ambiguous, which could
-		// dispatch a tool result to the wrong tool.
-		req := &anthropic.BetaMessageNewParams{Tools: []anthropic.BetaToolUnionParam{
-			{OfTool: &anthropic.BetaToolParam{Name: "my_tool"}},
-			{OfTool: &anthropic.BetaToolParam{Name: "MyTool"}},
-		}}
-		rev := remapBetaRequestToolNames(req)
-		assert.Equal(t, "my_tool", req.Tools[0].OfTool.Name)
-		assert.Equal(t, "MyTool", req.Tools[1].OfTool.Name)
-		assert.Empty(t, rev)
-	})
-
-	t.Run("nil request", func(t *testing.T) {
-		assert.Nil(t, remapBetaRequestToolNames(nil))
-	})
-}
-
-// ===================================================================
 // restoreBetaToolNamesInMessage
 // ===================================================================
 
@@ -219,39 +144,19 @@ func TestRestoreBetaToolNamesInMessage(t *testing.T) {
 		assert.Equal(t, "bash", msg.Content[0].Name)
 	})
 
-	t.Run("noop for nil message", func(t *testing.T) {
-		// Should not panic
+	t.Run("inert for nil message, empty map, and non-tool blocks", func(t *testing.T) {
 		restoreBetaToolNamesInMessage(nil, map[string]string{"Bash": "bash"})
-	})
 
-	t.Run("noop for empty reverseMap", func(t *testing.T) {
-		msg := &anthropic.BetaMessage{
-			Content: []anthropic.BetaContentBlockUnion{
-				{Type: "tool_use", Name: "Bash"},
-			},
-		}
-		restoreBetaToolNamesInMessage(msg, map[string]string{})
-		assert.Equal(t, "Bash", msg.Content[0].Name)
-	})
-
-	t.Run("does not touch non-tool_use blocks", func(t *testing.T) {
-		msg := &anthropic.BetaMessage{
-			Content: []anthropic.BetaContentBlockUnion{
-				{Type: "text", Name: ""},
-			},
-		}
-		restoreBetaToolNamesInMessage(msg, map[string]string{"Bash": "bash"})
-		assert.Equal(t, "", msg.Content[0].Name)
-	})
-
-	t.Run("name not in reverseMap is unchanged", func(t *testing.T) {
 		msg := &anthropic.BetaMessage{
 			Content: []anthropic.BetaContentBlockUnion{
 				{Type: "tool_use", Name: "Read"},
+				{Type: "text", Name: ""},
 			},
 		}
+		restoreBetaToolNamesInMessage(msg, nil)
 		restoreBetaToolNamesInMessage(msg, map[string]string{"Bash": "bash"})
 		assert.Equal(t, "Read", msg.Content[0].Name)
+		assert.Equal(t, "", msg.Content[1].Name)
 	})
 }
 

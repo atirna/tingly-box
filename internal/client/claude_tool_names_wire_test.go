@@ -151,6 +151,8 @@ func TestWire_BetaStreaming_RenamesEverySiteAndRestoresTheStream(t *testing.T) {
 	assert.Equal(t, "read_file", streamedToolName)
 }
 
+// TestWire_V1Streaming_RenamesEverySiteAndRestoresTheStream is the v1 twin of
+// the Beta wire test, kept compact: the full assertion set runs once above.
 func TestWire_V1Streaming_RenamesEverySiteAndRestoresTheStream(t *testing.T) {
 	srv, captured := newWireServer(t, betaToolUseStream("ReadFile"))
 	c := newWireClient(t, srv.URL)
@@ -185,7 +187,6 @@ func TestWire_V1Streaming_RenamesEverySiteAndRestoresTheStream(t *testing.T) {
 		}
 	}
 	require.NoError(t, stream.Err())
-	require.NotEmpty(t, *captured, "server never saw a request body")
 
 	body := string(*captured)
 	assert.Equal(t, []string{"ReadFile", "mcp__github__get_pull_request"}, wireToolNames(t, *captured))

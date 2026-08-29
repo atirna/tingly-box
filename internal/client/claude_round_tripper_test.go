@@ -40,50 +40,6 @@ func TestAnthropicBetaFlags(t *testing.T) {
 	}
 }
 
-func TestRemapRequestToolNames(t *testing.T) {
-	t.Run("renames bash to Bash in OfTool", func(t *testing.T) {
-		req := &anthropic.MessageNewParams{Tools: []anthropic.ToolUnionParam{
-			{OfTool: &anthropic.ToolParam{Name: "bash"}},
-		}}
-		rev := remapRequestToolNames(req)
-		assert.Equal(t, "Bash", req.Tools[0].OfTool.Name)
-		assert.Equal(t, map[string]string{"Bash": "bash"}, rev)
-	})
-
-	t.Run("skips built-in tools (OfTool is nil)", func(t *testing.T) {
-		req := &anthropic.MessageNewParams{Tools: []anthropic.ToolUnionParam{
-			{OfBashTool20250124: &anthropic.ToolBash20250124Param{}},
-		}}
-		rev := remapRequestToolNames(req)
-		assert.Empty(t, rev)
-	})
-
-	t.Run("already TitleCase — no rename", func(t *testing.T) {
-		req := &anthropic.MessageNewParams{Tools: []anthropic.ToolUnionParam{
-			{OfTool: &anthropic.ToolParam{Name: "Bash"}},
-		}}
-		rev := remapRequestToolNames(req)
-		assert.Equal(t, "Bash", req.Tools[0].OfTool.Name)
-		assert.Empty(t, rev)
-	})
-
-	t.Run("unknown tool — TitleCased", func(t *testing.T) {
-		// Anthropic's OAuth path rejects requests carrying many snake_case
-		// tool names, so unknown tools are folded too — not just the
-		// well-known Claude Code ones.
-		req := &anthropic.MessageNewParams{Tools: []anthropic.ToolUnionParam{
-			{OfTool: &anthropic.ToolParam{Name: "my_custom_tool"}},
-		}}
-		rev := remapRequestToolNames(req)
-		assert.Equal(t, "MyCustomTool", req.Tools[0].OfTool.Name)
-		assert.Equal(t, map[string]string{"MyCustomTool": "my_custom_tool"}, rev)
-	})
-
-	t.Run("nil request", func(t *testing.T) {
-		assert.Nil(t, remapRequestToolNames(nil))
-	})
-}
-
 func TestRestoreToolNamesInMessage(t *testing.T) {
 	t.Run("restores tool_use name", func(t *testing.T) {
 		msg := &anthropic.Message{

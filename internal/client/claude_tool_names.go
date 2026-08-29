@@ -29,13 +29,14 @@ const mcpNamespaceSeparator = "__"
 
 // claudeCodeToolName returns the name Claude Code would send for a tool.
 //
-// Anthropic fingerprints Claude Code OAuth traffic partly on tool naming: a
-// request carrying many lowercase/snake_case tool names is classified as
-// third-party and billed to Extra Usage rather than the subscription, which
-// surfaces as a 400 "You're out of extra usage" once that bucket is spent.
-// Measured against api.anthropic.com, requests with >=16 snake_case tool names
-// fail while the same request with TitleCased names succeeds; the check is a
-// casing heuristic, not an allowlist of known Claude Code tools.
+// Anthropic classifies some OAuth traffic as third-party and bills it to Extra
+// Usage rather than the subscription, which surfaces as a 400 "You're out of
+// extra usage" once that bucket is spent; tool naming appears to be one of the
+// signals. An earlier report measured a hard cutoff (~16 snake_case names);
+// later probes — five arms up to 48 lowercase names at 100% density — did not
+// reproduce it, so the exact trigger is unconfirmed (see PR #1634). The fold
+// is kept regardless because it only moves names towards the shape Claude Code
+// itself sends, and at worst is a no-op.
 //
 // MCP-namespaced names are exempt — see mcpNamespaceSeparator.
 // oauthToolRenameMap then wins for the well-known Claude Code tools so those

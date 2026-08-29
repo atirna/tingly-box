@@ -172,7 +172,7 @@ func (c *ClaudeClient) Guard(ctx context.Context, req *anthropic.MessageNewParam
 		}
 	}
 
-	// Remap tool names to Claude Code TitleCase equivalents to avoid Anthropic fingerprinting
+	// Remap tool names towards Claude Code spelling (see claude_tool_names.go)
 	reverseMap := remapRequestToolNames(req)
 
 	// Inject session ID from metadata
@@ -232,7 +232,7 @@ func (c *ClaudeClient) GuardBeta(ctx context.Context, req *anthropic.BetaMessage
 		stripBetaClearThinkingEdit(req)
 	}
 
-	// Remap tool names to Claude Code TitleCase equivalents to avoid Anthropic fingerprinting
+	// Remap tool names towards Claude Code spelling (see claude_tool_names.go)
 	reverseMap := remapBetaRequestToolNames(req)
 
 	// Inject session ID from metadata
