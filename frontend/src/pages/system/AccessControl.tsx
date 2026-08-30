@@ -25,6 +25,7 @@ import {
     Security as SecurityIcon,
 } from '@/components/icons';
 import { useTranslation } from 'react-i18next';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { api } from '@/services/api.ts';
 import { useAuth } from '@/contexts/AuthContext.tsx';
 import { PageLayout } from '@/components/PageLayout.tsx';
@@ -171,11 +172,12 @@ const AccessControl = () => {
     const [resetModelDialogOpen, setResetModelDialogOpen] = useState(false);
     const [userSuccessToken, setUserSuccessToken] = useState<string | null>(null);
     const [modelSuccessToken, setModelSuccessToken] = useState<string | null>(null);
-    // Which token's copy button most recently succeeded — scoped per token so
-    // copying the user token doesn't also flash "Copied!" on the model token's
-    // button (and vice versa). The row and its own reset-success banner share
-    // a key since they display the same underlying value.
-    const [copiedKey, setCopiedKey] = useState<'user' | 'model' | null>(null);
+    // Separate copy-feedback per token so copying the user token doesn't also
+    // flash "Copied!" on the model token's button (and vice versa). The row
+    // and its own reset-success banner share one flag since they display the
+    // same underlying value.
+    const { copied: copiedUser, copy: copyUserToken } = useCopyFeedback();
+    const { copied: copiedModel, copy: copyModelToken } = useCopyFeedback();
 
     // Visibility states for showing full tokens
     const [showUserToken, setShowUserToken] = useState(false);
@@ -202,18 +204,6 @@ const AccessControl = () => {
         loadModelToken();
     }, []);
 
-    const handleCopyToken = async (token: string, key: 'user' | 'model') => {
-        try {
-            await navigator.clipboard.writeText(token);
-            setCopiedKey(key);
-            // Only clear if nothing newer has claimed the "copied" flag —
-            // avoids a fast second copy of the same token having its
-            // feedback cut short by the first copy's timer.
-            setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 2000);
-        } catch (err) {
-            console.error('Failed to copy token:', err);
-        }
-    };
 
     const handleUserResetClick = () => {
         setResetUserDialogOpen(true);
@@ -341,8 +331,8 @@ const AccessControl = () => {
                         title={t('accessControl.userToken.resetSuccess')}
                         message={t('accessControl.userToken.resetSuccessMessage')}
                         token={userSuccessToken}
-                        copiedTooltip={copiedKey === 'user'}
-                        onCopy={() => handleCopyToken(userSuccessToken, 'user')}
+                        copiedTooltip={copiedUser}
+                        onCopy={() => copyUserToken(userSuccessToken)}
                         copyLabel={t('accessControl.copy')}
                         copiedLabel={t('accessControl.copied')}
                         acknowledgeLabel={t('accessControl.userToken.saved')}
@@ -356,8 +346,8 @@ const AccessControl = () => {
                         title={t('accessControl.modelToken.resetSuccess')}
                         message={t('accessControl.modelToken.resetSuccessMessage')}
                         token={modelSuccessToken}
-                        copiedTooltip={copiedKey === 'model'}
-                        onCopy={() => handleCopyToken(modelSuccessToken, 'model')}
+                        copiedTooltip={copiedModel}
+                        onCopy={() => copyModelToken(modelSuccessToken)}
                         copyLabel={t('accessControl.copy')}
                         copiedLabel={t('accessControl.copied')}
                         acknowledgeLabel={t('accessControl.modelToken.saved')}
@@ -397,8 +387,8 @@ const AccessControl = () => {
                                     displayValue={showUserToken ? displayUserToken : maskToken(displayUserToken)}
                                     revealed={showUserToken}
                                     onToggleReveal={() => setShowUserToken(!showUserToken)}
-                                    onCopy={() => handleCopyToken(displayUserToken, 'user')}
-                                    copiedTooltip={copiedKey === 'user'}
+                                    onCopy={() => copyUserToken(displayUserToken)}
+                                    copiedTooltip={copiedUser}
                                 />
                                 {!isUsingDefaultToken && !userSuccessToken && (
                                     <Typography
@@ -442,8 +432,8 @@ const AccessControl = () => {
                                     displayValue={showModelToken ? displayModelToken : maskToken(displayModelToken)}
                                     revealed={showModelToken}
                                     onToggleReveal={() => setShowModelToken(!showModelToken)}
-                                    onCopy={() => handleCopyToken(displayModelToken, 'model')}
-                                    copiedTooltip={copiedKey === 'model'}
+                                    onCopy={() => copyModelToken(displayModelToken)}
+                                    copiedTooltip={copiedModel}
                                 />
                             </Stack>
                         </Box>

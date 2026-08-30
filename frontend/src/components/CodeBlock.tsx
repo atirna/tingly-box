@@ -1,9 +1,10 @@
 import { ContentCopy as CopyIcon, Check as CheckIcon } from '@/components/icons';
 import { Box, IconButton, Typography } from '@mui/material';
-import React, { useState } from 'react';
+import React from 'react';
 import { Highlight, themes } from 'prism-react-renderer';
 import type { Language } from 'prism-react-renderer';
 import { EMPTY_STYLE } from '@/constants/defaults';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 
 export interface CodeBlockProps {
     code: string;
@@ -56,19 +57,13 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     headerActions,
     wrap = false,
 }) => {
-    const [copied, setCopied] = useState(false);
+    const { copied, copy } = useCopyFeedback();
 
-    const handleCopy = async () => {
+    const handleCopy = () => {
         if (onCopy) {
             onCopy(code);
         } else {
-            try {
-                await navigator.clipboard.writeText(code);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            } catch (err) {
-                console.error('Failed to copy code:', err);
-            }
+            copy(code);
         }
     };
 

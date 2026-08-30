@@ -2,6 +2,7 @@ import { Check as IconCheck, Computer as IconComputer, ContentCopy as IconConten
 import { Box, Button, CircularProgress, Divider, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { useNotify } from '@/hooks/useNotify.ts';
 import { api } from '@/services/api.ts';
 import { isGuiMode } from '@/utils/protocol.ts';
@@ -31,7 +32,7 @@ export const ShortcutCard = () => {
     const [shortcutStatus, setShortcutStatus] = useState<{ exists: boolean; created: string[]; scriptPath: string } | null>(null);
     const [shortcutCreating, setShortcutCreating] = useState(false);
     const [shortcutError, setShortcutError] = useState<string | null>(null);
-    const [copiedShortcutScript, setCopiedShortcutScript] = useState(false);
+    const { copied: copiedShortcutScript, copy: copyShortcutScript } = useCopyFeedback();
 
     useEffect(() => {
         loadShortcutStatus();
@@ -68,11 +69,7 @@ export const ShortcutCard = () => {
 
     const handleCopyShortcutScript = () => {
         if (!shortcutStatus?.scriptPath) return;
-        navigator.clipboard.writeText(shortcutStatus.scriptPath).then(() => {
-            setCopiedShortcutScript(true);
-            notify.success(t('common.copied'));
-            setTimeout(() => setCopiedShortcutScript(false), 2000);
-        });
+        copyShortcutScript(shortcutStatus.scriptPath, () => notify.success(t('common.copied')));
     };
 
     return (

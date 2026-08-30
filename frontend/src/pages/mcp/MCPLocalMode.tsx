@@ -17,11 +17,12 @@ import {
 } from '@/components/icons';
 import { useEffect, useState } from 'react';
 import { useNotify } from '@/hooks/useNotify';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 
 const MCPLocalMode = () => {
     const notify = useNotify();
     const [baseUrl, setBaseUrl] = useState('');
-    const [copiedCommand, setCopiedCommand] = useState(false);
+    const { copied: copiedCommand, copy: copyCommand } = useCopyFeedback();
 
     useEffect(() => {
         const url = window.location.origin;
@@ -50,12 +51,12 @@ const MCPLocalMode = () => {
     };
 
     const handleCopy = (text: string, type: 'command' | 'config') => {
-        navigator.clipboard.writeText(text);
         if (type === 'command') {
-            setCopiedCommand(true);
-            setTimeout(() => setCopiedCommand(false), 2000);
+            copyCommand(text, () => notify.success('Copied to clipboard'));
+        } else {
+            navigator.clipboard.writeText(text);
+            notify.success('Copied to clipboard');
         }
-        notify.success('Copied to clipboard');
     };
 
     return (

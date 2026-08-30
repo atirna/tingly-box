@@ -16,6 +16,7 @@ import {
     ContentCopy as CopyIcon,
     Terminal as TerminalIcon,
 } from '@/components/icons';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,13 +92,11 @@ interface CodeBlockProps {
  * Includes a copy-to-clipboard button in the header.
  */
 const CodeBlock: React.FC<CodeBlockProps> = ({ filename, runtimeLabel, command }) => {
-    const [copied, setCopied] = useState(false);
+    const { copied, copy } = useCopyFeedback();
 
     const handleCopy = useCallback(() => {
-        void navigator.clipboard.writeText(command.replace(/\\\n\s*/g, ' '));
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    }, [command]);
+        copy(command.replace(/\\\n\s*/g, ' '));
+    }, [command, copy]);
 
     return (
         <Box

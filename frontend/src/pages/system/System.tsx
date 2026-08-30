@@ -11,6 +11,7 @@ import { useHealth } from '@/contexts/HealthContext.tsx';
 import { useVersion } from '@/contexts/VersionContext.tsx';
 import { useAuth } from '@/contexts/AuthContext.tsx';
 import { useThemeMode } from '@/contexts/ThemeContext.tsx';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { useNotify } from '@/hooks/useNotify.ts';
 import { api } from '@/services/api.ts';
 import { getThemeOptions } from '@/theme/options.ts';
@@ -85,7 +86,7 @@ const System = () => {
     const [globalProxyUrl, setGlobalProxyUrl] = useState('');
     const [globalProxyInput, setGlobalProxyInput] = useState('');
     const [proxyUrlSaving, setProxyUrlSaving] = useState(false);
-    const [copiedVersion, setCopiedVersion] = useState(false);
+    const { copied: copiedVersion, copy: copyVersion } = useCopyFeedback();
     const isServerStatusAvailable = Boolean(serverStatus);
     const serverStatusLabel = !isServerStatusAvailable
         ? t('system.status.unavailable')
@@ -108,11 +109,7 @@ const System = () => {
 
     const handleCopyVersion = () => {
         const value = (currentVersion || 'Unknown').split('+')[0];
-        navigator.clipboard.writeText(value).then(() => {
-            setCopiedVersion(true);
-            notify.success(t('system.about.versionCopied'));
-            setTimeout(() => setCopiedVersion(false), 2000);
-        });
+        copyVersion(value, () => notify.success(t('system.about.versionCopied')));
     };
 
     useEffect(() => {
