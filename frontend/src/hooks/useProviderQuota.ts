@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNotify } from '@/hooks/useNotify';
+import { fetchUIAPI } from '@/services/api';
 import type { ProviderQuota } from '@/types/quota';
 
 interface ProviderQuotaData {
@@ -14,36 +15,9 @@ interface UseProviderQuotaOptions {
   fetchOnMount?: boolean;
 }
 
-/**
- * Helper function to fetch from API
- */
 /** 404 means the provider has no quota to show — not an error worth raising. */
 function isMissingQuota(error: unknown): boolean {
   return (error as { status?: number })?.status === 404;
-}
-
-async function fetchUIAPI(url: string, options: RequestInit = {}): Promise<any> {
-  const basePath = window.location.origin;
-  const fullUrl = `${basePath}/api/v1${url}`;
-
-  const token = localStorage.getItem('user_auth_token');
-
-  const response = await fetch(fullUrl, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    // The status rides along so callers can tell "this provider has no quota"
-    // (404) from a real failure, and stay quiet about the former.
-    throw Object.assign(new Error(`API error: ${response.status}`), { status: response.status });
-  }
-
-  return response.json();
 }
 
 /**

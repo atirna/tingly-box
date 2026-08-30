@@ -28,32 +28,11 @@ import { useRecentModels } from '@/hooks/useRecentModels';
 import { useNewModels } from '@/hooks/useNewModels';
 import { useModelDescriptions } from '@/hooks/useModelDescriptions';
 import { notify } from '@/utils/notify';
+import { fetchUIAPI } from '@/services/api';
 import CustomModelCard from './CustomModelCard';
 import ModelCard from './ModelCard';
 import RecentModelsSection from './RecentModelsSection';
 import NewModelsSection from './NewModelsSection';
-
-async function fetchUIAPI(url: string, options: RequestInit = {}): Promise<any> {
-    const basePath = window.location.origin;
-    const fullUrl = `${basePath}/api/v1${url}`;
-
-    const token = localStorage.getItem('user_auth_token');
-
-    const response = await fetch(fullUrl, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token && { Authorization: `Bearer ${token}` }),
-            ...options.headers,
-        },
-    });
-
-    if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-    }
-
-    return response.json();
-}
 
 // Convert ProviderModelData.quota to ProviderQuota type
 function convertToProviderQuota(

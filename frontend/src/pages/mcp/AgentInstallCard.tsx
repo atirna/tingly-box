@@ -10,12 +10,13 @@
  *   <AgentInstallCard sectionNumber="02" />
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Box, Chip, Typography } from '@mui/material';
 import {
     Terminal as TerminalIcon,
 } from '@/components/icons';
 import { CopyIconButton } from '@/components/CopyIconButton';
+import { getApiBaseUrl } from '@/utils/protocol';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -179,39 +180,62 @@ export interface AgentInstallCardProps {
     footer?: React.ReactNode;
 }
 
-const DEFAULT_MCP_COMMAND = `claude mcp add --transport http tb "http://localhost:12580/api/v1/mcp/tb" --header "Authorization: Bearer $(cat ~/.tingly-box/config.json | jq -r '.user_token')"`;
-
-const DEFAULT_CODEX_COMMAND = `codex mcp add tb -- http http://localhost:12580/api/v1/mcp/tb \\\n  --header "Authorization: Bearer $(cat ~/.tingly-box/config.json | jq -r '.user_token')"`;
-
-const DEFAULT_OPENCODE_COMMAND = `"mcp": {\n  "http://localhost:12580/api/v1/mcp/tb": {\n    "type": "remote",\n    "url": "http://localhost:12580/api/v1/mcp/tb",\n    "oauth": false,\n    "headers": {\n      "Authorization": "Bearer {MY_API_KEY}"\n    }\n  }\n}`;
-
-const DEFAULT_RUNTIME_OPTIONS: RuntimeOptions = {
-    claude: {
-        label: 'Claude Code',
-        filename: 'register-tb.sh',
-        command: DEFAULT_MCP_COMMAND,
-    },
-    codex: {
-        label: 'Codex',
-        filename: 'register-tb.sh',
-        command: DEFAULT_CODEX_COMMAND,
-    },
-    opencode: {
-        label: 'OpenCode',
-        filename: '~/.config/opencode/opencode.json',
-        command: DEFAULT_OPENCODE_COMMAND,
-    },
+// The token is read from local config at run time (`~/.tingly-box/config.json`),
+// so these commands only need to be correct about *where* the gateway is
+// bound — which is why the endpoint is built from the resolved API base URL
+// (buildDefaultRuntimeOptions) rather than hardcoded, so it stays correct
+// when the server isn't on the default port.
+const buildDefaultRuntimeOptions = (baseUrl: string): RuntimeOptions => {
+    const endpoint = `${baseUrl}/api/v1/mcp/tb`;
+    return {
+        claude: {
+            label: 'Claude Code',
+            filename: 'register-tb.sh',
+            command: `claude mcp add --transport http tb "${endpoint}" --header "Authorization: Bearer $(cat ~/.tingly-box/config.json | jq -r '.user_token')"`,
+        },
+        codex: {
+            label: 'Codex',
+            filename: 'register-tb.sh',
+            command: `codex mcp add tb -- http ${endpoint} \\\n  --header "Authorization: Bearer $(cat ~/.tingly-box/config.json | jq -r '.user_token')"`,
+        },
+        opencode: {
+            label: 'OpenCode',
+            filename: '~/.config/opencode/opencode.json',
+            command: `"mcp": {\n  "${endpoint}": {\n    "type": "remote",\n    "url": "${endpoint}",\n    "oauth": false,\n    "headers": {\n      "Authorization": "Bearer {MY_API_KEY}"\n    }\n  }\n}`,
+        },
+    };
 };
 
+// Fallback shown before getApiBaseUrl() resolves — matches the gateway's
+// documented default port, same as every other "not yet loaded" placeholder
+// in the scenario pages.
+const DEFAULT_BASE_URL = 'http://localhost:12580';
+
 export const AgentInstallCard: React.FC<AgentInstallCardProps> = ({
-    runtimeOptions = DEFAULT_RUNTIME_OPTIONS,
+    runtimeOptions,
     sectionNumber = '01',
     heading = 'Add to agents',
     subtitle = 'Register the gateway with your coding agent. Run once per machine.',
     footer,
 }) => {
     const [runtime, setRuntime] = useState<AgentRuntime>('claude');
-    const config = runtimeOptions[runtime];
+    const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
+
+    useEffect(() => {
+        // Only needed for the default commands; an explicit runtimeOptions
+        // override means the caller already resolved its own base URL.
+        if (runtimeOptions) return;
+        let isMounted = true;
+        getApiBaseUrl().then(url => {
+            if (isMounted) setBaseUrl(url);
+        });
+        return () => {
+            isMounted = false;
+        };
+    }, [runtimeOptions]);
+
+    const resolvedOptions = runtimeOptions ?? buildDefaultRuntimeOptions(baseUrl);
+    const config = resolvedOptions[runtime];
 
     return (
         <Box>
@@ -298,7 +322,7 @@ export const AgentInstallCard: React.FC<AgentInstallCardProps> = ({
 
                     {/* Runtime pills */}
                     <RuntimeSelector
-                        options={runtimeOptions}
+                        options={resolvedOptions}
                         value={runtime}
                         onChange={setRuntime}
                     />

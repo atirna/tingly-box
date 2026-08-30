@@ -16,14 +16,23 @@ import {
 import { CopyIconButton } from '@/components/CopyIconButton';
 import { useEffect, useState } from 'react';
 import { useNotify } from '@/hooks/useNotify';
+import { getApiBaseUrl } from '@/utils/protocol';
 
 const MCPLocalMode = () => {
     const notify = useNotify();
     const [baseUrl, setBaseUrl] = useState('');
 
     useEffect(() => {
-        const url = window.location.origin;
-        setBaseUrl(url);
+        let isMounted = true;
+        // getApiBaseUrl() (not window.location.origin) so this also resolves
+        // correctly in GUI/Wails mode, where the frontend's own origin does
+        // not necessarily match the backend's bound port.
+        getApiBaseUrl().then(url => {
+            if (isMounted) setBaseUrl(url);
+        });
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     const getEndpointUrl = () => {

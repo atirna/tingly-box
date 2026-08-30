@@ -109,6 +109,35 @@ export async function enrichBotsWithCapabilities(bots: BotSettings[]): Promise<B
     }));
 }
 
+// Raw fetch helper for tingly-box's own control-plane API (`/api/v1/...`),
+// authenticated with the browser's `user_auth_token`. Resolves the base URL
+// through getApiBaseUrl() rather than window.location.origin so it also
+// works in GUI/Wails mode, where the frontend's own origin does not
+// necessarily match the backend's port.
+export async function fetchUIAPI(url: string, options: RequestInit = {}): Promise<any> {
+    const base = await getApiBaseUrl();
+    const fullUrl = `${base}/api/v1${url}`;
+
+    const token = getUserAuthToken();
+
+    const response = await fetch(fullUrl, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token && {Authorization: `Bearer ${token}`}),
+            ...options.headers,
+        },
+    });
+
+    if (!response.ok) {
+        // The status rides along so callers can tell "this provider has no
+        // quota" (404) from a real failure, and stay quiet about the former.
+        throw Object.assign(new Error(`API error: ${response.status}`), {status: response.status});
+    }
+
+    return response.json();
+}
+
 export const api = {
     // Initialize API client
     initialize: async (): Promise<void> => {
