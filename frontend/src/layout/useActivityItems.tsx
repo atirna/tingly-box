@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getHiddenScenarios } from '@/pages/scenario/scenarioRegistry';
-import { OpenAI, Anthropic, Claude, DeepSeek, OpenCode, Pi, Xcode, VSCode, Codex, ClaudeDesktop } from '../components/BrandIcons';
+import { OpenAI, Anthropic, Claude, Cursor, DeepSeek, OpenCode, Pi, Xcode, VSCode, Codex, ClaudeDesktop } from '../components/BrandIcons';
 import {
     SettingsApplications,
     BarChart as IconChartBar,
@@ -128,6 +128,7 @@ export function useActivityItems(): ActivityItem[] {
             { id: 'dsh', nav: { path: '/agent/dsh', label: t('layout.nav.useDsh', { defaultValue: 'DeepSeek' }), icon: <DeepSeek size={20} /> } },
             { id: 'xcode', nav: { path: '/agent/xcode', label: t('layout.nav.useXcode', { defaultValue: 'Xcode' }), icon: <Xcode size={20} /> } },
             { id: 'vscode', nav: { path: '/agent/vscode', label: t('layout.nav.useVSCode', { defaultValue: 'VS Code' }), icon: <VSCode size={20} /> } },
+            { id: 'cursor', nav: { path: '/agent/cursor', label: t('layout.nav.useCursor', { defaultValue: 'Cursor' }), icon: <Cursor size={20} /> } },
             // "custom" (bring-your-own-request-model) closes out the coding
             // tools group, right after the named integrations it's a fallback for.
             { id: 'custom', nav: { path: '/agent/custom', label: t('layout.nav.useCustom', { defaultValue: 'Custom' }), icon: <IconExtension sx={{ fontSize: 20 }} /> } },
