@@ -39,6 +39,7 @@ import {
 } from './probeConfig';
 import { ProbeControls } from './ProbeControls';
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
+import { CopyIconButton } from '@/components/CopyIconButton';
 import api from '@/services/api';
 import { ProbeDevControls } from './ProbeDialogDevControls';
 
@@ -219,7 +220,6 @@ const CollapsibleSection = memo(({ title, defaultExpanded = false, children }: C
 // artifact section (cURL, Response, Raw JSON) hands over the exact text.
 const CopyBlock = memo(({ text, maxHeight, fontSize = '0.78rem' }: { text: string; maxHeight?: number | string; fontSize?: string }) => {
     const { t } = useTranslation();
-    const { copied, copy } = useCopyFeedback();
     return (
         <Box sx={{ position: 'relative' }}>
             <Box
@@ -239,15 +239,12 @@ const CopyBlock = memo(({ text, maxHeight, fontSize = '0.78rem' }: { text: strin
             >
                 {text}
             </Box>
-            <Tooltip title={copied ? t('probe.copied') : t('probe.copy')}>
-                <IconButton
-                    size="small"
-                    onClick={() => copy(text)}
-                    sx={{ position: 'absolute', top: 4, right: 4, color: 'text.secondary' }}
-                >
-                    <CopyIcon fontSize="small" />
-                </IconButton>
-            </Tooltip>
+            <CopyIconButton
+                value={text}
+                label={t('probe.copy')}
+                copiedLabel={t('probe.copied')}
+                sx={{ position: 'absolute', top: 4, right: 4 }}
+            />
         </Box>
     );
 });

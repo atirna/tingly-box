@@ -7,10 +7,6 @@ import {
     Button,
     IconButton,
     Alert,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
     CircularProgress,
     Divider,
     Tooltip,
@@ -31,6 +27,7 @@ import { useAuth } from '@/contexts/AuthContext.tsx';
 import { PageLayout } from '@/components/PageLayout.tsx';
 import UnifiedCard from '@/components/UnifiedCard.tsx';
 import CardGrid from "@/components/CardGrid.tsx";
+import ConfirmDialog from '@/components/ConfirmDialog.tsx';
 
 interface TokenInfo {
     token: string;
@@ -440,102 +437,80 @@ const AccessControl = () => {
                     </Stack>
                 </UnifiedCard>
             </CardGrid>
-            {/* User Reset Confirmation Dialog */}
-            <Dialog open={resetUserDialogOpen} onClose={() => setResetUserDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
+            <ConfirmDialog
+                open={resetUserDialogOpen}
+                onClose={() => setResetUserDialogOpen(false)}
+                onConfirm={handleUserResetConfirm}
+                loading={resettingUser}
+                confirmColor="warning"
+                confirmLabel={t('accessControl.userToken.resetConfirmButton')}
+                confirmingLabel={t('accessControl.resetting')}
+                cancelLabel={t('accessControl.userToken.resetCancel')}
+                title={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <WarningIcon color="warning" />
                         <Typography variant="h6">{t('accessControl.userToken.resetTitle')}</Typography>
                     </Box>
-                </DialogTitle>
-                <DialogContent>
-                    <Typography variant="body1" gutterBottom>
-                        {t('accessControl.userToken.resetConfirm')}
-                    </Typography>
-                    <Stack sx={{ mt: 2 }} spacing={1}>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.new')}
+                }
+                description={
+                    <>
+                        <Typography variant="body1" gutterBottom>
+                            {t('accessControl.userToken.resetConfirm')}
                         </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.session')}
-                        </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.other')}
-                        </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.stop')}
-                        </Typography>
-                    </Stack>
-                    <Alert severity="warning" sx={{ mt: 2 }}>
-                        {t('accessControl.userToken.resetWarning')}
-                    </Alert>
-                </DialogContent>
-                <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button onClick={() => setResetUserDialogOpen(false)} disabled={resettingUser}>
-                        {t('accessControl.userToken.resetCancel')}
-                    </Button>
-                    <Button
-                        onClick={handleUserResetConfirm}
-                        variant="contained"
-                        color="warning"
-                        disabled={resettingUser}
-                        startIcon={resettingUser ? <CircularProgress size={16} /> : undefined}
-                    >
-                        {resettingUser ? t('accessControl.resetting') : t('accessControl.userToken.resetConfirmButton')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-            {/* Model Reset Confirmation Dialog */}
-            <Dialog open={resetModelDialogOpen} onClose={() => setResetModelDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
+                        <Stack sx={{ mt: 2 }} spacing={1}>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.new')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.session')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.other')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.stop')}
+                            </Typography>
+                        </Stack>
+                        <Alert severity="warning" sx={{ mt: 2 }}>
+                            {t('accessControl.userToken.resetWarning')}
+                        </Alert>
+                    </>
+                }
+            />
+            <ConfirmDialog
+                open={resetModelDialogOpen}
+                onClose={() => setResetModelDialogOpen(false)}
+                onConfirm={handleModelResetConfirm}
+                loading={resettingModel}
+                confirmColor="warning"
+                confirmLabel={t('accessControl.modelToken.resetConfirmButton')}
+                confirmingLabel={t('accessControl.resetting')}
+                cancelLabel={t('accessControl.modelToken.resetCancel')}
+                title={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <WarningIcon color="warning" />
                         <Typography variant="h6">{t('accessControl.modelToken.resetTitle')}</Typography>
                     </Box>
-                </DialogTitle>
-                <DialogContent>
-                    <Typography variant="body1" gutterBottom>
-                        {t('accessControl.modelToken.resetConfirm')}
-                    </Typography>
-                    <Stack sx={{ mt: 2 }} spacing={1}>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.modelToken.resetPoints.new')}
+                }
+                description={
+                    <>
+                        <Typography variant="body1" gutterBottom>
+                            {t('accessControl.modelToken.resetConfirm')}
                         </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.modelToken.resetPoints.stop')}
-                        </Typography>
-                    </Stack>
-                    <Alert severity="warning" sx={{ mt: 2 }}>
-                        {t('accessControl.modelToken.resetWarning')}
-                    </Alert>
-                </DialogContent>
-                <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button onClick={() => setResetModelDialogOpen(false)} disabled={resettingModel}>
-                        {t('accessControl.modelToken.resetCancel')}
-                    </Button>
-                    <Button
-                        onClick={handleModelResetConfirm}
-                        variant="contained"
-                        color="warning"
-                        disabled={resettingModel}
-                        startIcon={resettingModel ? <CircularProgress size={16} /> : undefined}
-                    >
-                        {resettingModel ? t('accessControl.resetting') : t('accessControl.modelToken.resetConfirmButton')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                        <Stack sx={{ mt: 2 }} spacing={1}>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.modelToken.resetPoints.new')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.modelToken.resetPoints.stop')}
+                            </Typography>
+                        </Stack>
+                        <Alert severity="warning" sx={{ mt: 2 }}>
+                            {t('accessControl.modelToken.resetWarning')}
+                        </Alert>
+                    </>
+                }
+            />
         </PageLayout>
     );
 };

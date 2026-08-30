@@ -5,24 +5,21 @@ import {
     Box,
     Chip,
     Divider,
-    IconButton,
     Paper,
     Stack,
     Typography,
 } from '@mui/material';
 import {
-    ContentCopy as ContentCopyIcon,
     CheckCircle as CheckCircleIcon,
     Terminal as TerminalIcon,
 } from '@/components/icons';
+import { CopyIconButton } from '@/components/CopyIconButton';
 import { useEffect, useState } from 'react';
 import { useNotify } from '@/hooks/useNotify';
-import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 
 const MCPLocalMode = () => {
     const notify = useNotify();
     const [baseUrl, setBaseUrl] = useState('');
-    const { copied: copiedCommand, copy: copyCommand } = useCopyFeedback();
 
     useEffect(() => {
         const url = window.location.origin;
@@ -50,14 +47,7 @@ const MCPLocalMode = () => {
         }, null, 2);
     };
 
-    const handleCopy = (text: string, type: 'command' | 'config') => {
-        if (type === 'command') {
-            copyCommand(text, () => notify.success('Copied to clipboard'));
-        } else {
-            navigator.clipboard.writeText(text);
-            notify.success('Copied to clipboard');
-        }
-    };
+    const notifyCopied = () => notify.success('Copied to clipboard');
 
     return (
         <PageLayout loading={false}>
@@ -155,19 +145,12 @@ const MCPLocalMode = () => {
                                 >
                                     {getClaudeCodeCommand()}
                                 </Typography>
-                                <IconButton
-                                    size="small"
+                                <CopyIconButton
+                                    value={getClaudeCodeCommand()}
                                     aria-label="Copy Claude Code command"
-                                    onClick={() => handleCopy(getClaudeCodeCommand(), 'command')}
-                                    sx={{
-                                        position: 'absolute',
-                                        right: 8,
-                                        top: 8,
-                                    }}
-                                    color={copiedCommand ? 'success' : 'default'}
-                                >
-                                    {copiedCommand ? <CheckCircleIcon fontSize="small" /> : <ContentCopyIcon fontSize="small" />}
-                                </IconButton>
+                                    sx={{ position: 'absolute', right: 8, top: 8 }}
+                                    onCopied={notifyCopied}
+                                />
                             </Paper>
                         </Box>
 
@@ -209,18 +192,12 @@ const MCPLocalMode = () => {
                                 >
                                     {getClaudeDesktopConfig()}
                                 </Typography>
-                                <IconButton
-                                    size="small"
+                                <CopyIconButton
+                                    value={getClaudeDesktopConfig()}
                                     aria-label="Copy Claude Desktop configuration"
-                                    onClick={() => handleCopy(getClaudeDesktopConfig(), 'config')}
-                                    sx={{
-                                        position: 'absolute',
-                                        right: 8,
-                                        top: 8,
-                                    }}
-                                >
-                                    <ContentCopyIcon fontSize="small" />
-                                </IconButton>
+                                    sx={{ position: 'absolute', right: 8, top: 8 }}
+                                    onCopied={notifyCopied}
+                                />
                             </Paper>
                             <Typography
                                 variant="caption"

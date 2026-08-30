@@ -17,6 +17,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNotify } from '@/hooks/useNotify';
 import SharingKeysTable, { type SharingKey } from '@/components/SharingKeysTable';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 const SharingKeysPage = () => {
     const { t } = useTranslation();
@@ -169,37 +170,26 @@ const SharingKeysPage = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
-            {/* Delete Confirm Dialog */}
-            <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    <Stack direction="row" spacing={1} sx={{
-                        alignItems: "center"
-                    }}>
+            <ConfirmDialog
+                open={deleteDialogOpen}
+                onClose={() => setDeleteDialogOpen(false)}
+                onConfirm={handleDeleteToken}
+                loading={deletingToken}
+                confirmColor="error"
+                confirmLabel="Delete Token"
+                title={
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                         <IconTrash color="error" />
                         <span>Delete Token</span>
                     </Stack>
-                </DialogTitle>
-                <DialogContent>
-                    <Typography>
+                }
+                description={
+                    <>
                         Are you sure you want to delete the token <strong>"{tokenToDelete?.display_name}"</strong>?
                         This action cannot be undone.
-                    </Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDeleteDialogOpen(false)} disabled={deletingToken}>
-                        Cancel
-                    </Button>
-                    <Button
-                        variant="contained"
-                        color="error"
-                        onClick={handleDeleteToken}
-                        disabled={deletingToken}
-                        startIcon={deletingToken ? <CircularProgress size={16} /> : <IconTrash sx={{ fontSize: 18 }} />}
-                    >
-                        Delete Token
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                    </>
+                }
+            />
         </PageLayout>
     );
 };

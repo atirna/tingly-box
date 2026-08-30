@@ -18,6 +18,7 @@ import { useNotify } from '@/hooks/useNotify';
 import SharingKeysTable, { type SharingKey } from '@/components/SharingKeysTable';
 import type { Team } from '@/types/team';
 import TeamKeyScopeAlert from './TeamKeyScopeAlert';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 interface SharingKeysDialogProps {
     open: boolean;
@@ -230,34 +231,21 @@ const SharingKeysDialog: React.FC<SharingKeysDialogProps> = ({ open, onClose, te
                     </Button>
                 </DialogActions>
             </Dialog>
-            {/* Delete Confirm Dialog */}
-            <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    <Stack direction="row" spacing={1} sx={{
-                        alignItems: "center"
-                    }}>
+            <ConfirmDialog
+                open={deleteDialogOpen}
+                onClose={() => setDeleteDialogOpen(false)}
+                onConfirm={handleDeleteToken}
+                loading={deletingToken}
+                confirmColor="error"
+                confirmLabel={t('sharingKeys.deleteToken')}
+                title={
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                         <IconTrash color="error" />
                         <span>{t('sharingKeys.deleteToken')}</span>
                     </Stack>
-                </DialogTitle>
-                <DialogContent>
-                    <Typography>
-                        {t('sharingKeys.deleteConfirm', { name: tokenToDelete?.display_name })}
-                    </Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDeleteDialogOpen(false)} disabled={deletingToken}>{t('common.cancel')}</Button>
-                    <Button
-                        variant="contained"
-                        color="error"
-                        onClick={handleDeleteToken}
-                        disabled={deletingToken}
-                        startIcon={deletingToken ? <CircularProgress size={16} /> : <IconTrash sx={{ fontSize: 18 }} />}
-                    >
-                        {t('sharingKeys.deleteToken')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                }
+                description={t('sharingKeys.deleteConfirm', { name: tokenToDelete?.display_name })}
+            />
         </>
     );
 };
