@@ -15,6 +15,7 @@ import {
     Claude,
     ClaudeDesktop,
     Codex,
+    Cursor,
     DeepSeek,
     OpenAI,
     OpenCode,
@@ -96,6 +97,14 @@ export const SCENARIOS: ScenarioDescriptor[] = [
         descKey: 'scenarioOverview.descriptions.vscode',
         path: '/agent/vscode',
         icon: (size) => <VSCode size={size} />,
+        hideable: true,
+    },
+    {
+        id: 'cursor',
+        labelKey: 'layout.nav.useCursor',
+        descKey: 'scenarioOverview.descriptions.cursor',
+        path: '/agent/cursor',
+        icon: (size) => <Cursor size={size} />,
         hideable: true,
     },
     {

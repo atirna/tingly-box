@@ -409,6 +409,8 @@ func (c *TBClientImpl) GetScenarioEndpointPath(scenario typ.RuleScenario) string
 		return "/tingly/xcode"
 	case typ.ScenarioVSCode:
 		return "/tingly/vscode"
+	case typ.ScenarioCursor:
+		return "/tingly/cursor"
 	case typ.ScenarioTeam:
 		return "/tingly/team"
 	case typ.ScenarioCustom:

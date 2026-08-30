@@ -54,6 +54,7 @@ export default {
       "useDsh": "DeepSeek",
       "useXcode": "Xcode",
       "useVSCode": "VS Code",
+      "useCursor": "Cursor",
       "useEmbed": "Embedding",
       "useImageGen": "Image",
       "useTeam": "Team",
@@ -1759,6 +1760,7 @@ export default {
       "opencode": "OpenCode AI development environment with BYOK support",
       "xcode": "Xcode AI coding assistant through Tingly Box proxy for iOS/macOS development",
       "vscode": "Bring Your Own Key: Use your own API keys with VS Code Copilot through Tingly Box proxy",
+      "cursor": "Cursor AI code editor through Tingly Box proxy, with Cursor compatibility handling enabled by default",
       "pi": "Pi coding agent through Tingly Box proxy",
       "dsh": "DeepSeek Harness (dsh) agent harness through Tingly Box proxy",
       "imagegen": "AI-powered image generation and editing through Tingly Box proxy with multiple model support"
@@ -1815,6 +1817,7 @@ export default {
       "opencode": "Open-source coding agent powered by your provider.",
       "xcode": "Bring your model into Xcode's coding intelligence.",
       "vscode": "Power VS Code Copilot Chat through Tingly Box.",
+      "cursor": "Bring your model into Cursor with compatibility handling built in.",
       "pi": "Route the pi coding agent through your provider.",
       "dsh": "Route the dsh coding agent through your provider.",
       "openai": "Drop-in OpenAI-compatible SDK endpoint.",

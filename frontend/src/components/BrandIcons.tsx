@@ -19,6 +19,7 @@ import ZhipuSvg from '@lobehub/icons-static-svg/icons/zhipu.svg?url';
 import XAISvg from '@lobehub/icons-static-svg/icons/xai.svg?url';
 import MistralSvg from '@lobehub/icons-static-svg/icons/mistral.svg?url';
 import OpenRouterSvg from '@lobehub/icons-static-svg/icons/openrouter.svg?url';
+import CursorSvg from '@lobehub/icons-static-svg/icons/cursor.svg?url';
 import GroqSvg from '@lobehub/icons-static-svg/icons/groq.svg?url';
 import TogetherSvg from '@lobehub/icons-static-svg/icons/together-color.svg?url';
 import FireworksSvg from '@lobehub/icons-static-svg/icons/fireworks.svg?url';
@@ -130,6 +131,7 @@ export const Mistral = createBrandIcon(MistralSvg, 'Mistral', false, true);
 export const OpenRouter = createBrandIcon(OpenRouterSvg, 'OpenRouter', false, true);
 export const Xcode = createBrandIcon(XcodeSvg, 'Xcode', true);
 export const VSCode = createBrandIcon(VSCodeSvg, 'VS Code', true);
+export const Cursor = createBrandIcon(CursorSvg, 'Cursor', false, true);
 export const Pi = createBrandIcon(PiSvg, 'Pi', false, true);
 
 // Reuse Claude icon for Claude Desktop

@@ -40,10 +40,19 @@ func (c *Config) GetEffectiveAffinity(rule *typ.Rule) time.Duration {
 // that must not leak upstream (CleanHeader). Default both on so team rules work
 // out of the box. Only seed when the caller sent no flags at all, so an explicit
 // payload that sets any flag is left untouched.
+//
+// Cursor: every request routed through /tingly/cursor is, by construction,
+// from the Cursor IDE — that's the whole point of giving it its own scenario
+// instead of relying on the generic cursor_compat_auto header sniff. So skip
+// the sniff and turn cursor_compat on directly, the same way the dedicated
+// scenario page implies it should behave out of the box.
 func applyScenarioCreateDefaults(rule *typ.Rule) {
 	if rule.Scenario.Is(typ.ScenarioTeam) && rule.Flags.IsZero() {
 		rule.Flags.ClaudeCodeCompat = true
 		rule.Flags.CleanHeader = true
+	}
+	if rule.Scenario.Is(typ.ScenarioCursor) && rule.Flags.IsZero() {
+		rule.Flags.CursorCompat = true
 	}
 }
 

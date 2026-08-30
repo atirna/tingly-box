@@ -101,7 +101,7 @@ func builtinScenarioDescriptorFor(scenario RuleScenario) ScenarioDescriptor {
 			AllowRuleBinding:   true,
 			AllowDirectPathUse: true,
 		}
-	case ScenarioCodex, ScenarioOpenCode, ScenarioPi, ScenarioXcode, ScenarioVSCode:
+	case ScenarioCodex, ScenarioOpenCode, ScenarioPi, ScenarioXcode, ScenarioVSCode, ScenarioCursor:
 		return ScenarioDescriptor{
 			ID:                 scenario,
 			SupportedTransport: []ScenarioTransport{TransportOpenAI},
