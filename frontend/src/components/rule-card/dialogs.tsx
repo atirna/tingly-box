@@ -1,5 +1,6 @@
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, TextField, Typography } from '@mui/material';
 import type { ConfigRecord } from '@/components/RoutingGraphTypes';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 // ============================================================================
 // Delete Confirmation Dialog
@@ -16,22 +17,15 @@ export interface RuleCardDeleteDialogProps {
  */
 export function RuleCardDeleteDialog({ open, onClose, onConfirm }: RuleCardDeleteDialogProps) {
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Delete Routing Rule</DialogTitle>
-            <DialogContent>
-                <DialogContentText>
-                    Are you sure you want to delete this routing rule? This action cannot be undone.
-                </DialogContentText>
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose} color="primary">
-                    Cancel
-                </Button>
-                <Button onClick={onConfirm} color="error" variant="contained">
-                    Delete
-                </Button>
-            </DialogActions>
-        </Dialog>
+        <ConfirmDialog
+            open={open}
+            onClose={onClose}
+            onConfirm={onConfirm}
+            title="Delete Routing Rule"
+            description="Are you sure you want to delete this routing rule? This action cannot be undone."
+            confirmLabel="Delete"
+            confirmColor="error"
+        />
     );
 }
 

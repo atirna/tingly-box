@@ -23,6 +23,7 @@ import { useState, useEffect } from 'react';
 import { type Skill, type SkillLocation } from '@/types/prompt';
 import { getIdeSourceLabel } from '@/constants/ideSources';
 import { api } from '@/services/api';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 
 interface SkillDetailDialogProps {
     open: boolean;
@@ -34,7 +35,7 @@ interface SkillDetailDialogProps {
 const SkillDetailDialog = ({ open, skill, location, onClose }: SkillDetailDialogProps) => {
     const [loading, setLoading] = useState(false);
     const [content, setContent] = useState<string>('');
-    const [copied, setCopied] = useState(false);
+    const { copied, copy: copyContent, reset: resetCopied } = useCopyFeedback();
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -43,9 +44,10 @@ const SkillDetailDialog = ({ open, skill, location, onClose }: SkillDetailDialog
         }
         // Reset copied state when dialog closes
         if (!open) {
-            setCopied(false);
+            resetCopied();
             setError(null);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, skill, location]);
 
     const loadSkillContent = async () => {
@@ -73,15 +75,13 @@ const SkillDetailDialog = ({ open, skill, location, onClose }: SkillDetailDialog
     };
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(content);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        copyContent(content);
     };
 
     const handleClose = () => {
         setContent('');
         setError(null);
-        setCopied(false);
+        resetCopied();
         onClose();
     };
 

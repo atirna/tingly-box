@@ -2,16 +2,22 @@ import { useCallback, useState } from 'react';
 
 // useCopyFeedback: copy text to the clipboard and flip a "copied" flag for a
 // couple seconds so the caller can swap a tooltip/icon to acknowledge it.
+// `onCopied` runs once the write actually succeeds — for callers that also
+// fire a toast/notification alongside the visual flip.
 export function useCopyFeedback(resetMs = 2000) {
     const [copied, setCopied] = useState(false);
     const copy = useCallback(
-        (text: string) => {
+        (text: string, onCopied?: () => void) => {
             navigator.clipboard.writeText(text).then(() => {
                 setCopied(true);
+                onCopied?.();
                 setTimeout(() => setCopied(false), resetMs);
             });
         },
         [resetMs],
     );
-    return { copied, copy };
+    // For a caller that needs to clear the flag early — e.g. a dialog
+    // resetting it on close instead of waiting out the timer.
+    const reset = useCallback(() => setCopied(false), []);
+    return { copied, copy, reset };
 }

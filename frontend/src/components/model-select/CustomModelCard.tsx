@@ -1,5 +1,5 @@
 import { CheckCircle, Delete as DeleteIcon, Edit as EditIcon } from '@/components/icons';
-import { Box, Card, CircularProgress, IconButton, Tooltip, Typography, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
+import { Box, Card, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import React, { useState } from 'react';
 import type { Provider } from '../../types/provider.ts';
@@ -9,6 +9,7 @@ import { ProbeDialog } from '../probe/ProbeDialog';
 import { useModelTestProbe } from '../probe/useModelTestProbe';
 import { ControlBar } from './ControlBar';
 import { getModelCardActiveColor, getModelCardStateStyles, modelCardTransition } from './cardStyles';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 interface CustomModelCardProps {
     model: string;
@@ -219,37 +220,20 @@ export default function CustomModelCard({
                 initialResult={probe.result ?? undefined}
                 onResult={probe.setResult}
             />
-            {/* Confirmation dialog for deleting custom model */}
-            <Dialog
+            <ConfirmDialog
                 open={deleteConfirmOpen}
                 onClose={handleCancelDelete}
-                aria-labelledby="delete-confirm-title"
-            >
-                <DialogTitle id="delete-confirm-title">
-                    Delete Custom Model?
-                </DialogTitle>
-                <DialogContent sx={{ pb: 2 }}>
-                    <Typography variant="body2" sx={{
-                        color: "text.secondary"
-                    }}>
+                onConfirm={handleConfirmDelete}
+                confirmColor="error"
+                confirmLabel="Delete"
+                title="Delete Custom Model?"
+                description={
+                    <>
                         Are you sure you want to delete the custom model <strong>"{model}"</strong>?
                         {isSelected && " The selection will be cleared after deletion."}
-                    </Typography>
-                </DialogContent>
-                <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button onClick={handleCancelDelete} color="primary">
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleConfirmDelete}
-                        color="error"
-                        variant="contained"
-                        autoFocus
-                    >
-                        Delete
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                    </>
+                }
+            />
         </>
     );
 }

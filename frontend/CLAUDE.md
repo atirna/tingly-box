@@ -17,6 +17,13 @@ Every route element in `App.tsx` must be `React.lazy(() => import('./pages/...')
 
 **`vite.config.wails.ts`'s `manualChunks`/`optimizeDeps` must stay in sync with `vite.config.ts`.** They're separate config files (Rollup can't share a function across two `defineConfig` calls), so a fix applied to one doesn't propagate to the other — this has drifted before (the wails config kept forcing `recharts`/`d3` into an eager `recharts-vendor` chunk after the web config was fixed to leave them lazy). When you change one file's chunking/`optimizeDeps` logic, apply the same change to the other, or explain in a comment why they intentionally differ.
 
+## Reuse existing hooks instead of hand-rolling
+
+These get reinvented locally often enough that it's worth naming explicitly:
+
+- **Copy-to-clipboard feedback** (a "copied" flag that auto-resets after ~2s): use `hooks/useCopyFeedback.ts`, not a local `useState` + `setTimeout`. It also takes an optional `onCopied` callback for a toast, and a `reset()` for clearing the flag early (e.g. on dialog close).
+- **Toast/snackbar notifications**: use `useNotify()` (`hooks/useNotify.ts`) — it renders globally via `NotificationProvider`, so there's no local `Snackbar`/`Alert`/open-state to wire up. Don't add a component-local `Snackbar`.
+
 ## Type checking
 
 `pnpm typecheck` runs in CI (`release.yml`) as a non-blocking, `continue-on-error` step — the repo has pre-existing legacy type errors that aren't being fixed as part of unrelated changes, so this only warns instead of failing the build. Still run `pnpm typecheck` locally before opening a PR and fix anything your change introduces; don't rely on CI to catch it.

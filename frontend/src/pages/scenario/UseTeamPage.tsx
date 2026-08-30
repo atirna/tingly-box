@@ -1,6 +1,7 @@
 import CardGrid from '@/components/CardGrid.tsx';
 import UnifiedCard from '@/components/UnifiedCard.tsx';
 import ProviderConfigCard from '@/components/ProviderConfigCard.tsx';
+import ConfirmDialog from '@/components/ConfirmDialog.tsx';
 import {
     Alert, Box, Button, CircularProgress, Dialog, DialogActions,
     DialogContent, DialogTitle, FormControlLabel, IconButton, Stack, Switch,
@@ -231,18 +232,16 @@ const UseTeamPageContent: React.FC = () => {
                 </DialogActions>
             </Dialog>
 
-            <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>{t('teams.deleteTeam')}</DialogTitle>
-                <DialogContent>
-                    <Typography>{t('teams.deleteConfirm', {team: currentTeam?.name})}</Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDeleteOpen(false)} disabled={saving}>{t('common.cancel')}</Button>
-                    <Button variant="contained" color="error" onClick={deleteTeam} disabled={saving}>
-                        {t('teams.deleteTeam')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <ConfirmDialog
+                open={deleteOpen}
+                onClose={() => setDeleteOpen(false)}
+                title={t('teams.deleteTeam')}
+                description={t('teams.deleteConfirm', {team: currentTeam?.name})}
+                confirmLabel={t('teams.deleteTeam')}
+                confirmColor="error"
+                loading={saving}
+                onConfirm={deleteTeam}
+            />
         </PageLayout>
     );
 };

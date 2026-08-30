@@ -35,6 +35,7 @@ import { useTranslation } from 'react-i18next';
 import TemplatePage from './components/TemplatePage.tsx';
 import { ScenarioPageModalProvider } from '@/pages/scenario/context/ScenarioPageContext';
 import ClaudeCodeProfileOverrides, { type ClaudeCodeProfileSettingsArtifact } from './components/ClaudeCodeProfileOverrides';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 const BASE_SCENARIO = 'claude_code';
 
@@ -401,36 +402,25 @@ const ClaudeCodeProfilePageContent: React.FC = () => {
                     </DialogActions>
                 </Dialog>
 
-                {/* Delete profile confirmation dialog */}
-                <Dialog
+                <ConfirmDialog
                     open={deleteProfileOpen}
                     onClose={() => setDeleteProfileOpen(false)}
-                    maxWidth="xs"
-                    fullWidth
-                >
-                    <DialogTitle>{t('claudeCode.profile.deleteTitle')}</DialogTitle>
-                    <DialogContent sx={{ pt: 3 }}>
-                        <Typography variant="body1">
-                            {t('claudeCode.profile.deleteConfirm', { name: currentProfile?.name || profileId || '', interpolation: { escapeValue: false } })}
-                        </Typography>
-                        <Typography
-                            variant="body2"
-                            sx={{
-                                color: "text.secondary",
-                                mt: 1
-                            }}>
-                            {t('claudeCode.profile.deleteWarning')}
-                        </Typography>
-                    </DialogContent>
-                    <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: 'flex-end' }}>
-                        <Button onClick={() => setDeleteProfileOpen(false)} color="inherit" disabled={isProfileMutating}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleDeleteProfile} variant="contained" color="error" disabled={isProfileMutating}>
-                            Delete
-                        </Button>
-                    </DialogActions>
-                </Dialog>
+                    onConfirm={handleDeleteProfile}
+                    loading={isProfileMutating}
+                    confirmColor="error"
+                    confirmLabel="Delete"
+                    title={t('claudeCode.profile.deleteTitle')}
+                    description={
+                        <>
+                            <Typography variant="body1">
+                                {t('claudeCode.profile.deleteConfirm', { name: currentProfile?.name || profileId || '', interpolation: { escapeValue: false } })}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary", mt: 1 }}>
+                                {t('claudeCode.profile.deleteWarning')}
+                            </Typography>
+                        </>
+                    }
+                />
             </CardGrid>
         </PageLayout>
     );

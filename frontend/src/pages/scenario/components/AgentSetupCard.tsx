@@ -21,6 +21,7 @@ import UnifiedCard from '@/components/UnifiedCard';
 import { api } from '@/services/api';
 import { SPOTLIGHT_ADD_MODEL_EVENT } from '@/components/nodes/ActionAddNode';
 import { EntryGuideDialog } from '@/components/tier/EntryGuideDialog';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 
 export interface AgentApplyResult {
     success: boolean;
@@ -148,8 +149,8 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
     const [providerCount, setProviderCount] = useState(0);
     const [providerLoading, setProviderLoading] = useState(true);
     const [applyResult, setApplyResult] = useState<AgentApplyResult | null>(null);
-    const [copied, setCopied] = useState(false);
-    const [copiedMirror, setCopiedMirror] = useState(false);
+    const { copied, copy: copyInstallCommand, reset: resetCopied } = useCopyFeedback(1500);
+    const { copied: copiedMirror, copy: copyInstallMirrorCommand, reset: resetCopiedMirror } = useCopyFeedback(1500);
     const [showGuide, setShowGuide] = useState(false);
     // Tracks which completed steps the user has manually expanded
     const [expandedDoneSteps, setExpandedDoneSteps] = useState<Set<number>>(new Set());
@@ -205,17 +206,13 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
         setCollapsed(next);
     };
 
-    const handleCopy = async () => {
-        await navigator.clipboard.writeText(installCommand);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+    const handleCopy = () => {
+        copyInstallCommand(installCommand);
     };
 
-    const handleCopyMirror = async () => {
+    const handleCopyMirror = () => {
         if (!installMirrorCommand) return;
-        await navigator.clipboard.writeText(installMirrorCommand);
-        setCopiedMirror(true);
-        setTimeout(() => setCopiedMirror(false), 1500);
+        copyInstallMirrorCommand(installMirrorCommand);
     };
 
     const markInstallDone = () => {
@@ -263,8 +260,8 @@ const AgentSetupCard: React.FC<AgentSetupCardProps> = ({
         setApplyDone(false);
         setModelSkipped(false);
         setApplyResult(null);
-        setCopied(false);
-        setCopiedMirror(false);
+        resetCopied();
+        resetCopiedMirror();
     };
 
     const progressLabel = allDone ? t('agentSetup.done') : `${doneCount}/${TOTAL_STEPS}`;

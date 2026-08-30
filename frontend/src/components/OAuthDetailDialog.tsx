@@ -1,4 +1,4 @@
-import { ContentCopy, Info, Visibility, VisibilityOff, VpnKey } from '@/components/icons';
+import { Info, Visibility, VisibilityOff, VpnKey } from '@/components/icons';
 import {
     Alert,
     Box,
@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from 'react';
 import {type Provider } from '../types/provider';
 import ProviderExportButton from '@/components/ProviderExportButton';
+import { CopyIconButton } from '@/components/CopyIconButton';
 
 interface OAuthEditFormData {
     name: string;
@@ -45,7 +46,6 @@ const OAuthDetailDialog = ({ open, provider, onClose, onSubmit, onNotification }
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [visibleTokens, setVisibleTokens] = useState<Record<string, boolean>>({});
-    const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
     // Update form data when provider changes
     useEffect(() => {
@@ -76,16 +76,6 @@ const OAuthDetailDialog = ({ open, provider, onClose, onSubmit, onNotification }
 
     const toggleTokenVisibility = (tokenKey: string) => {
         setVisibleTokens(prev => ({ ...prev, [tokenKey]: !prev[tokenKey] }));
-    };
-
-    const copyToken = async (token: string, tokenKey: string) => {
-        try {
-            await navigator.clipboard.writeText(token);
-            setCopiedToken(tokenKey);
-            setTimeout(() => setCopiedToken(null), 2000);
-        } catch (err) {
-            console.error('Failed to copy:', err);
-        }
     };
 
     const maskToken = (token: string) => {
@@ -245,14 +235,10 @@ const OAuthDetailDialog = ({ open, provider, onClose, onSubmit, onNotification }
                                                 >
                                                     {isTokenVisible('access_token') ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
                                                 </IconButton>
-                                                <IconButton
+                                                <CopyIconButton
                                                     edge="end"
-                                                    size="small"
-                                                    onClick={() => copyToken(provider.oauth_detail!.access_token, 'access_token')}
-                                                    title={copiedToken === 'access_token' ? 'Copied!' : 'Copy'}
-                                                >
-                                                    <ContentCopy fontSize="small" />
-                                                </IconButton>
+                                                    value={provider.oauth_detail!.access_token}
+                                                />
                                             </InputAdornment>
                                         ),
                                     },
@@ -282,14 +268,10 @@ const OAuthDetailDialog = ({ open, provider, onClose, onSubmit, onNotification }
                                                     >
                                                         {isTokenVisible('refresh_token') ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
                                                     </IconButton>
-                                                    <IconButton
+                                                    <CopyIconButton
                                                         edge="end"
-                                                        size="small"
-                                                        onClick={() => copyToken(provider.oauth_detail?.refresh_token ?? '', 'refresh_token')}
-                                                        title={copiedToken === 'refresh_token' ? 'Copied!' : 'Copy'}
-                                                    >
-                                                        <ContentCopy fontSize="small" />
-                                                    </IconButton>
+                                                        value={provider.oauth_detail?.refresh_token ?? ''}
+                                                    />
                                                 </InputAdornment>
                                             ),
                                         },

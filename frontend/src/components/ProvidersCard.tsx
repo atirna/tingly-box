@@ -1,19 +1,18 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-    Alert,
     Button,
     Dialog,
     DialogActions,
     DialogContent,
     DialogContentText,
     DialogTitle,
-    Snackbar,
 } from '@mui/material';
 import ConnectAIDialogs from '@/components/ConnectAIDialogs';
 import { ProviderListContent } from '@/components/ConnectProviderDialog';
 import { useProviderDialog } from '@/hooks/useProviderDialog';
+import { useNotify } from '@/hooks/useNotify.ts';
 
 /**
  * ProvidersCard — browse the provider catalog and connect one. This is what
@@ -34,24 +33,19 @@ import { useProviderDialog } from '@/hooks/useProviderDialog';
 export const ProvidersCard = () => {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const notify = useNotify();
     const [browseQuery, setBrowseQuery] = useState('');
-
-    const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
-        open: false,
-        message: '',
-        severity: 'info',
-    });
     const [successDialogOpen, setSuccessDialogOpen] = useState(false);
 
-    const showMessage = (message: string, severity: 'success' | 'error' | 'info' = 'info') => {
-        setSnackbar({ open: true, message, severity });
-    };
+    const showNotification = useCallback((message: string, severity: 'success' | 'error') => {
+        notify[severity](message);
+    }, [notify]);
 
     // The same Connect AI flow every other surface uses: the provider list is
     // rendered inline (card content instead of a picker dialog), and every
     // card — key / custom / self-hosted / OAuth / import / paste & detect —
     // routes through the shared hook + dialog stack.
-    const connectAI = useProviderDialog(showMessage, {
+    const connectAI = useProviderDialog(showNotification, {
         onProviderAdded: () => setSuccessDialogOpen(true),
     });
 
@@ -62,7 +56,7 @@ export const ProvidersCard = () => {
 
     const handleStayHere = () => {
         setSuccessDialogOpen(false);
-        showMessage(t('onboarding.success', { defaultValue: 'Provider added successfully! You can now create scenarios.' }), 'success');
+        notify.success(t('onboarding.success', { defaultValue: 'Provider added successfully! You can now create scenarios.' }));
     };
 
     return (
@@ -104,20 +98,6 @@ export const ProvidersCard = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
-
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={snackbar.severity === 'error' ? null : 4000}
-                onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-            >
-                <Alert
-                    severity={snackbar.severity}
-                    onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
         </>
     );
 };

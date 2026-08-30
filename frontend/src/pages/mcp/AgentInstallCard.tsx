@@ -10,12 +10,12 @@
  *   <AgentInstallCard sectionNumber="02" />
  */
 
-import React, { useCallback, useState } from 'react';
-import { Alert, Box, Chip, IconButton, Tooltip, Typography } from '@mui/material';
+import React, { useState } from 'react';
+import { Alert, Box, Chip, Typography } from '@mui/material';
 import {
-    ContentCopy as CopyIcon,
     Terminal as TerminalIcon,
 } from '@/components/icons';
+import { CopyIconButton } from '@/components/CopyIconButton';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,14 +91,6 @@ interface CodeBlockProps {
  * Includes a copy-to-clipboard button in the header.
  */
 const CodeBlock: React.FC<CodeBlockProps> = ({ filename, runtimeLabel, command }) => {
-    const [copied, setCopied] = useState(false);
-
-    const handleCopy = useCallback(() => {
-        void navigator.clipboard.writeText(command.replace(/\\\n\s*/g, ' '));
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    }, [command]);
-
     return (
         <Box
             sx={{
@@ -141,19 +133,14 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ filename, runtimeLabel, command }
                         border: '1px solid rgb(48, 54, 61)',
                     }}
                 />
-                <Tooltip title={copied ? 'Copied!' : 'Copy'} arrow>
-                    <IconButton
-                        size="small"
-                        onClick={handleCopy}
-                        sx={{
-                            p: 0.5,
-                            color: copied ? 'rgb(16, 185, 129)' : 'rgb(125, 133, 144)',
-                            '&:hover': { color: 'rgb(201, 209, 217)' },
-                        }}
-                    >
-                        <CopyIcon sx={{ fontSize: '0.85rem' }} />
-                    </IconButton>
-                </Tooltip>
+                <CopyIconButton
+                    value={command.replace(/\\\n\s*/g, ' ')}
+                    color="rgb(125, 133, 144)"
+                    copiedColor="rgb(16, 185, 129)"
+                    iconSize="0.85rem"
+                    tooltipArrow
+                    sx={{ p: 0.5, '&:hover': { color: 'rgb(201, 209, 217)' } }}
+                />
             </Box>
 
             {/* Command text */}

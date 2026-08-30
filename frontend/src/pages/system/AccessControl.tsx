@@ -7,10 +7,6 @@ import {
     Button,
     IconButton,
     Alert,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
     CircularProgress,
     Divider,
     Tooltip,
@@ -25,11 +21,13 @@ import {
     Security as SecurityIcon,
 } from '@/components/icons';
 import { useTranslation } from 'react-i18next';
+import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { api } from '@/services/api.ts';
 import { useAuth } from '@/contexts/AuthContext.tsx';
 import { PageLayout } from '@/components/PageLayout.tsx';
 import UnifiedCard from '@/components/UnifiedCard.tsx';
 import CardGrid from "@/components/CardGrid.tsx";
+import ConfirmDialog from '@/components/ConfirmDialog.tsx';
 
 interface TokenInfo {
     token: string;
@@ -171,11 +169,12 @@ const AccessControl = () => {
     const [resetModelDialogOpen, setResetModelDialogOpen] = useState(false);
     const [userSuccessToken, setUserSuccessToken] = useState<string | null>(null);
     const [modelSuccessToken, setModelSuccessToken] = useState<string | null>(null);
-    // Which token's copy button most recently succeeded — scoped per token so
-    // copying the user token doesn't also flash "Copied!" on the model token's
-    // button (and vice versa). The row and its own reset-success banner share
-    // a key since they display the same underlying value.
-    const [copiedKey, setCopiedKey] = useState<'user' | 'model' | null>(null);
+    // Separate copy-feedback per token so copying the user token doesn't also
+    // flash "Copied!" on the model token's button (and vice versa). The row
+    // and its own reset-success banner share one flag since they display the
+    // same underlying value.
+    const { copied: copiedUser, copy: copyUserToken } = useCopyFeedback();
+    const { copied: copiedModel, copy: copyModelToken } = useCopyFeedback();
 
     // Visibility states for showing full tokens
     const [showUserToken, setShowUserToken] = useState(false);
@@ -202,18 +201,6 @@ const AccessControl = () => {
         loadModelToken();
     }, []);
 
-    const handleCopyToken = async (token: string, key: 'user' | 'model') => {
-        try {
-            await navigator.clipboard.writeText(token);
-            setCopiedKey(key);
-            // Only clear if nothing newer has claimed the "copied" flag —
-            // avoids a fast second copy of the same token having its
-            // feedback cut short by the first copy's timer.
-            setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 2000);
-        } catch (err) {
-            console.error('Failed to copy token:', err);
-        }
-    };
 
     const handleUserResetClick = () => {
         setResetUserDialogOpen(true);
@@ -341,8 +328,8 @@ const AccessControl = () => {
                         title={t('accessControl.userToken.resetSuccess')}
                         message={t('accessControl.userToken.resetSuccessMessage')}
                         token={userSuccessToken}
-                        copiedTooltip={copiedKey === 'user'}
-                        onCopy={() => handleCopyToken(userSuccessToken, 'user')}
+                        copiedTooltip={copiedUser}
+                        onCopy={() => copyUserToken(userSuccessToken)}
                         copyLabel={t('accessControl.copy')}
                         copiedLabel={t('accessControl.copied')}
                         acknowledgeLabel={t('accessControl.userToken.saved')}
@@ -356,8 +343,8 @@ const AccessControl = () => {
                         title={t('accessControl.modelToken.resetSuccess')}
                         message={t('accessControl.modelToken.resetSuccessMessage')}
                         token={modelSuccessToken}
-                        copiedTooltip={copiedKey === 'model'}
-                        onCopy={() => handleCopyToken(modelSuccessToken, 'model')}
+                        copiedTooltip={copiedModel}
+                        onCopy={() => copyModelToken(modelSuccessToken)}
                         copyLabel={t('accessControl.copy')}
                         copiedLabel={t('accessControl.copied')}
                         acknowledgeLabel={t('accessControl.modelToken.saved')}
@@ -397,8 +384,8 @@ const AccessControl = () => {
                                     displayValue={showUserToken ? displayUserToken : maskToken(displayUserToken)}
                                     revealed={showUserToken}
                                     onToggleReveal={() => setShowUserToken(!showUserToken)}
-                                    onCopy={() => handleCopyToken(displayUserToken, 'user')}
-                                    copiedTooltip={copiedKey === 'user'}
+                                    onCopy={() => copyUserToken(displayUserToken)}
+                                    copiedTooltip={copiedUser}
                                 />
                                 {!isUsingDefaultToken && !userSuccessToken && (
                                     <Typography
@@ -442,110 +429,88 @@ const AccessControl = () => {
                                     displayValue={showModelToken ? displayModelToken : maskToken(displayModelToken)}
                                     revealed={showModelToken}
                                     onToggleReveal={() => setShowModelToken(!showModelToken)}
-                                    onCopy={() => handleCopyToken(displayModelToken, 'model')}
-                                    copiedTooltip={copiedKey === 'model'}
+                                    onCopy={() => copyModelToken(displayModelToken)}
+                                    copiedTooltip={copiedModel}
                                 />
                             </Stack>
                         </Box>
                     </Stack>
                 </UnifiedCard>
             </CardGrid>
-            {/* User Reset Confirmation Dialog */}
-            <Dialog open={resetUserDialogOpen} onClose={() => setResetUserDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
+            <ConfirmDialog
+                open={resetUserDialogOpen}
+                onClose={() => setResetUserDialogOpen(false)}
+                onConfirm={handleUserResetConfirm}
+                loading={resettingUser}
+                confirmColor="warning"
+                confirmLabel={t('accessControl.userToken.resetConfirmButton')}
+                confirmingLabel={t('accessControl.resetting')}
+                cancelLabel={t('accessControl.userToken.resetCancel')}
+                title={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <WarningIcon color="warning" />
                         <Typography variant="h6">{t('accessControl.userToken.resetTitle')}</Typography>
                     </Box>
-                </DialogTitle>
-                <DialogContent>
-                    <Typography variant="body1" gutterBottom>
-                        {t('accessControl.userToken.resetConfirm')}
-                    </Typography>
-                    <Stack sx={{ mt: 2 }} spacing={1}>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.new')}
+                }
+                description={
+                    <>
+                        <Typography variant="body1" gutterBottom>
+                            {t('accessControl.userToken.resetConfirm')}
                         </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.session')}
-                        </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.other')}
-                        </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.userToken.resetPoints.stop')}
-                        </Typography>
-                    </Stack>
-                    <Alert severity="warning" sx={{ mt: 2 }}>
-                        {t('accessControl.userToken.resetWarning')}
-                    </Alert>
-                </DialogContent>
-                <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button onClick={() => setResetUserDialogOpen(false)} disabled={resettingUser}>
-                        {t('accessControl.userToken.resetCancel')}
-                    </Button>
-                    <Button
-                        onClick={handleUserResetConfirm}
-                        variant="contained"
-                        color="warning"
-                        disabled={resettingUser}
-                        startIcon={resettingUser ? <CircularProgress size={16} /> : undefined}
-                    >
-                        {resettingUser ? t('accessControl.resetting') : t('accessControl.userToken.resetConfirmButton')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-            {/* Model Reset Confirmation Dialog */}
-            <Dialog open={resetModelDialogOpen} onClose={() => setResetModelDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
+                        <Stack sx={{ mt: 2 }} spacing={1}>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.new')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.session')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.other')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.userToken.resetPoints.stop')}
+                            </Typography>
+                        </Stack>
+                        <Alert severity="warning" sx={{ mt: 2 }}>
+                            {t('accessControl.userToken.resetWarning')}
+                        </Alert>
+                    </>
+                }
+            />
+            <ConfirmDialog
+                open={resetModelDialogOpen}
+                onClose={() => setResetModelDialogOpen(false)}
+                onConfirm={handleModelResetConfirm}
+                loading={resettingModel}
+                confirmColor="warning"
+                confirmLabel={t('accessControl.modelToken.resetConfirmButton')}
+                confirmingLabel={t('accessControl.resetting')}
+                cancelLabel={t('accessControl.modelToken.resetCancel')}
+                title={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <WarningIcon color="warning" />
                         <Typography variant="h6">{t('accessControl.modelToken.resetTitle')}</Typography>
                     </Box>
-                </DialogTitle>
-                <DialogContent>
-                    <Typography variant="body1" gutterBottom>
-                        {t('accessControl.modelToken.resetConfirm')}
-                    </Typography>
-                    <Stack sx={{ mt: 2 }} spacing={1}>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.modelToken.resetPoints.new')}
+                }
+                description={
+                    <>
+                        <Typography variant="body1" gutterBottom>
+                            {t('accessControl.modelToken.resetConfirm')}
                         </Typography>
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary"
-                        }}>
-                            • {t('accessControl.modelToken.resetPoints.stop')}
-                        </Typography>
-                    </Stack>
-                    <Alert severity="warning" sx={{ mt: 2 }}>
-                        {t('accessControl.modelToken.resetWarning')}
-                    </Alert>
-                </DialogContent>
-                <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button onClick={() => setResetModelDialogOpen(false)} disabled={resettingModel}>
-                        {t('accessControl.modelToken.resetCancel')}
-                    </Button>
-                    <Button
-                        onClick={handleModelResetConfirm}
-                        variant="contained"
-                        color="warning"
-                        disabled={resettingModel}
-                        startIcon={resettingModel ? <CircularProgress size={16} /> : undefined}
-                    >
-                        {resettingModel ? t('accessControl.resetting') : t('accessControl.modelToken.resetConfirmButton')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                        <Stack sx={{ mt: 2 }} spacing={1}>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.modelToken.resetPoints.new')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                • {t('accessControl.modelToken.resetPoints.stop')}
+                            </Typography>
+                        </Stack>
+                        <Alert severity="warning" sx={{ mt: 2 }}>
+                            {t('accessControl.modelToken.resetWarning')}
+                        </Alert>
+                    </>
+                }
+            />
         </PageLayout>
     );
 };

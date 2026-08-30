@@ -1,8 +1,9 @@
 import CardGrid from '@/components/CardGrid.tsx';
 import { PageLayout } from '@/components/PageLayout.tsx';
 import UnifiedCard from '@/components/UnifiedCard.tsx';
-import { Logout, Refresh as RefreshIcon, CheckCircle as IconCircleCheck, Cancel as IconCircleX, Info as IconInfoCircle, Lock as IconLock, License as IconLicense, GitHub as IconBrandGithub, Translate as IconLanguage, Brush as IconBrush, Check as IconCheck, AccessTime as IconClock, ContentCopy as IconContentCopy, Router as IconRouter } from '@/components/icons';
+import { Logout, Refresh as RefreshIcon, CheckCircle as IconCircleCheck, Cancel as IconCircleX, Info as IconInfoCircle, Lock as IconLock, License as IconLicense, GitHub as IconBrandGithub, Translate as IconLanguage, Brush as IconBrush, Check as IconCheck, AccessTime as IconClock, Router as IconRouter } from '@/components/icons';
 import { UpdatePanelDialog } from '@/components/UpdatePanelDialog';
+import { CopyIconButton } from '@/components/CopyIconButton';
 import { Box, Button, CircularProgress, Divider, IconButton, InputAdornment, Link, Stack, Switch, TextField, Tooltip, Typography, Chip, type SxProps, type Theme } from '@mui/material';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -85,7 +86,6 @@ const System = () => {
     const [globalProxyUrl, setGlobalProxyUrl] = useState('');
     const [globalProxyInput, setGlobalProxyInput] = useState('');
     const [proxyUrlSaving, setProxyUrlSaving] = useState(false);
-    const [copiedVersion, setCopiedVersion] = useState(false);
     const isServerStatusAvailable = Boolean(serverStatus);
     const serverStatusLabel = !isServerStatusAvailable
         ? t('system.status.unavailable')
@@ -106,14 +106,7 @@ const System = () => {
         notify.success(t('system.language.saveSuccess'));
     };
 
-    const handleCopyVersion = () => {
-        const value = (currentVersion || 'Unknown').split('+')[0];
-        navigator.clipboard.writeText(value).then(() => {
-            setCopiedVersion(true);
-            notify.success(t('system.about.versionCopied'));
-            setTimeout(() => setCopiedVersion(false), 2000);
-        });
-    };
+    const displayVersion = (currentVersion || 'Unknown').split('+')[0];
 
     useEffect(() => {
         loadAllData();
@@ -249,16 +242,15 @@ const System = () => {
                             icon={<IconInfoCircle sx={{ fontSize: 16, color: 'text.secondary' }} />}
                             label={t('system.about.version')}
                             action={
-                                <Tooltip title={copiedVersion ? t('common.copied') : t('system.about.copyVersion')} placement="top" arrow>
-                                    <IconButton
-                                        size="small"
-                                        onClick={handleCopyVersion}
-                                        aria-label={t('system.about.copyVersion')}
-                                        sx={{ color: 'text.secondary' }}
-                                    >
-                                        {copiedVersion ? <IconCheck sx={{ fontSize: 16, color: 'success.main' }} /> : <IconContentCopy sx={{ fontSize: 16 }} />}
-                                    </IconButton>
-                                </Tooltip>
+                                <CopyIconButton
+                                    value={displayVersion}
+                                    label={t('system.about.copyVersion')}
+                                    copiedLabel={t('common.copied')}
+                                    iconSize={16}
+                                    tooltipPlacement="top"
+                                    tooltipArrow
+                                    onCopied={() => notify.success(t('system.about.versionCopied'))}
+                                />
                             }
                         >
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
