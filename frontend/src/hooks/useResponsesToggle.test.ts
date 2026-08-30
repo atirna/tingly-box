@@ -49,7 +49,7 @@ describe('useResponsesToggle', () => {
             provider_uuid: 'prov-1',
             model: 'gpt-5',
             direct: true,
-            endpoint: 'responses',
+            protocol: 'openai_responses',
         }));
         expect(onUpdateRecord).toHaveBeenCalledWith('flags', expect.objectContaining({openaiEndpointOverride: 'responses'}));
         expect(notify.success).toHaveBeenCalled();
