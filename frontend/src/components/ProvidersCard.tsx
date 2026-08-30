@@ -11,25 +11,25 @@ import {
     DialogTitle,
     Snackbar,
 } from '@mui/material';
-import UnifiedCard from '@/components/UnifiedCard.tsx';
 import ConnectAIDialogs from '@/components/ConnectAIDialogs';
 import { ProviderListContent } from '@/components/ConnectProviderDialog';
 import { useProviderDialog } from '@/hooks/useProviderDialog';
 
 /**
- * ProvidersCard — browse the provider catalog and connect one, inline as a
- * card rather than a full page. This is what the old standalone Onboarding
- * page used to be: the lightbulb Help entry is the new onboarding front
- * door, and this card is the one piece of Onboarding's content that still
- * needed a home (the shared Connect AI *dialog* — form/OAuth/paste/import —
- * already exists everywhere else; this card is specifically the *browsable
- * list* view of it).
+ * ProvidersCard — browse the provider catalog and connect one. This is what
+ * the old standalone Onboarding page used to be: the lightbulb Help entry is
+ * the new onboarding front door, and this is the one piece of Onboarding's
+ * content that still needed a home (the shared Connect AI *dialog* —
+ * form/OAuth/paste/import — already exists everywhere else; this is
+ * specifically the *browsable list* view of it). Rendered inside a
+ * CollapsibleCard on HelpPage; title/description live in that shared
+ * accordion header, not here.
  *
  * Unlike CredentialPage's Connect AI (a picker hidden behind a button, so
  * empty-state entry points need a `?dialog=add` deep link to open it), the
- * list here is always visible as soon as the card renders — first-run and
- * empty-state entry points just need to land on this page, no query param
- * needed.
+ * list here is always visible as soon as the card is expanded — first-run
+ * and empty-state entry points just need to land on this page (HelpPage
+ * expands this section by default), no query param needed.
  */
 export const ProvidersCard = () => {
     const { t } = useTranslation();
@@ -67,20 +67,14 @@ export const ProvidersCard = () => {
 
     return (
         <>
-            <UnifiedCard
-                size="full"
-                title={t('help.providers.title')}
-                subtitle={t('help.providers.description')}
-            >
-                <ProviderListContent
-                    onSelect={connectAI.handleConnectSelect}
-                    query={browseQuery}
-                    onQueryChange={setBrowseQuery}
-                    hideOfficialInfo={true}
-                    showDetails={true}
-                    wide={true}
-                />
-            </UnifiedCard>
+            <ProviderListContent
+                onSelect={connectAI.handleConnectSelect}
+                query={browseQuery}
+                onQueryChange={setBrowseQuery}
+                hideOfficialInfo={true}
+                showDetails={true}
+                wide={true}
+            />
 
             {/* Shared Connect AI dialog stack (form / OAuth / paste / import /
                 cloud). inline: the provider list above is the picker, so no

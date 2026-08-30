@@ -921,6 +921,13 @@ export default {
     "providers": {
       "title": "Providers",
       "description": "Browse the catalog or paste a config snippet — we'll figure out the rest."
+    },
+    "routing": {
+      "title": "Routing & Tier Guides",
+      "description": "Revisit how direct routing, smart routing, and model tiers work — the same diagrams and steps used elsewhere in the product.",
+      "direct": "Direct Routing Guide",
+      "smart": "Smart Routing Guide",
+      "tier": "Tier Guide"
     }
   },
   "serverInfo": {
