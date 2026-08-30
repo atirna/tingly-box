@@ -1,8 +1,8 @@
 // API service layer for communicating with the backend
 
-import TinglyService from "@/bindings";
 import type {components} from '@/client';
-import * as botInteractionApi from './botInteractionApi';
+import * as botApi from './botApi';
+import * as modelApi from './modelApi';
 import {getApiBaseUrl} from '../utils/protocol';
 import {
     controlApi,
@@ -14,52 +14,14 @@ import {
 } from './openapi';
 
 // IM bot interaction (capabilities/chats/groups/permissions + notify/interact/
-// wait) lives in its own module — see botInteractionApi.ts for why it follows
-// a different contract than the rest of this file.
-export {enrichBotsWithCapabilities} from './botInteractionApi';
+// wait) lives in its own module — see botApi.ts for why it follows a
+// different contract than the rest of this file.
+export {enrichBotsWithCapabilities} from './botApi';
 
 // Get user auth token for UI and control API from localStorage
 const getUserAuthToken = (): string | null => {
     return localStorage.getItem('user_auth_token');
 };
-
-// Get model token for OpenAI/Anthropic API from localStorage
-const getModelToken = (): string | null => {
-    return localStorage.getItem('model_token');
-};
-
-// Fetch helper for model API endpoints (OpenAI/Anthropic compatible)
-async function modelAPI(url: string, options: RequestInit = {}): Promise<any> {
-    let token = getModelToken();
-
-    // Try to get model token from GUI if available
-    if (!token && import.meta.env.VITE_PKG_MODE === "gui") {
-        const svc = TinglyService;
-        if (svc) {
-            try {
-                const guiToken = await svc.GetUserAuthToken();
-                if (guiToken) {
-                    token = guiToken;
-                }
-            } catch (err) {
-                console.error('Failed to get GUI token for modelAPI:', err);
-            }
-        }
-    }
-
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...options.headers as Record<string, string>,
-    };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    try {
-        const response = await fetch(url, {headers, ...options});
-        return await response.json();
-    } catch (error) {
-        return {success: false, error: (error as Error).message};
-    }
-}
 
 // Team endpoints don't follow the rest of this file's {success,data}/
 // {success,error:string} convention — callers (UseTeamPage.tsx,
@@ -614,17 +576,11 @@ export const api = {
         }
     },
 
-    // Model API calls (OpenAI/Anthropic compatible)
-    openAIChatCompletions: (data: any): Promise<any> => modelAPI('/openai/v1/chat/completions', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    anthropicMessages: (data: any): Promise<any> => modelAPI('/anthropic/v1/messages', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    listOpenAIModels: (): Promise<any> => modelAPI('/openai/v1/models'),
-    listAnthropicModels: (): Promise<any> => modelAPI('/anthropic/v1/models'),
+    // Model gateway API (OpenAI/Anthropic-compatible) — see modelApi.ts.
+    openAIChatCompletions: modelApi.openAIChatCompletions,
+    anthropicMessages: modelApi.anthropicMessages,
+    listOpenAIModels: modelApi.listOpenAIModels,
+    listAnthropicModels: modelApi.listAnthropicModels,
     // Token management
     setUserToken: (token: string): void => {
         localStorage.setItem('user_auth_token', token);
@@ -635,12 +591,8 @@ export const api = {
         localStorage.removeItem('user_auth_token');
         resetClient();
     },
-    setModelToken: (token: string): void => {
-        localStorage.setItem('model_token', token);
-    },
-    removeModelToken: (): void => {
-        localStorage.removeItem('model_token');
-    },
+    setModelToken: modelApi.setModelToken,
+    removeModelToken: modelApi.removeModelToken,
 
     // Usage Dashboard API calls
     getUsageStats: async (params: {
@@ -1041,23 +993,23 @@ export const api = {
         controlApi((client, headers) => client.GET('/api/v1/imbot-settings', {headers})),
 
     // IM bot capabilities/chats/groups/permissions + notify/interact/wait —
-    // see botInteractionApi.ts.
-    listBotCapabilities: botInteractionApi.listBotCapabilities,
-    setBotCapability: botInteractionApi.setBotCapability,
-    listBotDirectChats: botInteractionApi.listBotDirectChats,
-    setBotDirectChatBlocked: botInteractionApi.setBotDirectChatBlocked,
-    deleteBotDirectChat: botInteractionApi.deleteBotDirectChat,
-    setBotDirectChatPermission: botInteractionApi.setBotDirectChatPermission,
-    setBotDirectChatPermissions: botInteractionApi.setBotDirectChatPermissions,
-    listBotGroups: botInteractionApi.listBotGroups,
-    getBotGroup: botInteractionApi.getBotGroup,
-    setBotGroupBlocked: botInteractionApi.setBotGroupBlocked,
-    setBotGroupCapability: botInteractionApi.setBotGroupCapability,
-    addBotGroupActor: botInteractionApi.addBotGroupActor,
-    listBotChats: botInteractionApi.listBotChats,
-    notifyBot: botInteractionApi.notifyBot,
-    interactBot: botInteractionApi.interactBot,
-    waitBotInteract: botInteractionApi.waitBotInteract,
+    // see botApi.ts.
+    listBotCapabilities: botApi.listBotCapabilities,
+    setBotCapability: botApi.setBotCapability,
+    listBotDirectChats: botApi.listBotDirectChats,
+    setBotDirectChatBlocked: botApi.setBotDirectChatBlocked,
+    deleteBotDirectChat: botApi.deleteBotDirectChat,
+    setBotDirectChatPermission: botApi.setBotDirectChatPermission,
+    setBotDirectChatPermissions: botApi.setBotDirectChatPermissions,
+    listBotGroups: botApi.listBotGroups,
+    getBotGroup: botApi.getBotGroup,
+    setBotGroupBlocked: botApi.setBotGroupBlocked,
+    setBotGroupCapability: botApi.setBotGroupCapability,
+    addBotGroupActor: botApi.addBotGroupActor,
+    listBotChats: botApi.listBotChats,
+    notifyBot: botApi.notifyBot,
+    interactBot: botApi.interactBot,
+    waitBotInteract: botApi.waitBotInteract,
 
     getImBotSetting: async (uuid: string): Promise<any> =>
         controlApi((client, headers) => client.GET('/api/v1/imbot-settings/{uuid}', {
