@@ -195,14 +195,18 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
         if (!bot.uuid) return;
         const blocked = !target.blocked;
         setBusyTarget(target.id);
-        const result = target.kind === 'group'
-            ? await api.setBotGroupBlocked(bot.uuid, target.id, blocked)
-            : await api.setBotDirectChatBlocked(bot.uuid, target.id, blocked);
-        setBusyTarget(null);
-        if (result.error) {
-            notify.error(result.error);
+        try {
+            if (target.kind === 'group') {
+                await api.setBotGroupBlocked(bot.uuid, target.id, blocked);
+            } else {
+                await api.setBotDirectChatBlocked(bot.uuid, target.id, blocked);
+            }
+        } catch (toggleError) {
+            setBusyTarget(null);
+            notify.error((toggleError as Error).message);
             return;
         }
+        setBusyTarget(null);
         notify.success(blocked
             ? t('notify.target.blocked', {defaultValue: 'Target blocked'})
             : t('notify.target.unblocked', {defaultValue: 'Target unblocked'}));
@@ -214,13 +218,16 @@ const BotNotifyGroup: React.FC<BotNotifyGroupProps> = ({bot, onToggle, isTogglin
         const chat = targets.find((candidate) => candidate.id === chatID && candidate.kind === 'direct_chat');
         if (!chat) return;
         setBusyTarget(chatID);
-        const result = await api.deleteBotDirectChat(bot.uuid, chat.id);
-        setBusyTarget(null);
-        setDeleteTarget(null);
-        if (result.error) {
-            notify.error(result.error);
+        try {
+            await api.deleteBotDirectChat(bot.uuid, chat.id);
+        } catch (deleteError) {
+            setBusyTarget(null);
+            setDeleteTarget(null);
+            notify.error((deleteError as Error).message);
             return;
         }
+        setBusyTarget(null);
+        setDeleteTarget(null);
         notify.success(t('notify.chat.deleted', {defaultValue: 'Chat deleted'}));
         setTargets(prev => prev.filter(target => target.id !== chatID));
     }, [bot.uuid, targets, t]);

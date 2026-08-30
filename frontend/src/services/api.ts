@@ -2,7 +2,7 @@
 
 import TinglyService from "@/bindings";
 import type {components} from '@/client';
-import type {BotChat, BotSettings} from '@/types/bot';
+import * as botInteractionApi from './botInteractionApi';
 import {getApiBaseUrl} from '../utils/protocol';
 import {
     controlApi,
@@ -12,6 +12,11 @@ import {
     resetControlApiClient as resetClient,
     unwrap,
 } from './openapi';
+
+// IM bot interaction (capabilities/chats/groups/permissions + notify/interact/
+// wait) lives in its own module — see botInteractionApi.ts for why it follows
+// a different contract than the rest of this file.
+export {enrichBotsWithCapabilities} from './botInteractionApi';
 
 // Get user auth token for UI and control API from localStorage
 const getUserAuthToken = (): string | null => {
@@ -56,57 +61,24 @@ async function modelAPI(url: string, options: RequestInit = {}): Promise<any> {
     }
 }
 
-// Temporary raw control-plane call for the Bot Access endpoints. The backend
-// models are already in Swagger; this helper can be removed after SDK codegen.
-async function botAccessAPI(path: string, options: RequestInit = {}): Promise<any> {
-    const base = await getApiBaseUrl();
-    const headers = await getAuthHeaders();
-    const response = await fetch(`${base}${path}`, {
-        ...options,
-        headers: {...headers, 'Content-Type': 'application/json', ...(options.headers || {})},
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `request failed (${response.status})`);
-    return data;
-}
-
-// Temporary raw control-plane call for Team endpoints. The backend routes and
-// Swagger models are authoritative; remove this shim after the generated SDK
-// is refreshed from the new schema.
-async function teamControlAPI(path: string, options: RequestInit = {}): Promise<any> {
+// Team endpoints don't follow the rest of this file's {success,data}/
+// {success,error:string} convention — callers (UseTeamPage.tsx,
+// SharingKeysDialog.tsx) read `result.error?.message`, an object. Keep that
+// contract here rather than forcing it through controlApi()/unwrap().
+async function teamApiCall<T>(
+    call: (client: Awaited<ReturnType<typeof getClient>>, headers: Record<string, string>) => Promise<{data?: T; error?: unknown; response: Response}>,
+): Promise<{success: boolean; data?: T; error?: {message: string}}> {
     try {
-        const base = await getApiBaseUrl();
+        const client = await getClient();
         const headers = await getAuthHeaders();
-        const response = await fetch(`${base}${path}`, {
-            ...options,
-            headers: {...headers, 'Content-Type': 'application/json', ...(options.headers || {})},
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            return {success: false, error: data.error || {message: `request failed (${response.status})`}};
+        const {data, error, response} = await call(client, headers);
+        if (data === undefined || error !== undefined) {
+            return {success: false, error: {message: errorMessage(error) || `request failed (${response.status})`}};
         }
         return {success: true, data};
     } catch (error: any) {
         return {success: false, error: {message: error.message || 'Team API request failed'}};
     }
-}
-
-const listBotCapabilities = (botUUID: string) =>
-    botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/capabilities`);
-
-
-// Capability records are exposed separately from the generated bot settings
-// model. Keep the join in one place so every bot surface gets the same
-// per-bot failure fallback while SDK codegen catches up.
-export async function enrichBotsWithCapabilities(bots: BotSettings[]): Promise<BotSettings[]> {
-    return Promise.all(bots.map(async (bot) => {
-        try {
-            const result = await listBotCapabilities(bot.uuid!);
-            return {...bot, capabilities: result.capabilities || []};
-        } catch {
-            return {...bot, capabilities: []};
-        }
-    }));
 }
 
 // Raw fetch helper for tingly-box's own control-plane API (`/api/v1/...`),
@@ -145,160 +117,69 @@ export const api = {
     },
 
     // Status endpoints
-    getStatus: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/status', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getStatus: async (): Promise<any> => controlApi((client, headers) => client.GET('/api/v1/status', {headers})),
 
     getProviders: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/providers', {headers});
-            const body = unwrap(response);
-            if (body?.success && body?.data) {
-                // Sort providers alphabetically by name to reduce UI changes
-                body.data.sort((a: any, b: any) => a.name.localeCompare(b.name));
-            }
-            return body;
-        } catch (error: any) {
-            return {success: false, error: error.message};
+        const body = await controlApi((client, headers) => client.GET('/api/v2/providers', {headers}));
+        if (body?.success && body?.data) {
+            // Sort providers alphabetically by name to reduce UI changes
+            body.data.sort((a: any, b: any) => a.name.localeCompare(b.name));
         }
+        return body;
     },
 
     // Get provider templates (service providers for dropdown)
-    getProviderTemplates: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/provider-templates', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getProviderTemplates: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/provider-templates', {headers})),
 
-    updateProviderModelsByUUID: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/provider-models/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            // Model ordering is authoritative from the backend
-            // (config.SortProviderModels); do not re-sort here.
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    // Model ordering is authoritative from the backend (config.SortProviderModels); do not re-sort here.
+    updateProviderModelsByUUID: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/provider-models/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
-    getProviderModelsByUUID: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/provider-models/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            // Model ordering is authoritative from the backend
-            // (config.SortProviderModels); do not re-sort here.
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getProviderModelsByUUID: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/provider-models/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
-    getHistory: async (limit?: number): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/history', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getHistory: async (limit?: number): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/history', {headers})),
 
     // Provider management
-    addProvider: async (data: any, force: boolean = false): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/providers', {
-                headers,
-                params: {query: {force} as any},
-                body: data
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    addProvider: async (data: any, force: boolean = false): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/providers', {
+            headers,
+            params: {query: {force}},
+            body: data
+        })),
 
-    getProvider: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/providers/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getProvider: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/providers/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
-    updateProvider: async (uuid: string, data: any): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.PUT('/api/v2/providers/{uuid}', {
-                headers,
-                params: {path: {uuid}},
-                body: data
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    updateProvider: async (uuid: string, data: any): Promise<any> =>
+        controlApi((client, headers) => client.PUT('/api/v2/providers/{uuid}', {
+            headers,
+            params: {path: {uuid}},
+            body: data
+        })),
 
-    deleteProvider: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.DELETE('/api/v2/providers/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    deleteProvider: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.DELETE('/api/v2/providers/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
-    toggleProvider: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/providers/{uuid}/toggle', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    toggleProvider: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/providers/{uuid}/toggle', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
     // List virtual models registered in the in-process registries.
     getAvailableVirtualModels: async (): Promise<any> => {
@@ -306,142 +187,60 @@ export const api = {
     },
 
     // Server control
-    startServer: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/server/start', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    startServer: async (): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/server/start', {headers})),
 
-    stopServer: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/server/stop', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    stopServer: async (): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/server/stop', {headers})),
 
-    restartServer: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/server/restart', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    restartServer: async (): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/server/restart', {headers})),
 
-    generateToken: async (clientId: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/token', {
-                headers,
-                body: {client_id: clientId}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    generateToken: async (clientId: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/token', {
+            headers,
+            body: {client_id: clientId}
+        })),
 
-    getToken: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/token', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getToken: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/token', {headers})),
 
     // Rules API
     getRules: async (scenario: string): Promise<any> => {
         if (!scenario.trim()) {
             return {success: false, error: 'Scenario is required', data: []};
         }
-
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/rules', {
-                headers,
-                params: {query: {scenario}}
-            });
-            if (response.error) {
-                return {success: false, error: errorMessage(response.error), data: []};
-            }
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message, data: []};
-        }
+        const result = await controlApi((client, headers) => client.GET('/api/v1/rules', {
+            headers,
+            params: {query: {scenario}}
+        }));
+        return result?.success === false ? {...result, data: result.data ?? []} : result;
     },
 
-    getRule: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/rule/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getRule: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/rule/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
-    createRule: async (uuid: string, data: any): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/rule', {
-                headers,
-                body: data
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    createRule: async (uuid: string, data: any): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/rule', {
+            headers,
+            body: data
+        })),
 
-    updateRule: async (uuid: string, data: any): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/rule/{uuid}', {
-                headers,
-                params: {path: {uuid}},
-                body: data
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    updateRule: async (uuid: string, data: any): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/rule/{uuid}', {
+            headers,
+            params: {path: {uuid}},
+            body: data
+        })),
 
-    deleteRule: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.DELETE('/api/v1/rule/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    deleteRule: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.DELETE('/api/v1/rule/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
     getRuleFlagRegistry: async (): Promise<any> => {
         return controlApi((client, headers) => client.GET('/api/v1/rule/flags/registry', {headers}));
@@ -449,37 +248,19 @@ export const api = {
 
     // Imports providers from a base64/JSONL export bundle. Every imported
     // provider is always created with a freshly minted UUID.
-    importProvider: async (data: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/provider-import', {
-                headers,
-                body: {
-                    data,
-                },
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    importProvider: async (data: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/provider-import', {
+            headers,
+            body: {data},
+        })),
 
     // Exports a single provider (with its real, unmasked token) as a
     // base64 (default) or JSONL bundle.
-    exportProvider: async (uuid: string, format: 'base64' | 'jsonl' = 'base64'): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/provider-export', {
-                headers,
-                params: {query: {uuid, format}},
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    exportProvider: async (uuid: string, format: 'base64' | 'jsonl' = 'base64'): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/provider-export', {
+            headers,
+            params: {query: {uuid, format}},
+        })),
 
     // Scenario API
     getScenarios: async (): Promise<any> => {
@@ -553,25 +334,16 @@ export const api = {
 
     // Profile API
 
-    // Placeholder calls for the new Claude Code config endpoints. These use
-    // the generated client's runtime transport; remove the casts after the
-    // next OpenAPI client regeneration includes these routes.
     getAppliedClaudeConfig: async (): Promise<any> => {
-        return controlApi((client, headers) => (client as any).GET('/api/v1/config/claude', {headers}));
+        return controlApi((client, headers) => client.GET('/api/v1/config/claude', {headers}));
     },
 
-    // Placeholder for the Codex applied-config endpoint. Uses the generated
-    // client's runtime transport; remove the casts after the next OpenAPI
-    // client regeneration includes this route.
     getAppliedCodexConfig: async (): Promise<any> => {
-        return controlApi((client, headers) => (client as any).GET('/api/v1/config/codex', {headers}));
+        return controlApi((client, headers) => client.GET('/api/v1/config/codex', {headers}));
     },
 
-    // Placeholder for the DeepSeek Harness (dsh) applied-config endpoint. Uses
-    // the generated client's runtime transport; remove the casts after the
-    // next OpenAPI client regeneration includes this route.
     getAppliedDshConfig: async (): Promise<any> => {
-        return controlApi((client, headers) => (client as any).GET('/api/v1/config/dsh', {headers}));
+        return controlApi((client, headers) => client.GET('/api/v1/config/dsh', {headers}));
     },
 
     getProfiles: async (scenario: string): Promise<any> => {
@@ -612,7 +384,7 @@ export const api = {
     },
 
     getClaudeCodeProfileConfig: async (scenario: string, id: string): Promise<any> => {
-        return controlApi((client, headers) => (client as any).GET('/api/v1/scenario/{scenario}/profiles/{id}/claude-config', {
+        return controlApi((client, headers) => client.GET('/api/v1/scenario/{scenario}/profiles/{id}/claude-config', {
             headers,
             params: {path: {scenario, id}},
         }));
@@ -624,7 +396,7 @@ export const api = {
         preferences: Record<string, string>,
         defaultMode: string,
     ): Promise<any> => {
-        return controlApi((client, headers) => (client as any).PUT('/api/v1/scenario/{scenario}/profiles/{id}/claude-config', {
+        return controlApi((client, headers) => client.PUT('/api/v1/scenario/{scenario}/profiles/{id}/claude-config', {
             headers,
             params: {path: {scenario, id}},
             body: {preferences, defaultMode},
@@ -632,7 +404,7 @@ export const api = {
     },
 
     resetClaudeCodeProfileConfig: async (scenario: string, id: string): Promise<any> => {
-        return controlApi((client, headers) => (client as any).DELETE('/api/v1/scenario/{scenario}/profiles/{id}/claude-config', {
+        return controlApi((client, headers) => client.DELETE('/api/v1/scenario/{scenario}/profiles/{id}/claude-config', {
             headers,
             params: {path: {scenario, id}},
         }));
@@ -753,68 +525,44 @@ export const api = {
         return controlApi((client, headers) => client.POST('/api/v1/guardrails/reload', {headers}));
     },
 
-    probeModel: async (uuid: string, model: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/probe', {
-                headers,
-                body: {
-                    target_type: 'provider' as const,
-                    provider_uuid: uuid,
-                    model: model,
-                    stream: false,
-                    message: 'Hello, this is a test message. Please respond with a short greeting.',
-                }
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    probeModel: async (uuid: string, model: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/probe', {
+            headers,
+            body: {
+                target_type: 'provider' as const,
+                provider_uuid: uuid,
+                model: model,
+                stream: false,
+                message: 'Hello, this is a test message. Please respond with a short greeting.',
+            }
+        })),
 
     // Lightweight probe for optional key validation using OPTIONS and models endpoint
     // This is used by the "Test Connection" button - results are informational only
-    probeProviderLightweight: async (name: string, api_style: string, api_base: string, token: string, auth_type?: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/probe/lightweight', {
-                headers,
-                body: {
-                    name: name,
-                    api_style: api_style as any,
-                    api_base: api_base,
-                    token: token,
-                    auth_type: auth_type,
-                }
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    probeProviderLightweight: async (name: string, api_style: string, api_base: string, token: string, auth_type?: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/probe/lightweight', {
+            headers,
+            body: {
+                name: name,
+                api_style: api_style as any,
+                api_base: api_base,
+                token: token,
+                auth_type: auth_type,
+            }
+        })),
 
-    probeProvider: async (api_style: string, api_base: string, token: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/probe', {
-                headers,
-                body: {
-                    target_type: 'provider_config' as const,
-                    api_style: api_style as any,
-                    api_base: api_base,
-                    token: token,
-                    stream: false,
-                    message: 'Hello, this is a test message. Please respond with a short greeting.',
-                }
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    probeProvider: async (api_style: string, api_base: string, token: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/probe', {
+            headers,
+            body: {
+                target_type: 'provider_config' as const,
+                api_style: api_style as any,
+                api_base: api_base,
+                token: token,
+                stream: false,
+                message: 'Hello, this is a test message. Please respond with a short greeting.',
+            }
+        })),
 
 
 
@@ -823,9 +571,13 @@ export const api = {
             const client = await getClient();
             const headers = await getAuthHeaders();
             const response = await client.GET('/api/v1/info/version', {headers});
-            // openapi-fetch returns { data, error, response }
-            if ((response as any).error || !response.data) {
-                console.error('Failed to get version:', (response as any).error || 'No data in response');
+            // This route has no declared error response, so openapi-fetch's
+            // generated type narrows `error` to `never` on the (only) success
+            // branch; widen to read it defensively (a non-2xx is still
+            // possible at runtime, e.g. a 401 from auth middleware).
+            const err = (response as {error?: unknown}).error;
+            if (err || !response.data) {
+                console.error('Failed to get version:', err || 'No data in response');
                 return 'Unknown';
             }
             return response.data?.data?.version || 'Unknown';
@@ -835,52 +587,28 @@ export const api = {
         }
     },
 
-    getLatestVersion: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/info/version/check', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getLatestVersion: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/info/version/check', {headers})),
 
     // Desktop / start-menu shortcut. getShortcutStatus is a read-only check
     // (does every artifact createShortcut would write already exist?); it
     // never writes to disk. createShortcut is idempotent — safe to call again
     // any time (after an upgrade, a source change, or to recover a deleted
     // shortcut).
-    getShortcutStatus: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/shortcut', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getShortcutStatus: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/shortcut', {headers})),
 
-    createShortcut: async (name?: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/shortcut', {
-                headers,
-                body: name ? {name} : {},
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    createShortcut: async (name?: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/shortcut', {
+            headers,
+            body: name ? {name} : {},
+        })),
 
     healthCheck: async (): Promise<boolean> => {
         try {
             const client = await getClient();
             const response = await client.GET('/api/v1/info/health');
-            return (response.data as any)?.health === true;
+            return response.data?.health === true;
         } catch {
             return false;
         }
@@ -926,32 +654,24 @@ export const api = {
         limit?: number;
         sort_by?: 'total_tokens' | 'request_count' | 'avg_latency';
         sort_order?: 'asc' | 'desc';
-    } = {}): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/usage/stats', {
-                headers,
-                params: {
-                    query: {
-                        group_by: params.group_by as any,
-                        start_time: params.start_time,
-                        end_time: params.end_time,
-                        provider: params.provider,
-                        model: params.model,
-                        scenario: params.scenario,
-                        user_id: params.user_id,
-                        limit: params.limit,
-                        sort_by: params.sort_by,
-                        sort_order: params.sort_order,
-                    }
+    } = {}): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/usage/stats', {
+            headers,
+            params: {
+                query: {
+                    group_by: params.group_by as any,
+                    start_time: params.start_time,
+                    end_time: params.end_time,
+                    provider: params.provider,
+                    model: params.model,
+                    scenario: params.scenario,
+                    user_id: params.user_id,
+                    limit: params.limit,
+                    sort_by: params.sort_by,
+                    sort_order: params.sort_order,
                 }
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+            }
+        })),
 
     getUsageTimeSeries: async (params: {
         interval?: string;
@@ -961,29 +681,21 @@ export const api = {
         model?: string;
         scenario?: string;
         user_id?: string;
-    } = {}): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/usage/timeseries', {
-                headers,
-                params: {
-                    query: {
-                        interval: params.interval as any,
-                        start_time: params.start_time,
-                        end_time: params.end_time,
-                        provider: params.provider,
-                        model: params.model,
-                        scenario: params.scenario,
-                        user_id: params.user_id,
-                    } as any
-                }
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    } = {}): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/usage/timeseries', {
+            headers,
+            params: {
+                query: {
+                    interval: params.interval as any,
+                    start_time: params.start_time,
+                    end_time: params.end_time,
+                    provider: params.provider,
+                    model: params.model,
+                    scenario: params.scenario,
+                    user_id: params.user_id,
+                } as any
+            }
+        })),
 
     getUsageRecords: async (params: {
         start_time?: string;
@@ -995,31 +707,23 @@ export const api = {
         status?: string;
         limit?: number;
         offset?: number;
-    } = {}): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/usage/records', {
-                headers,
-                params: {
-                    query: {
-                        start_time: params.start_time,
-                        end_time: params.end_time,
-                        provider: params.provider,
-                        model: params.model,
-                        scenario: params.scenario,
-                        user_id: params.user_id,
-                        status: params.status as any,
-                        limit: params.limit,
-                        offset: params.offset,
-                    } as any
-                }
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    } = {}): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/usage/records', {
+            headers,
+            params: {
+                query: {
+                    start_time: params.start_time,
+                    end_time: params.end_time,
+                    provider: params.provider,
+                    model: params.model,
+                    scenario: params.scenario,
+                    user_id: params.user_id,
+                    status: params.status as any,
+                    limit: params.limit,
+                    offset: params.offset,
+                } as any
+            }
+        })),
 
     getUsagePerformance: async (params: {
         start_time?: string;
@@ -1028,28 +732,20 @@ export const api = {
         model?: string;
         scenario?: string;
         user_id?: string;
-    } = {}): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/usage/performance', {
-                headers,
-                params: {
-                    query: {
-                        start_time: params.start_time,
-                        end_time: params.end_time,
-                        provider: params.provider,
-                        model: params.model,
-                        scenario: params.scenario,
-                        user_id: params.user_id,
-                    }
+    } = {}): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/usage/performance', {
+            headers,
+            params: {
+                query: {
+                    start_time: params.start_time,
+                    end_time: params.end_time,
+                    provider: params.provider,
+                    model: params.model,
+                    scenario: params.scenario,
+                    user_id: params.user_id,
                 }
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+            }
+        })),
 
     // ============================================
     // OAuth API
@@ -1064,51 +760,31 @@ export const api = {
         // When set, re-authenticate this existing provider in place (preserves
         // its UUID and all rule/service references) instead of creating a new one.
         provider_uuid?: string;
-    }): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/oauth/authorize', {
-                headers,
-                body: data as any
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    }): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/oauth/authorize', {
+            headers,
+            body: data as any
+        })),
 
     // Get OAuth session status
-    oauthStatus: async (session_id: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/oauth/status', {
-                headers,
-                params: {query: {session_id}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    oauthStatus: async (session_id: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/oauth/status', {
+            headers,
+            params: {query: {session_id}}
+        })),
 
     // Cancel an in-progress OAuth session
-    oauthCancel: async (data: { session_id: string }): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/oauth/cancel', {
-                headers,
-                body: data
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    oauthCancel: async (data: { session_id: string }): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/oauth/cancel', {
+            headers,
+            body: data
+        })),
 
-    // Refresh OAuth token
+    // Refresh OAuth token. Deliberately not controlApi(): on a non-2xx the
+    // backend's real error body ({success:false, error:"..."}) is preserved
+    // under `data` (not just its extracted message) so callers
+    // (CredentialPage.tsx) can read response.data?.error and decide whether
+    // to guide the user to reauthorize.
     oauthRefresh: async (data: { provider_uuid: string }): Promise<any> => {
         try {
             const client = await getClient();
@@ -1117,10 +793,9 @@ export const api = {
                 headers,
                 body: data
             });
-            // On a non-2xx the body lands in response.error (e.g. the backend's
-            // {success:false, error:"..."}); surface it so callers can show the
-            // real reason and decide whether to guide the user to reauthorize.
-            const err = (response as any).error;
+            // No declared error response on this route narrows `error` to
+            // `never` on the success branch; widen to read it defensively.
+            const err = (response as {error?: unknown}).error;
             if (err) {
                 return {success: false, error: 'Request failed', data: err};
             }
@@ -1131,31 +806,15 @@ export const api = {
     },
 
     // Get available OAuth providers
-    oauthProviders: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/oauth/providers', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    oauthProviders: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/oauth/providers', {headers})),
 
     // Get OAuth provider configuration
-    oauthProviderConfig: async (type: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/oauth/providers/{type}', {
-                headers,
-                params: {path: {type}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    oauthProviderConfig: async (type: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/oauth/providers/{type}', {
+            headers,
+            params: {path: {type}}
+        })),
 
     // Config Apply API - Safe endpoints that generate config from system state.
     // `preferences` is the source of truth: each key is a Claude Code env
@@ -1196,8 +855,11 @@ export const api = {
             });
             // Callers read `message` (not `error`) on this endpoint — keep the
             // shape but carry the backend's real message instead of a generic.
-            if (response.error) {
-                return { success: false, message: errorMessage(response.error) };
+            // No declared error response narrows `error` to `never` on the
+            // success branch; widen to read it defensively.
+            const err = (response as {error?: unknown}).error;
+            if (err) {
+                return { success: false, message: errorMessage(err) };
             }
             return unwrap(response);
         } catch (error: any) {
@@ -1223,8 +885,11 @@ export const api = {
                     oauthProviderUuid: oauthProviderUuid ?? '',
                 },
             });
-            if (response.error) {
-                return { success: false, message: errorMessage(response.error) };
+            // No declared error response narrows `error` to `never` on the
+            // success branch; widen to read it defensively.
+            const err = (response as {error?: unknown}).error;
+            if (err) {
+                return { success: false, message: errorMessage(err) };
             }
             return unwrap(response);
         } catch (error: any) {
@@ -1238,7 +903,7 @@ export const api = {
         try {
             const client = await getClient();
             const headers = await getAuthHeaders();
-            const response = await (client as any).POST('/api/v1/config/apply/dsh', {
+            const response = await client.POST('/api/v1/config/apply/dsh', {
                 headers,
                 body: {
                     preferences: preferences ?? {},
@@ -1246,8 +911,11 @@ export const api = {
             });
             // Callers read `message` (not `error`) on this endpoint — keep the
             // shape but carry the backend's real message instead of a generic.
-            if (response.error) {
-                return { success: false, message: errorMessage(response.error) };
+            // No declared error response narrows `error` to `never` on the
+            // success branch; widen to read it defensively.
+            const err = (response as {error?: unknown}).error;
+            if (err) {
+                return { success: false, message: errorMessage(err) };
             }
             return unwrap(response);
         } catch (error: any) {
@@ -1261,14 +929,17 @@ export const api = {
         try {
             const client = await getClient();
             const headers = await getAuthHeaders();
-            const response = await (client as any).POST('/api/v1/config/preview/dsh', {
+            const response = await client.POST('/api/v1/config/preview/dsh', {
                 headers,
                 body: {
                     preferences: preferences ?? {},
                 },
             });
-            if (response.error) {
-                return { success: false, message: errorMessage(response.error) };
+            // No declared error response narrows `error` to `never` on the
+            // success branch; widen to read it defensively.
+            const err = (response as {error?: unknown}).error;
+            if (err) {
+                return { success: false, message: errorMessage(err) };
             }
             return unwrap(response);
         } catch (error: any) {
@@ -1297,354 +968,102 @@ export const api = {
     // ============================================
 
     // Get all skill locations
-    getSkillLocations: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/skill-locations', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getSkillLocations: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/skill-locations', {headers})),
 
     // Add a new skill location
     addSkillLocation: async (data: {
         name: string;
         path: string;
         ide_source: string;
-    }): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/skill-locations', {
-                headers,
-                body: data
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    }): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/skill-locations', {
+            headers,
+            body: data
+        })),
 
     // Get a specific skill location
-    getSkillLocation: async (id: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/skill-locations/{id}', {
-                headers,
-                params: {path: {id}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getSkillLocation: async (id: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/skill-locations/{id}', {
+            headers,
+            params: {path: {id}}
+        })),
 
     // Remove a skill location
-    removeSkillLocation: async (id: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.DELETE('/api/v2/skill-locations/{id}', {
-                headers,
-                params: {path: {id}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    removeSkillLocation: async (id: string): Promise<any> =>
+        controlApi((client, headers) => client.DELETE('/api/v2/skill-locations/{id}', {
+            headers,
+            params: {path: {id}}
+        })),
 
     // Refresh/scan a skill location
-    refreshSkillLocation: async (id: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/skill-locations/{id}/refresh', {
-                headers,
-                params: {path: {id}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    refreshSkillLocation: async (id: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/skill-locations/{id}/refresh', {
+            headers,
+            params: {path: {id}}
+        })),
 
     // Discover IDEs with skills
-    discoverIdes: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/skill-locations/discover', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    discoverIdes: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/skill-locations/discover', {headers})),
 
     // Import discovered skill locations
-    importSkillLocations: async (locations: any[]): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/skill-locations/import', {
-                headers,
-                body: {locations}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    importSkillLocations: async (locations: any[]): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/skill-locations/import', {
+            headers,
+            body: {locations}
+        })),
 
     // Scan all IDE locations for skills (comprehensive scan)
-    scanIdes: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v2/skill-locations/scan', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    scanIdes: async (): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v2/skill-locations/scan', {headers})),
 
     // Get skill content with file content
     // NOTE: query params (location_id, skill_id, skill_path) are not yet documented in the OpenAPI spec.
-    getSkillContent: async (locationId: string, skillId: string, skillPath?: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v2/skill-content', {
-                headers,
-                params: {query: {
-                    location_id: locationId,
-                    ...(skillId && {skill_id: skillId}),
-                    ...(skillPath && {skill_path: skillPath}),
-                } as any},
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getSkillContent: async (locationId: string, skillId: string, skillPath?: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v2/skill-content', {
+            headers,
+            params: {query: {
+                location_id: locationId,
+                ...(skillId && {skill_id: skillId}),
+                ...(skillPath && {skill_path: skillPath}),
+            } as any},
+        })),
 
     // ========== ImBot Settings API ==========
 
     // Get ImBot platform configurations
-    getImBotPlatforms: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/imbot-platforms', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getImBotPlatforms: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/imbot-platforms', {headers})),
 
     // List all ImBot settings
-    getImBotSettingsList: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/imbot-settings', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getImBotSettingsList: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/imbot-settings', {headers})),
 
-    listBotCapabilities,
-    setBotCapability: (botUUID: string, capability: 'notify' | 'remote_control', enabled: boolean) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/capabilities/${capability}`, {
-            method: 'PUT', body: JSON.stringify({enabled, config: {}}),
-        }),
-    listBotDirectChats: (botUUID: string) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/chats`),
-    setBotDirectChatBlocked: (botUUID: string, chatID: string, blocked: boolean) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/chats/${encodeURIComponent(chatID)}/blocked`, {
-            method: 'PUT', body: JSON.stringify({blocked}),
-        }),
-    deleteBotDirectChat: (botUUID: string, chatID: string) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/chats/${encodeURIComponent(chatID)}`, {
-            method: 'DELETE',
-        }),
-    setBotDirectChatPermission: (botUUID: string, chatID: string, capability: string, action: string, effect: 'allow' | 'deny') =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/chats/${encodeURIComponent(chatID)}/permissions/${capability}/${action}`, {
-            method: 'PUT', body: JSON.stringify({effect}),
-        }),
-    setBotDirectChatPermissions: (botUUID: string, chatID: string, permissions: Array<{capability: string; action: string; effect: 'allow' | 'deny'}>) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/chats/${encodeURIComponent(chatID)}/permissions`, {
-            method: 'PUT', body: JSON.stringify({permissions}),
-        }),
-    listBotGroups: (botUUID: string) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/groups`),
-    getBotGroup: (botUUID: string, groupID: string) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/groups/${encodeURIComponent(groupID)}`),
-    setBotGroupBlocked: (botUUID: string, groupID: string, blocked: boolean) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/groups/${encodeURIComponent(groupID)}/blocked`, {
-            method: 'PUT', body: JSON.stringify({blocked}),
-        }),
-    setBotGroupCapability: (botUUID: string, groupID: string, capability: string, effect: 'allow' | 'deny') =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/groups/${encodeURIComponent(groupID)}/capabilities/${capability}`, {
-            method: 'PUT', body: JSON.stringify({effect}),
-        }),
-    addBotGroupActor: (botUUID: string, groupID: string, actorID: string, externalActorID: string, displayName?: string) =>
-        botAccessAPI(`/api/v1/bots/${encodeURIComponent(botUUID)}/groups/${encodeURIComponent(groupID)}/actors/${encodeURIComponent(actorID)}`, {
-            method: 'PUT', body: JSON.stringify({external_actor_id: externalActorID, display_name: displayName, label: 'Controller'}),
-        }),
+    // IM bot capabilities/chats/groups/permissions + notify/interact/wait —
+    // see botInteractionApi.ts.
+    listBotCapabilities: botInteractionApi.listBotCapabilities,
+    setBotCapability: botInteractionApi.setBotCapability,
+    listBotDirectChats: botInteractionApi.listBotDirectChats,
+    setBotDirectChatBlocked: botInteractionApi.setBotDirectChatBlocked,
+    deleteBotDirectChat: botInteractionApi.deleteBotDirectChat,
+    setBotDirectChatPermission: botInteractionApi.setBotDirectChatPermission,
+    setBotDirectChatPermissions: botInteractionApi.setBotDirectChatPermissions,
+    listBotGroups: botInteractionApi.listBotGroups,
+    getBotGroup: botInteractionApi.getBotGroup,
+    setBotGroupBlocked: botInteractionApi.setBotGroupBlocked,
+    setBotGroupCapability: botInteractionApi.setBotGroupCapability,
+    addBotGroupActor: botInteractionApi.addBotGroupActor,
+    listBotChats: botInteractionApi.listBotChats,
+    notifyBot: botInteractionApi.notifyBot,
+    interactBot: botInteractionApi.interactBot,
+    waitBotInteract: botInteractionApi.waitBotInteract,
 
-    // List the chats a bot can reach (GET /api/v1/bots/:bot/chats).
-    // Placeholder until codegen regenerates the client SDK for the new
-    // bot-interaction endpoint — calls the raw path directly.
-    listBotChats: async (botUUID: string): Promise<{chats?: BotChat[]; running?: boolean; error?: string}> => {
-        try {
-            const base = await getApiBaseUrl();
-            const headers = await getAuthHeaders();
-            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/chats`, {
-                headers: {...headers, 'Content-Type': 'application/json'},
-            });
-            if (!response.ok) {
-                return {error: `failed to list chats (${response.status})`};
-            }
-            const payload = await response.json();
-            return {
-                chats: (payload.chats || []).map((item: any) => ({
-                    chat_id: item.chat?.external_chat_id,
-                    id: item.chat?.id,
-                    platform: item.chat?.platform,
-                    is_paired: Boolean(item.chat?.peer_actor_id),
-                    blocked: item.chat?.blocked,
-                    can_notify: (item.permissions || []).some((permission: any) =>
-                        permission.capability === 'notify' &&
-                        permission.action === 'notify.receive' &&
-                        permission.effect === 'allow'),
-                })),
-                running: true,
-            };
-        } catch (error: any) {
-            return {error: error.message};
-        }
-    },
-
-    // Send a one-way notification to a running bot's chat
-    // (POST /api/v1/bots/:bot/notify). Placeholder until codegen regenerates
-    // the client SDK — calls the raw path directly. Field names mirror the
-    // backend notifyRequest: stable internal target + body required.
-    notifyBot: async (
-        botUUID: string,
-        body: {target: {kind: 'direct_chat' | 'group'; id: string}; title?: string; body: string; level?: string},
-    ): Promise<{ok?: boolean; error?: string}> => {
-        try {
-            const base = await getApiBaseUrl();
-            const headers = await getAuthHeaders();
-            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/notify`, {
-                method: 'POST',
-                headers: {...headers, 'Content-Type': 'application/json'},
-                body: JSON.stringify(body),
-            });
-            if (!response.ok) {
-                const data = await response.json().catch(() => null);
-                return {error: data?.error || `notify failed (${response.status})`};
-            }
-            return await response.json();
-        } catch (error: any) {
-            return {error: error.message};
-        }
-    },
-
-    // Start an interactive prompt on a running bot's chat
-    // (POST /api/v1/bots/:bot/interact). Placeholder until codegen regenerates
-    // the client SDK. Returns request_id + wait_url + expires_at, or {error}.
-    // Field names mirror backend interactRequest: target/kind/title required,
-    // options required for confirm/choose, timeout_seconds optional (≤30m).
-    interactBot: async (
-        botUUID: string,
-        body: {
-            target: {kind: 'direct_chat' | 'group'; id: string};
-            kind: 'confirm' | 'choose' | 'ask';
-            title: string;
-            body?: string;
-            options?: Array<{value: string; label: string; style?: string}>;
-            timeout_seconds?: number;
-        },
-    ): Promise<{request_id?: string; wait_url?: string; expires_at?: string; error?: string}> => {
-        try {
-            const base = await getApiBaseUrl();
-            const headers = await getAuthHeaders();
-            const response = await fetch(`${base}/api/v1/bots/${encodeURIComponent(botUUID)}/interact`, {
-                method: 'POST',
-                headers: {...headers, 'Content-Type': 'application/json'},
-                body: JSON.stringify(body),
-            });
-            if (!response.ok) {
-                const data = await response.json().catch(() => null);
-                return {error: data?.error || `interact failed (${response.status})`};
-            }
-            return await response.json();
-        } catch (error: any) {
-            return {error: error.message};
-        }
-    },
-
-    // Long-poll for the reply to an interactive prompt
-    // (GET /api/v1/bots/:bot/interact/:request_id?timeout=Ns). Placeholder
-    // until codegen. Returns a normalized status:
-    //   'answered' | 'cancelled' (200, carries decision)
-    //   'timeout' | 'error'     (410, carries decision/reason)
-    //   'pending'               (504 — caller retries)
-    //   'expired'               (404)
-    //   'unavailable'           (503)
-    // Transport failures fold into {error} (mirrors runProbe.ts).
-    waitBotInteract: async (
-        botUUID: string,
-        requestID: string,
-        timeoutMs = 45000,
-    ): Promise<{status?: string; decision?: Record<string, unknown>; reason?: string; error?: string}> => {
-        try {
-            const base = await getApiBaseUrl();
-            const headers = await getAuthHeaders();
-            const response = await fetch(
-                `${base}/api/v1/bots/${encodeURIComponent(botUUID)}/interact/${encodeURIComponent(requestID)}?timeout=${Math.floor(timeoutMs / 1000)}s`,
-                {headers: {...headers, 'Content-Type': 'application/json'}},
-            );
-            const data = await response.json().catch(() => null);
-            if (response.status === 504) return {status: 'pending'};
-            if (response.status === 404) return {status: 'expired'};
-            if (response.status === 503) return {status: 'unavailable'};
-            if (!response.ok) {
-                return {error: data?.error || `wait failed (${response.status})`};
-            }
-            // 200 (answered/cancelled) or 410 (timeout/error) carry a status body.
-            return {
-                status: data?.status,
-                decision: data?.decision,
-                reason: data?.reason,
-            };
-        } catch (error: any) {
-            return {error: error.message};
-        }
-    },
-
-    getImBotSetting: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/imbot-settings/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            if (error.response?.status === 404) {
-                return {success: false, error: 'ImBot setting not found'};
-            }
-            return {success: false, error: error.message};
-        }
-    },
+    getImBotSetting: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/imbot-settings/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
     createImBotSetting: async (data: {
         name?: string;
@@ -1659,20 +1078,14 @@ export const api = {
         default_cwd?: string;
         enabled?: boolean;
         require_pairing?: boolean;
-    }): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/imbot-settings', {
-                headers,
-                body: data as any
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    }): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/imbot-settings', {
+            headers,
+            body: data as any
+        })),
 
+    // 404 ("ImBot setting not found") already comes back verbatim from the
+    // backend in the unwrap()ped error message — no special-casing needed.
     updateImBotSetting: async (uuid: string, data: {
         name?: string;
         auth_type?: string;
@@ -1687,74 +1100,30 @@ export const api = {
         smartguide_provider?: string;
         smartguide_model?: string;
         remote_agent?: boolean;
-    }): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.PUT('/api/v1/imbot-settings/{uuid}', {
-                headers,
-                params: {path: {uuid}},
-                body: data
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            if (error.response?.status === 404) {
-                return {success: false, error: 'ImBot setting not found'};
-            }
-            return {success: false, error: error.message};
-        }
-    },
+    }): Promise<any> =>
+        controlApi((client, headers) => client.PUT('/api/v1/imbot-settings/{uuid}', {
+            headers,
+            params: {path: {uuid}},
+            body: data
+        })),
 
-    deleteImBotSetting: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.DELETE('/api/v1/imbot-settings/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            if (error.response?.status === 404) {
-                return {success: false, error: 'ImBot setting not found'};
-            }
-            return {success: false, error: error.message};
-        }
-    },
+    deleteImBotSetting: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.DELETE('/api/v1/imbot-settings/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
-    restartImBot: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/imbot-admin/restart/{uuid}', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            if (error.response?.status === 404) {
-                return {success: false, error: 'ImBot setting not found'};
-            }
-            return {success: false, error: error.message};
-        }
-    },
+    restartImBot: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/imbot-admin/restart/{uuid}', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
-    toggleImBotSetting: async (uuid: string): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/imbot-settings/{uuid}/toggle', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            if (error.response?.status === 404) {
-                return {success: false, error: 'ImBot setting not found'};
-            }
-            return {success: false, error: error.message};
-        }
-    },
+    toggleImBotSetting: async (uuid: string): Promise<any> =>
+        controlApi((client, headers) => client.POST('/api/v1/imbot-settings/{uuid}/toggle', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
     // Reveal current TOFU pairing code (audit-logged on every call).
     getImBotPairingCode: async (uuid: string): Promise<{
@@ -1764,22 +1133,11 @@ export const api = {
         expires_at?: string;
         message?: string;
         error?: string;
-    }> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/imbot-settings/{uuid}/pairing-code', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response) as any;
-        } catch (error: any) {
-            if (error.response?.status === 404) {
-                return {success: false, error: 'ImBot setting not found'};
-            }
-            return {success: false, error: error.message};
-        }
-    },
+    }> =>
+        controlApi((client, headers) => client.GET('/api/v1/imbot-settings/{uuid}/pairing-code', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
     // Mint a fresh TOFU pairing code, invalidating the previous one.
     rotateImBotPairingCode: async (uuid: string): Promise<{
@@ -1789,22 +1147,11 @@ export const api = {
         expires_at?: string;
         message?: string;
         error?: string;
-    }> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/imbot-settings/{uuid}/pairing-code/rotate', {
-                headers,
-                params: {path: {uuid}}
-            });
-            return unwrap(response) as any;
-        } catch (error: any) {
-            if (error.response?.status === 404) {
-                return {success: false, error: 'ImBot setting not found'};
-            }
-            return {success: false, error: error.message};
-        }
-    },
+    }> =>
+        controlApi((client, headers) => client.POST('/api/v1/imbot-settings/{uuid}/pairing-code/rotate', {
+            headers,
+            params: {path: {uuid}}
+        })),
 
     // User Token Management APIs
     // Get current user token (masked)
@@ -1812,46 +1159,21 @@ export const api = {
         success: boolean;
         data?: { token: string; is_default: boolean };
         error?: string
-    }> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/auth/token', {headers});
-            return {success: true, data: response.data?.data as { token: string; is_default: boolean } | undefined};
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    }> => controlApi((client, headers) => client.GET('/api/v1/auth/token', {headers})),
 
     // Reset user token to a new secure random value
     resetUserToken: async (): Promise<{ success: boolean; data?: { token: string }; error?: string }> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/auth/token/reset', {headers});
-            const data = response.data?.data as { token: string } | undefined;
-            if (data?.token) {
-                // Update localStorage with new token
-                localStorage.setItem('user_auth_token', data.token);
-                resetClient();
-            }
-            return {success: true, data};
-        } catch (error: any) {
-            return {success: false, error: error.message};
+        const result = await controlApi((client, headers) => client.POST('/api/v1/auth/token/reset', {headers}));
+        if (result?.success && result.data?.token) {
+            localStorage.setItem('user_auth_token', result.data.token);
+            resetClient();
         }
+        return result;
     },
 
     // Reset model token to a new secure random value
-    resetModelToken: async (): Promise<{ success: boolean; data?: { token: string }; error?: string }> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.POST('/api/v1/auth/model-token/reset', {headers});
-            return {success: true, data: (response.data as any)?.data};
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    resetModelToken: async (): Promise<{ success: boolean; data?: { token: string }; error?: string }> =>
+        controlApi((client, headers) => client.POST('/api/v1/auth/model-token/reset', {headers})),
 
     // ========== Weixin QR Login API ==========
 
@@ -1910,31 +1232,15 @@ export const api = {
     // ========== System Configuration API ==========
 
     // Get system configuration
-    getConfig: async (): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.GET('/api/v1/config', {headers});
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    getConfig: async (): Promise<any> =>
+        controlApi((client, headers) => client.GET('/api/v1/config', {headers})),
 
     // Update system configuration
-    updateConfig: async (config: any): Promise<any> => {
-        try {
-            const client = await getClient();
-            const headers = await getAuthHeaders();
-            const response = await client.PUT('/api/v1/config', {
-                headers,
-                body: config
-            });
-            return unwrap(response);
-        } catch (error: any) {
-            return {success: false, error: error.message};
-        }
-    },
+    updateConfig: async (config: any): Promise<any> =>
+        controlApi((client, headers) => client.PUT('/api/v1/config', {
+            headers,
+            body: config
+        })),
 
     // ========== MCP Runtime API ==========
 
@@ -2112,29 +1418,35 @@ export const api = {
     },
 
     moveAPITokenToTeam: async (tokenId: string, teamId: string): Promise<any> =>
-        teamControlAPI(`/api/v1/tokens/${encodeURIComponent(tokenId)}/team`, {
-            method: 'PUT',
-            body: JSON.stringify({team_id: teamId}),
-        }),
+        teamApiCall((client, headers) => client.PUT('/api/v1/tokens/{token_id}/team', {
+            headers,
+            params: {path: {token_id: tokenId}},
+            body: {team_id: teamId},
+        })),
 
-    listTeams: async (): Promise<any> => teamControlAPI('/api/v1/teams'),
+    listTeams: async (): Promise<any> =>
+        teamApiCall((client, headers) => client.GET('/api/v1/teams', {headers})),
 
     createTeam: async (data: {name: string}): Promise<any> =>
-        teamControlAPI('/api/v1/teams', {method: 'POST', body: JSON.stringify(data)}),
+        teamApiCall((client, headers) => client.POST('/api/v1/teams', {headers, body: data})),
 
     updateTeam: async (teamId: string, data: {name: string}): Promise<any> =>
-        teamControlAPI(`/api/v1/teams/${encodeURIComponent(teamId)}`, {
-            method: 'PUT',
-            body: JSON.stringify(data),
-        }),
+        teamApiCall((client, headers) => client.PUT('/api/v1/teams/{team_id}', {
+            headers,
+            params: {path: {team_id: teamId}},
+            body: data,
+        })),
 
     setTeamEnabled: async (teamId: string, enabled: boolean): Promise<any> =>
-        teamControlAPI(`/api/v1/teams/${encodeURIComponent(teamId)}/${enabled ? 'enable' : 'disable'}`, {
-            method: 'PUT',
-        }),
+        teamApiCall((client, headers) => enabled
+            ? client.PUT('/api/v1/teams/{team_id}/enable', {headers, params: {path: {team_id: teamId}}})
+            : client.PUT('/api/v1/teams/{team_id}/disable', {headers, params: {path: {team_id: teamId}}})),
 
     deleteTeam: async (teamId: string): Promise<any> =>
-        teamControlAPI(`/api/v1/teams/${encodeURIComponent(teamId)}`, {method: 'DELETE'}),
+        teamApiCall((client, headers) => client.DELETE('/api/v1/teams/{team_id}', {
+            headers,
+            params: {path: {team_id: teamId}},
+        })),
 };
 
 export default api;

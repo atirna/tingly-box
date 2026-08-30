@@ -118,7 +118,7 @@ const PlatformRemoteAgentPage = ({ platformId, platformName, platformPicker }: P
                 );
                 await loadBots();
             } else {
-                showNotification(result?.error || t('remoteControl.notify.toggleFailedGeneric', { defaultValue: 'Failed to toggle bot' }), 'error');
+                showNotification(result?.reason || t('remoteControl.notify.toggleFailedGeneric', { defaultValue: 'Failed to toggle bot' }), 'error');
             }
         } catch (err) {
             console.error('Failed to toggle Remote Control capability:', err);
