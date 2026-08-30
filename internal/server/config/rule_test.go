@@ -178,6 +178,39 @@ func TestAddRule_TeamSeedsCreateDefaults(t *testing.T) {
 	}
 }
 
+func TestAddRule_CursorSeedsCreateDefaults(t *testing.T) {
+	cfg, err := NewConfig(WithConfigDir(t.TempDir()))
+	if err != nil {
+		t.Fatalf("NewConfig error: %v", err)
+	}
+
+	// A bare cursor rule (no flags) must come out with cursor_compat seeded on —
+	// every request through the dedicated /tingly/cursor scenario is from
+	// Cursor, so there's no need to rely on the cursor_compat_auto header sniff.
+	if err := cfg.AddRule(typ.Rule{UUID: "cursor-1", Scenario: typ.ScenarioCursor, RequestModel: "m"}); err != nil {
+		t.Fatalf("AddRule failed: %v", err)
+	}
+	seeded := cfg.GetRuleByUUID("cursor-1")
+	if seeded == nil {
+		t.Fatal("cursor rule not found after AddRule")
+	}
+	if !seeded.Flags.CursorCompat {
+		t.Errorf("expected cursor_compat seeded on, got %+v", seeded.Flags)
+	}
+
+	// An explicit flag set is left untouched — the default is not layered on.
+	if err := cfg.AddRule(typ.Rule{UUID: "cursor-2", Scenario: typ.ScenarioCursor, RequestModel: "m2", Flags: typ.RuleFlags{SkipUsage: true}}); err != nil {
+		t.Fatalf("AddRule failed: %v", err)
+	}
+	explicit := cfg.GetRuleByUUID("cursor-2")
+	if explicit == nil {
+		t.Fatal("explicit cursor rule not found after AddRule")
+	}
+	if !explicit.Flags.SkipUsage || explicit.Flags.CursorCompat {
+		t.Errorf("explicit flags must not be overridden, got %+v", explicit.Flags)
+	}
+}
+
 func TestAddRule_DuplicateUUID(t *testing.T) {
 	cfg, err := NewConfig(WithConfigDir(t.TempDir()))
 	if err != nil {

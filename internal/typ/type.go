@@ -68,6 +68,7 @@ const (
 	ScenarioDsh           RuleScenario = "dsh" // DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness)
 	ScenarioXcode         RuleScenario = "xcode"
 	ScenarioVSCode        RuleScenario = "vscode"
+	ScenarioCursor        RuleScenario = "cursor"
 	ScenarioClaudeDesktop RuleScenario = "claude_desktop"
 	ScenarioSmartGuide    RuleScenario = "_smart_guide"
 	ScenarioGlobal        RuleScenario = "_global"  // Global flags that apply to all scenarios
@@ -88,6 +89,7 @@ func BuiltinScenarios() []RuleScenario {
 		ScenarioDsh,
 		ScenarioXcode,
 		ScenarioVSCode,
+		ScenarioCursor,
 		ScenarioClaudeDesktop,
 		ScenarioSmartGuide,
 		ScenarioGlobal,

@@ -48,6 +48,7 @@ const UsePiPage = lazy(() => import('./pages/scenario/UsePiPage'));
 const UseDshPage = lazy(() => import('./pages/scenario/UseDshPage'));
 const UseXcodePage = lazy(() => import('./pages/scenario/UseXcodePage'));
 const UseVSCodePage = lazy(() => import('./pages/scenario/UseVSCodePage'));
+const UseCursorPage = lazy(() => import('./pages/scenario/UseCursorPage'));
 const UseEmbedPage = lazy(() => import('./pages/scenario/UseEmbedPage'));
 const UseImageGenPage = lazy(() => import('./pages/scenario/UseImageGenPage'));
 const CredentialPage = lazy(() => import('./pages/CredentialPage'));
@@ -251,6 +252,7 @@ function AppContent() {
                     <Route path="/agent/dsh" element={<UseDshPage />} />
                     <Route path="/agent/xcode" element={<UseXcodePage />} />
                     <Route path="/agent/vscode" element={<UseVSCodePage />} />
+                    <Route path="/agent/cursor" element={<UseCursorPage />} />
                     <Route path="/agent/embed" element={<UseEmbedPage />} />
                     <Route path="/agent/image" element={<UseImageGenPage />} />
                     <Route path="/agent/playground" element={<Navigate to="/agent/image" replace />} />
