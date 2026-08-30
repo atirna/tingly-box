@@ -4412,6 +4412,173 @@
         }
       }
     },
+    "/api/v1/provider-quota": {
+      "get": {
+        "tags": [
+          "provider-quota"
+        ],
+        "summary": "List cached quota for every provider that has a quota fetcher",
+        "description": "List cached quota for every provider that has a quota fetcher",
+        "operationId": "apiV1Provider-quotaGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListQuotaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/provider-quota/batch": {
+      "post": {
+        "tags": [
+          "provider-quota"
+        ],
+        "summary": "Fetch quota for a specific set of providers in one call",
+        "description": "Fetch quota for a specific set of providers in one call",
+        "operationId": "apiV1Provider-quotaBatchPost",
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchGetQuotaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchGetQuotaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/provider-quota/refresh": {
+      "post": {
+        "tags": [
+          "provider-quota"
+        ],
+        "summary": "Force a refresh of every provider's quota from upstream",
+        "description": "Force a refresh of every provider's quota from upstream",
+        "operationId": "apiV1Provider-quotaRefreshPost",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListQuotaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/provider-quota/summary": {
+      "get": {
+        "tags": [
+          "provider-quota"
+        ],
+        "summary": "Aggregate quota summary across all providers",
+        "description": "Aggregate quota summary across all providers",
+        "operationId": "apiV1Provider-quotaSummaryGet",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/provider-quota/{uuid}": {
+      "get": {
+        "tags": [
+          "provider-quota"
+        ],
+        "summary": "Quota for one provider, served from cache when fresh",
+        "description": "Quota for one provider, served from cache when fresh",
+        "operationId": "apiV1Provider-quotaUuidGet",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "Unique identifier (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderUsage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/provider-quota/{uuid}/refresh": {
+      "post": {
+        "tags": [
+          "provider-quota"
+        ],
+        "summary": "Force a refresh of one provider's quota from upstream",
+        "description": "Force a refresh of one provider's quota from upstream",
+        "operationId": "apiV1Provider-quotaUuidRefreshPost",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "Unique identifier (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderUsage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/requests": {
       "get": {
         "tags": [
@@ -8322,6 +8489,36 @@
           "data"
         ]
       },
+      "BatchGetQuotaRequest": {
+        "type": "object",
+        "properties": {
+          "provider_uuids": {
+            "type": "array",
+            "description": "Field provider_uuids",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "provider_uuids"
+        ]
+      },
+      "BatchGetQuotaResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "Field data",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProviderUsage"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "BlockedUpdateRequest": {
         "type": "object",
         "properties": {
@@ -11111,6 +11308,25 @@
           "success"
         ]
       },
+      "ListQuotaResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "Field data",
+            "items": {
+              "$ref": "#/components/schemas/ProviderUsage"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaData"
+          }
+        },
+        "required": [
+          "meta",
+          "data"
+        ]
+      },
       "ListResponse": {
         "type": "object",
         "properties": {
@@ -11528,6 +11744,25 @@
           "num_gc",
           "num_goroutine",
           "gc_forced"
+        ]
+      },
+      "MetaData": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field total"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Field updated_at"
+          }
+        },
+        "required": [
+          "total",
+          "updated_at"
         ]
       },
       "ModelInfo": {
@@ -14871,6 +15106,55 @@
           "status_code"
         ]
       },
+      "Summary": {
+        "type": "object",
+        "properties": {
+          "by_status": {
+            "type": "object",
+            "description": "Field by_status",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "by_type": {
+            "type": "object",
+            "description": "Field by_type",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "error_providers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field error_providers"
+          },
+          "ok_providers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field ok_providers"
+          },
+          "total_providers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field total_providers"
+          },
+          "warning_providers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Field warning_providers"
+          }
+        },
+        "required": [
+          "total_providers",
+          "ok_providers",
+          "error_providers",
+          "warning_providers",
+          "by_status",
+          "by_type"
+        ]
+      },
       "SystemLogEntry": {
         "type": "object",
         "properties": {
@@ -17198,6 +17482,10 @@
     {
       "name": "onboarding",
       "description": "Operations related to onboarding"
+    },
+    {
+      "name": "provider-quota",
+      "description": "Operations related to provider-quota"
     },
     {
       "name": "providers",

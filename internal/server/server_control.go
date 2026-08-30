@@ -229,12 +229,12 @@ func (s *Server) UseUIEndpoints(ctx context.Context) {
 	mcpHandler := mcpmodule.NewHandler(s.config, s.mcpRuntime)
 	mcpmodule.RegisterRoutes(apiV1, mcpHandler, mcpHandler.GetLocalHandler(), mcpHandler.GetTransportHandler())
 
-	// Provider quota API routes
-	if s.quotaManager != nil {
-		quotaHandler := providerQuotaModule.NewHandler(s.quotaManager, logrus.StandardLogger())
-		quotaHandler.RegisterRoutes(apiV1.Router)
-		logrus.Info("Provider quota API routes registered")
-	}
+	// Provider quota API routes — registered unconditionally (nil manager is
+	// safe; Handler.available() answers 503 per request) so the routes and
+	// their response models always appear in openapi.json regardless of
+	// whether quota tracking happens to be configured on this build.
+	quotaHandler := providerQuotaModule.NewHandler(s.quotaManager, logrus.StandardLogger())
+	providerQuotaModule.RegisterRoutes(apiV1, quotaHandler)
 
 	// Static files and templates - try embedded assets first, fallback to filesystem
 	UseWebStaticEndpoints(s.engine)
