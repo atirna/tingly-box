@@ -13,34 +13,37 @@ import (
 	"github.com/tingly-dev/tingly-box/ai/quota"
 )
 
-// Manager 配额管理器接口
+// Manager is the quota manager interface.
 type Manager interface {
-	// GetQuota 获取指定供应商的配额（读库存数据，不触发上游拉取；新鲜度由后台 refresher 保证）
+	// GetQuota returns the given provider's quota (reads stored data, does not
+	// trigger an upstream fetch; freshness is guaranteed by the background refresher).
 	GetQuota(ctx context.Context, providerUUID string) (*quota.ProviderUsage, error)
-	// ListQuota 获取所有供应商的配额列表
+	// ListQuota returns the quota list for every provider.
 	ListQuota(ctx context.Context) ([]*quota.ProviderUsage, error)
-	// Refresh 刷新所有启用的供应商配额
+	// Refresh refreshes quota for every enabled provider.
 	Refresh(ctx context.Context) ([]*quota.ProviderUsage, error)
-	// RefreshProvider 刷新指定供应商的配额
+	// RefreshProvider refreshes quota for one provider.
 	RefreshProvider(ctx context.Context, providerUUID string) (*quota.ProviderUsage, error)
-	// Summary 获取配额汇总
+	// Summary returns the aggregate quota summary.
 	Summary(ctx context.Context) (*quota.Summary, error)
 	// IsProviderSupported reports whether the provider has a registered quota
 	// fetcher. Callers should skip quota fetching when this returns false.
 	IsProviderSupported(providerUUID string) bool
-	// StartAutoRefresh 启动自动刷新
+	// StartAutoRefresh starts automatic refresh.
 	StartAutoRefresh(ctx context.Context)
-	// StopAutoRefresh 停止自动刷新
+	// StopAutoRefresh stops automatic refresh.
 	StopAutoRefresh()
 }
 
-// Handler 配额 API 处理器
+// Handler is the quota API handler.
 type Handler struct {
 	manager Manager
 	logger  *logrus.Logger
 }
 
-// NewHandler 创建处理器
+// NewHandler creates the handler. manager may be nil when quota tracking is
+// not configured, or during OpenAPI schema generation — every handler method
+// checks available() first.
 func NewHandler(manager Manager, logger *logrus.Logger) *Handler {
 	return &Handler{
 		manager: manager,
@@ -48,34 +51,37 @@ func NewHandler(manager Manager, logger *logrus.Logger) *Handler {
 	}
 }
 
-// RegisterRoutes 注册路由
-func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
-	quota := r.Group("/provider-quota")
-	{
-		quota.GET("", h.ListQuota)
-		quota.POST("/batch", h.BatchGetQuota) // 批量获取指定 providers 的 quota
-		quota.GET("/:uuid", h.GetQuota)
-		quota.POST("/refresh", h.RefreshAll)
-		quota.POST("/:uuid/refresh", h.RefreshProvider)
-		quota.GET("/summary", h.Summary)
+// available reports whether quota tracking is configured, answering 503 when
+// it is not. Routes are registered unconditionally (see routes.go) so they
+// appear in openapi.json on every build; this is what keeps that safe.
+func (h *Handler) available(c *gin.Context) bool {
+	if h.manager != nil {
+		return true
 	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error": "quota tracking is not enabled on this tingly-box",
+	})
+	return false
 }
 
-// ListQuotaResponse 列表响应
+// ListQuotaResponse is the list response.
 type ListQuotaResponse struct {
 	Meta MetaData               `json:"meta"`
 	Data []*quota.ProviderUsage `json:"data"`
 }
 
-// MetaData 元数据
+// MetaData is the response metadata.
 type MetaData struct {
 	Total     int       `json:"total"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ListQuota 获取所有供应商配额
+// ListQuota returns quota for every provider.
 // GET /api/v1/provider-quota
 func (h *Handler) ListQuota(c *gin.Context) {
+	if !h.available(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	usages, err := h.manager.ListQuota(ctx)
@@ -96,9 +102,12 @@ func (h *Handler) ListQuota(c *gin.Context) {
 	})
 }
 
-// GetQuota 获取指定供应商配额
+// GetQuota returns quota for the given provider.
 // GET /api/v1/provider-quota/:uuid
 func (h *Handler) GetQuota(c *gin.Context) {
+	if !h.available(c) {
+		return
+	}
 	uuid := c.Param("uuid")
 	if uuid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -129,9 +138,12 @@ func (h *Handler) GetQuota(c *gin.Context) {
 	c.JSON(http.StatusOK, usage)
 }
 
-// RefreshAll 刷新所有配额
+// RefreshAll refreshes quota for every provider.
 // POST /api/v1/provider-quota/refresh
 func (h *Handler) RefreshAll(c *gin.Context) {
+	if !h.available(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	usages, err := h.manager.Refresh(ctx)
@@ -152,9 +164,12 @@ func (h *Handler) RefreshAll(c *gin.Context) {
 	})
 }
 
-// RefreshProvider 刷新指定供应商配额
+// RefreshProvider refreshes quota for the given provider.
 // POST /api/v1/provider-quota/:uuid/refresh
 func (h *Handler) RefreshProvider(c *gin.Context) {
+	if !h.available(c) {
+		return
+	}
 	uuid := c.Param("uuid")
 	if uuid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -183,9 +198,12 @@ func (h *Handler) RefreshProvider(c *gin.Context) {
 	c.JSON(http.StatusOK, usage)
 }
 
-// Summary 获取配额汇总
+// Summary returns the aggregate quota summary.
 // GET /api/v1/provider-quota/summary
 func (h *Handler) Summary(c *gin.Context) {
+	if !h.available(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	summary, err := h.manager.Summary(ctx)
@@ -200,21 +218,24 @@ func (h *Handler) Summary(c *gin.Context) {
 	c.JSON(http.StatusOK, summary)
 }
 
-// BatchGetQuotaRequest 批量获取配额请求
+// BatchGetQuotaRequest is the batch quota request.
 type BatchGetQuotaRequest struct {
-	// ProviderUUIDs 需要获取配额的供应商 UUID 列表
+	// ProviderUUIDs is the list of provider UUIDs to fetch quota for.
 	ProviderUUIDs []string `json:"provider_uuids" binding:"required"`
 }
 
-// BatchGetQuotaResponse 批量获取配额响应
+// BatchGetQuotaResponse is the batch quota response.
 type BatchGetQuotaResponse struct {
 	Data map[string]*quota.ProviderUsage `json:"data"` // key: provider_uuid, value: quota data
 }
 
-// BatchGetQuota 批量获取指定供应商的配额
+// BatchGetQuota returns quota for a specific set of providers.
 // POST /api/v1/provider-quota/batch
 // Body: { "provider_uuids": ["uuid1", "uuid2", "uuid3"] }
 func (h *Handler) BatchGetQuota(c *gin.Context) {
+	if !h.available(c) {
+		return
+	}
 	var req BatchGetQuotaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -233,7 +254,7 @@ func (h *Handler) BatchGetQuota(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// 并发获取多个 provider 的 quota
+	// Fetch quota for multiple providers concurrently.
 	result := make(map[string]*quota.ProviderUsage)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -245,7 +266,8 @@ func (h *Handler) BatchGetQuota(c *gin.Context) {
 			defer wg.Done()
 			usage, err := h.manager.GetQuota(ctx, providerUUID)
 			if err != nil {
-				// 如果某个 provider 没有 quota 数据（或不支持配额），不返回错误，只是跳过
+				// If a provider has no quota data (or doesn't support quota),
+				// skip it silently rather than returning an error.
 				if !errors.Is(err, quota.ErrUsageNotFound) && !errors.Is(err, quota.ErrProviderUnsupported) {
 					h.logger.WithError(err).WithField("provider_uuid", providerUUID).Warn("failed to get quota for provider")
 					errChan <- err
@@ -261,13 +283,13 @@ func (h *Handler) BatchGetQuota(c *gin.Context) {
 	wg.Wait()
 	close(errChan)
 
-	// 收集错误（如果有）
+	// Collect errors, if any.
 	var fetchErrors []error
 	for err := range errChan {
 		fetchErrors = append(fetchErrors, err)
 	}
 
-	// 如果全部失败，返回错误
+	// If everything failed, return an error.
 	if len(result) == 0 && len(fetchErrors) > 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to get quota for any provider",
