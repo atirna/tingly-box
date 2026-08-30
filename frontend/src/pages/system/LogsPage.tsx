@@ -57,7 +57,7 @@ const LogsPage = () => {
                         checked={debugMode}
                         onChange={handleDebugModeChange}
                         disabled={loadingDebug}
-                        inputProps={{ 'aria-label': 'Debug Mode' }}
+                        slotProps={{ input: { 'aria-label': 'Debug Mode' } }}
                     />
                 </Stack>
             }

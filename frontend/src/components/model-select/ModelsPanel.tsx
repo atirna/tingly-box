@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Provider } from '@/types/provider';
-import type { ProviderQuota } from '@/types/quota';
+import type { ProviderQuota, ProviderUsage } from '@/types/quota';
 import { QuotaBarItem } from '@/components/credential/QuotaBarItem';
 import { useQuotaBars } from '@/components/credential/QuotaBarRow';
 import SearchField from '@/components/SearchField';
@@ -34,9 +34,12 @@ import ModelCard from './ModelCard';
 import RecentModelsSection from './RecentModelsSection';
 import NewModelsSection from './NewModelsSection';
 
-// Convert ProviderModelData.quota to ProviderQuota type
+// Convert ProviderModelData.quota (the generated, wire-shaped ProviderUsage —
+// its windows carry a bare `kind?: string`) to the app's narrower
+// ProviderQuota (windows: QuotaWindow[], kind narrowed to the two real
+// values the backend sends).
 function convertToProviderQuota(
-    quota: Partial<ProviderQuota> | undefined,
+    quota: Partial<ProviderUsage> | undefined,
     provider: Provider,
     lastUpdated?: string
 ): ProviderQuota | undefined {

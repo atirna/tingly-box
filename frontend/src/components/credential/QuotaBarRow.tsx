@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Stack, Typography } from '@mui/material';
-import type { ProviderQuota, UsageWindow } from '@/types/quota';
+import type { ProviderQuota, QuotaWindow } from '@/types/quota';
 import { quotaToWindows } from '@/types/quota';
 import { QuotaBarItem } from './QuotaBarItem';
 
@@ -10,7 +10,7 @@ interface QuotaBarRowProps {
 
 interface ResourceItem {
   key: string;
-  window: UsageWindow;
+  window: QuotaWindow;
   countLabel: string;
   tooltipContent: React.ReactNode;
 }
@@ -69,7 +69,7 @@ export function useQuotaBars(quota: ProviderQuota | undefined): {
           limit: total,
           used_percent: 100,
           unit: 'percent' as const,
-        } as UsageWindow,
+        } as QuotaWindow,
         countLabel: `${total}`,
         tooltipContent,
       };
