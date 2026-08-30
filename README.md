@@ -264,6 +264,30 @@ This works with any tool that supports OpenAI-compatible endpoints: Cherry Studi
 </details>
 
 <details>
+<summary><strong>Self-Hosted Model Servers - vLLM / SGLang / Ollama / LM Studio / LocalAI / Jan</strong></summary>
+
+Already running your own inference server? Tingly Box connects to it like any other provider and exposes it through the same unified gateway.
+
+**Supported out of the box**
+
+- vLLM
+- SGLang
+- Ollama
+- LM Studio
+- LocalAI
+- Jan
+
+Anything else that speaks an OpenAI/Anthropic-compatible API still works via **Custom endpoint**.
+
+**Quick Setup**
+
+1. Open Web UI like `http://localhost:12580`
+2. Click **Connect AI** → pick your engine from the **Self-hosted** section (default URL and key are pre-filled)
+3. **Test Connection**, then save — it's now usable like any other provider
+
+</details>
+
+<details>
 <summary><strong>Web Management UI</strong></summary>
 
 Launch the web management interface:
