@@ -53,6 +53,33 @@ type BotChatOKResponse struct {
 	OK bool `json:"ok" example:"true"`
 }
 
+// BotNotifyResponse is the swagger model for the POST /bots/:bot/notify
+// success body (200). Mirrors bot_api.go's Notify handler literally
+// (gin.H{"ok": true}) — kept in sync by hand since the handler builds the
+// map directly rather than marshaling this struct.
+type BotNotifyResponse struct {
+	OK bool `json:"ok" example:"true"`
+}
+
+// BotInteractStartResponse is the swagger model for the POST
+// /bots/:bot/interact success body (202). Mirrors bot_api.go's Interact
+// handler literally (gin.H{"request_id", "wait_url", "expires_at"}).
+type BotInteractStartResponse struct {
+	RequestID string `json:"request_id" example:"a1b2c3d4"`
+	WaitURL   string `json:"wait_url" example:"/api/v1/bots/abc/interact/a1b2c3d4"`
+	ExpiresAt string `json:"expires_at" example:"2026-07-25T12:02:00Z"`
+}
+
+// BotInteractWaitResponse is the swagger model for the GET
+// /bots/:bot/interact/:request_id body — returned on both 200 (answered /
+// cancelled) and 410 (timeout / error); Reason is only set in the latter
+// case. Mirrors handler.go's respondResult literally.
+type BotInteractWaitResponse struct {
+	Status   string         `json:"status" example:"answered"`
+	Decision map[string]any `json:"decision,omitempty"`
+	Reason   string         `json:"reason,omitempty" example:"no reply within timeout"`
+}
+
 // BotChatsResponse is the swagger model for the GET /bots/:bot/chats body.
 // Running is false when the bot's channel isn't registered — the list is then
 // empty by definition, and the caller can say "start the bot" rather than
@@ -79,6 +106,7 @@ func RegisterBotRoutes(router *swagger.RouteGroup, handler *BotAPIHandler) {
 		swagger.WithDescription("Deliver a one-way notification to a running bot's chat. Requires the operator user token."),
 		swagger.WithPathParam("bot", "string", "Target bot UUID"),
 		swagger.WithRequestModel(BotNotifyRequest{}),
+		swagger.WithResponseModel(BotNotifyResponse{}),
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 400, Message: "Invalid request body"},
 			swagger.ErrorResponseConfig{Code: 404, Message: "Bot not running"},
@@ -91,6 +119,7 @@ func RegisterBotRoutes(router *swagger.RouteGroup, handler *BotAPIHandler) {
 		swagger.WithDescription("Start an interactive prompt on a running bot's chat and return a request_id to long-poll for the reply."),
 		swagger.WithPathParam("bot", "string", "Target bot UUID"),
 		swagger.WithRequestModel(BotInteractRequest{}),
+		swagger.WithResponseModel(BotInteractStartResponse{}),
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 400, Message: "Invalid request body or kind"},
 			swagger.ErrorResponseConfig{Code: 404, Message: "Bot not running"},
@@ -103,9 +132,13 @@ func RegisterBotRoutes(router *swagger.RouteGroup, handler *BotAPIHandler) {
 		swagger.WithDescription("Long-poll for the reply to an interactive prompt started by POST /bots/:bot/interact."),
 		swagger.WithPathParam("bot", "string", "Target bot UUID"),
 		swagger.WithPathParam("request_id", "string", "Interaction request id from the interact response"),
+		swagger.WithQuery("timeout", "string", "Long-poll budget, e.g. 45s (default 45s, capped at 50s)"),
+		swagger.WithResponseModel(BotInteractWaitResponse{}),
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 404, Message: "Request expired"},
+			swagger.ErrorResponseConfig{Code: 410, Message: "Prompt timed out or ended in error"},
 			swagger.ErrorResponseConfig{Code: 503, Message: "Interaction registry unavailable"},
+			swagger.ErrorResponseConfig{Code: 504, Message: "No reply yet — retry (long-poll pending)"},
 		),
 	)
 

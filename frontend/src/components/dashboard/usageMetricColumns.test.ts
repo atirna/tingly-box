@@ -9,6 +9,7 @@ describe('getUsageMetricColumns', () => {
             'cacheHit',
             'input',
             'output',
+            'reasoning',
             'errorRate',
         ]);
     });
@@ -25,6 +26,7 @@ describe('getUsageMetricColumns', () => {
             'cacheHit',
             'input',
             'output',
+            'reasoning',
             'errorRate',
         ]);
     });

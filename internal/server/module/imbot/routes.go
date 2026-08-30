@@ -12,7 +12,11 @@ func RegisterRoutes(router *swagger.RouteGroup, handler *Handler) {
 	router.GET("/imbot-settings", handler.ListSettings,
 		swagger.WithTags("imbot-settings"),
 		swagger.WithDescription("Returns all ImBot configurations"),
-		swagger.WithResponseModel(ListResponse{}),
+		// Explicit name: "ListResponse" collides with team.ListResponse in
+		// the shared OpenAPI schema namespace (both packages had a bare
+		// ListResponse type) — without this, whichever gets generated last
+		// silently overwrites the other's shape in openapi.json.
+		swagger.WithResponseModel(ListResponse{}, "ImBotSettingsListResponse"),
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 503, Message: "ImBot settings store not available"},
 		),
@@ -33,7 +37,9 @@ func RegisterRoutes(router *swagger.RouteGroup, handler *Handler) {
 	router.POST("/imbot-settings", handler.CreateSettings,
 		swagger.WithTags("imbot-settings"),
 		swagger.WithDescription("Creates a new ImBot configuration"),
-		swagger.WithRequestModel(CreateRequest{}),
+		// Explicit name: bare "CreateRequest" collides with team.CreateRequest
+		// — see the ListResponse comment above.
+		swagger.WithRequestModel(CreateRequest{}, "ImBotSettingsCreateRequest"),
 		swagger.WithResponseModel(SettingsResponse{}),
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 400, Message: "Invalid request"},
@@ -45,7 +51,9 @@ func RegisterRoutes(router *swagger.RouteGroup, handler *Handler) {
 		swagger.WithTags("imbot-settings"),
 		swagger.WithDescription("Updates an existing ImBot configuration"),
 		swagger.WithPathParam("uuid", "string", "ImBot configuration UUID"),
-		swagger.WithRequestModel(UpdateRequest{}),
+		// Explicit name: bare "UpdateRequest" collides with team.UpdateRequest
+		// — see the ListResponse comment above.
+		swagger.WithRequestModel(UpdateRequest{}, "ImBotSettingsUpdateRequest"),
 		swagger.WithResponseModel(SettingsResponse{}),
 		swagger.WithErrorResponses(
 			swagger.ErrorResponseConfig{Code: 404, Message: "ImBot settings not found"},

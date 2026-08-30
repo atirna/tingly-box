@@ -8,16 +8,12 @@ import type {
 } from '@/client';
 
 /**
- * A quota window plus the semantics fields. Declared here because `task
- * codegen` has not yet regenerated the client schema; they ship on the wire
- * today. See .design/quota-semantics.md.
+ * A quota window, with `kind` narrowed from the generated UsageWindow's bare
+ * `string` to the two real values the backend ever sends — see
+ * .design/quota-semantics.md.
  */
-export type QuotaWindow = UsageWindow & {
+export type QuotaWindow = Omit<UsageWindow, 'kind'> & {
     kind?: 'limit' | 'resource';
-    unknown?: boolean;
-    unlimited?: boolean;
-    available?: number;
-    currency_code?: string;
 };
 
 /** The fields that decide whether a window has a figure to show. */
@@ -50,8 +46,13 @@ function windowSortKey(window: QuotaWindow): [number, number] {
     return [rank, minutes];
 }
 
-// Type aliases for convenience and backward compatibility
-export type ProviderQuota = ProviderUsage & {
+// Type aliases for convenience and backward compatibility.
+// Omit + re-add `windows` rather than a plain intersection: ProviderUsage
+// already declares `windows?: UsageWindow[]`, and TS does not merge two
+// array-typed properties element-wise across an intersection — the wider
+// UsageWindow[] branch can end up winning at use sites, silently losing the
+// QuotaWindow narrowing.
+export type ProviderQuota = Omit<ProviderUsage, 'windows'> & {
     windows?: QuotaWindow[];
 };
 

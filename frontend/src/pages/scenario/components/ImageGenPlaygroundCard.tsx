@@ -27,7 +27,7 @@ import type { Rule } from '@/components/RoutingGraphTypes';
 import UnifiedCard from '@/components/UnifiedCard';
 import { AutoAwesome, Brush, Close, ContentCopy, Edit, FileUpload, Photo, ZoomIn } from '@/components/icons';
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
-import { getOpenAIClient } from '@/services/openaiClient';
+import { getOpenAIClient } from '@/services/modelApi';
 
 const IMAGE_SCENARIO = 'imagegen';
 // Base panel height, plus the mode toggle row present in both modes. Edit
