@@ -1760,7 +1760,7 @@ export default {
       "opencode": "OpenCode AI development environment with BYOK support",
       "xcode": "Xcode AI coding assistant through Tingly Box proxy for iOS/macOS development",
       "vscode": "Bring Your Own Key: Use your own API keys with VS Code Copilot through Tingly Box proxy",
-      "cursor": "Cursor AI code editor through Tingly Box proxy, with Cursor compatibility handling enabled by default",
+      "cursor": "Cursor AI code editor through Tingly Box proxy, with Cursor compatibility handling enabled by default. Cursor calls this URL from its own cloud, so it must be a publicly reachable HTTPS address — not localhost.",
       "pi": "Pi coding agent through Tingly Box proxy",
       "dsh": "DeepSeek Harness (dsh) agent harness through Tingly Box proxy",
       "imagegen": "AI-powered image generation and editing through Tingly Box proxy with multiple model support"

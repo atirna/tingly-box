@@ -1,4 +1,4 @@
-import { Box, Dialog, DialogActions, DialogContent, DialogTitle, Button, Typography, Stack } from '@mui/material';
+import { Alert, Box, Dialog, DialogActions, DialogContent, DialogTitle, Button, Typography, Stack } from '@mui/material';
 import React from 'react';
 import { useScenarioPageModal } from '@/pages/scenario/context/ScenarioPageContext';
 
@@ -9,6 +9,22 @@ interface CursorConfigModalProps {
     copyToClipboard: (text: string, label: string) => Promise<void>;
 }
 
+// Cursor calls "Override OpenAI Base URL" from its own cloud backend
+// (api2.cursor.sh), never from the local Cursor app — so a localhost or
+// private-network URL is unreachable from there and the chat just hangs
+// with no local traffic to debug. See .design/cursor.md.
+const looksUnreachableFromCursorCloud = (url: string): boolean => {
+    try {
+        const { hostname, protocol } = new URL(url);
+        if (protocol !== 'https:') return true;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return true;
+        if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)) return true;
+        return false;
+    } catch {
+        return true;
+    }
+};
+
 const CursorConfigModal: React.FC<CursorConfigModalProps> = ({
     open,
     onClose,
@@ -17,6 +33,7 @@ const CursorConfigModal: React.FC<CursorConfigModalProps> = ({
 }) => {
     // Get token from context
     const { token } = useScenarioPageModal();
+    const unreachable = looksUnreachableFromCursorCloud(baseUrl);
     return (
         <Dialog
             open={open}
@@ -40,6 +57,19 @@ const CursorConfigModal: React.FC<CursorConfigModalProps> = ({
             </DialogTitle>
             <DialogContent sx={{ pt: 1 }}>
                 <Stack spacing={2}>
+                    <Alert severity={unreachable ? 'warning' : 'info'} variant="outlined">
+                        Cursor calls this Base URL from <strong>its own cloud servers</strong>, not from
+                        the Cursor app on your machine — so it must be reachable over the public
+                        internet via <strong>HTTPS</strong>.{' '}
+                        {unreachable ? (
+                            <>This URL looks local or private, so it <strong>won't work as-is</strong> —
+                                expose this server publicly first (e.g. a Cloudflare Tunnel or ngrok), or
+                                use a publicly deployed Tingly Box instance.</>
+                        ) : (
+                            <>Double-check this address is actually reachable from the internet before
+                                pasting it into Cursor.</>
+                        )}
+                    </Alert>
                     <Box sx={{ bgcolor: 'background.paper', p: 2, borderRadius: 1, border: 1, borderColor: 'divider' }}>
                         <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
                             <strong>1.</strong> Open <strong>Cursor</strong> → <strong>Settings</strong> → <strong>Models</strong>

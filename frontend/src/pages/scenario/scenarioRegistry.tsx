@@ -162,10 +162,17 @@ const DEFAULTS_VERSION_KEY = 'scenario.hiddenDefaultsVersion';
 const VISIBILITY_EVENT = 'scenario-visibility-change';
 // "pi" is hidden by default until its integration details are verified —
 // remove once it's ready to launch.
-const DEFAULT_HIDDEN = ['custom', 'pi'];
+// "cursor" is hidden by default because Cursor's "Override OpenAI Base URL"
+// is called from Cursor's own cloud backend (api2.cursor.sh), not from the
+// local Cursor app — a plain http://localhost:<port>/tingly/cursor Base URL
+// is unreachable from there and the chat silently hangs. It only works when
+// tingly-box is reachable over a public HTTPS URL (real deployment, or a
+// tunnel). See .design/cursor.md. Un-hide once we can detect/guide this
+// better, e.g. warn inline when baseUrl looks like localhost/a private IP.
+const DEFAULT_HIDDEN = ['custom', 'pi', 'cursor'];
 // Bump this whenever DEFAULT_HIDDEN gains a genuinely new entry, so existing
 // users pick up the new default without losing their own customisations.
-const DEFAULTS_VERSION = 4;
+const DEFAULTS_VERSION = 5;
 
 // Scenario ids renamed in place (old -> new). A user's existing hidden/shown
 // choice for the old id carries over to the new one below, instead of being

@@ -1756,7 +1756,7 @@ export default {
       "opencode": "支持自带密钥（BYOK）的 OpenCode AI 开发环境",
       "xcode": "通过 Tingly Box 代理，在 Xcode 中用于 iOS/macOS 开发的 AI 编码助手",
       "vscode": "自带密钥：通过 Tingly Box 代理，在 VS Code Copilot 中使用你自己的 API Key",
-      "cursor": "通过 Tingly Box 代理接入 Cursor，默认开启 Cursor 兼容处理",
+      "cursor": "通过 Tingly Box 代理接入 Cursor，默认开启 Cursor 兼容处理。Cursor 是从其云端服务器发起请求的，因此这里的地址必须是公网可访问的 HTTPS 地址，不能是 localhost。",
       "pi": "通过 Tingly Box 代理使用 pi 编码 Agent",
       "dsh": "通过 Tingly Box 代理使用 DeepSeek Harness (dsh) 智能体框架",
       "imagegen": "通过 Tingly Box 代理进行 AI 图像生成与编辑，支持多种模型",
