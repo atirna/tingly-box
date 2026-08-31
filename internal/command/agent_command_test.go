@@ -45,3 +45,102 @@ func TestAgentShowFlagCmdKong_NoTTYWithoutAgentType_ClearError(t *testing.T) {
 		t.Errorf("error = %q, want a usage example", err.Error())
 	}
 }
+
+// TestAgentApplyFlagCmdKong_WithoutAgentType_ClearError: unlike agent
+// show/restore, apply never falls back to an interactive picker at all —
+// it's a one-shot "apply the defaults" command, not a wizard, so a missing
+// agent type is always a clear error, TTY or not (a TTY doesn't change
+// whether picking interactively is the right thing for apply to do).
+func TestAgentApplyFlagCmdKong_WithoutAgentType_ClearError(t *testing.T) {
+	err := (&AgentApplyFlagCmdKong{}).Run(nil)
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "agent type required") {
+		t.Errorf("error = %q, want it to say an agent type is required", err.Error())
+	}
+	if !strings.Contains(err.Error(), "agent apply claude-code") {
+		t.Errorf("error = %q, want a usage example", err.Error())
+	}
+}
+
+// TestAgentApplyFlagCmdKong_NoTTYWithoutYes_ClearError: `apply` is meant
+// to be a one-shot "configure and go" command (unlike show/restore, it's
+// the one CLI verb genuinely worth running non-interactively often), so a
+// missing confirmation TTY must fail with a hint to pass -y/--yes rather
+// than block on a bufio read that can never succeed. Needs a real
+// AppManager: with an agent type given, Run reaches routing-rule
+// resolution (which needs a config) before the yes/TTY check.
+func TestAgentApplyFlagCmdKong_NoTTYWithoutYes_ClearError(t *testing.T) {
+	withNonTTYStdin(t)
+	am := newTestAppManager(t)
+
+	var err error
+	withSilencedStdout(t, func() {
+		err = (&AgentApplyFlagCmdKong{AgentType: "claude-code"}).Run(am)
+	})
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no TTY") || !strings.Contains(err.Error(), "-y/--yes") {
+		t.Errorf("error = %q, want it to mention the missing TTY and -y/--yes", err.Error())
+	}
+}
+
+// TestAgentApplyFlagCmdKong_NoRoutingRule_NeverPromptsForProvider is the
+// core regression guard for the redesign: apply is a one-shot "apply the
+// defaults" command, so with no routing rule configured it must proceed
+// with config-files-only rather than falling back to an interactive
+// provider/model picker (the old promptForAgentConfig path, now removed
+// entirely). Preview mode returns before the confirm step, so this also
+// proves the picker isn't reachable earlier in Run, without needing
+// -y/--yes or touching real Claude Code config files.
+func TestAgentApplyFlagCmdKong_NoRoutingRule_NeverPromptsForProvider(t *testing.T) {
+	withNonTTYStdin(t) // a fallback to the old picker would block reading this
+	am := newTestAppManager(t)
+
+	var err error
+	output := captureStdout(t, func() {
+		err = (&AgentApplyFlagCmdKong{AgentType: "claude-code", Preview: true}).Run(am)
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(output, "no service configured") {
+		t.Errorf("output = %q, want the config-files-only preview note", output)
+	}
+}
+
+// TestAgentRestoreFlagCmdKong_NoTTYWithoutAgentType_ClearError: `agent
+// restore` had the identical unguarded promptForAgentTypeChoice fallback
+// that show/apply were fixed for, just never covered — same bug, same
+// fix, via the shared requireTTY helper. appManager is nil: Run doesn't
+// touch it before this check.
+func TestAgentRestoreFlagCmdKong_NoTTYWithoutAgentType_ClearError(t *testing.T) {
+	withNonTTYStdin(t)
+
+	err := (&AgentRestoreFlagCmdKong{}).Run(nil)
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no TTY") {
+		t.Errorf("error = %q, want it to mention the missing TTY", err.Error())
+	}
+	if !strings.Contains(err.Error(), "agent restore claude-code") {
+		t.Errorf("error = %q, want a usage example", err.Error())
+	}
+}
+
+// TestAgentRestoreFlagCmdKong_NoTTYWithoutYes_ClearError: same gap as
+// above, for restore's "Proceed? [y/N]" confirmation.
+func TestAgentRestoreFlagCmdKong_NoTTYWithoutYes_ClearError(t *testing.T) {
+	withNonTTYStdin(t)
+
+	err := (&AgentRestoreFlagCmdKong{AgentType: "claude-code"}).Run(nil)
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no TTY") || !strings.Contains(err.Error(), "-y/--yes") {
+		t.Errorf("error = %q, want it to mention the missing TTY and -y/--yes", err.Error())
+	}
+}
