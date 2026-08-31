@@ -3,6 +3,7 @@ package command
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -66,13 +67,33 @@ func runQuotaShowAll(appManager *AppManager, refresh bool) error {
 		return fmt.Errorf("failed to get quota data: %w", err)
 	}
 
-	providers := usecase.NewProviderUseCase(appManager.GetGlobalConfig()).List().Providers
+	providers := quotaRelevantProviders(appManager)
 	if len(providers) == 0 {
 		fmt.Println("No providers configured.")
 		return nil
 	}
 
 	return displayQuotaForProviders(providers, usages)
+}
+
+// quotaRelevantProviders lists providers that can meaningfully have a quota.
+func quotaRelevantProviders(appManager *AppManager) []*typ.Provider {
+	all := usecase.NewProviderUseCase(appManager.GetGlobalConfig()).List().Providers
+	return filterQuotaRelevant(all)
+}
+
+// filterQuotaRelevant drops virtual/local model providers (auth type
+// vmodel): they never make an outbound call, so they can never report
+// usage — showing them here was a permanent "Error: no data" row for
+// something that structurally can't have data.
+func filterQuotaRelevant(all []*typ.Provider) []*typ.Provider {
+	providers := make([]*typ.Provider, 0, len(all))
+	for _, p := range all {
+		if !p.IsVirtual() {
+			providers = append(providers, p)
+		}
+	}
+	return providers
 }
 
 // runQuotaShowProvider shows a specific provider with optional refresh
@@ -103,6 +124,14 @@ func runQuotaShowProvider(appManager *AppManager, providerName string, refresh b
 
 	usage, err := qm.GetQuota(ctx, provider.UUID)
 	if err != nil {
+		// ErrUsageNotFound/ErrProviderUnsupported mean "nothing to show yet",
+		// not a failure — `quota --all` already renders this gracefully via
+		// displayQuotaForProviders; `quota <name>` must match instead of
+		// hard-erroring on the exact same condition.
+		if errors.Is(err, quota.ErrUsageNotFound) || errors.Is(err, quota.ErrProviderUnsupported) {
+			printQuotaDetails(placeholderQuotaUsage(provider))
+			return nil
+		}
 		return fmt.Errorf("failed to get quota: %w", err)
 	}
 
@@ -112,7 +141,7 @@ func runQuotaShowProvider(appManager *AppManager, providerName string, refresh b
 
 // runQuotaInteractive runs interactive mode for provider selection
 func runQuotaInteractive(appManager *AppManager, refresh bool) error {
-	providers := usecase.NewProviderUseCase(appManager.GetGlobalConfig()).List().Providers
+	providers := quotaRelevantProviders(appManager)
 
 	if len(providers) == 0 {
 		fmt.Println("❌ No providers configured.")
@@ -194,13 +223,7 @@ func displayQuotaForProviders(providers []*typ.Provider, usages []*quota.Provide
 		if u, ok := usageMap[p.UUID]; ok {
 			printQuotaDetails(u)
 		} else {
-			// No data yet — show provider with "not fetched" status
-			printQuotaDetails(&quota.ProviderUsage{
-				ProviderUUID: p.UUID,
-				ProviderName: p.Name,
-				ProviderType: quota.ProviderType(p.APIStyle),
-				LastError:    "no data — run 'quota' to fetch",
-			})
+			printQuotaDetails(placeholderQuotaUsage(p))
 		}
 
 		// Empty line between providers (except after last one)
@@ -210,6 +233,20 @@ func displayQuotaForProviders(providers []*typ.Provider, usages []*quota.Provide
 	}
 
 	return nil
+}
+
+// placeholderQuotaUsage builds a "not fetched yet" stand-in so a provider
+// with no quota data renders the same "no data" line whether it's shown via
+// `quota --all` (skipped over a missing map entry) or `quota <name>`
+// (ErrUsageNotFound/ErrProviderUnsupported from GetQuota) — one code path,
+// not two messages that can drift.
+func placeholderQuotaUsage(p *typ.Provider) *quota.ProviderUsage {
+	return &quota.ProviderUsage{
+		ProviderUUID: p.UUID,
+		ProviderName: p.Name,
+		ProviderType: quota.ProviderType(p.APIStyle),
+		LastError:    "no data — run 'quota' to fetch",
+	}
 }
 
 // printQuotaDetails prints detailed quota information (minimal style)

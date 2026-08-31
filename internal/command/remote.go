@@ -76,6 +76,10 @@ func (r *RemoteConfigCmdKong) Run(appManager *AppManager) error {
 type RemoteAddCmdKong struct{}
 
 func (r *RemoteAddCmdKong) Run(appManager *AppManager) error {
+	// No flag form exists — it's always interactive.
+	if err := requireTTY("add a bot via the Web UI's Remote page instead"); err != nil {
+		return err
+	}
 	return runRemoteAdd(appManager)
 }
 
@@ -188,7 +192,7 @@ func selectBotInteractively(store *db.ImBotSettingsStore) (string, error) {
 func promptForSmartGuideModel(reader *bufio.Reader, appManager *AppManager) (string, string, error) {
 	providers := usecase.NewProviderUseCase(appManager.GetGlobalConfig()).List().Providers
 	if len(providers) == 0 {
-		return "", "", fmt.Errorf("no providers configured. Please add a provider first using 'tingly-box config provider add' / 'tb config provider add'")
+		return "", "", fmt.Errorf("no providers configured. Please add a provider first using 'tingly-box provider add' / 'tb provider add'")
 	}
 
 	// Select provider
