@@ -20,6 +20,16 @@ each GitHub release:
 All three expose `tingly-box` and `tb` bins. The shim never writes into its own
 install dir — binaries and caches live under `~/.cache/tingly-box/`.
 
+Common shim logic lives in `build/npx/shared/` (cache-dir resolution, the
+two cleanup sweeps, `--transport-version` parsing, entry semantics,
+download + zip extraction, exec-failure diagnostics); each `bin.js` keeps
+only its own flow and imports the rest via relative path. Publishing is
+unaffected because mitigation A esbuild-bundles the entry into one file —
+`shared/` is a source-layout concern only. Dependencies (`undici`,
+`unzipper`) are hoisted to `build/npx/package.json` so dev runs and the
+esbuild step resolve them from a single `node_modules`; the per-package
+manifests carry no dependencies at all.
+
 No-args behavior is split by invocation (see `cli-entry-semantics.md`): under
 npx / `npm exec` (`npm_command=exec`) the cli and bundle shims keep the
 historical run-now behavior as `restart --daemon -y` (the invocation is the
@@ -52,15 +62,17 @@ the path to re-enable global installs.
   plus per-leg smoke-tests that run the bundled shim with no `node_modules` —
   the cli one against the real release download, the bundle one against the
   packaged zips).
-- B is `cleanupRetiredInstallDirs()` in all three `build/npx/*/bin.js`.
-- E is `cleanupStaleBinaryCaches()` in all three `build/npx/*/bin.js`.
+- B is `cleanupRetiredInstallDirs()` and E is `cleanupStaleBinaryCaches()`,
+  both in `build/npx/shared/cleanup.js`, called by all three shims.
 - `build/npx/test-shim.sh <release-tag>` codifies the verification: it builds
   the published artifact the same way CI does (pin tag, esbuild bundle) and
   runs the matrix — sweep skipped under a fresh `node_modules` mtime, exact
   retire-shape sweep under an old one (sibling/human dirs untouched), an
   end-to-end download + `version` against the real release, and the
   stale-cache sweep guards (rollback kept, fresh/non-tag/file entries
-  untouched; Linux only, where `XDG_CACHE_HOME` sandboxes the cache root). Run it before
+  untouched; Linux only, where `XDG_CACHE_HOME` sandboxes the cache root).
+  It also esbuild-bundles the gui and bundle shims and parse-checks them,
+  so a broken `shared/` import fails the harness for every package. Run it before
   touching the shims or the publish workflow. CI runs it too: the
   `verify-npx-shim` job in `verify-build.yml` executes it on every release
   (and on manual runs against any tag).
@@ -195,9 +207,9 @@ binary in place (no Windows locked-exe problem, a running daemon keeps its
 old inode) — but nothing ever removed the old tag dirs, so the cache grew by
 one full binary per release forever.
 
-`cleanupStaleBinaryCaches()` in all three `build/npx/*/bin.js` sweeps them on
-every launch, once the current tag's binary is confirmed in place. Policy and
-guards:
+`cleanupStaleBinaryCaches()` (`build/npx/shared/cleanup.js`) sweeps them on
+every launch of any shim, once the current tag's binary is confirmed in
+place. Policy and guards:
 
 - Keep the tag in use, plus the most recently touched *other* tag dir as
   rollback; sweep the rest.
