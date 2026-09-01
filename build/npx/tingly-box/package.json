@@ -2,7 +2,15 @@
   "name": "tingly-box",
   "version": "1.6.1",
   "description": "High-performance AI gateway CLI - connect to multiple AI providers through a single API",
-  "keywords": ["ai", "gateway", "openai", "anthropic", "claude", "cli", "tingly"],
+  "keywords": [
+    "ai",
+    "gateway",
+    "openai",
+    "anthropic",
+    "claude",
+    "cli",
+    "tingly"
+  ],
   "homepage": "https://github.com/tingly-dev/tingly-box",
   "repository": {
     "type": "git",
@@ -20,9 +28,5 @@
     "tingly-box": "bin.js",
     "tb": "bin.js"
   },
-  "type": "module",
-  "dependencies": {
-    "undici": "^7.0.0",
-    "unzipper": "^0.12.3"
-  }
+  "type": "module"
 }

@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "child_process";
-import { chmodSync, existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
-import { basename, dirname, join } from "path";
+import { chmodSync, existsSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { mkdir } from "fs/promises";
 import unzipper from "unzipper";
 import { homedir } from "os";
+import { cleanupRetiredInstallDirs, cleanupStaleBinaryCaches } from "../shared/cleanup.js";
+import { DEFAULT_ARGS, sourceArgs } from "../shared/entry.js";
+import { execBinary } from "../shared/exec.js";
 
 // Default branch to use when not specified via transport version
 // This will be replaced during the NPX build process
@@ -113,80 +115,13 @@ async function extractBinary(platformDir) {
 	return cachedBinary;
 }
 
-// Sweep leftover npm "retire" dirs (.<name>-<hash>) from an interrupted
-// `npm update -g`; their deterministic name otherwise makes every later
-// update fail with ENOTEMPTY. See .design/npm.md.
-function cleanupRetiredInstallDirs() {
-	try {
-		const pkgDir = __dirname;
-		const parentDir = dirname(pkgDir);
-		if (basename(parentDir) !== "node_modules") return;
-		// Fresh parent mtime: an npm transaction may be in flight and the
-		// retired dir is its rollback source — skip.
-		if (Date.now() - statSync(parentDir).mtimeMs < 5 * 60 * 1000) return;
-		// Only npm's exact retire shape (@npmcli/arborist retire-path.js).
-		const retired = new RegExp(`^\\.${basename(pkgDir)}-[a-zA-Z0-9]{8}$`);
-		for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
-			if (entry.isDirectory() && retired.test(entry.name)) {
-				rmSync(join(parentDir, entry.name), { recursive: true, force: true });
-			}
-		}
-	} catch {
-		// Never block launch on cleanup.
-	}
-}
-
-// Sweep stale versioned binary caches (<cacheRoot>/<tag>/) left behind by
-// earlier releases: every release extracts into its own tag dir and nothing
-// ever removed the old ones. Keeps the tag in use plus the most recently
-// touched other tag as rollback. See .design/npm.md.
-function cleanupStaleBinaryCaches(cacheRoot, keepTag) {
-	try {
-		// Exact release-tag dir shapes only ("latest" or vX.Y.Z[-pre]); files
-		// (e.g. a future `current` pointer) and human-made dirs never match.
-		const tagShape = /^(?:latest|v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
-		const candidates = [];
-		for (const entry of readdirSync(cacheRoot, { withFileTypes: true })) {
-			if (!entry.isDirectory() || !tagShape.test(entry.name)) continue;
-			if (entry.name === keepTag) continue;
-			const dirPath = join(cacheRoot, entry.name);
-			const mtimeMs = statSync(dirPath).mtimeMs;
-			// Fresh mtime: a concurrent launch (e.g. a version-pinned npx) may
-			// be extracting into it right now — skip, sweep on a later run.
-			if (Date.now() - mtimeMs < 60 * 60 * 1000) continue;
-			candidates.push({ dirPath, mtimeMs });
-		}
-		// Newest non-current tag survives as rollback; the rest go. A binary
-		// still running from a swept dir keeps its inode on POSIX; on Windows
-		// the locked exe makes rmSync throw and the sweep retries next launch.
-		candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-		for (const { dirPath } of candidates.slice(1)) {
-			rmSync(dirPath, { recursive: true, force: true });
-		}
-	} catch {
-		// Never block launch on cleanup.
-	}
-}
-
-// npx / `npm exec` sets npm_command=exec; a bin launched directly (e.g. from
-// `npm install -g`) does not. Entry-semantics rationale for everything below:
-// .design/cli-entry-semantics.md.
-const IS_NPX = process.env.npm_command === "exec";
-
-// Bare npx invocation = "run it now" (restart into the background, -y being
-// the consent a bare `restart` would otherwise prompt for); a bare installed
-// bin shows help.
-const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon", "-y"] : ["--help"];
-
-// Records how this process was launched; also decides which npm package a
-// shortcut relaunches. As a global flag it must come before the subcommand.
-const SOURCE_ARGS = [IS_NPX ? "--source=npx-bundle" : "--source=npm-bundle"];
+const SOURCE_ARGS = sourceArgs("npx-bundle", "npm-bundle");
 
 const args = process.argv.slice(2);
 const baseArgs = args.length > 0 ? args : DEFAULT_ARGS;
 const argsToUse = [...SOURCE_ARGS, ...baseArgs];
 
-cleanupRetiredInstallDirs();
+cleanupRetiredInstallDirs(__dirname);
 
 const platformDir = getPlatformInfo();
 
@@ -205,60 +140,4 @@ const binaryPath = await extractBinary(platformDir);
 // The binary for this tag is in place — old tag dirs are now safe to GC.
 cleanupStaleBinaryCaches(dirname(getCacheDir()), BINARY_RELEASE_BRANCH);
 
-try {
-	execFileSync(binaryPath, argsToUse, {
-		stdio: "inherit",
-		encoding: 'utf8'
-	});
-} catch (execError) {
-	const errorCode = execError.code;
-	const errorMessage = execError.message;
-	const errorStatus = execError.status;
-	const errorSignal = execError.signal;
-
-	// Create comprehensive error output
-	console.error(`\n❌ Tingly-Box execution failed`);
-	console.error(`┌─ Error Details:`);
-	console.error(`│  Message: ${errorMessage}`);
-
-	if (errorCode) {
-		console.error(`│  Code: ${errorCode}`);
-		switch (errorCode) {
-			case 'ENOENT':
-				console.error(`│  └─ Binary not found at: ${binaryPath}`);
-				break;
-			case 'EACCES':
-				console.error(`│  └─ Permission denied. Try: chmod +x "${binaryPath}"`);
-				break;
-			case 'ETXTBSY':
-				console.error(`│  └─ Binary file is busy or being modified.`);
-				break;
-			default:
-				console.error(`│  └─ System error occurred.`);
-		}
-	}
-
-	if (errorStatus !== null && errorStatus !== undefined) {
-		console.error(`│  Exit Code: ${errorStatus}`);
-		console.error(`│  └─ The binary exited with non-zero status code.`);
-	}
-
-	if (errorSignal) {
-		console.error(`│  Signal: ${errorSignal}`);
-		console.error(`│  └─ The binary was terminated by a signal.`);
-	}
-
-	console.error(`└─ Binary Path: ${binaryPath}`);
-	console.error(`   Platform: ${process.platform} (${process.arch})`);
-
-	// Provide additional help for Linux
-	if (process.platform === "linux") {
-		console.error(`\n💡 Linux Troubleshooting:`);
-		console.error(`   • Check if required libraries are installed`);
-		console.error(`   • For missing dependencies: install required system packages`);
-	}
-
-	// Exit with the binary's exit code
-	const exitCode = errorStatus !== undefined ? errorStatus : 1;
-	process.exit(exitCode);
-}
+execBinary(binaryPath, argsToUse);

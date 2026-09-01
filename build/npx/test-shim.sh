@@ -22,9 +22,10 @@ pass() { echo "✅ $1"; }
 fail() { echo "❌ $1"; FAILED=1; }
 
 # --- build: same sequence as the CI publish job -----------------------------
+# Deps are hoisted to build/npx/ (shared/ modules resolve them from there).
 echo "==> [build] bundling shim like CI (tag $TAG)"
-if [ ! -d "$PKG_DIR/node_modules" ]; then
-	(cd "$PKG_DIR" && npm ci)
+if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
+	(cd "$SCRIPT_DIR" && npm ci)
 fi
 sed "s|const BINARY_RELEASE_BRANCH = .*|const BINARY_RELEASE_BRANCH = '$TAG';|" \
 	"$PKG_DIR/bin.js" > "$ENTRY"
@@ -33,6 +34,20 @@ npx --yes "esbuild@$ESBUILD_VERSION" "$ENTRY" --bundle --platform=node --target=
 	--banner:js="import{createRequire as __cr}from'module';const require=__cr(import.meta.url);" \
 	--outfile="$WORK/bin.js" --log-level=warning
 node --check "$WORK/bin.js" && pass "build: bundle parses ($(du -h "$WORK/bin.js" | cut -f1))"
+
+# The other two shims share modules with the cli one — verify they also
+# bundle to a parseable single file (no download/exec, just the build).
+for pkg in tingly-box-gui tingly-box-bundle; do
+	npx --yes "esbuild@$ESBUILD_VERSION" "$SCRIPT_DIR/$pkg/bin.js" --bundle --platform=node --target=node18 \
+		--format=esm --external:@aws-sdk/client-s3 \
+		--banner:js="import{createRequire as __cr}from'module';const require=__cr(import.meta.url);" \
+		--outfile="$WORK/$pkg.bin.js" --log-level=warning
+	if node --check "$WORK/$pkg.bin.js"; then
+		pass "build: $pkg bundle parses ($(du -h "$WORK/$pkg.bin.js" | cut -f1))"
+	else
+		fail "build: $pkg bundle does not parse"
+	fi
+done
 
 # --- cold cache (macOS shim ignores XDG_CACHE_HOME; clear only the tag) -----
 case "$(uname -s)" in

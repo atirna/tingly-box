@@ -1,92 +1,25 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "child_process";
-import { chmodSync, createWriteStream, existsSync, fsyncSync, mkdirSync, readdirSync, rmSync, statSync } from "fs";
-import { basename, dirname, join } from "path";
-import { Readable } from "stream";
+import { existsSync, mkdirSync } from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { ProxyAgent } from "undici";
-import unzipper from "unzipper";
+import { cacheDir } from "../shared/cachedir.js";
+import { cleanupRetiredInstallDirs, cleanupStaleBinaryCaches } from "../shared/cleanup.js";
+import { downloadAndExtractZip } from "../shared/download.js";
+import { DEFAULT_ARGS, sourceArgs } from "../shared/entry.js";
+import { execBinary } from "../shared/exec.js";
+import { parseTransportVersion } from "../shared/transport.js";
 
 // Configuration for binary downloads
 const BASE_URL = "https://github.com/tingly-dev/tingly-box/releases/download/";
-
-// GitHub API endpoint for getting latest release info
-const LATEST_RELEASE_API_URL = "https://github.com/tingly-dev/tingly-box/releases/download/";
 
 // Default branch to use when not specified via transport version
 // This will be replaced during the NPX build process
 const BINARY_RELEASE_BRANCH = "latest";
 
-// Create proxy agent from environment variables (HTTP_PROXY, HTTPS_PROXY)
-// Only create ProxyAgent if proxy is configured, otherwise use undefined (direct connection)
-const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
-const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-const proxyUri = httpsProxy || httpProxy;
-const dispatcher = proxyUri ? new ProxyAgent(proxyUri) : undefined;
-
-// Parse transport version from command line arguments
-function parseTransportVersion() {
-	const args = process.argv.slice(2);
-	let transportVersion = "latest"; // Default to latest
-
-	// Find --transport-version argument
-	const versionArgIndex = args.findIndex((arg) => arg.startsWith("--transport-version"));
-
-	if (versionArgIndex !== -1) {
-		const versionArg = args[versionArgIndex];
-
-		if (versionArg.includes("=")) {
-			// Format: --transport-version=v1.2.3
-			transportVersion = versionArg.split("=")[1];
-		} else if (versionArgIndex + 1 < args.length) {
-			// Format: --transport-version v1.2.3
-			transportVersion = args[versionArgIndex + 1];
-		}
-
-		// Remove the transport-version arguments from args array so they don't get passed to the binary
-		if (versionArg.includes("=")) {
-			args.splice(versionArgIndex, 1);
-		} else {
-			args.splice(versionArgIndex, 2);
-		}
-	}
-
-	return { version: validateTransportVersion(transportVersion), remainingArgs: args };
-}
-
-// Validate transport version format
-function validateTransportVersion(version) {
-	if (version === "latest") {
-		return version;
-	}
-
-	// Check if version matches v{x.x.x} format
-	const versionRegex = /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-	if (versionRegex.test(version)) {
-		return version;
-	}
-
-	console.error(`Invalid transport version format: ${version}`);
-	console.error(`Transport version must be either "latest", "v1.2.3", or "v1.2.3-prerelease1"`);
-	process.exit(1);
-}
-
 const { version: VERSION, remainingArgs } = parseTransportVersion();
 
-// npx / `npm exec` sets npm_command=exec; a bin launched directly (e.g. from
-// `npm install -g`) does not. Entry-semantics rationale for everything below:
-// .design/cli-entry-semantics.md.
-const IS_NPX = process.env.npm_command === "exec";
-
-// Bare npx invocation = "run it now" (restart into the background, -y being
-// the consent a bare `restart` would otherwise prompt for); a bare installed
-// bin shows help.
-const DEFAULT_ARGS = IS_NPX ? ["restart", "--daemon", "-y"] : ["--help"];
-
-// Records how this process was launched; also decides which npm package a
-// shortcut relaunches. As a global flag it must come before the subcommand.
-const SOURCE_ARGS = [IS_NPX ? "--source=npx" : "--source=npm"];
+const SOURCE_ARGS = sourceArgs("npx", "npm");
 
 async function getPlatformArchAndBinary() {
 	const platform = process.platform;
@@ -121,286 +54,11 @@ async function getPlatformArchAndBinary() {
 	return { platformDir, archDir, binaryName, suffix };
 }
 
-async function downloadBinary(url, dest) {
-	// console.log(`🔄 Downloading binary from ${url}...`);
-
-	// Fetch with redirect following and optional proxy support
-	const fetchOptions = {
-		redirect: 'follow', // Automatically follow redirects
-		headers: {
-			'User-Agent': 'tingly-box-npx'
-		}
-	};
-	if (dispatcher) {
-		fetchOptions.dispatcher = dispatcher;
-	}
-
-	const res = await fetch(url, fetchOptions);
-
-	if (!res.ok) {
-		console.error(`❌ Download failed: ${res.status} ${res.statusText}`);
-		process.exit(1);
-	}
-
-	const contentLength = res.headers.get("content-length");
-	const totalSize = contentLength ? parseInt(contentLength, 10) : null;
-	let downloadedSize = 0;
-
-	const fileStream = createWriteStream(dest, { flags: "w" });
-	await new Promise((resolve, reject) => {
-		try {
-			// Convert the fetch response body to a Node.js readable stream
-			const nodeStream = Readable.fromWeb(res.body);
-
-			// Add progress tracking
-			nodeStream.on("data", (chunk) => {
-				downloadedSize += chunk.length;
-				if (totalSize) {
-					const progress = ((downloadedSize / totalSize) * 100).toFixed(1);
-					process.stdout.write(`\r⏱️ Downloading Binary: ${progress}% (${formatBytes(downloadedSize)}/${formatBytes(totalSize)})`);
-				} else {
-					process.stdout.write(`\r⏱️ Downloaded: ${formatBytes(downloadedSize)}`);
-				}
-			});
-
-			nodeStream.pipe(fileStream);
-			fileStream.on("finish", () => {
-				process.stdout.write("\n");
-
-				// Ensure file is fully written to disk
-				try {
-					fsyncSync(fileStream.fd);
-				} catch (syncError) {
-					// fsync might fail on some systems, ignore
-				}
-
-				resolve();
-			});
-			fileStream.on("error", reject);
-			nodeStream.on("error", reject);
-		} catch (error) {
-			reject(error);
-		}
-	});
-
-	chmodSync(dest, 0o755);
-}
-
-async function downloadAndExtractZip(url, extractDir, binaryName) {
-	console.log(`🔄 Downloading ZIP from ${url}...`);
-
-	// Fetch with redirect following and optional proxy support
-	const fetchOptions = {
-		redirect: 'follow',
-		headers: {
-			'User-Agent': 'tingly-box-npx'
-		}
-	};
-	if (dispatcher) {
-		fetchOptions.dispatcher = dispatcher;
-	}
-
-	const res = await fetch(url, fetchOptions);
-
-	if (!res.ok) {
-		console.error(`❌ Download failed: ${res.status} ${res.statusText}`);
-		process.exit(1);
-	}
-
-	const contentLength = res.headers.get("content-length");
-	const totalSize = contentLength ? parseInt(contentLength, 10) : null;
-	let downloadedSize = 0;
-
-	// Convert the fetch response body to a Node.js readable stream
-	const nodeStream = Readable.fromWeb(res.body);
-
-	// Collect the entire ZIP into a buffer
-	const chunks = [];
-	for await (const chunk of nodeStream) {
-		chunks.push(chunk);
-		downloadedSize += chunk.length;
-		if (totalSize) {
-			const progress = ((downloadedSize / totalSize) * 100).toFixed(1);
-			process.stdout.write(`\r⏱️ Downloading: ${progress}% (${formatBytes(downloadedSize)}/${formatBytes(totalSize)})`);
-		} else {
-			process.stdout.write(`\r⏱️ Downloaded: ${formatBytes(downloadedSize)}`);
-		}
-	}
-	const zipBuffer = Buffer.concat(chunks);
-
-	// Extract ZIP from buffer using unzipper
-	try {
-		console.log(`\n📦 Extracting ZIP to ${extractDir}...`);
-
-		const directory = await unzipper.Open.buffer(zipBuffer);
-
-		// Debug: List all entries in the ZIP
-		console.log(`📋 ZIP contents (${directory.files.length} entries):`);
-		for (const file of directory.files) {
-			console.log(`  ${file.type}: ${file.path} (permissions: ${file.unixPermissions?.toString(8)})`);
-		}
-
-		// Extract all files to the target directory
-		for (const file of directory.files) {
-			// Skip directory entries and __MACOSX metadata
-			if (file.type === 'Directory' || file.path.startsWith('__MACOSX/') || file.path.includes('.DS_Store')) {
-				console.log(`⏭️  Skipping: ${file.path} (type: ${file.type})`);
-				continue;
-			}
-
-			const filePath = join(extractDir, file.path);
-			// Get parent directory of the file in the ZIP
-			const pathParts = file.path.split('/');
-			pathParts.pop(); // Remove the filename
-			const fileDir = pathParts.length > 0 ? join(extractDir, ...pathParts) : extractDir;
-
-			console.log(`📄 Extracting: ${file.path} -> ${filePath}`);
-
-			// Ensure parent directory exists
-			if (fileDir !== extractDir && !existsSync(fileDir)) {
-				mkdirSync(fileDir, { recursive: true });
-			}
-
-			// Remove existing directory if it exists (this was created incorrectly before)
-			if (existsSync(filePath) && statSync(filePath).isDirectory()) {
-				console.log(`🧹 Removing incorrect directory: ${filePath}`);
-				// Can't easily remove a directory in Node without fs.rm (Node 14.14+)
-				// Skip and let user clean up manually
-				console.log(`⚠️  Please manually remove: rm -rf "${filePath}"`);
-				continue;
-			}
-
-			// Extract file
-			const content = await file.buffer();
-			const fileStream = createWriteStream(filePath);
-			await new Promise((resolve, reject) => {
-				fileStream.write(content, (err) => {
-					if (err) reject(err);
-					else {
-						fileStream.end();
-						resolve();
-					}
-				});
-			});
-			// Set file permissions after writing
-			if (process.platform !== "win32") {
-				// Use ZIP permissions if available, otherwise default to 0o755 (executable)
-				const permissions = file.unixPermissions && file.unixPermissions > 0 ? file.unixPermissions : 0o755;
-				chmodSync(filePath, permissions);
-			}
-		}
-
-		console.log(`✅ Extracted ZIP to ${extractDir}`);
-	} catch (error) {
-		console.error(`\n❌ Failed to extract ZIP: ${error.message}`);
-		console.error(`Stack: ${error.stack}`);
-		process.exit(1);
-	}
-}
-
-// Returns the os cache directory path for storing binaries
-// Linux: $XDG_CACHE_HOME or ~/.cache
-// macOS: ~/Library/Caches
-// Windows: %LOCALAPPDATA% or %USERPROFILE%\AppData\Local
-function cacheDir() {
-	if (process.platform === "linux") {
-		return process.env.XDG_CACHE_HOME || join(process.env.HOME || "", ".cache");
-	}
-	if (process.platform === "darwin") {
-		return join(process.env.HOME || "", "Library", "Caches");
-	}
-	if (process.platform === "win32") {
-		return process.env.LOCALAPPDATA || join(process.env.USERPROFILE || "", "AppData", "Local");
-	}
-	console.error(`Unsupported platform/arch: ${process.platform}/${process.arch}`);
-	process.exit(1);
-}
-
-// gets the latest version number for transport
-async function getLatestVersion() {
-    const releaseUrl = LATEST_RELEASE_API_URL;
-    const fetchOptions = {};
-    if (dispatcher) {
-        fetchOptions.dispatcher = dispatcher;
-    }
-    const res = await fetch(releaseUrl, fetchOptions);
-    if (!res.ok) {
-        return null;
-    }
-    const data = await res.json();
-    return data.name;
-}
-
-// Sweep leftover npm "retire" dirs (.<name>-<hash>) from an interrupted
-// `npm update -g`; their deterministic name otherwise makes every later
-// update fail with ENOTEMPTY. See .design/npm.md.
-function cleanupRetiredInstallDirs() {
-	try {
-		const pkgDir = dirname(fileURLToPath(import.meta.url));
-		const parentDir = dirname(pkgDir);
-		if (basename(parentDir) !== "node_modules") return;
-		// Fresh parent mtime: an npm transaction may be in flight and the
-		// retired dir is its rollback source — skip.
-		if (Date.now() - statSync(parentDir).mtimeMs < 5 * 60 * 1000) return;
-		// Only npm's exact retire shape (@npmcli/arborist retire-path.js).
-		const retired = new RegExp(`^\\.${basename(pkgDir)}-[a-zA-Z0-9]{8}$`);
-		for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
-			if (entry.isDirectory() && retired.test(entry.name)) {
-				rmSync(join(parentDir, entry.name), { recursive: true, force: true });
-			}
-		}
-	} catch {
-		// Never block launch on cleanup.
-	}
-}
-
-// Sweep stale versioned binary caches (<cacheRoot>/<tag>/) left behind by
-// earlier releases: every release downloads into its own tag dir and nothing
-// ever removed the old ones. Keeps the tag in use plus the most recently
-// touched other tag as rollback. See .design/npm.md.
-function cleanupStaleBinaryCaches(cacheRoot, keepTag) {
-	try {
-		// Exact release-tag dir shapes only ("latest" or vX.Y.Z[-pre]); files
-		// (e.g. a future `current` pointer) and human-made dirs never match.
-		const tagShape = /^(?:latest|v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
-		const candidates = [];
-		for (const entry of readdirSync(cacheRoot, { withFileTypes: true })) {
-			if (!entry.isDirectory() || !tagShape.test(entry.name)) continue;
-			if (entry.name === keepTag) continue;
-			const dirPath = join(cacheRoot, entry.name);
-			const mtimeMs = statSync(dirPath).mtimeMs;
-			// Fresh mtime: a concurrent launch (e.g. a version-pinned npx) may
-			// be downloading into it right now — skip, sweep on a later run.
-			if (Date.now() - mtimeMs < 60 * 60 * 1000) continue;
-			candidates.push({ dirPath, mtimeMs });
-		}
-		// Newest non-current tag survives as rollback; the rest go. A binary
-		// still running from a swept dir keeps its inode on POSIX; on Windows
-		// the locked exe makes rmSync throw and the sweep retries next launch.
-		candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-		for (const { dirPath } of candidates.slice(1)) {
-			rmSync(dirPath, { recursive: true, force: true });
-		}
-	} catch {
-		// Never block launch on cleanup.
-	}
-}
-
-function formatBytes(bytes) {
-	if (bytes === 0) return "0 B";
-	const k = 1024;
-	const sizes = ["B", "KB", "MB", "GB"];
-	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-}
-
 (async () => {
-	cleanupRetiredInstallDirs();
+	cleanupRetiredInstallDirs(dirname(fileURLToPath(import.meta.url)));
 
 	const platformInfo = await getPlatformArchAndBinary();
 	const { platformDir, archDir, binaryName, suffix } = platformInfo;
-
-	const namedVersion = VERSION === "latest" ? BINARY_RELEASE_BRANCH : VERSION;
 
 	// For the NPX package, we always use the configured branch or the specified version
 	const branchName = VERSION === "latest" ? BINARY_RELEASE_BRANCH : VERSION;
@@ -409,11 +67,9 @@ function formatBytes(bytes) {
 	const zipFileName = `${binaryName}-${platformDir}-${archDir}.zip`;
 	const downloadUrl = `${BASE_URL}/${branchName}/${zipFileName}`;
 
-	let lastError = null;
-	let binaryWorking = false;
-
 	// Use branch name for caching
-	const tinglyBinDir = join(cacheDir(), "tingly-box", branchName, "bin");
+	const cacheRoot = join(cacheDir(), "tingly-box");
+	const tinglyBinDir = join(cacheRoot, branchName, "bin");
 
 	// Create the binary directory
 	try {
@@ -430,103 +86,21 @@ function formatBytes(bytes) {
 
 	// If binary doesn't exist, download and extract ZIP
 	if (!existsSync(binaryPath)) {
-		await downloadAndExtractZip(downloadUrl, tinglyBinDir, binaryName);
-
-		// Make sure the binary is executable
-		if (process.platform !== "win32") {
-			chmodSync(binaryPath, 0o755);
-		}
+		await downloadAndExtractZip(downloadUrl, tinglyBinDir);
 
 		console.log(`✅ Downloaded and extracted to ${binaryPath}`);
 	}
 
 	// The binary for this tag is in place — old tag dirs are now safe to GC.
-	cleanupStaleBinaryCaches(join(cacheDir(), "tingly-box"), branchName);
+	cleanupStaleBinaryCaches(cacheRoot, branchName);
 
-    // Test if the binary can execute
-    // Debug: Show binary location
-    console.log(`🔍 Executing binary: ${binaryPath}`);
+	console.log(`🔍 Executing binary: ${binaryPath}`);
 
-    try {
-        // Use default args if no arguments provided; always prepend the source
-        // flag so any npx invocation records its launch source.
-        const baseArgs = remainingArgs.length > 0 ? remainingArgs : DEFAULT_ARGS;
-        const argsToUse = [...SOURCE_ARGS, ...baseArgs];
-
-        execFileSync(binaryPath, argsToUse, {
-            stdio: "inherit",
-            encoding: 'utf8'
-        });
-
-        // If we reach here, the binary executed successfully
-        binaryWorking = true;
-
-        // If execFileSync completes without throwing, the binary exited with code 0
-        // No need to explicitly exit here, let the script continue
-    } catch (execError) {
-        lastError = execError;
-        binaryWorking = false;
-
-        // Extract detailed error information
-        const errorCode = execError.code;
-        const errorSignal = execError.signal;
-        const errorMessage = execError.message;
-        const errorStatus = execError.status;
-
-        // Create comprehensive error output
-        console.error(`\n❌ Tingly-Box execution failed`);
-        console.error(`┌─ Error Details:`);
-        console.error(`│  Message: ${errorMessage}`);
-
-        if (errorCode) {
-            console.error(`│  Code: ${errorCode}`);
-            // Provide specific guidance for common error codes
-            switch (errorCode) {
-                case 'ENOENT':
-                    console.error(`│  └─ Binary not found at: ${binaryPath}`);
-                    console.error(`│     Try removing the cached binary: rm -rf "${join(cacheDir(), 'tingly-box')}"`);
-                    break;
-                case 'EACCES':
-                    console.error(`│  └─ Permission denied. Check binary permissions.`);
-                    break;
-                case 'ETXTBSY':
-                    console.error(`│  └─ Binary file is busy or being modified.`);
-                    break;
-                default:
-                    console.error(`│  └─ System error occurred.`);
-            }
-        }
-
-        if (errorStatus !== null && errorStatus !== undefined) {
-            console.error(`│  Exit Code: ${errorStatus}`);
-            console.error(`│  └─ The binary exited with non-zero status code.`);
-        }
-
-        if (errorSignal) {
-            console.error(`│  Signal: ${errorSignal}`);
-            console.error(`│  └─ The binary was terminated by a signal.`);
-        }
-
-        console.error(`└─ Binary Path: ${binaryPath}`);
-        console.error(`   Platform: ${process.platform} (${process.arch})`);
-
-        // Provide additional help for common scenarios
-        if (process.platform === "linux") {
-            console.error(`\n💡 Linux Troubleshooting:`);
-            console.error(`   • Check if required libraries are installed:`);
-            console.error(`     - For glibc issues: try on a different Linux distribution`);
-            console.error(`     - For missing dependencies: install required system packages`);
-            console.error(`   • Try running with strace: strace -o trace.log "${binaryPath}"`);
-        }
-
-        // Suggest retry
-        console.error(`\n🔄 To retry, run: npx tingly-box ${remainingArgs.join(' ')}`);
-        console.error(`   Or clear cache first: rm -rf "${join(cacheDir(), 'tingly-box')}"`);
-    }
-
-    if (!binaryWorking) {
-        // Exit with the binary's exit code if available, otherwise default to 1
-        const exitCode = lastError.status !== undefined ? lastError.status : 1;
-        process.exit(exitCode);
-    }
+	// Use default args if no arguments provided; always prepend the source
+	// flag so any npx invocation records its launch source.
+	const baseArgs = remainingArgs.length > 0 ? remainingArgs : DEFAULT_ARGS;
+	execBinary(binaryPath, [...SOURCE_ARGS, ...baseArgs], {
+		retryCmd: `npx tingly-box ${remainingArgs.join(' ')}`,
+		cacheRoot,
+	});
 })();

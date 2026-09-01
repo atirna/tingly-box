@@ -189,9 +189,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
-          cache-dependency-path: |
-            ${{ matrix.pkg_dir }}/package-lock.json
-            build/npx/*/package-lock.json
+          cache-dependency-path: build/npx/package-lock.json
 
       - name: Configure Git
         run: |
@@ -218,8 +216,10 @@ jobs:
           cd ..
 
       # Both legs need node_modules for the esbuild bundling step below.
+      # Deps are hoisted to build/npx/ so bin.js and shared/ modules resolve
+      # them from one place (see .design/npm.md).
       - name: Install dependencies
-        working-directory: ${{ matrix.pkg_dir }}
+        working-directory: build/npx
         run: npm ci
 
       - name: Run tests
@@ -255,8 +255,9 @@ jobs:
         if: matrix.type == 'cli'
         working-directory: ${{ matrix.pkg_dir }}
         run: |
-          # What a user's install runs: bundled bin.js, no node_modules.
-          rm -rf node_modules
+          # What a user's install runs: bundled bin.js, no node_modules
+          # (also not the hoisted one at build/npx).
+          rm -rf node_modules ../node_modules
           node bin.js --transport-version="${{ needs.setup.outputs.release_tag }}" version
 
       # Bundle-only steps
@@ -325,8 +326,9 @@ jobs:
         working-directory: ${{ matrix.pkg_dir }}
         run: |
           # What a user's install runs: bundled bin.js resolving the binary
-          # from the packaged zips, with no node_modules present.
-          rm -rf node_modules
+          # from the packaged zips, with no node_modules present
+          # (also not the hoisted one at build/npx).
+          rm -rf node_modules ../node_modules
           node bin.js version
 
       - name: Calculate package size
@@ -516,9 +518,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
-          cache-dependency-path: |
-            build/npx/tingly-box-gui/package-lock.json
-            build/npx/*/package-lock.json
+          cache-dependency-path: build/npx/package-lock.json
 
       - name: Configure Git
         run: |
@@ -544,8 +544,9 @@ jobs:
           rm -f bin.js.bak
           cd ..
 
+      # Deps hoisted to build/npx/, same as the cli/bundle legs.
       - name: Install dependencies
-        working-directory: ${{ env.PKG_DIR }}
+        working-directory: build/npx
         run: npm ci
 
       - name: Run tests
@@ -570,7 +571,7 @@ jobs:
           npm pkg delete dependencies
           node --check bin.js
           # On Linux the GUI shim prints "not supported" and exits 0.
-          rm -rf node_modules
+          rm -rf node_modules ../node_modules
           node bin.js
           echo "✅ Bundled bin.js ($(du -h bin.js | cut -f1)), dependencies stripped"
 
