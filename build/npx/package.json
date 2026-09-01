@@ -1,0 +1,10 @@
+{
+  "name": "tingly-box-npx-shims",
+  "private": true,
+  "description": "Hoisted dependencies for the npx shims and their shared/ modules. bin.js imports resolve here for dev runs and esbuild bundling; published packages are single-file and zero-dependency (see .design/npm.md).",
+  "type": "module",
+  "dependencies": {
+    "undici": "^7.0.0",
+    "unzipper": "^0.12.3"
+  }
+}
