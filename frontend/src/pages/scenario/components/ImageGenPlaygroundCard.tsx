@@ -25,9 +25,11 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { Rule } from '@/components/RoutingGraphTypes';
 import UnifiedCard from '@/components/UnifiedCard';
-import { AutoAwesome, Brush, Close, ContentCopy, Edit, FileUpload, Photo, ZoomIn } from '@/components/icons';
+import { AutoAwesome, Brush, Close, ContentCopy, Download, Edit, FileUpload, GridView, Photo, ZoomIn } from '@/components/icons';
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { getOpenAIClient } from '@/services/modelApi';
+import { downloadImage, fetchBlob, slugify } from '@/utils/download';
+import ImageSliceDialog from './ImageSliceDialog';
 
 const IMAGE_SCENARIO = 'imagegen';
 // Base panel height, plus the mode toggle row present in both modes. Edit
@@ -40,6 +42,13 @@ const EDIT_REFERENCE_SECTION_HEIGHT = 108;
 // .design/imageedit.md) — the common denominator across providers behind
 // this scenario.
 const MAX_EDIT_REFERENCE_IMAGES = 5;
+
+// Shared by the lightbox's overlay buttons — restyling the bar should be one edit.
+const overlayIconSx = {
+    color: 'common.white',
+    bgcolor: 'rgba(255, 255, 255, 0.08)',
+    '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.16)' },
+} as const;
 
 type Mode = 'generate' | 'edit';
 type Quality = 'auto' | 'high' | 'medium' | 'low' | 'standard';
@@ -125,6 +134,7 @@ const ImageGenPlaygroundCard: React.FC<ImageGenPlaygroundCardProps> = ({
     const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
     const [runs, setRuns] = useState<GenerationRun[]>(() => imageGenSessionRuns);
     const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
+    const [sliceTarget, setSliceTarget] = useState<SelectedImage | null>(null);
     const historyTrackRef = useRef<HTMLDivElement>(null);
     const referenceFileInputRef = useRef<HTMLInputElement>(null);
     const pendingCount = runs.filter((run) => run.status === 'pending').length;
@@ -187,14 +197,25 @@ const ImageGenPlaygroundCard: React.FC<ImageGenPlaygroundCardProps> = ({
     // data URL/data-equivalent), so this never re-encodes the image.
     const handleUseAsReference = useCallback(async (src: string) => {
         try {
-            const res = await fetch(src);
-            const blob = await res.blob();
+            const blob = await fetchBlob(src);
             const file = new File([blob], `reference-${Date.now()}.png`, { type: blob.type || 'image/png' });
             setMode('edit');
             setReferenceImages([{ file, previewUrl: src }]);
         } catch {
             showNotification(
                 t('playground.referenceLoadFailed', { defaultValue: 'Could not use this image as a reference' }),
+                'error',
+            );
+        }
+    }, [showNotification, t]);
+
+    // Hands the finished pixels over, not a notification that they exist.
+    const handleDownload = useCallback(async (image: SelectedImage) => {
+        try {
+            await downloadImage(image.src, `${slugify(image.prompt)}-${image.index + 1}`);
+        } catch {
+            showNotification(
+                t('playground.downloadFailed', { defaultValue: 'Could not download this image' }),
                 'error',
             );
         }
@@ -983,13 +1004,27 @@ const ImageGenPlaygroundCard: React.FC<ImageGenPlaygroundCardProps> = ({
                             <IconButton
                                 onClick={() => { if (selectedImage) copyPrompt(selectedImage.prompt); }}
                                 aria-label={t('playground.copyPrompt', { defaultValue: 'Copy prompt' })}
-                                sx={{
-                                    color: 'common.white',
-                                    bgcolor: 'rgba(255, 255, 255, 0.08)',
-                                    '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.16)' },
-                                }}
+                                sx={overlayIconSx}
                             >
                                 <ContentCopy fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title={t('playground.slice.action', { defaultValue: 'Split into tiles' })}>
+                            <IconButton
+                                onClick={() => setSliceTarget(selectedImage)}
+                                aria-label={t('playground.slice.action', { defaultValue: 'Split into tiles' })}
+                                sx={overlayIconSx}
+                            >
+                                <GridView fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title={t('playground.download', { defaultValue: 'Download' })}>
+                            <IconButton
+                                onClick={() => { if (selectedImage) void handleDownload(selectedImage); }}
+                                aria-label={t('playground.download', { defaultValue: 'Download' })}
+                                sx={overlayIconSx}
+                            >
+                                <Download fontSize="small" />
                             </IconButton>
                         </Tooltip>
                         <Tooltip title={t('playground.useAsReference', { defaultValue: 'Edit this image' })}>
@@ -1000,11 +1035,7 @@ const ImageGenPlaygroundCard: React.FC<ImageGenPlaygroundCardProps> = ({
                                     setSelectedImage(null);
                                 }}
                                 aria-label={t('playground.useAsReference', { defaultValue: 'Edit this image' })}
-                                sx={{
-                                    color: 'common.white',
-                                    bgcolor: 'rgba(255, 255, 255, 0.08)',
-                                    '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.16)' },
-                                }}
+                                sx={overlayIconSx}
                             >
                                 <Edit fontSize="small" />
                             </IconButton>
@@ -1012,11 +1043,7 @@ const ImageGenPlaygroundCard: React.FC<ImageGenPlaygroundCardProps> = ({
                         <IconButton
                             onClick={() => setSelectedImage(null)}
                             aria-label={t('playground.closePreview', { defaultValue: 'Close image preview' })}
-                            sx={{
-                                color: 'common.white',
-                                bgcolor: 'rgba(255, 255, 255, 0.08)',
-                                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.16)' },
-                            }}
+                            sx={overlayIconSx}
                         >
                             <Close />
                         </IconButton>
@@ -1049,6 +1076,13 @@ const ImageGenPlaygroundCard: React.FC<ImageGenPlaygroundCardProps> = ({
                     )}
                 </DialogContent>
             </Dialog>
+            <ImageSliceDialog
+                open={sliceTarget !== null}
+                src={sliceTarget?.src ?? null}
+                prompt={sliceTarget?.prompt ?? ''}
+                onClose={() => setSliceTarget(null)}
+                showNotification={showNotification}
+            />
         </>
     );
 };

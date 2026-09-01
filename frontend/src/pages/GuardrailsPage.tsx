@@ -27,6 +27,7 @@ import PageLayout from '@/components/PageLayout';
 import PageHeader from '@/components/PageHeader';
 import UnifiedCard from '@/components/UnifiedCard';
 import { api } from '@/services/api';
+import { downloadText } from '@/utils/download';
 
 type GuardrailsHistoryEntry = {
     time: string;
@@ -228,14 +229,7 @@ const GuardrailsPage = () => {
                 return;
             }
             files.forEach((file: { content?: string; name?: string }) => {
-                const blob = new Blob([file.content || ''], { type: 'text/yaml' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = file.name || 'guardrails-fragment.yaml';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(link.href);
+                downloadText(file.content || '', file.name || 'guardrails-fragment.yaml', 'text/yaml');
             });
             closeExportDialog();
             setActionMessage({

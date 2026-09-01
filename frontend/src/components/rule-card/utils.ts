@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { api } from '@/services/api';
 import type { SmartRouting, ConfigProvider, Rule, ConfigRecord, RuleFlags, RuleFlagsApi, FlagSpec } from '@/components/RoutingGraphTypes';
 import { getFlagValue, setFlagValue, flagDefault, isFlagActive, snakeToCamel, apiToFlags } from './flagHelpers';
+import { downloadText } from '@/utils/download';
 
 // ============================================================================
 // Helper Functions
@@ -337,7 +338,7 @@ async function exportData(
     const extension = format === 'jsonl' ? 'jsonl' : 'txt';
     const mimeType = format === 'jsonl' ? 'application/jsonl' : 'text/plain';
 
-    downloadFile(content, `${filename}.${extension}`, mimeType);
+    downloadText(content, `${filename}.${extension}`, mimeType);
     onNotification(notificationMsg, 'success');
 }
 
@@ -435,7 +436,7 @@ export async function exportProvider(
         const message = format === 'jsonl'
             ? 'Provider exported successfully!'
             : 'Provider exported as Base64! You can copy and share this file.';
-        downloadFile(content, `${filename}.${extension}`, mimeType);
+        downloadText(content, `${filename}.${extension}`, mimeType);
         onNotification(message, 'success');
     } catch (error) {
         console.error('Error exporting provider:', error);
@@ -606,19 +607,4 @@ async function copyToClipboard(text: string): Promise<void> {
             document.body.removeChild(textArea);
         }
     }
-}
-
-/**
- * Downloads content as a file
- */
-function downloadFile(content: string, filename: string, mimeType: string): void {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
 }
