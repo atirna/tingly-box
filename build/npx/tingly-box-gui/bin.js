@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "child_process";
-import { chmodSync, createWriteStream, existsSync, mkdirSync } from "fs";
+import { chmodSync, existsSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
-import { Readable } from "stream";
 import { fileURLToPath } from "url";
-import unzipper from "unzipper";
 import { cacheDir } from "../shared/cachedir.js";
 import { cleanupRetiredInstallDirs, cleanupStaleBinaryCaches } from "../shared/cleanup.js";
-import { dispatcher, formatBytes } from "../shared/download.js";
+import { downloadAndExtractZip } from "../shared/download.js";
 import { parseTransportVersion } from "../shared/transport.js";
 
 // Configuration for binary downloads
@@ -50,97 +48,6 @@ async function getPlatformArchAndBinary() {
 	}
 
 	return { platformDir, archDir, binaryName: "tingly-box-gui", suffix, appName };
-}
-
-async function downloadAndExtractZip(url, extractDir) {
-	console.log(`🔄 Downloading ZIP from ${url}...`);
-
-	// Fetch with redirect following and optional proxy support
-	const fetchOptions = {
-		redirect: 'follow',
-		headers: {
-			'User-Agent': 'tingly-box-npx'
-		}
-	};
-	if (dispatcher) {
-		fetchOptions.dispatcher = dispatcher;
-	}
-
-	const res = await fetch(url, fetchOptions);
-
-	if (!res.ok) {
-		console.error(`❌ Download failed: ${res.status} ${res.statusText}`);
-		process.exit(1);
-	}
-
-	const contentLength = res.headers.get("content-length");
-	const totalSize = contentLength ? parseInt(contentLength, 10) : null;
-	let downloadedSize = 0;
-
-	// Convert the fetch response body to a Node.js readable stream
-	const nodeStream = Readable.fromWeb(res.body);
-
-	// Collect the entire ZIP into a buffer
-	const chunks = [];
-	for await (const chunk of nodeStream) {
-		chunks.push(chunk);
-		downloadedSize += chunk.length;
-		if (totalSize) {
-			const progress = ((downloadedSize / totalSize) * 100).toFixed(1);
-			process.stdout.write(`\r⏱️ Downloading: ${progress}% (${formatBytes(downloadedSize)}/${formatBytes(totalSize)})`);
-		} else {
-			process.stdout.write(`\r⏱️ Downloaded: ${formatBytes(downloadedSize)}`);
-		}
-	}
-	const zipBuffer = Buffer.concat(chunks);
-
-	// Extract ZIP from buffer using unzipper
-	try {
-		console.log(`\n📦 Extracting ZIP to ${extractDir}...`);
-
-		const directory = await unzipper.Open.buffer(zipBuffer);
-
-		// Extract all files to the target directory
-		for (const file of directory.files) {
-			const filePath = join(extractDir, file.path);
-			const fileDir = join(extractDir, file.path.replace(/\/[^/]*$/, ''));
-
-			// Create directory if needed
-			if (file.type === 'Directory') {
-				if (!existsSync(filePath)) {
-					mkdirSync(filePath, { recursive: true });
-				}
-			} else {
-				// Ensure parent directory exists
-				if (!existsSync(fileDir)) {
-					mkdirSync(fileDir, { recursive: true });
-				}
-
-				// Extract file
-				const content = await file.buffer();
-				const fileStream = createWriteStream(filePath);
-				await new Promise((resolve, reject) => {
-					fileStream.write(content, (err) => {
-						if (err) reject(err);
-						else {
-							fileStream.end();
-							resolve();
-						}
-					});
-				});
-				// Set file permissions after writing
-				if (file.unixPermissions && process.platform !== "win32") {
-					chmodSync(filePath, file.unixPermissions);
-				}
-			}
-		}
-
-		console.log(`✅ Extracted ZIP to ${extractDir}`);
-	} catch (error) {
-		console.error(`\n❌ Failed to extract ZIP: ${error.message}`);
-		console.error(`Stack: ${error.stack}`);
-		process.exit(1);
-	}
 }
 
 (async () => {
