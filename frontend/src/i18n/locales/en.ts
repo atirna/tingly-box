@@ -1680,7 +1680,30 @@ export default {
     "requestFailed": "Request failed",
     "closePreview": "Close image preview",
     "copyPrompt": "Copy prompt",
-    "promptCopied": "Copied"
+    "promptCopied": "Copied",
+    "download": "Download",
+    "downloadFailed": "Could not download this image",
+    "slice": {
+      "action": "Split into tiles",
+      "title": "Split into tiles",
+      "close": "Close slicer",
+      "hint": "Cuts an evenly divided grid — a sticker sheet, a contact sheet, a spritesheet. Adjust the margin and gap until the outlines sit on the artwork, then click a tile to leave it out.",
+      "rows": "Rows",
+      "cols": "Columns",
+      "margin": "Outer margin",
+      "gutter": "Gap between tiles",
+      "exportSize": "Output size",
+      "exportOriginal": "Original",
+      "exportOriginalWithSize": "Original · {{width}}×{{height}} px",
+      "selectedCount": "{{selected}} of {{total}} tiles",
+      "downloadOne": "Download this tile",
+      "downloadZip": "Download {{count}} PNGs (ZIP)",
+      "cancel": "Cancel",
+      "tile": "Tile {{number}}",
+      "sheetAlt": "Image being sliced",
+      "failed": "Could not slice this image",
+      "loadFailed": "This image could not be read for slicing. Providers that return a remote URL may block browser access to their pixels."
+    }
   },
   "agentSetup": {
     "quickStart": "Quick Start",

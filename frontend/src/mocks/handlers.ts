@@ -1572,6 +1572,10 @@ let mockSharingKeys = [
     { token_id: 'tb-share-platform00000000000000000000000001', user_id: 'user-platform', team_id: '00000000-0000-0000-0000-000000000002', display_name: 'Platform CI', enabled: true, created_at: '2026-07-12T00:00:00Z' },
 ]
 
+// Shared by the imagegen fixtures below: SVG source -> data URL.
+const svgDataUrl = (svg: string): string =>
+    `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+
 export const handlers = [
     // Remote Agents / Remote Graphs API endpoints
     http.get('/api/remote-agents', () => {
@@ -2405,7 +2409,29 @@ export const handlers = [
         const palette = ['#7c3aed', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6']
         const promptText = String(body?.prompt ?? '').slice(0, 80).replace(/[<>&"]/g, '')
 
+        // A prompt that asks for an NxM grid gets a real grid back, so the
+        // playground's slicer is exercisable against the mock backend.
+        const sheet = /(\d+)\s*[x×]\s*(\d+)\s+grid/i.exec(promptText)
+
+        const makeSheetSvgDataUrl = (cols: number, rows: number, offset: number): string => {
+            const cellW = w / cols
+            const cellH = h / rows
+            const radius = Math.min(cellW, cellH) * 0.36
+            let body = ''
+            for (let row = 0; row < rows; row += 1) {
+                for (let col = 0; col < cols; col += 1) {
+                    const idx = row * cols + col
+                    const cx = cellW * (col + 0.5)
+                    const cy = cellH * (row + 0.5)
+                    body += `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="${palette[(idx + offset) % palette.length]}" stroke="white" stroke-width="${radius * 0.16}"/>`
+                        + `<text x="${cx}" y="${cy + radius * 0.2}" font-family="sans-serif" font-size="${radius * 0.7}" fill="white" text-anchor="middle" font-weight="700">${idx + 1}</text>`
+                }
+            }
+            return svgDataUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${body}</svg>`)
+        }
+
         const makeSvgDataUrl = (idx: number): string => {
+            if (sheet) return makeSheetSvgDataUrl(Number(sheet[1]), Number(sheet[2]), idx)
             const bg = palette[idx % palette.length]
             const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
                 + `<rect width="100%" height="100%" fill="${bg}"/>`
@@ -2413,8 +2439,7 @@ export const handlers = [
                 + `<text x="50%" y="56%" font-family="sans-serif" font-size="${Math.round(w / 36)}" fill="white" fill-opacity="0.85" text-anchor="middle">${promptText}</text>`
                 + `<text x="50%" y="95%" font-family="monospace" font-size="${Math.round(w / 50)}" fill="white" fill-opacity="0.7" text-anchor="middle">${body?.model ?? ''} · ${size} · q=${body?.quality ?? 'auto'}</text>`
                 + `</svg>`
-            const b64 = btoa(unescape(encodeURIComponent(svg)))
-            return `data:image/svg+xml;base64,${b64}`
+            return svgDataUrl(svg)
         }
 
         // Simulate a small latency so the loading state is visible
@@ -2448,8 +2473,7 @@ export const handlers = [
                 + `<text x="50%" y="56%" font-family="sans-serif" font-size="${Math.round(w / 36)}" fill="white" fill-opacity="0.85" text-anchor="middle">${promptText}</text>`
                 + `<text x="50%" y="95%" font-family="monospace" font-size="${Math.round(w / 50)}" fill="white" fill-opacity="0.7" text-anchor="middle">${model} · ${size} · q=${quality}</text>`
                 + `</svg>`
-            const b64 = btoa(unescape(encodeURIComponent(svg)))
-            return `data:image/svg+xml;base64,${b64}`
+            return svgDataUrl(svg)
         }
 
         // Simulate a small latency so the loading state is visible

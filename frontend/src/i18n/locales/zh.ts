@@ -1676,7 +1676,30 @@ export default {
     "requestFailed": "请求失败",
     "closePreview": "关闭图像预览",
     "copyPrompt": "复制提示词",
-    "promptCopied": "已复制"
+    "promptCopied": "已复制",
+    "download": "下载",
+    "downloadFailed": "无法下载这张图片",
+    "slice": {
+      "action": "切分为多张",
+      "title": "切分为多张",
+      "close": "关闭切图",
+      "hint": "按等分网格切割——贴纸表、九宫格、精灵图都适用。调整外边距和间隙，让框线对准画面，点击某一格可以把它排除。",
+      "rows": "行",
+      "cols": "列",
+      "margin": "外边距",
+      "gutter": "格子间隙",
+      "exportSize": "输出尺寸",
+      "exportOriginal": "原始尺寸",
+      "exportOriginalWithSize": "原始尺寸 · {{width}}×{{height}} px",
+      "selectedCount": "已选 {{selected}} / {{total}} 张",
+      "downloadOne": "下载这一张",
+      "downloadZip": "下载 {{count}} 张 PNG（ZIP）",
+      "cancel": "取消",
+      "tile": "第 {{number}} 格",
+      "sheetAlt": "待切割的图片",
+      "failed": "无法切割这张图片",
+      "loadFailed": "无法读取这张图片的像素。部分 provider 返回的远程 URL 会阻止浏览器读取图像内容。"
+    }
   },
   "agentSetup": {
     "quickStart": "快速开始",
