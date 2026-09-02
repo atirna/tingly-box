@@ -194,7 +194,7 @@ func TestConvertChatToOpenAIResponses(t *testing.T) {
 		// Third item should be function_call_output
 		fnOutput := result.Input.OfInputItemList[2].OfFunctionCallOutput
 		require.NotNil(t, fnOutput)
-		assert.Equal(t, "call_123", fnOutput.CallID)
+		assert.Equal(t, "call_123", fnOutput.CallID.Value)
 		assert.Equal(t, "Sunny, 22°C", fnOutput.Output.OfString.Value)
 	})
 

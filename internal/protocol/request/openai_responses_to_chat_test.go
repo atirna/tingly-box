@@ -236,8 +236,7 @@ func TestConvertOpenAIResponsesToChat(t *testing.T) {
 					// Function output
 					{
 						OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-							CallID: "call_123",
-							Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+							CallID: param.NewOpt("call_123"),							Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
 								OfString: param.NewOpt("Sunny, 22°C"),
 							},
 							Status: "completed",

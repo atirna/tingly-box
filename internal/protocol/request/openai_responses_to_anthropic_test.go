@@ -164,14 +164,12 @@ func TestConvertOpenAIResponsesToAnthropicBetaRequest_ParallelToolCalls(t *testi
 				},
 				{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-						CallID: "call_00_AAAA",
-						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("hello")},
+						CallID: param.NewOpt("call_00_AAAA"),						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("hello")},
 					},
 				},
 				{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-						CallID: "call_00_BBBB",
-						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("AGENTS.md\nCLAUDE.md")},
+						CallID: param.NewOpt("call_00_BBBB"),						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("AGENTS.md\nCLAUDE.md")},
 					},
 				},
 			},
@@ -216,8 +214,7 @@ func TestConvertOpenAIResponsesToAnthropicBetaRequest_SequentialToolCalls(t *tes
 				},
 				{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-						CallID: "call_00_AAAA",
-						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("hello")},
+						CallID: param.NewOpt("call_00_AAAA"),						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("hello")},
 					},
 				},
 				{
@@ -227,8 +224,7 @@ func TestConvertOpenAIResponsesToAnthropicBetaRequest_SequentialToolCalls(t *tes
 				},
 				{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-						CallID: "call_00_BBBB",
-						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("AGENTS.md\nCLAUDE.md")},
+						CallID: param.NewOpt("call_00_BBBB"),						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt("AGENTS.md\nCLAUDE.md")},
 					},
 				},
 			},

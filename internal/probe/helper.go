@@ -319,7 +319,7 @@ func buildOpenAIResponsesVisionInput(p probeParams) []responses.ResponseInputIte
 				Arguments: "{}",
 			}},
 			{OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-				CallID: visionproxy.ToolCallID,
+				CallID: param.NewOpt(visionproxy.ToolCallID),
 				Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
 					OfResponseFunctionCallOutputItemArray: responses.ResponseFunctionCallOutputItemListParam{
 						{OfInputText: &responses.ResponseInputTextContentParam{Text: visionproxy.ToolResultText}},

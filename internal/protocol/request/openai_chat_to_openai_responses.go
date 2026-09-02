@@ -304,7 +304,7 @@ func convertChatToolMessageToResponses(toolMsg *openai.ChatCompletionToolMessage
 
 	return responses.ResponseInputItemUnionParam{
 		OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-			CallID: toolMsg.ToolCallID,
+			CallID: param.NewOpt(toolMsg.ToolCallID),
 			Output: output,
 		},
 	}
