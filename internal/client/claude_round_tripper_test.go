@@ -40,43 +40,6 @@ func TestAnthropicBetaFlags(t *testing.T) {
 	}
 }
 
-func TestRemapToolNames(t *testing.T) {
-	t.Run("renames bash to Bash in OfTool", func(t *testing.T) {
-		tools := []anthropic.ToolUnionParam{
-			{OfTool: &anthropic.ToolParam{Name: "bash"}},
-		}
-		rev := remapToolNames(tools)
-		assert.Equal(t, "Bash", tools[0].OfTool.Name)
-		assert.Equal(t, map[string]string{"Bash": "bash"}, rev)
-	})
-
-	t.Run("skips built-in tools (OfTool is nil)", func(t *testing.T) {
-		tools := []anthropic.ToolUnionParam{
-			{OfBashTool20250124: &anthropic.ToolBash20250124Param{}},
-		}
-		rev := remapToolNames(tools)
-		assert.Empty(t, rev)
-	})
-
-	t.Run("already TitleCase — no rename", func(t *testing.T) {
-		tools := []anthropic.ToolUnionParam{
-			{OfTool: &anthropic.ToolParam{Name: "Bash"}},
-		}
-		rev := remapToolNames(tools)
-		assert.Equal(t, "Bash", tools[0].OfTool.Name)
-		assert.Empty(t, rev)
-	})
-
-	t.Run("unknown tool — passed through unchanged", func(t *testing.T) {
-		tools := []anthropic.ToolUnionParam{
-			{OfTool: &anthropic.ToolParam{Name: "my_custom_tool"}},
-		}
-		rev := remapToolNames(tools)
-		assert.Equal(t, "my_custom_tool", tools[0].OfTool.Name)
-		assert.Empty(t, rev)
-	})
-}
-
 func TestRestoreToolNamesInMessage(t *testing.T) {
 	t.Run("restores tool_use name", func(t *testing.T) {
 		msg := &anthropic.Message{

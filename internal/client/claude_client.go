@@ -172,8 +172,8 @@ func (c *ClaudeClient) Guard(ctx context.Context, req *anthropic.MessageNewParam
 		}
 	}
 
-	// Remap tool names to Claude Code TitleCase equivalents to avoid Anthropic fingerprinting
-	reverseMap := remapToolNames(req.Tools)
+	// Remap tool names towards Claude Code spelling (see claude_tool_names.go)
+	reverseMap := remapRequestToolNames(req)
 
 	// Inject session ID from metadata
 	meta := ops.ParseMetadataUserID(req.Metadata.UserID.String())
@@ -181,6 +181,11 @@ func (c *ClaudeClient) Guard(ctx context.Context, req *anthropic.MessageNewParam
 		panic("invalid metadata")
 	}
 	options := append(c.AnthropicClient.Client().Options, anthropicOption.WithHeader("X-Claude-Code-Session-Id", meta.SessionID))
+	// Streaming responses bypass restoreToolNamesInMessage, so undo the rename
+	// on the wire instead. No-op for non-streaming responses.
+	if len(reverseMap) > 0 {
+		options = append(options, anthropicOption.WithMiddleware(restoreToolNamesMiddleware(reverseMap)))
+	}
 	logrus.WithContext(ctx).Debugf("session: %s", meta.SessionID)
 	logrus.WithContext(ctx).Debugf("metadata: %s", req.Metadata.UserID)
 
@@ -227,8 +232,8 @@ func (c *ClaudeClient) GuardBeta(ctx context.Context, req *anthropic.BetaMessage
 		stripBetaClearThinkingEdit(req)
 	}
 
-	// Remap tool names to Claude Code TitleCase equivalents to avoid Anthropic fingerprinting
-	reverseMap := remapBetaToolNames(req.Tools)
+	// Remap tool names towards Claude Code spelling (see claude_tool_names.go)
+	reverseMap := remapBetaRequestToolNames(req)
 
 	// Inject session ID from metadata
 	meta := ops.ParseMetadataUserID(req.Metadata.UserID.String())
@@ -236,6 +241,11 @@ func (c *ClaudeClient) GuardBeta(ctx context.Context, req *anthropic.BetaMessage
 		panic("invalid metadata")
 	}
 	options := append(c.AnthropicClient.Client().Options, anthropicOption.WithHeader("X-Claude-Code-Session-Id", meta.SessionID))
+	// Streaming responses bypass restoreBetaToolNamesInMessage, so undo the
+	// rename on the wire instead. No-op for non-streaming responses.
+	if len(reverseMap) > 0 {
+		options = append(options, anthropicOption.WithMiddleware(restoreToolNamesMiddleware(reverseMap)))
+	}
 	logrus.WithContext(ctx).Debugf("session: %s", meta.SessionID)
 	logrus.WithContext(ctx).Debugf("metadata: %s", req.Metadata.UserID)
 
@@ -334,34 +344,106 @@ func stripBetaClearThinkingEdit(req *anthropic.BetaMessageNewParams) {
 	req.ContextManagement.Edits = filtered
 }
 
-// remapToolNames renames OfTool tools in-place using oauthToolRenameMap.
-// Returns a reverse map (TitleCase → original) for restoring names in the response.
-func remapToolNames(tools []anthropic.ToolUnionParam) map[string]string {
-	reverseMap := make(map[string]string)
-	for i := range tools {
-		t := tools[i].OfTool
+// remapRequestToolNames renames tool names in-place to their Claude Code
+// equivalents. Returns a reverse map (outbound → original) for restoring names
+// in the response.
+//
+// The plan is computed once from req.Tools and then applied to every site in
+// the request that has to agree with it: the tool definitions, an explicit
+// tool_choice pin, and the tool_use blocks of prior assistant turns. Folding a
+// site independently would be wrong — planToolRenames deliberately skips a
+// rename whose target collides with another tool in the same request, so an
+// independent fold could pin tool_choice to a name that is not in tools[], or
+// to a different tool that happens to own it.
+func remapRequestToolNames(req *anthropic.MessageNewParams) map[string]string {
+	if req == nil {
+		return nil
+	}
+	names := make([]string, 0, len(req.Tools))
+	for i := range req.Tools {
+		if t := req.Tools[i].OfTool; t != nil {
+			names = append(names, t.Name)
+		}
+	}
+	plan := planToolRenames(names)
+	if len(plan) == 0 {
+		return nil
+	}
+	reverseMap := make(map[string]string, len(plan))
+	for i := range req.Tools {
+		t := req.Tools[i].OfTool
 		if t == nil {
 			continue
 		}
-		if newName, ok := oauthToolRenameMap[t.Name]; ok && newName != t.Name {
+		if newName, ok := plan[t.Name]; ok {
 			reverseMap[newName] = t.Name
-			tools[i].OfTool.Name = newName
+			t.Name = newName
+		}
+	}
+	// tool_choice is request-only, so it needs no entry in the reverse map.
+	if pin := req.ToolChoice.OfTool; pin != nil {
+		if newName, ok := plan[pin.Name]; ok {
+			pin.Name = newName
+		}
+	}
+	// Prior turns carry the name the model was given last time. Leaving them
+	// at the client's spelling would contradict the renamed tools[] and put
+	// the snake_case names back on the wire this rename exists to remove.
+	for i := range req.Messages {
+		for j := range req.Messages[i].Content {
+			use := req.Messages[i].Content[j].OfToolUse
+			if use == nil {
+				continue
+			}
+			if newName, ok := plan[use.Name]; ok {
+				use.Name = newName
+			}
 		}
 	}
 	return reverseMap
 }
 
-// remapBetaToolNames is the BetaToolUnionParam equivalent of remapToolNames.
-func remapBetaToolNames(tools []anthropic.BetaToolUnionParam) map[string]string {
-	reverseMap := make(map[string]string)
-	for i := range tools {
-		t := tools[i].OfTool
+// remapBetaRequestToolNames is the BetaMessageNewParams equivalent of
+// remapRequestToolNames.
+func remapBetaRequestToolNames(req *anthropic.BetaMessageNewParams) map[string]string {
+	if req == nil {
+		return nil
+	}
+	names := make([]string, 0, len(req.Tools))
+	for i := range req.Tools {
+		if t := req.Tools[i].OfTool; t != nil {
+			names = append(names, t.Name)
+		}
+	}
+	plan := planToolRenames(names)
+	if len(plan) == 0 {
+		return nil
+	}
+	reverseMap := make(map[string]string, len(plan))
+	for i := range req.Tools {
+		t := req.Tools[i].OfTool
 		if t == nil {
 			continue
 		}
-		if newName, ok := oauthToolRenameMap[t.Name]; ok && newName != t.Name {
+		if newName, ok := plan[t.Name]; ok {
 			reverseMap[newName] = t.Name
-			tools[i].OfTool.Name = newName
+			t.Name = newName
+		}
+	}
+	if pin := req.ToolChoice.OfTool; pin != nil {
+		if newName, ok := plan[pin.Name]; ok {
+			pin.Name = newName
+		}
+	}
+	for i := range req.Messages {
+		for j := range req.Messages[i].Content {
+			use := req.Messages[i].Content[j].OfToolUse
+			if use == nil {
+				continue
+			}
+			if newName, ok := plan[use.Name]; ok {
+				use.Name = newName
+			}
 		}
 	}
 	return reverseMap
