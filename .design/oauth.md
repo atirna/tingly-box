@@ -57,12 +57,46 @@ AuthorizeOAuth  ──▶  SessionState (pending)  ──▶  user signs in upst
 - **Expiry** — `OAuthDetail.IsExpired` (`ai/provider.go`) treats a token as expired
   within a 5-minute buffer; `Provider.IsOAuthExpired` exposes it.
 - **Background refresh** — `OAuthRefresher`
-  (`internal/server/background/oauth_refresher.go`) runs every ~10 min, refreshing
-  tokens inside the 5-min buffer using the stored refresh token, and gives up on
-  credentials expired more than ~72h ago.
+  (`internal/server/module/tokenrefresh/refresher.go`) ticks every ~2 min (+≤10%
+  jitter) and refreshes any token due within 15 min, using the stored refresh
+  token. It gives up on credentials expired more than ~72h ago.
 - **Manual refresh** — `POST /oauth/refresh` (`RefreshOAuthToken`) overwrites the
   access/refresh tokens, expiry, and Codex `id_token` **in place** on the provider.
   It only works while the refresh token is still valid.
+
+### Why the buffer must exceed the tick
+
+Nothing on the request path refreshes on demand — the background loop is the only
+thing keeping a token alive — so the refresh window is a hard client-visible
+contract, not a tuning knob:
+
+```
+  interval > buffer  (the old 10 min / 5 min)      buffer > interval  (2 min / 15 min)
+
+  ──tick──────────────tick──────────────tick──     ──t──t──t──t──t──t──t──t──t──t──
+        │  buffer │                                     │◄──── buffer ────►│
+        └─ due ───┴─ EXPIRED ─┐                         └─ due            expiry
+                   ~5-6 min of│401 on every request       ~7 chances to refresh,
+                              ▼                            0 min expired
+```
+
+With the old numbers a perfectly healthy credential produced a 5–6 minute 401
+window **once per token lifetime**, because a token that came due just after a
+tick waited a full interval for the next one. The buffer now spans ~7 ticks, so a
+transient token-endpoint failure costs a retry instead of a client-visible 401.
+
+### Failure modes the refresh path defends against
+
+| Response | Old behavior | Now |
+|---|---|---|
+| No `expires_in` | `ExpiresAt` = `0001-01-01T00:00:00Z` → reads as "expired 2000 years ago" → trips the 72h cutoff → **silently never refreshed again** | stored as `""` (no known expiry), matching the create path; already-poisoned rows are re-refreshed instead of skipped (`minPlausibleExpiryYear`) |
+| 200 with no `access_token` | blank credential persisted over a working one → guaranteed 401 | refresh rejected, existing credential kept |
+| Non-200 | error carried only the body's **length** — undiagnosable | error carries the body (single-line, 512-byte cap), so it reaches the log and the "Token refresh failed" dialog |
+| Codex `id_token` | updated by manual refresh only, stale after a background refresh | both paths keep it in lockstep with the access token |
+
+An upstream 401/403 is also a failover trigger (`internal/protocolserver/failover_dispatch.go`):
+a broken credential on one service falls over to a sibling and is reported to the
+health monitor, instead of surfacing to the client as "Please run /login".
 
 ## Re-authentication (in place)
 
@@ -134,7 +168,7 @@ authorize(provider_uuid) ──▶ SessionState.TargetProviderUUID
 | `internal/server/module/oauth/handler.go` | authorize, callback, device-code poll, refresh, revoke; `createProviderFromToken` (create + re-auth) |
 | `internal/server/module/oauth/types.go` | request/response models; `OAuthAuthorizeRequest.provider_uuid` |
 | `internal/server/module/oauth/routes.go` | route registration |
-| `internal/server/background/oauth_refresher.go` | periodic background refresh |
+| `internal/server/module/tokenrefresh/refresher.go` | periodic background refresh; expiry/credential guards |
 | `internal/server/config/provider.go` | `AddProvider` / `UpdateProvider` / `DeleteProvider` + rule cleanup |
 | `frontend/src/components/OAuthDialog.tsx` | provider picker + direct/re-auth mode (`reauthProviderUuid`) |
 | `frontend/src/components/OAuthTable.tsx` | provider list, expiry display, Refresh / Reauthorize actions |

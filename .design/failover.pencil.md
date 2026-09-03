@@ -48,7 +48,7 @@ Legend: `║`/`▼` = control flow · boxes = phases · `┐┘` brackets group 
         ▼   inspect gate after the attempt
   ┌────────────────────────────────────────────────────────────────────────────┐
   │ committed?  (first real stream chunk already flushed) ──────────► DONE ✓     │
-  │ retryable?  (429 / 5xx,  or setup-fail → failAttemptSetup=500)               │
+  │ retryable?  (401/403 / 429 / 5xx,  or setup-fail → failAttemptSetup=500)     │
   │      selectFallbackService(tried, style = "")   ← pool spans ALL styles      │
   │           next candidate → Discard buffer, loop ↺                            │
   │           exhausted      → flush last buffered error ──────────► DONE ✗      │
@@ -73,6 +73,16 @@ Legend: `║`/`▼` = control flow · boxes = phases · `┐┘` brackets group 
   └─────────────────────────────┘        └─────────────────────────────┘
                                               ▲ after commit, retry is impossible
 ```
+
+## Why 401/403 is retryable
+
+Inbound auth is settled by middleware long before the gate exists, so a 401 that
+reaches the loop always came from a provider: a token caught mid-refresh, a
+rotated or revoked key, a provider-side account flag. That is a property of one
+credential, not of the request — which is exactly what a sibling service is for.
+The attempt is also reported to the health monitor (like 429), so the broken
+credential stops winning selection on the next request instead of 401ing every
+caller until someone notices.
 
 ## Why it's safe (the one invariant)
 

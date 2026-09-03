@@ -93,12 +93,23 @@ func TestNewOAuthRefresher(t *testing.T) {
 		t.Error("ServerConfig not set correctly")
 	}
 
-	if refresher.checkInterval != 10*time.Minute {
-		t.Errorf("Expected check interval 10m, got %v", refresher.checkInterval)
+	if refresher.checkInterval != defaultCheckInterval {
+		t.Errorf("Expected check interval %v, got %v", defaultCheckInterval, refresher.checkInterval)
 	}
 
-	if refresher.refreshBuffer != 5*time.Minute {
-		t.Errorf("Expected refresh buffer 5m, got %v", refresher.refreshBuffer)
+	if refresher.refreshBuffer != defaultRefreshBuffer {
+		t.Errorf("Expected refresh buffer %v, got %v", defaultRefreshBuffer, refresher.refreshBuffer)
+	}
+
+	// The invariant the whole design rests on: a token must come due for
+	// refresh several ticks before it actually expires. With the buffer at or
+	// below the tick interval there is a window, once per token lifetime, where
+	// the token is dead and the next check has not run yet — and nothing on the
+	// request path refreshes on demand, so every client request in that window
+	// is a hard 401.
+	maxTick := defaultCheckInterval + time.Duration(float64(defaultCheckInterval)*jitterPercent)
+	if defaultRefreshBuffer <= maxTick {
+		t.Errorf("refresh buffer %v must exceed the jittered check interval %v", defaultRefreshBuffer, maxTick)
 	}
 }
 
@@ -375,5 +386,128 @@ func TestOAuthRefresherSkipExpiredTooLong(t *testing.T) {
 
 	if mockMgr.refreshCalled {
 		t.Error("Expected RefreshToken NOT to be called for token expired more than 72h ago")
+	}
+}
+
+// scriptedTokenRefresher returns a caller-supplied token (or error) so tests can
+// exercise the odd refresh responses that used to poison a stored credential.
+type scriptedTokenRefresher struct {
+	token         *oauth.Token
+	err           error
+	refreshCalled bool
+}
+
+func (m *scriptedTokenRefresher) RefreshToken(ctx context.Context, userID string, issuer ai.Issuer, refreshToken string, opts ...oauth.Option) (*oauth.Token, error) {
+	m.refreshCalled = true
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.token, nil
+}
+
+// oauthProviderFixture builds a single-provider config plus a refresher wired to
+// the given manager, using the production interval/buffer defaults.
+func oauthProviderFixture(mgr tokenManager, expiresAt string) (*mockConfig, *OAuthRefresher, *typ.Provider) {
+	provider := &typ.Provider{
+		UUID:     "provider-uuid",
+		Name:     "TestOAuthProvider",
+		APIBase:  "https://api.test.com",
+		APIStyle: protocol.APIStyleOpenAI,
+		AuthType: typ.AuthTypeOAuth,
+		OAuthDetail: &typ.OAuthDetail{
+			AccessToken:  "old_access_token",
+			RefreshToken: "refresh_token_123",
+			ProviderType: "claude_code",
+			UserID:       "test-user",
+			ExpiresAt:    expiresAt,
+		},
+	}
+	cfg := &mockConfig{Config: &config.Config{}}
+	cfg.Providers = append(cfg.Providers, provider)
+	return cfg, &OAuthRefresher{
+		manager:       mgr,
+		serverConfig:  cfg,
+		checkInterval: defaultCheckInterval,
+		refreshBuffer: defaultRefreshBuffer,
+		rng:           rand.New(rand.NewSource(42)),
+	}, provider
+}
+
+// TestOAuthRefresherHealsPoisonedExpiry covers the credential that reads as
+// "expired in year 1" — what a refresh response without expires_in used to
+// persist. Such a row trips maxExpiryDuration, so the refresher used to skip it
+// forever while every client request 401ed.
+func TestOAuthRefresherHealsPoisonedExpiry(t *testing.T) {
+	mgr := &scriptedTokenRefresher{token: &oauth.Token{
+		AccessToken:  "new_access_token",
+		RefreshToken: "refresh_token_123",
+		Expiry:       time.Now().Add(1 * time.Hour),
+	}}
+	cfg, refresher, _ := oauthProviderFixture(mgr, time.Time{}.Format(time.RFC3339))
+
+	refresher.CheckAndRefreshTokens()
+
+	if !mgr.refreshCalled {
+		t.Fatal("Expected a provider with a zero expires_at to be refreshed, not written off as ancient")
+	}
+	updated, err := cfg.GetProviderByUUID("provider-uuid")
+	if err != nil {
+		t.Fatalf("Failed to get updated provider: %v", err)
+	}
+	if updated.OAuthDetail.AccessToken != "new_access_token" {
+		t.Errorf("Expected the healed access token, got %q", updated.OAuthDetail.AccessToken)
+	}
+	if updated.OAuthDetail.IsExpired() {
+		t.Error("Expected the healed provider to carry a future expiry")
+	}
+}
+
+// TestOAuthRefresherStoresUnknownExpiryAsEmpty pins the storage shape for a
+// refresh response that carries no expires_in: "" (no known expiry), never the
+// formatted zero time.
+func TestOAuthRefresherStoresUnknownExpiryAsEmpty(t *testing.T) {
+	mgr := &scriptedTokenRefresher{token: &oauth.Token{
+		AccessToken:  "new_access_token",
+		RefreshToken: "refresh_token_123",
+		// Expiry deliberately zero: issuer returned no expires_in.
+	}}
+	cfg, refresher, _ := oauthProviderFixture(mgr, time.Now().Add(1*time.Minute).Format(time.RFC3339))
+
+	refresher.CheckAndRefreshTokens()
+
+	updated, err := cfg.GetProviderByUUID("provider-uuid")
+	if err != nil {
+		t.Fatalf("Failed to get updated provider: %v", err)
+	}
+	if updated.OAuthDetail.ExpiresAt != "" {
+		t.Errorf("Expected an unknown expiry to be stored as empty, got %q", updated.OAuthDetail.ExpiresAt)
+	}
+	if updated.OAuthDetail.AccessToken != "new_access_token" {
+		t.Errorf("Expected access token 'new_access_token', got %q", updated.OAuthDetail.AccessToken)
+	}
+}
+
+// TestOAuthRefresherKeepsCredentialOnEmptyAccessToken makes sure a malformed
+// 200 never overwrites a working token with "" — that turns a token which is
+// merely near expiry into a guaranteed 401 on every request.
+func TestOAuthRefresherKeepsCredentialOnEmptyAccessToken(t *testing.T) {
+	mgr := &scriptedTokenRefresher{token: &oauth.Token{
+		AccessToken:  "",
+		RefreshToken: "rotated_refresh_token",
+		Expiry:       time.Now().Add(1 * time.Hour),
+	}}
+	cfg, refresher, _ := oauthProviderFixture(mgr, time.Now().Add(1*time.Minute).Format(time.RFC3339))
+
+	refresher.CheckAndRefreshTokens()
+
+	updated, err := cfg.GetProviderByUUID("provider-uuid")
+	if err != nil {
+		t.Fatalf("Failed to get updated provider: %v", err)
+	}
+	if updated.OAuthDetail.AccessToken != "old_access_token" {
+		t.Errorf("Expected the previous access token to survive, got %q", updated.OAuthDetail.AccessToken)
+	}
+	if updated.OAuthDetail.RefreshToken != "refresh_token_123" {
+		t.Errorf("Expected the previous refresh token to survive, got %q", updated.OAuthDetail.RefreshToken)
 	}
 }

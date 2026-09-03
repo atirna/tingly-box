@@ -14,15 +14,32 @@ import (
 )
 
 const (
-	// defaultCheckInterval is how often to check for tokens needing refresh
-	defaultCheckInterval = 10 * time.Minute
-	// defaultRefreshBuffer is how long before expiry to refresh a token (matches OAuth package default)
-	defaultRefreshBuffer = 5 * time.Minute
+	// defaultCheckInterval is how often to check for tokens needing refresh.
+	//
+	// This MUST stay well below defaultRefreshBuffer. The refresher is the only
+	// thing that keeps a token alive — nothing refreshes on the request path --
+	// so a token that falls due between two ticks is a hard 401 for every client
+	// request until the next tick. With interval > buffer that window is
+	// guaranteed once per token lifetime, however healthy the credential is.
+	defaultCheckInterval = 2 * time.Minute
+	// defaultRefreshBuffer is how long before expiry a token is refreshed.
+	//
+	// Sized as a multiple of defaultCheckInterval, not as "just before expiry":
+	// it buys ~7 refresh attempts before the token actually dies, so a transient
+	// token-endpoint failure costs a retry instead of a client-visible 401.
+	defaultRefreshBuffer = 15 * time.Minute
 	// maxExpiryDuration is the maximum time after token expiry to attempt refresh
 	// Tokens expired longer than this will not be refreshed (72 hours = 3 days)
 	maxExpiryDuration = 72 * time.Hour
 	// jitterPercent is the maximum jitter percentage to add to the check interval
 	jitterPercent = 0.10 // 10% jitter
+	// minPlausibleExpiryYear guards against a poisoned expires_at. A refresh
+	// response without expires_in used to be persisted as a zero time
+	// ("0001-01-01T00:00:00Z"), which reads as "expired ~2000 years ago" and
+	// therefore trips maxExpiryDuration — permanently parking the credential in
+	// "skipping refresh" while every request 401s. Such timestamps are treated
+	// as unknown (refresh now) instead of as ancient.
+	minPlausibleExpiryYear = 2000
 )
 
 // tokenManager defines the interface for token refresh operations
@@ -249,9 +266,13 @@ func (tr *OAuthRefresher) CheckAndRefreshTokens() {
 		// Refresh if token is expired OR will expire within buffer window
 		// BUT skip if token expired too long ago (more than maxExpiryDuration)
 		timeSinceExpiry := now.Sub(expiresAt)
-		if expiresAt.Before(now.Add(buffer)) || expiresAt.Before(now) {
-			// Check if token expired too long ago
-			if timeSinceExpiry > maxExpiryDuration {
+		if expiresAt.Before(now.Add(buffer)) {
+			// A timestamp that predates OAuth itself is a poisoned or unknown
+			// expiry, not a credential abandoned for years. Refreshing it is how
+			// such a row heals; skipping it is how a provider ends up 401ing
+			// forever with nothing but a warning in the log.
+			expiryIsPlausible := expiresAt.Year() >= minPlausibleExpiryYear
+			if expiryIsPlausible && timeSinceExpiry > maxExpiryDuration {
 				logger.WithFields(logrus.Fields{
 					"provider":          provider.Name,
 					"expiresAt":         provider.OAuthDetail.ExpiresAt,
@@ -259,6 +280,12 @@ func (tr *OAuthRefresher) CheckAndRefreshTokens() {
 					"maxExpiryDuration": maxExpiryDuration,
 				}).Warn("Token expired too long ago, skipping refresh")
 				continue
+			}
+			if !expiryIsPlausible {
+				logger.WithFields(logrus.Fields{
+					"provider":  provider.Name,
+					"expiresAt": provider.OAuthDetail.ExpiresAt,
+				}).Warn("Implausible expires_at, treating as unknown and refreshing")
 			}
 			tr.refreshProviderToken(provider)
 			refreshCount++
@@ -299,7 +326,17 @@ func (tr *OAuthRefresher) refreshProviderToken(provider *typ.Provider) {
 	)
 
 	if err != nil {
-		logger.WithError(err).Error("Failed to refresh token")
+		logger.WithField("issuer", issuer).
+			WithField("expiresAt", provider.OAuthDetail.ExpiresAt).
+			WithError(err).Error("Failed to refresh token")
+		return
+	}
+
+	// Never persist a blank credential over a working one: writing "" here turns
+	// a token that is merely near expiry into a guaranteed 401 on every request,
+	// and the next cycle would happily overwrite it again.
+	if token.AccessToken == "" {
+		logger.WithField("issuer", issuer).Error("Refresh returned an empty access token, keeping the current credential")
 		return
 	}
 
@@ -308,7 +345,17 @@ func (tr *OAuthRefresher) refreshProviderToken(provider *typ.Provider) {
 	if token.RefreshToken != "" {
 		provider.OAuthDetail.RefreshToken = token.RefreshToken
 	}
-	provider.OAuthDetail.ExpiresAt = token.Expiry.Format(time.RFC3339)
+	provider.OAuthDetail.ExpiresAt = formatExpiry(token.Expiry)
+	// Keep the Codex id_token in lockstep with the access token, the same way
+	// the manual POST /oauth/refresh path does — a background refresh that
+	// leaves a stale identity assertion behind is an auth failure waiting to
+	// happen on the next native-config export.
+	if token.IDToken != "" {
+		if provider.OAuthDetail.ExtraFields == nil {
+			provider.OAuthDetail.ExtraFields = map[string]interface{}{}
+		}
+		provider.OAuthDetail.ExtraFields["id_token"] = token.IDToken
+	}
 
 	if err := tr.serverConfig.UpdateProvider(provider.UUID, provider); err != nil {
 		logger.WithError(err).Error("Failed to update provider")
@@ -317,4 +364,19 @@ func (tr *OAuthRefresher) refreshProviderToken(provider *typ.Provider) {
 
 	// Note: Client pool invalidation is handled automatically by Config.UpdateProvider() via hooks
 	logger.WithField("expiresAt", provider.OAuthDetail.ExpiresAt).Info("Token refreshed successfully")
+}
+
+// formatExpiry renders a token expiry for storage in OAuthDetail.ExpiresAt.
+//
+// A zero Expiry means the issuer returned no expires_in. Formatting it verbatim
+// yields "0001-01-01T00:00:00Z", which every consumer then reads as "expired
+// two millennia ago": IsExpired() is permanently true, and CheckAndRefreshTokens
+// used to write the credential off as beyond maxExpiryDuration. The create path
+// (createProviderFromToken) already stores "" — meaning "no known expiry" — so
+// the refresh paths store the same thing.
+func formatExpiry(expiry time.Time) string {
+	if expiry.IsZero() {
+		return ""
+	}
+	return expiry.Format(time.RFC3339)
 }
