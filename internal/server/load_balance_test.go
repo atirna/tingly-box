@@ -205,9 +205,11 @@ func TestLBScenario_RateLimit_HealthExclusion(t *testing.T) {
 
 // ============ Special status: 401 auth error ============
 //
-// 401 is terminal (not retryable — no failover masks it) AND marks the service
-// immediately unhealthy (auth error, no threshold), so it's excluded next request.
-func TestLBScenario_AuthError_TerminalAndExcluded(t *testing.T) {
+// 401 is a property of one credential (token caught mid-refresh, rotated key),
+// not of the request — the caller's own auth was settled by middleware long
+// before this point. So it fails over to a healthy sibling AND marks the service
+// immediately unhealthy (auth error, no threshold), excluding it next request.
+func TestLBScenario_AuthError_FailsOverAndExcluded(t *testing.T) {
 	t0 := svc("deepseek", "deepseek-pro", 0, true)
 	t1 := svc("deepseek", "deepseek-flash", 1, true)
 	id0, id1 := t0.ServiceID(), t1.ServiceID()
@@ -218,12 +220,12 @@ func TestLBScenario_AuthError_TerminalAndExcluded(t *testing.T) {
 	require.NoError(t, err)
 	defer cleanup()
 
-	// req1: t0 → 401. Non-retryable → terminal: the client sees 401 even though
-	// t1 is healthy (auth errors are never failed over).
+	// req1: t0 → 401 → failover to t1, which serves the request. The client
+	// never sees the broken credential.
 	tr, err := sim.Request("")
 	require.NoError(t, err)
-	require.Equal(t, []string{id0}, tr.Attempts, "401 is terminal — no failover to t1")
-	require.Equal(t, 401, tr.FinalStatus)
+	require.Equal(t, []string{id0, id1}, tr.Attempts, "401 fails over to the healthy sibling")
+	require.Equal(t, 200, tr.FinalStatus)
 	require.Equal(t, "unhealthy", sim.HealthStates()[id0], "401 marks the service immediately unhealthy")
 
 	// req2: t0 health-excluded → t1 selected.

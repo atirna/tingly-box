@@ -78,7 +78,18 @@ func (ph *ProtocolHandler) FailAttemptSetup(c *gin.Context, err error) {
 // errors as 500. 502 covers the explicit "upstream stream failed" path.
 // Keeping both means refactors that change one helper's status code
 // don't silently break failover.
+//
+// 401/403 are here because an upstream auth failure is a property of one
+// credential, not of the request: an OAuth token caught mid-refresh, a rotated
+// or revoked API key, a provider-side quota flag. The inbound caller's own
+// token is checked by middleware long before the gate is installed, so a 401
+// reaching this point always came from a provider — and answering it with a
+// sibling service is the whole reason a rule holds more than one. Without
+// this, a single stale credential turns into "Please run /login" on the
+// client while healthy services sit idle.
 var retryableUpstreamStatuses = map[int]bool{
+	http.StatusUnauthorized:        true,
+	http.StatusForbidden:           true,
 	http.StatusTooManyRequests:     true,
 	http.StatusBadGateway:          true,
 	http.StatusServiceUnavailable:  true,
@@ -430,8 +441,16 @@ func (ph *ProtocolHandler) DispatchWithPriorityFailover(
 		// fallback means final usage tracking only sees the fallback's success,
 		// so record a failed 429 attempt here or the next request would select
 		// the rate-limited service again before SmartRouting/LB evaluation.
-		if status == http.StatusTooManyRequests && ph.deps.HealthMonitor != nil {
-			ph.deps.HealthMonitor.ReportRateLimit(serviceID)
+		if ph.deps.HealthMonitor != nil {
+			switch status {
+			case http.StatusTooManyRequests:
+				ph.deps.HealthMonitor.ReportRateLimit(serviceID)
+			case http.StatusUnauthorized, http.StatusForbidden:
+				// Same reasoning as the 429 case: the fallback's success is all
+				// the final usage tracking sees, so the broken credential would
+				// keep winning selection on every subsequent request.
+				ph.deps.HealthMonitor.ReportAuthError(serviceID, status)
+			}
 		}
 
 		loadbalance.RecordServiceFailure(rule.UUID, serviceID)

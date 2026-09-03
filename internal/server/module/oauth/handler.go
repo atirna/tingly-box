@@ -632,7 +632,14 @@ func (h *Handler) RefreshOAuthToken(c *gin.Context) {
 	if token.RefreshToken != "" {
 		provider.OAuthDetail.RefreshToken = token.RefreshToken
 	}
-	provider.OAuthDetail.ExpiresAt = token.Expiry.Format(time.RFC3339)
+	// A zero Expiry (issuer returned no expires_in) must not be formatted
+	// verbatim: "0001-01-01T00:00:00Z" reads as "expired long ago" everywhere
+	// downstream and permanently parks the credential. Store "" — no known
+	// expiry — exactly like the create path does.
+	provider.OAuthDetail.ExpiresAt = ""
+	if !token.Expiry.IsZero() {
+		provider.OAuthDetail.ExpiresAt = token.Expiry.Format(time.RFC3339)
+	}
 	// Codex's native auth.json export reads id_token from ExtraFields. Keep
 	// it in lockstep with AccessToken so refreshed providers don't ship an
 	// expired identity assertion alongside a fresh bearer.
@@ -660,7 +667,7 @@ func (h *Handler) RefreshOAuthToken(c *gin.Context) {
 	resp.Data.AccessToken = token.AccessToken
 	resp.Data.RefreshToken = token.RefreshToken
 	resp.Data.TokenType = "Bearer"
-	resp.Data.ExpiresAt = token.Expiry.Format(time.RFC3339)
+	resp.Data.ExpiresAt = provider.OAuthDetail.ExpiresAt
 	resp.Data.ProviderType = string(token.Issuer)
 
 	c.JSON(http.StatusOK, resp)

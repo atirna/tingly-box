@@ -232,9 +232,9 @@ func TestIsRetryableStatus(t *testing.T) {
 		{0, false},   // writer never written → terminal, no retry
 		{200, false}, // 2xx → success
 		{201, false},
-		{400, false}, // 4xx (not 429) → client error, don't retry
-		{401, false},
-		{403, false},
+		{400, false}, // 4xx (not auth/rate-limit) → client error, don't retry
+		{401, true},  // upstream credential problem → try another service
+		{403, true},
 		{404, false},
 		{422, false},
 		{429, true}, // rate limit

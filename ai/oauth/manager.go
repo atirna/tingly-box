@@ -675,7 +675,13 @@ func (m *Manager) refreshToken(ctx context.Context, issuer ai.Issuer, refreshTok
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("refresh token failed: status %d, body: %d", resp.StatusCode, len(string(body)))
+		// Carry the issuer's own words, not just how many bytes it used to say
+		// them. This error is what the refresher logs and what the "Token
+		// refresh failed" dialog shows, and "invalid_grant" vs. "invalid_client"
+		// vs. a proxy's HTML error page are three completely different fixes.
+		// The body of a failed token exchange carries no secret of ours — the
+		// request did not succeed, so there is no token in it.
+		return nil, fmt.Errorf("refresh token failed: status %d, body: %s", resp.StatusCode, truncateForError(body))
 	}
 
 	// Parse response directly into Token
@@ -707,6 +713,13 @@ func (m *Manager) RefreshToken(ctx context.Context, userID string, issuer ai.Iss
 
 	token.Issuer = issuer
 
+	// A 200 with no access token is not a refresh — it is a response shape we
+	// do not understand. Failing here keeps callers from persisting a blank
+	// credential (and a zero expiry) over a token that still works.
+	if token.AccessToken == "" {
+		return nil, fmt.Errorf("refresh token: %w: response carried no access_token", ErrTokenExchangeFailed)
+	}
+
 	// Preserve old refresh token if new one is not returned
 	// Some OAuth providers don't return a new refresh token on each refresh
 	if token.RefreshToken == "" {
@@ -719,6 +732,25 @@ func (m *Manager) RefreshToken(ctx context.Context, userID string, issuer ai.Iss
 	}
 
 	return token, nil
+}
+
+// maxErrorBodyBytes bounds how much of an upstream error body is quoted back
+// into an error string, so a runaway HTML page from a proxy cannot flood the
+// logs or the UI.
+const maxErrorBodyBytes = 512
+
+// truncateForError renders an upstream error body as a single-line, bounded
+// string suitable for embedding in an error message.
+func truncateForError(body []byte) string {
+	s := strings.TrimSpace(string(body))
+	if s == "" {
+		return "<empty>"
+	}
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > maxErrorBodyBytes {
+		return s[:maxErrorBodyBytes] + "...(truncated)"
+	}
+	return s
 }
 
 // RevokeToken removes a token for a user and provider
