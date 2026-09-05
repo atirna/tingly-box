@@ -4,11 +4,12 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 	"log"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/tingly-dev/tingly-box/internal/protocolserver"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/browser"
@@ -167,6 +168,20 @@ func (s *Server) GetRouter() *gin.Engine {
 // GetLoadBalancer returns the load balancer instance
 func (s *Server) GetLoadBalancer() *protocolserver.LoadBalancer {
 	return s.loadBalancer
+}
+
+// CloseVirtualModelServer stops the private virtual-model HTTP server started
+// by NewServer. Stop calls it; test harnesses that build a Server without
+// Start must call it themselves so the serving goroutine does not outlive the
+// test. Safe to call more than once.
+func (s *Server) CloseVirtualModelServer() {
+	if s.vmodelServer == nil {
+		return
+	}
+	if err := s.vmodelServer.Close(); err != nil {
+		logrus.WithError(err).Debug("vmodel server shutdown")
+	}
+	s.vmodelServer = nil
 }
 
 // GetVirtualModelService returns the in-process virtual-model service, so
@@ -333,6 +348,8 @@ func (s *Server) Stop(ctx context.Context) error {
 			logrus.Errorf("Error closing stores: %v", err)
 		}
 	}
+
+	s.CloseVirtualModelServer()
 
 	fmt.Println("Shutting down server...")
 	return s.httpServer.Shutdown(ctx)
