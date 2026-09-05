@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,6 +37,22 @@ type Handler struct {
 // NewHandler creates a new Handler backed by the given per-provider registries.
 func NewHandler(anthropicReg *anthropicvm.Registry, openaiReg *openaivm.Registry) *Handler {
 	return &Handler{anthropicReg: anthropicReg, openaiReg: openaiReg}
+}
+
+// NotSupported answers 501 for endpoints the virtual models do not simulate
+// (embeddings, images, count_tokens, ...). Mounted as the private server's
+// NoRoute handler. The envelope follows the protocol of the path's root so
+// each SDK surfaces a clean API error.
+func (h *Handler) NotSupported(c *gin.Context) {
+	detail := gin.H{
+		"message": fmt.Sprintf("%s is not supported by vmodel", c.Request.URL.Path),
+		"type":    "not_supported_error",
+	}
+	if strings.HasPrefix(c.Request.URL.Path, "/anthropic/") {
+		c.JSON(http.StatusNotImplemented, gin.H{"type": "error", "error": detail})
+		return
+	}
+	c.JSON(http.StatusNotImplemented, gin.H{"error": detail})
 }
 
 // ListModels handles GET /virtual/v1/models — returns the union of both registries.

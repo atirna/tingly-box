@@ -9,8 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tingly-dev/tingly-box/ai"
+	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
+	vmodelclient "github.com/tingly-dev/tingly-box/vmodel/client"
+	"github.com/tingly-dev/tingly-box/vmodel/virtualserver"
 )
 
 // TestClientPool_ClientConstruction exercises the GetXxxClient constructors
@@ -647,4 +654,69 @@ func TestSetTransportConfig_ClearsPoolOnRespectEnvProxyChange(t *testing.T) {
 	if len(pool.transports) != 0 {
 		t.Errorf("expected pool to be empty after clear, got %d entries", len(pool.transports))
 	}
+}
+
+func newVModelProvider(style protocol.APIStyle) *typ.Provider {
+	return &typ.Provider{
+		UUID: "vm-" + string(style), Name: "vm-" + string(style),
+		APIBase:  vmodelclient.APIBase(style),
+		APIStyle: style,
+		AuthType: typ.AuthTypeVirtual,
+		Enabled:  true,
+	}
+}
+
+// newVModelPool returns a ClientPool wired to a fresh virtualserver.
+func newVModelPool(t *testing.T) *ClientPool {
+	t.Helper()
+	srv := virtualserver.Serve(virtualserver.NewService())
+	t.Cleanup(func() { _ = srv.Close() })
+	pool := NewClientPool()
+	pool.SetVModelTransport(vmodelclient.NewTransport(srv.DialContext))
+	return pool
+}
+
+// A vmodel provider must come out of the ordinary constructors with the real
+// SDK client attached and injected statuses intact — no in-process shortcut.
+func TestClientPool_VModelProvider_DialsVirtualserver(t *testing.T) {
+	pool := newVModelPool(t)
+	before := GetGlobalTransportPool().Stats()["transport_count"]
+	c := pool.GetOpenAIClient(context.Background(), newVModelProvider(protocol.APIStyleOpenAI), "echo-model")
+	require.NotNil(t, c)
+	require.NotNil(t, c.Client(), "vmodel providers expose the real SDK client")
+	assert.Equal(t, before, GetGlobalTransportPool().Stats()["transport_count"],
+		"vmodel providers must not allocate a pooled network transport")
+
+	resp, err := c.ChatCompletionsNew(context.Background(), openai.ChatCompletionNewParams{
+		Model:    "echo-model",
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, resp.Choices[0].Message.Content, "Echo")
+
+	_, err = c.ChatCompletionsNew(context.Background(), openai.ChatCompletionNewParams{
+		Model:    "virtual-fail-429",
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("x")},
+	})
+	var apiErr *openai.Error
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, 429, apiErr.StatusCode, "injected status must survive the transport unchanged")
+}
+
+func TestClientPool_VModelProvider_Anthropic(t *testing.T) {
+	c := newVModelPool(t).GetAnthropicClient(context.Background(), newVModelProvider(protocol.APIStyleAnthropic), "echo-model")
+	require.NotNil(t, c)
+	msg, err := c.Client().Messages.New(context.Background(), anthropic.MessageNewParams{
+		Model:     "echo-model",
+		MaxTokens: 32,
+		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock("hi"))},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, msg.Content[0].Text, "Echo")
+}
+
+func TestClientPool_VModelProvider_WithoutTransportReturnsNil(t *testing.T) {
+	provider := newVModelProvider(protocol.APIStyleOpenAI)
+	assert.Nil(t, NewClientPool().GetOpenAIClient(context.Background(), provider, "echo-model"))
+	assert.Nil(t, NewClientPool().GetAnthropicClient(context.Background(), provider, "echo-model"))
 }

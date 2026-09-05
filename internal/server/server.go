@@ -138,8 +138,10 @@ type Server struct {
 	otelSetup    *otel.Setup
 	tokenTracker *tracker.TokenTracker
 
-	// virtual model service for testing
+	// virtual model service (registries + gin handlers) and the private HTTP
+	// server vmodel providers are dispatched to
 	virtualModelService *virtualserver.Service
+	vmodelServer        *virtualserver.Server
 
 	// quota manager for provider quota tracking
 	quotaManager providerQuotaModule.Manager
@@ -430,10 +432,16 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	server.virtualModelService = virtualserver.NewService()
 	logrus.Debugf("Virtual model service initialized with default models")
 
+	// Serve the virtual models on a private in-memory listener and hand this
+	// server's ClientPool the transport that dials it, so vmodel providers
+	// travel the same SDK + transport chain as real upstreams
+	// (.design/vmodel-transport.md).
+	server.vmodelServer = virtualserver.Serve(server.virtualModelService)
+	server.clientPool.SetVModelTransport(vmodelclient.NewTransport(server.vmodelServer.DialContext))
+
 	// Seed builtin virtual-model providers (idempotent). These become first-class
 	// rows in the provider store so they show up in the standard UI and dispatch
-	// pipeline; the dispatcher short-circuits to the in-process handler when it
-	// resolves to a vmodel provider.
+	// pipeline with APIBase vmodel://openai / vmodel://anthropic.
 	if store := cfg.GetProviderStore(); store != nil {
 		if err := server.virtualModelService.EnsureBuiltinProviders(store); err != nil {
 			logrus.WithError(err).Warn("Failed to seed builtin virtual-model providers")
@@ -441,14 +449,6 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 			logrus.Debugf("Builtin virtual-model providers seeded")
 		}
 	}
-
-	// Wire in-process vmodel clients into the pool so virtual providers
-	// traverse the exact same dispatch path as real providers.
-	vmodelProvider := &typ.Provider{Name: "vmodel-internal", AuthType: typ.AuthTypeVirtual}
-	server.clientPool.SetVirtualClients(
-		vmodelclient.NewOpenAIClient(server.virtualModelService.GetOpenAIRegistry(), vmodelProvider),
-		vmodelclient.NewAnthropicClient(server.virtualModelService.GetAnthropicRegistry(), vmodelProvider),
-	)
 
 	// Initialize provider quota manager
 	quotaMgr, err := initQuotaManager(cfg)
